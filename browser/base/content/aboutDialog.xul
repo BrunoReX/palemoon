@@ -76,7 +76,7 @@
     <hbox id="clientBox">
       <vbox id="leftBox" flex="1"/>
       <vbox id="rightBox" flex="1">
-#expand <label id="version" value="__MOZ_APP_VERSION__"/>
+#expand <label id="version">Version __MOZ_APP_VERSION__</label>
         <label id="distribution" class="text-blurb"/>
         <label id="distributionId" class="text-blurb"/>
 
@@ -138,7 +138,7 @@
       <description id="trademark">
         <label class="trademark-label">&trademarkInfo.part1;</label>
 #ifdef MOZ_OFFICIAL_BRANDING
-        <!-- DO NOT REMOVE without consulting people involved with bug 616193 -->
+        <!-- DO NOT REMOVE Breaks updater button in non en/en-US -->
         <label id="extra-trademark" class="trademark-label"></label>
 #endif
       </description>

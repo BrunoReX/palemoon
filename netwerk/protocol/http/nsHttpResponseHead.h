@@ -57,7 +57,7 @@ public:
                          , mCacheControlNoStore(PR_FALSE)
                          , mCacheControlNoCache(PR_FALSE)
                          , mPragmaNoCache(PR_FALSE) {}
-   ~nsHttpResponseHead() 
+    ~nsHttpResponseHead() 
     {
         Reset();
     }
@@ -104,7 +104,7 @@ public:
     void     ParseStatusLine(const char *line);
 
     // parse a header line. line must be null terminated. parsing is destructive.
-    void     ParseHeaderLine(const char *line);
+    nsresult ParseHeaderLine(const char *line);
 
     // cache validation support methods
     nsresult ComputeFreshnessLifetime(PRUint32 *);

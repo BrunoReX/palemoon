@@ -31,7 +31,7 @@ tabbrowser {
   width: 0;
   -moz-transition: min-width 50ms ease-out,
                    max-width 75ms ease-out,
-                   opacity 50ms ease-out 20ms /* hide the tab for the first 20ms of the max-width transition */;
+                   opacity 30ms ease-out 20ms /* hide the tab for the first 20ms of the max-width transition */;
 }
 
 .tabbrowser-tab:not([pinned]):not([fadein]) {
@@ -40,7 +40,7 @@ tabbrowser {
   opacity: 0 !important;
   -moz-transition: min-width 50ms ease-out,
                    max-width 75ms ease-out,
-                   opacity 50ms ease-out 50ms /* hide the tab for the last 100ms of the max-width transition */;
+                   opacity 30ms ease-out 50ms /* hide the tab for the last 100ms of the max-width transition */;
 }
 
 .tab-throbber:not([fadein]):not([pinned]),
@@ -54,7 +54,7 @@ tabbrowser {
 .tab-label,
 .tab-icon-image,
 .tab-close-button {
-  -moz-transition: opacity 50ms;
+  -moz-transition: opacity 75ms;
 }
 
 .tabbrowser-tabs[positionpinnedtabs] > .tabbrowser-tab[pinned] {
@@ -481,7 +481,7 @@ statuspanel[type=status] {
 }
 
 statuspanel[type=overLink] {
-  -moz-transition: opacity 0ms;
+  -moz-transition: opacity 50ms ease-out;
   direction: ltr;
 }
 

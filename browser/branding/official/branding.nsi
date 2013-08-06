@@ -44,4 +44,3 @@
 !define CompanyName           "Moonchild Productions"
 !define URLInfoAbout          "http://www.palemoon.org/"
 !define URLUpdateInfo         "http://www.palemoon.org/"
-!define SurveyURL             ""

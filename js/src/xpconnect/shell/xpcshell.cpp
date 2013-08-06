@@ -265,10 +265,10 @@ GetLine(JSContext *cx, char *bufp, FILE *file, const char *prompt) {
     } else
 #endif
     {
-        char line[256];
+        char line[256] = { '\0' };
         fputs(prompt, gOutFile);
         fflush(gOutFile);
-        if (!fgets(line, sizeof line, file))
+        if (!fgets(line, sizeof line, file) && errno != EINTR || feof(file))
             return JS_FALSE;
         strcpy(bufp, line);
     }
@@ -571,7 +571,7 @@ GCZeal(JSContext *cx, uintN argc, jsval *vp)
     if (!JS_ValueToECMAUint32(cx, argc ? JS_ARGV(cx, vp)[0] : JSVAL_VOID, &zeal))
         return JS_FALSE;
 
-    JS_SetGCZeal(cx, (PRUint8)zeal);
+    JS_SetGCZeal(cx, (PRUint8)zeal, JS_DEFAULT_ZEAL_FREQ, JS_FALSE);
     JS_SET_RVAL(cx, vp, JSVAL_VOID);
     return JS_TRUE;
 }
@@ -728,7 +728,6 @@ static const struct {
     const char  *name;
     uint32      flag;
 } js_options[] = {
-    {"anonfunfix",      JSOPTION_ANONFUNFIX},
     {"atline",          JSOPTION_ATLINE},
     {"jit",             JSOPTION_JIT},
     {"relimit",         JSOPTION_RELIMIT},

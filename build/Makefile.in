@@ -55,12 +55,14 @@ endif
 
 DIRS += pgo
 
+ifdef ENABLE_TESTS
 ifeq (Android,$(OS_TARGET))
   DIRS += mobile/sutagent/android \
           mobile/sutagent/android/watcher \
           mobile/sutagent/android/ffxcp \
           mobile/sutagent/android/fencp \
           $(NULL)
+endif
 endif
 
 include $(topsrcdir)/config/rules.mk
@@ -115,6 +117,11 @@ ifdef ENABLE_TESTS
 libs:: $(topsrcdir)/tools/rb/fix_stack_using_bpsyms.py
 	$(INSTALL) $< $(DIST)/bin
 
+# Unit tests for ManifestParser
+check::
+	$(PYTHON) $(topsrcdir)/config/pythonpath.py -I$(srcdir) \
+	  $(srcdir)/tests/test.py
+
 ifeq ($(OS_ARCH),Darwin)
 libs:: $(topsrcdir)/tools/rb/fix-macosx-stack.pl
 	$(INSTALL) $< $(DIST)/bin
@@ -123,11 +130,11 @@ libs:: $(topsrcdir)/tools/rb/fix_macosx_stack.py
 
 # Basic unit tests for some stuff in the unify script
 check::
-# build ppc/i386 binaries, and unify them
-	rm -f unify-test-ppc unify-test-i386 unify-test-universal
-	$(HOST_CC) -arch ppc $(srcdir)/unify-test.c -o unify-test-ppc
+# build x64/i386 binaries, and unify them
+	rm -f unify-test-x64 unify-test-i386 unify-test-universal
+	$(HOST_CC) -arch x86_64 $(srcdir)/unify-test.c -o unify-test-x64
 	$(HOST_CC) -arch i386 $(srcdir)/unify-test.c -o unify-test-i386
-	@if ! $(srcdir)/macosx/universal/unify ./unify-test-ppc ./unify-test-i386 \
+	@if ! $(srcdir)/macosx/universal/unify ./unify-test-x64 ./unify-test-i386 \
           ./unify-test-universal; then \
           echo "TEST-UNEXPECTED-FAIL | build/ | unify failed to produce a universal binary!"; \
           false; \

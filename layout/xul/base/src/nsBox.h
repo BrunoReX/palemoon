@@ -42,8 +42,6 @@
 
 class nsITheme;
 
-#define DEFAULT_ORDINAL_GROUP 1
-
 #define NS_STATE_IS_ROOT        NS_FRAME_STATE_BIT(24)
 #define NS_STATE_SET_TO_DEBUG   NS_FRAME_STATE_BIT(26)
 #define NS_STATE_DEBUG_WAS_SET  NS_FRAME_STATE_BIT(27)
@@ -73,12 +71,8 @@ public:
   NS_IMETHOD GetPadding(nsMargin& aBorderAndPadding);
   NS_IMETHOD GetMargin(nsMargin& aMargin);
 
-  NS_IMETHOD SetLayoutManager(nsIBoxLayout* aLayout);
-  NS_IMETHOD GetLayoutManager(nsIBoxLayout** aLayout);
-
   virtual Valignment GetVAlign() const { return vAlign_Top; }
   virtual Halignment GetHAlign() const { return hAlign_Left; }
-
 
   NS_IMETHOD RelayoutChildAtOrdinal(nsBoxLayoutState& aState, nsIBox* aChild);
 

@@ -57,6 +57,7 @@
 #include "nsICachingChannel.h"
 #include "nsURILoader.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
+#include "mozilla/Util.h" // for DebugOnly
 
 #define HTTP_OK_CODE 200
 #define HTTP_PARTIAL_RESPONSE_CODE 206
@@ -331,7 +332,7 @@ nsMediaChannelStream::OnStopRequest(nsIRequest* aRequest, nsresult aStatus)
       mLoadInBackground = PR_FALSE;
 
       nsLoadFlags loadFlags;
-      nsresult rv = mChannel->GetLoadFlags(&loadFlags);
+      DebugOnly<nsresult> rv = mChannel->GetLoadFlags(&loadFlags);
       NS_ASSERTION(NS_SUCCEEDED(rv), "GetLoadFlags() failed!");
 
       loadFlags &= ~nsIRequest::LOAD_BACKGROUND;
@@ -938,7 +939,7 @@ public:
   {
     return (aOffset < mSize) ? aOffset : -1;
   }
-  virtual PRInt64 GetCachedDataEnd(PRInt64 aOffset) { return PR_MAX(aOffset, mSize); }
+  virtual PRInt64 GetCachedDataEnd(PRInt64 aOffset) { return NS_MAX(aOffset, mSize); }
   virtual PRBool  IsDataCachedToEndOfStream(PRInt64 aOffset) { return PR_TRUE; }
   virtual PRBool  IsSuspendedByCache() { return PR_FALSE; }
   virtual PRBool  IsSuspended() { return PR_FALSE; }

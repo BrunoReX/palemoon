@@ -38,9 +38,8 @@
 
 #include "nsHTMLObjectResizer.h"
 
-#include "nsIDOMEventTarget.h"
 #include "nsIDOMNSHTMLElement.h"
-#include "nsPIDOMEventTarget.h"
+#include "nsIDOMEventTarget.h"
 #include "nsIDOMText.h"
 
 #include "nsIDOMCSSValue.h"
@@ -60,12 +59,13 @@
 
 #include "nsPoint.h"
 
-#include "nsIPrefBranch.h"
-#include "nsIPrefService.h"
 #include "nsIServiceManager.h"
+#include "mozilla/Preferences.h"
 
 #include "nsILookAndFeel.h"
 #include "nsWidgetsCID.h"
+
+using namespace mozilla;
 
 class nsHTMLEditUtils;
 
@@ -130,7 +130,7 @@ ResizerSelectionListener::NotifySelectionChanged(nsIDOMDocument *, nsISelection 
 // ResizerMouseMotionListener
 // ==================================================================
 
-NS_IMPL_ISUPPORTS2(ResizerMouseMotionListener, nsIDOMEventListener, nsIDOMMouseMotionListener)
+NS_IMPL_ISUPPORTS1(ResizerMouseMotionListener, nsIDOMEventListener)
 
 ResizerMouseMotionListener::ResizerMouseMotionListener(nsIHTMLEditor * aEditor)
 {
@@ -141,9 +141,8 @@ ResizerMouseMotionListener::~ResizerMouseMotionListener()
 {
 }
 
-
 NS_IMETHODIMP
-ResizerMouseMotionListener::MouseMove(nsIDOMEvent* aMouseEvent)
+ResizerMouseMotionListener::HandleEvent(nsIDOMEvent* aMouseEvent)
 {
   nsCOMPtr<nsIDOMMouseEvent> mouseEvent ( do_QueryInterface(aMouseEvent) );
   if (!mouseEvent) {
@@ -159,18 +158,6 @@ ResizerMouseMotionListener::MouseMove(nsIDOMEvent* aMouseEvent)
     objectResizer->MouseMove(aMouseEvent);
   }
 
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-ResizerMouseMotionListener::HandleEvent(nsIDOMEvent* aMouseEvent)
-{
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-ResizerMouseMotionListener::DragMove(nsIDOMEvent* aMouseEvent)
-{
   return NS_OK;
 }
 
@@ -496,8 +483,7 @@ nsHTMLEditor::HideResizers(void)
 
   // don't forget to remove the listeners !
 
-  nsCOMPtr<nsPIDOMEventTarget> piTarget = GetPIDOMEventTarget();
-  nsCOMPtr<nsIDOMEventTarget> target = do_QueryInterface(piTarget);
+  nsCOMPtr<nsIDOMEventTarget> target = GetDOMEventTarget();
 
   if (target && mMouseMotionListenerP)
   {
@@ -554,19 +540,8 @@ nsHTMLEditor::StartResizing(nsIDOMElement *aHandle)
   mActivatedHandle->SetAttribute(NS_LITERAL_STRING("_moz_activated"), NS_LITERAL_STRING("true"));
 
   // do we want to preserve ratio or not?
-  PRBool preserveRatio = nsHTMLEditUtils::IsImage(mResizedObject);
-  nsresult result;
-  nsCOMPtr<nsIPrefBranch> prefBranch =
-    do_GetService(NS_PREFSERVICE_CONTRACTID, &result);
-  if (NS_SUCCEEDED(result) && prefBranch && preserveRatio) {
-    result = prefBranch->GetBoolPref("editor.resizing.preserve_ratio", &preserveRatio);
-    if (NS_FAILED(result)) {
-      // just in case Anvil does not update its prefs file
-      // and because it really does not make sense to me to allow free
-      // resizing on corners without a modifier key
-      preserveRatio = PR_TRUE;
-    }
-  }
+  PRBool preserveRatio = nsHTMLEditUtils::IsImage(mResizedObject) &&
+    Preferences::GetBool("editor.resizing.preserve_ratio", PR_TRUE);
 
   // the way we change the position/size of the shadow depends on
   // the handle
@@ -609,14 +584,14 @@ nsHTMLEditor::StartResizing(nsIDOMElement *aHandle)
                                       mResizedObjectHeight);
 
   // add a mouse move listener to the editor
+  nsresult result = NS_OK;
   if (!mMouseMotionListenerP) {
     mMouseMotionListenerP = new ResizerMouseMotionListener(this);
     if (!mMouseMotionListenerP) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
 
-    nsCOMPtr<nsPIDOMEventTarget> piTarget = GetPIDOMEventTarget();
-    nsCOMPtr<nsIDOMEventTarget> target = do_QueryInterface(piTarget);
+    nsCOMPtr<nsIDOMEventTarget> target = GetDOMEventTarget();
     NS_ENSURE_TRUE(target, NS_ERROR_FAILURE);
 
     result = target->AddEventListener(NS_LITERAL_STRING("mousemove"),
@@ -927,8 +902,8 @@ nsHTMLEditor::MouseMove(nsIDOMEvent* aMouseEvent)
     look->GetMetric(nsILookAndFeel::eMetric_DragThresholdX, xThreshold);
     look->GetMetric(nsILookAndFeel::eMetric_DragThresholdY, yThreshold);
 
-    if (PR_ABS(clientX - mOriginalX ) * 2 >= xThreshold ||
-        PR_ABS(clientY - mOriginalY ) * 2 >= yThreshold) {
+    if (NS_ABS(clientX - mOriginalX ) * 2 >= xThreshold ||
+        NS_ABS(clientY - mOriginalY ) * 2 >= yThreshold) {
       mGrabberClicked = PR_FALSE;
       StartMoving(nsnull);
     }

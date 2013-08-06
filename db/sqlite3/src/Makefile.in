@@ -84,7 +84,7 @@ ifeq ($(OS_ARCH),SunOS)
 MODULE_OPTIMIZE_FLAGS = -xO5
 endif
 ifeq ($(OS_ARCH),WINNT)
-MODULE_OPTIMIZE_FLAGS = -O2
+MODULE_OPTIMIZE_FLAGS = -O2 -arch:SSE2 -GFTs -GS-
 endif
 endif
 

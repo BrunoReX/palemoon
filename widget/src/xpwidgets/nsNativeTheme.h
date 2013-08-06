@@ -40,6 +40,7 @@
 // code duplication.
 
 #include "prtypes.h"
+#include "nsAlgorithm.h"
 #include "nsIAtom.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
@@ -170,6 +171,11 @@ class nsNativeTheme : public nsITimerCallback
 
   // menupopup:
   PRBool IsSubmenu(nsIFrame* aFrame, PRBool* aLeftOfParent);
+
+  // True if it's not a menubar item or menulist item
+  PRBool IsRegularMenuItem(nsIFrame *aFrame);
+
+  PRBool IsMenuListEditable(nsIFrame *aFrame);
 
   nsIPresShell *GetPresShell(nsIFrame* aFrame);
   PRInt32 CheckIntAttr(nsIFrame* aFrame, nsIAtom* aAtom, PRInt32 defaultValue);

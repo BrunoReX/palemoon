@@ -48,12 +48,13 @@
 #include "jsobjinlines.h"
 #include "jsstrinlines.h"
 
+#include "methodjit/MethodJIT.h"
 #include "assembler/wtf/Platform.h"
+#include "yarr/BumpPointerAllocator.h"
 
+#include "yarr/Yarr.h"
 #if ENABLE_YARR_JIT
-#include "yarr/yarr/RegexJIT.h"
-#else
-#include "yarr/pcre/pcre.h"
+#include "yarr/YarrJIT.h"
 #endif
 
 namespace js {
@@ -95,10 +96,10 @@ regexp_statics_construct(JSContext *cx, GlobalObject *parent)
 class RegExp
 {
 #if ENABLE_YARR_JIT
-    JSC::Yarr::RegexCodeBlock   compiled;
-#else
-    JSRegExp                    *compiled;
+    /* native code is valid only if codeBlock.isFallBack() == false */
+    JSC::Yarr::YarrCodeBlock    codeBlock;
 #endif
+    JSC::Yarr::BytecodePattern  *byteCode;
     JSLinearString              *source;
     size_t                      refCount;
     unsigned                    parenCount; /* Must be |unsigned| to interface with YARR. */
@@ -111,7 +112,11 @@ class RegExp
 #endif
 
     RegExp(JSLinearString *source, uint32 flags, JSCompartment *compartment)
-      : compiled(), source(source), refCount(1), parenCount(0), flags(flags)
+      :
+#if ENABLE_YARR_JIT
+        codeBlock(),
+#endif
+        byteCode(NULL), source(source), refCount(1), parenCount(0), flags(flags)
 #ifdef DEBUG
         , compartment(compartment)
 #endif
@@ -120,17 +125,17 @@ class RegExp
     JS_DECLARE_ALLOCATION_FRIENDS_FOR_PRIVATE_CONSTRUCTOR;
 
     ~RegExp() {
-#if !ENABLE_YARR_JIT
-        if (compiled)
-            jsRegExpFree(compiled);
+#if ENABLE_YARR_JIT
+        codeBlock.release();
 #endif
+        if (byteCode)
+            Foreground::delete_<JSC::Yarr::BytecodePattern>(byteCode);
     }
 
-    bool compileHelper(JSContext *cx, JSLinearString &pattern);
-    bool compile(JSContext *cx);
+    bool compileHelper(JSContext *cx, JSLinearString &pattern, TokenStream *ts);
+    bool compile(JSContext *cx, TokenStream *ts);
     static const uint32 allFlags = JSREG_FOLD | JSREG_GLOB | JSREG_MULTILINE | JSREG_STICKY;
-    void handlePCREError(JSContext *cx, int error);
-    void handleYarrError(JSContext *cx, int error);
+    void reportYarrError(JSContext *cx, TokenStream *ts, JSC::Yarr::ErrorCode error);
     static inline bool initArena(JSContext *cx);
     static inline void checkMatchPairs(JSString *input, int *buf, size_t matchItemCount);
     static JSObject *createResult(JSContext *cx, JSString *input, int *buf, size_t matchItemCount);
@@ -169,10 +174,10 @@ class RegExp
 
     /* Factories */
 
-    static AlreadyIncRefed<RegExp> create(JSContext *cx, JSString *source, uint32 flags);
+    static AlreadyIncRefed<RegExp> create(JSContext *cx, JSString *source, uint32 flags, TokenStream *ts);
 
     /* Would overload |create|, but |0| resolves ambiguously against pointer and uint. */
-    static AlreadyIncRefed<RegExp> createFlagged(JSContext *cx, JSString *source, JSString *flags);
+    static AlreadyIncRefed<RegExp> createFlagged(JSContext *cx, JSString *source, JSString *flags, TokenStream *ts);
 
     /*
      * Create an object with new regular expression internals.
@@ -181,9 +186,9 @@ class RegExp
      *          execution, as opposed to during something like XDR.
      */
     static JSObject *createObject(JSContext *cx, RegExpStatics *res, const jschar *chars,
-                                  size_t length, uint32 flags);
+                                  size_t length, uint32 flags, TokenStream *ts);
     static JSObject *createObjectNoStatics(JSContext *cx, const jschar *chars, size_t length,
-                                           uint32 flags);
+                                           uint32 flags, TokenStream *ts);
     static RegExp *extractFrom(JSObject *obj);
 
     /* Mutators */
@@ -318,9 +323,6 @@ inline bool
 RegExp::executeInternal(JSContext *cx, RegExpStatics *res, JSString *inputstr,
                         size_t *lastIndex, bool test, Value *rval)
 {
-#if !ENABLE_YARR_JIT
-    JS_ASSERT(compiled);
-#endif
     const size_t pairCount = parenCount + 1;
     const size_t bufCount = pairCount * 3; /* Should be x2, but PCRE has... needs. */
     const size_t matchItemCount = pairCount * 2;
@@ -360,25 +362,18 @@ RegExp::executeInternal(JSContext *cx, RegExpStatics *res, JSString *inputstr,
         inputOffset = *lastIndex;
     }
 
+    int result;
 #if ENABLE_YARR_JIT
-    int result = JSC::Yarr::executeRegex(cx, compiled, chars, *lastIndex - inputOffset, len, buf,
-                                         bufCount);
+    if (!codeBlock.isFallBack())
+        result = JSC::Yarr::execute(codeBlock, chars, *lastIndex - inputOffset, len, buf);
+    else
+        result = JSC::Yarr::interpret(byteCode, chars, *lastIndex - inputOffset, len, buf);
 #else
-    int result = jsRegExpExecute(cx, compiled, chars, len, *lastIndex - inputOffset, buf, 
-                                 bufCount);
+    result = JSC::Yarr::interpret(byteCode, chars, *lastIndex - inputOffset, len, buf);
 #endif
     if (result == -1) {
         *rval = NullValue();
         return true;
-    }
-
-    if (result < 0) {
-#if ENABLE_YARR_JIT
-        handleYarrError(cx, result);
-#else
-        handlePCREError(cx, result);
-#endif
-        return false;
     }
 
     /* 
@@ -412,7 +407,7 @@ RegExp::executeInternal(JSContext *cx, RegExpStatics *res, JSString *inputstr,
 }
 
 inline AlreadyIncRefed<RegExp>
-RegExp::create(JSContext *cx, JSString *source, uint32 flags)
+RegExp::create(JSContext *cx, JSString *source, uint32 flags, TokenStream *ts)
 {
     typedef AlreadyIncRefed<RegExp> RetType;
     JSLinearString *flatSource = source->ensureLinear(cx);
@@ -421,7 +416,7 @@ RegExp::create(JSContext *cx, JSString *source, uint32 flags)
     RegExp *self = cx->new_<RegExp>(flatSource, flags, cx->compartment);
     if (!self)
         return RetType(NULL);
-    if (!self->compile(cx)) {
+    if (!self->compile(cx, ts)) {
         Foreground::delete_(self);
         return RetType(NULL);
     }
@@ -430,14 +425,14 @@ RegExp::create(JSContext *cx, JSString *source, uint32 flags)
 
 inline JSObject *
 RegExp::createObject(JSContext *cx, RegExpStatics *res, const jschar *chars, size_t length,
-                     uint32 flags)
+                     uint32 flags, TokenStream *ts)
 {
     uint32 staticsFlags = res->getFlags();
-    return createObjectNoStatics(cx, chars, length, flags | staticsFlags);
+    return createObjectNoStatics(cx, chars, length, flags | staticsFlags, ts);
 }
 
 inline JSObject *
-RegExp::createObjectNoStatics(JSContext *cx, const jschar *chars, size_t length, uint32 flags)
+RegExp::createObjectNoStatics(JSContext *cx, const jschar *chars, size_t length, uint32 flags, TokenStream *ts)
 {
     JS_ASSERT((flags & allFlags) == flags);
     JSString *str = js_NewStringCopyN(cx, chars, length);
@@ -449,7 +444,7 @@ RegExp::createObjectNoStatics(JSContext *cx, const jschar *chars, size_t length,
      * could be from the malloc-allocated GC-invisible re. So we must anchor.
      */
     JS::Anchor<JSString *> anchor(str);
-    AlreadyIncRefed<RegExp> re = RegExp::create(cx, str, flags);
+    AlreadyIncRefed<RegExp> re = RegExp::create(cx, str, flags, ts);
     if (!re)
         return NULL;
     JSObject *obj = NewBuiltinClassInstance(cx, &js_RegExpClass);
@@ -460,64 +455,57 @@ RegExp::createObjectNoStatics(JSContext *cx, const jschar *chars, size_t length,
     return obj;
 }
 
-#ifdef ANDROID
-static bool
-YarrJITIsBroken(JSContext *cx)
+/*
+ * This function should be deleted once we can. See bug 604774.
+ */
+static inline bool
+EnableYarrJIT(JSContext *cx)
 {
-#if defined(JS_TRACER) && defined(JS_METHODJIT)
-    /* FIXME/bug 604774: dead code walking.
-     *
-     * If both JITs are disabled, assume they were disabled because
-     * we're running on a blacklisted device.
-     */
-    return !cx->traceJitEnabled && !cx->methodJitEnabled;
+#if defined ANDROID && defined(JS_TRACER) && defined(JS_METHODJIT)
+    return cx->traceJitEnabled || cx->methodJitEnabled;
 #else
-    return false;
-#endif
-}
-#endif  /* ANDROID */
-
-inline bool
-RegExp::compileHelper(JSContext *cx, JSLinearString &pattern)
-{
-#if ENABLE_YARR_JIT
-    bool fellBack = false;
-    int error = 0;
-    jitCompileRegex(*cx->compartment->regExpAllocator, compiled, pattern, parenCount, error, fellBack, ignoreCase(), multiline()
-#ifdef ANDROID
-                    /* Temporary gross hack to work around buggy kernels. */
-                    , YarrJITIsBroken(cx)
-#endif
-);
-    if (!error)
-        return true;
-    if (fellBack)
-        handlePCREError(cx, error);
-    else
-        handleYarrError(cx, error);
-    return false;
-#else
-    int error = 0;
-    compiled = jsRegExpCompile(pattern.chars(), pattern.length(),
-                               ignoreCase() ? JSRegExpIgnoreCase : JSRegExpDoNotIgnoreCase,
-                               multiline() ? JSRegExpMultiline : JSRegExpSingleLine,
-                               &parenCount, &error);
-    if (!error)
-        return true;
-    handlePCREError(cx, error);
-    return false;
+    return true;
 #endif
 }
 
 inline bool
-RegExp::compile(JSContext *cx)
+RegExp::compileHelper(JSContext *cx, JSLinearString &pattern, TokenStream *ts)
+{
+    JSC::Yarr::ErrorCode yarrError;
+    JSC::Yarr::YarrPattern yarrPattern(pattern, ignoreCase(), multiline(), &yarrError);
+    if (yarrError) {
+        reportYarrError(cx, ts, yarrError);
+        return false;
+    }
+    parenCount = yarrPattern.m_numSubpatterns;
+
+#if ENABLE_YARR_JIT && defined(JS_METHODJIT)
+    if (EnableYarrJIT(cx) && !yarrPattern.m_containsBackreferences) {
+        bool ok = cx->compartment->ensureJaegerCompartmentExists(cx);
+        if (!ok)
+            return false;
+        JSC::Yarr::JSGlobalData globalData(cx->compartment->jaegerCompartment()->execAlloc());
+        JSC::Yarr::jitCompile(yarrPattern, &globalData, codeBlock);
+        if (!codeBlock.isFallBack())
+            return true;
+    }
+#endif
+
+    codeBlock.setFallBack(true);
+    byteCode = JSC::Yarr::byteCompile(yarrPattern, cx->compartment->regExpAllocator).get();
+
+    return true;
+}
+
+inline bool
+RegExp::compile(JSContext *cx, TokenStream *ts)
 {
     /* Flatten source early for the rest of compilation. */
     if (!source->ensureLinear(cx))
         return false;
 
     if (!sticky())
-        return compileHelper(cx, *source);
+        return compileHelper(cx, *source, ts);
 
     /*
      * The sticky case we implement hackily by prepending a caret onto the front
@@ -536,7 +524,7 @@ RegExp::compile(JSContext *cx)
     JSLinearString *fakeySource = sb.finishString();
     if (!fakeySource)
         return false;
-    return compileHelper(cx, *fakeySource);
+    return compileHelper(cx, *fakeySource, ts);
 }
 
 inline bool

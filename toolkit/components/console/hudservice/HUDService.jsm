@@ -51,6 +51,7 @@ const CONSOLEAPI_CLASS_ID = "{b49c18f8-3379-4fc0-8c90-d7772c1a9ff3}";
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource:///modules/NetworkHelper.jsm");
+Cu.import("resource:///modules/PropertyPanel.jsm");
 
 var EXPORTED_SYMBOLS = ["HUDService", "ConsoleUtils"];
 
@@ -2823,6 +2824,10 @@ HUD_SERVICE.prototype =
     let windowUI = nBox.ownerDocument.getElementById("console_window_" + hudId);
     if (windowUI) {
       // The Web Console popup is already open, no need to continue.
+      if (aContentWindow == aContentWindow.top) {
+        let hud = this.hudReferences[hudId];
+        hud.reattachConsole(aContentWindow);
+      }
       return;
     }
 
@@ -3227,10 +3232,8 @@ HeadsUpDisplay.prototype = {
 
     let panel = this.chromeDocument.createElementNS(XUL_NS, "panel");
 
-    let label = this.getStr("webConsoleOwnWindowTitle");
-
     let config = { id: "console_window_" + this.hudId,
-                   label: label,
+                   label: this.getPanelTitle(),
                    titlebar: "normal",
                    noautohide: "true",
                    norestorefocus: "true",
@@ -3357,6 +3360,17 @@ HeadsUpDisplay.prototype = {
     this.consoleWindowUnregisterOnHide = true;
 
     return panel;
+  },
+
+  /**
+   * Retrieve the Web Console panel title.
+   *
+   * @return string
+   *         The Web Console panel title.
+   */
+  getPanelTitle: function HUD_getPanelTitle()
+  {
+    return this.getFormatStr("webConsoleWindowTitleAndURL", [this.uriSpec]);
   },
 
   positions: {
@@ -3509,6 +3523,10 @@ HeadsUpDisplay.prototype = {
     this.contentWindow = aContentWindow;
     this.contentDocument = this.contentWindow.document;
     this.uriSpec = this.contentWindow.location.href;
+
+    if (this.consolePanel) {
+      this.consolePanel.label = this.getPanelTitle();
+    }
 
     if (!this.jsterm) {
       this.createConsoleInput(this.contentWindow, this.consoleWrap, this.outputNode);
@@ -4157,6 +4175,8 @@ function findCompletionBeginning(aStr)
 function JSPropertyProvider(aScope, aInputValue)
 {
   let obj = unwrap(aScope);
+  // Store the scope object, since obj will be modified later on.
+  let win = obj;
 
   // Analyse the aInputValue and find the beginning of the last part that
   // should be completed.
@@ -4195,10 +4215,15 @@ function JSPropertyProvider(aScope, aInputValue)
 
       // Check if prop is a getter function on obj. Functions can change other
       // stuff so we can't execute them to get the next object. Stop here.
-      if (obj.__lookupGetter__(prop)) {
+      if (isNonNativeGetter(win, obj, prop)) {
         return null;
       }
-      obj = obj[prop];
+      try {
+        obj = obj[prop];
+      }
+      catch (ex) {
+        return null;
+      }
     }
   }
   else {
@@ -4241,10 +4266,16 @@ function isIteratorOrGenerator(aObject)
       return true;
     }
 
-    let str = aObject.toString();
-    if (typeof aObject.next == "function" &&
-        str.indexOf("[object Generator") == 0) {
-      return true;
+    try {
+      let str = aObject.toString();
+      if (typeof aObject.next == "function" &&
+          str.indexOf("[object Generator") == 0) {
+        return true;
+      }
+    }
+    catch (ex) {
+      // window.history.next throws in the typeof check above.
+      return false;
     }
   }
 
@@ -4547,8 +4578,7 @@ JSTerm.prototype = {
   },
 
   /**
-   * Evaluates a string in the sandbox. The string is currently wrapped by a
-   * with(window) { aString } construct, see bug 574033.
+   * Evaluates a string in the sandbox.
    *
    * @param string aString
    *        String to evaluate in the sandbox.

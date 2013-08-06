@@ -57,8 +57,6 @@
 
 #include "nsIServiceManager.h"
 #include "nsIConsoleService.h"
-#include "nsIPrefService.h"
-#include "nsIPrefBranch2.h"
 
 #include "gfxCrashReporterUtils.h"
 
@@ -540,6 +538,8 @@ LayerManagerOGL::RootLayer() const
   return static_cast<LayerOGL*>(mRoot->ImplData());
 }
 
+/* This function tries to stick to portable C89 as much as possible
+ * so that it can be easily copied into other applications */
 void
 LayerManagerOGL::FPSState::DrawFPS(GLContext* context, CopyProgram* copyprog)
 {
@@ -575,13 +575,18 @@ LayerManagerOGL::FPSState::DrawFPS(GLContext* context, CopyProgram* copyprog)
       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
     };
 
-    unsigned long* buf = (unsigned long*)malloc(64 * 8 * 4);
+    // convert from 8 bit to 32 bit so that don't have to write the text above out in 32 bit format
+    // we rely on int being 32 bits
+    unsigned int* buf = (unsigned int*)malloc(64 * 8 * 4);
     for (int i = 0; i < 7; i++) {
       for (int j = 0; j < 41; j++) {
-        buf[i * 64 + j] = (text[i * 41 + j] == 0) ? 0xfff000ff : 0xffffffff;
+        unsigned int purple = 0xfff000ff;
+        unsigned int white  = 0xffffffff;
+        buf[i * 64 + j] = (text[i * 41 + j] == 0) ? purple : white;
       }
     }
     context->fTexImage2D(LOCAL_GL_TEXTURE_2D, 0, LOCAL_GL_RGBA, 64, 8, 0, LOCAL_GL_RGBA, LOCAL_GL_UNSIGNED_BYTE, buf);
+    free(buf);
     initialized = true;
   }
 
@@ -663,6 +668,71 @@ LayerManagerOGL::FPSState::DrawFPS(GLContext* context, CopyProgram* copyprog)
                                 0, texCoords);
 
   context->fDrawArrays(LOCAL_GL_TRIANGLE_STRIP, 0, 12);
+}
+
+// |aTexCoordRect| is the rectangle from the texture that we want to
+// draw using the given program.  The program already has a necessary
+// offset and scale, so the geometry that needs to be drawn is a unit
+// square from 0,0 to 1,1.
+//
+// |aTexSize| is the actual size of the texture, as it can be larger
+// than the rectangle given by |aTexCoordRect|.
+void 
+LayerManagerOGL::BindAndDrawQuadWithTextureRect(LayerProgram *aProg,
+                                                const nsIntRect& aTexCoordRect,
+                                                const nsIntSize& aTexSize,
+                                                GLenum aWrapMode)
+{
+  GLuint vertAttribIndex =
+    aProg->AttribLocation(LayerProgram::VertexAttrib);
+  GLuint texCoordAttribIndex =
+    aProg->AttribLocation(LayerProgram::TexCoordAttrib);
+  NS_ASSERTION(texCoordAttribIndex != GLuint(-1), "no texture coords?");
+
+  // clear any bound VBO so that glVertexAttribPointer() goes back to
+  // "pointer mode"
+  mGLContext->fBindBuffer(LOCAL_GL_ARRAY_BUFFER, 0);
+
+  // Given what we know about these textures and coordinates, we can
+  // compute fmod(t, 1.0f) to get the same texture coordinate out.  If
+  // the texCoordRect dimension is < 0 or > width/height, then we have
+  // wraparound that we need to deal with by drawing multiple quads,
+  // because we can't rely on full non-power-of-two texture support
+  // (which is required for the REPEAT wrap mode).
+
+  GLContext::RectTriangles rects;
+
+  if (aWrapMode == LOCAL_GL_REPEAT) {
+    rects.addRect(/* dest rectangle */
+                  0.0f, 0.0f, 1.0f, 1.0f,
+                  /* tex coords */
+                  aTexCoordRect.x / GLfloat(aTexSize.width),
+                  aTexCoordRect.y / GLfloat(aTexSize.height),
+                  aTexCoordRect.XMost() / GLfloat(aTexSize.width),
+                  aTexCoordRect.YMost() / GLfloat(aTexSize.height));
+  } else {
+    GLContext::DecomposeIntoNoRepeatTriangles(aTexCoordRect, aTexSize, rects);
+  }
+
+  mGLContext->fVertexAttribPointer(vertAttribIndex, 2,
+                                   LOCAL_GL_FLOAT, LOCAL_GL_FALSE, 0,
+                                   rects.vertexPointer());
+
+  mGLContext->fVertexAttribPointer(texCoordAttribIndex, 2,
+                                   LOCAL_GL_FLOAT, LOCAL_GL_FALSE, 0,
+                                   rects.texCoordPointer());
+
+  {
+    mGLContext->fEnableVertexAttribArray(texCoordAttribIndex);
+    {
+      mGLContext->fEnableVertexAttribArray(vertAttribIndex);
+
+      mGLContext->fDrawArrays(LOCAL_GL_TRIANGLES, 0, rects.elements());
+
+      mGLContext->fDisableVertexAttribArray(vertAttribIndex);
+    }
+    mGLContext->fDisableVertexAttribArray(texCoordAttribIndex);
+  }
 }
 
 void

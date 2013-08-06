@@ -252,12 +252,6 @@ PluginPRLibrary::GetImage(NPP instance, ImageContainer* aContainer, Image** aIma
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-nsresult
-PluginPRLibrary::GetImageSize(NPP instance, nsIntSize* aSize)
-{
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
 #if defined(XP_MACOSX)
 nsresult
 PluginPRLibrary::IsRemoteDrawingCoreAnimation(NPP instance, PRBool *aDrawing)
@@ -268,6 +262,12 @@ PluginPRLibrary::IsRemoteDrawingCoreAnimation(NPP instance, PRBool *aDrawing)
   return NS_OK;
 }
 #endif
+
+nsresult
+PluginPRLibrary::GetImageSize(NPP instance, nsIntSize* aSize)
+{
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
 
 nsresult
 PluginPRLibrary::SetBackgroundUnknown(NPP instance)

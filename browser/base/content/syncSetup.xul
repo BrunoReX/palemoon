@@ -54,6 +54,7 @@
 ]>
 <wizard id="accountSetup" title="&accountSetupTitle.label;"
         windowtype="Weave:AccountSetup"
+        persist="screenX screenY"
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         xmlns:html="http://www.w3.org/1999/xhtml"
         onwizardnext="return gSyncSetup.onWizardAdvance()"
@@ -124,8 +125,8 @@
           </hbox>
         </row>
         <row id="passwordRow" align="center">
-          <label value="&signIn.password.label;"
-                 accesskey="&signIn.password.accesskey;"
+          <label value="&setup.choosePassword.label;"
+                 accesskey="&setup.choosePassword.accesskey;"
                  control="weavePassword"/>
           <textbox id="weavePassword"
                    type="password"
@@ -228,7 +229,8 @@
   </wizardpage>
 
   <wizardpage label="&setup.captchaPage2.title.label;"
-              onextra1="gSyncSetup.onSyncOptions()">
+              onextra1="gSyncSetup.onSyncOptions()"
+              onpageshow="gSyncSetup.onPageShow();">
     <vbox flex="1" align="center">
       <browser height="150"
                width="450"

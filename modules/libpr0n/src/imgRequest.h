@@ -51,6 +51,7 @@
 #include "nsIStreamListener.h"
 #include "nsIURI.h"
 #include "nsIPrincipal.h"
+#include "nsITimedChannel.h"
 
 #include "nsCategoryCache.h"
 #include "nsCOMPtr.h"
@@ -89,7 +90,7 @@ public:
   NS_DECL_ISUPPORTS
 
   nsresult Init(nsIURI *aURI,
-                nsIURI *aKeyURI,
+                nsIURI *aCurrentURI,
                 nsIRequest *aRequest,
                 nsIChannel *aChannel,
                 imgCacheEntry *aCacheEntry,
@@ -127,6 +128,12 @@ public:
   inline PRUint64 WindowID() const {
     return mWindowId;
   }
+
+  // Set the cache validation information (expiry time, whether we must
+  // validate, etc) on the cache entry based on the request information.
+  // If this function is called multiple times, the information set earliest
+  // wins.
+  static void SetCacheValidation(imgCacheEntry* aEntry, nsIRequest* aRequest);
 
 private:
   friend class imgCacheEntry;
@@ -204,10 +211,11 @@ private:
   friend class imgMemoryReporter;
 
   nsCOMPtr<nsIRequest> mRequest;
-  // The original URI we were loaded with.
+  // The original URI we were loaded with. This is the same as the URI we are
+  // keyed on in the cache.
   nsCOMPtr<nsIURI> mURI;
-  // The URI we are keyed on in the cache.
-  nsCOMPtr<nsIURI> mKeyURI;
+  // The URI of the resource we ended up loading after all redirects, etc.
+  nsCOMPtr<nsIURI> mCurrentURI;
   nsCOMPtr<nsIPrincipal> mPrincipal;
   // Status-tracker -- transferred to mImage, when it gets instantiated
   nsAutoPtr<imgStatusTracker> mStatusTracker;
@@ -218,6 +226,8 @@ private:
   nsCOMPtr<nsIInterfaceRequestor> mPrevChannelSink;
 
   nsTObserverArray<imgRequestProxy*> mObservers;
+
+  nsCOMPtr<nsITimedChannel> mTimedChannel;
 
   nsCString mContentType;
 

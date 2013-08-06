@@ -83,7 +83,7 @@
 #include "nsISHistory.h"
 #include "nsISHistoryInternal.h"
 #include "nsIDocShellHistory.h"
-#include "nsIDOMNSHTMLDocument.h"
+#include "nsIDOMHTMLDocument.h"
 #include "nsIXULWindow.h"
 #include "nsIEditor.h"
 #include "nsIEditorDocShell.h"
@@ -113,6 +113,8 @@
 #include "ContentParent.h"
 #include "TabParent.h"
 #include "mozilla/layout/RenderFrameParent.h"
+
+#include "mozilla/Preferences.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -818,7 +820,7 @@ nsFrameLoader::Show(PRInt32 marginWidth, PRInt32 marginHeight,
   nsCOMPtr<nsIPresShell> presShell;
   mDocShell->GetPresShell(getter_AddRefs(presShell));
   if (presShell) {
-    nsCOMPtr<nsIDOMNSHTMLDocument> doc =
+    nsCOMPtr<nsIDOMHTMLDocument> doc =
       do_QueryInterface(presShell->GetDocument());
 
     if (doc) {
@@ -836,7 +838,7 @@ nsFrameLoader::Show(PRInt32 marginWidth, PRInt32 marginHeight,
         doc->SetDesignMode(NS_LITERAL_STRING("off"));
         doc->SetDesignMode(NS_LITERAL_STRING("on"));
       } else {
-        // Re-initialie the presentation for contenteditable documents
+        // Re-initialize the presentation for contenteditable documents
         nsCOMPtr<nsIEditorDocShell> editorDocshell = do_QueryInterface(mDocShell);
         if (editorDocshell) {
           PRBool editable = PR_FALSE,
@@ -1346,8 +1348,8 @@ nsFrameLoader::ShouldUseRemoteProcess()
     return false;
   }
 
-  PRBool remoteDisabled = nsContentUtils::GetBoolPref("dom.ipc.tabs.disabled",
-                                                      PR_FALSE);
+  PRBool remoteDisabled =
+    Preferences::GetBool("dom.ipc.tabs.disabled", PR_FALSE);
   if (remoteDisabled) {
     return false;
   }
@@ -1366,8 +1368,7 @@ nsFrameLoader::ShouldUseRemoteProcess()
     return true;
   }
 
-  PRBool remoteEnabled = nsContentUtils::GetBoolPref("dom.ipc.tabs.enabled",
-                                                     PR_FALSE);
+  PRBool remoteEnabled = Preferences::GetBool("dom.ipc.tabs.enabled", PR_FALSE);
   return (bool) remoteEnabled;
 }
 
@@ -1404,6 +1405,7 @@ nsFrameLoader::MaybeCreateDocShell()
   nsCOMPtr<nsISupports> container =
     doc->GetContainer();
   nsCOMPtr<nsIWebNavigation> parentAsWebNav = do_QueryInterface(container);
+  NS_ENSURE_STATE(parentAsWebNav);
 
   // Create the docshell...
   mDocShell = do_CreateInstance("@mozilla.org/docshell;1");
@@ -1456,6 +1458,7 @@ nsFrameLoader::MaybeCreateDocShell()
     // this some other way.....  Not sure how yet.
     nsCOMPtr<nsIDocShellTreeOwner> parentTreeOwner;
     parentAsItem->GetTreeOwner(getter_AddRefs(parentTreeOwner));
+    NS_ENSURE_STATE(parentTreeOwner);
     mIsTopLevelContent =
       AddTreeItemToTreeOwner(docShellAsItem, mOwnerContent, parentTreeOwner,
                              parentType, parentAsNode);
@@ -1901,9 +1904,9 @@ public:
     nsInProcessTabChildGlobal* tabChild =
       static_cast<nsInProcessTabChildGlobal*>(mFrameLoader->mChildMessageManager.get());
     if (tabChild && tabChild->GetInnerManager()) {
-      nsFrameScriptCx cx(static_cast<nsPIDOMEventTarget*>(tabChild), tabChild);
+      nsFrameScriptCx cx(static_cast<nsIDOMEventTarget*>(tabChild), tabChild);
       nsRefPtr<nsFrameMessageManager> mm = tabChild->GetInnerManager();
-      mm->ReceiveMessage(static_cast<nsPIDOMEventTarget*>(tabChild), mMessage,
+      mm->ReceiveMessage(static_cast<nsIDOMEventTarget*>(tabChild), mMessage,
                          PR_FALSE, mJSON, nsnull, nsnull);
     }
     return NS_OK;
@@ -2053,7 +2056,7 @@ nsFrameLoader::EnsureMessageManager()
   return NS_OK;
 }
 
-nsPIDOMEventTarget*
+nsIDOMEventTarget*
 nsFrameLoader::GetTabChildGlobalAsEventTarget()
 {
   return static_cast<nsInProcessTabChildGlobal*>(mChildMessageManager.get());

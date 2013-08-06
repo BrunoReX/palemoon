@@ -162,7 +162,7 @@ diff -re crt/src/makefile.sub ./crtsrc/makefile.sub
 LIB=link -lib -nologo
 .
 69c
-CFLAGS=$(CFLAGS) -O2 -arch:SSE2 -fp:fast -GS- -DMOZ_MEMORY=1 -DMOZ_MEMORY_WINDOWS=1
+CFLAGS=$(CFLAGS) -O2 -fp:fast -arch:SSE2 -GS- -DMOZ_MEMORY=1 -DMOZ_MEMORY_WINDOWS=1
 .
 diff -re crt/src/malloc.h ./crtsrc/malloc.h
 189a

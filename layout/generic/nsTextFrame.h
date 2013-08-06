@@ -56,6 +56,7 @@
 #include "gfxFont.h"
 #include "gfxSkipChars.h"
 #include "gfxContext.h"
+#include "nsDisplayList.h"
 
 class nsTextPaintStyle;
 class PropertyProvider;
@@ -270,36 +271,66 @@ public:
   void AddInlinePrefWidthForFlow(nsRenderingContext *aRenderingContext,
                                  InlinePrefWidthData *aData);
 
-  gfxFloat GetSnappedBaselineY(gfxContext* aContext, gfxFloat aY);
-
+  /**
+   * Calculate the horizontal bounds of the grapheme clusters that fit entirely
+   * inside the given left/right edges (which are positive lengths from the
+   * respective frame edge).  If an input value is zero it is ignored and the
+   * result for that edge is zero.  All out parameter values are undefined when
+   * the method returns false.
+   * @return true if at least one whole grapheme cluster fit between the edges
+   */
+  bool MeasureCharClippedText(gfxContext* aCtx,
+                              nscoord aLeftEdge, nscoord aRightEdge,
+                              nscoord* aSnappedLeftEdge,
+                              nscoord* aSnappedRightEdge);
+  /**
+   * Same as above; this method also the returns the corresponding text run
+   * offset and number of characters that fit.  All out parameter values are
+   * undefined when the method returns false.
+   * @return true if at least one whole grapheme cluster fit between the edges
+   */
+  bool MeasureCharClippedText(gfxContext* aCtx,
+                              PropertyProvider& aProvider,
+                              nscoord aLeftEdge, nscoord aRightEdge,
+                              PRUint32* aStartOffset, PRUint32* aMaxLength,
+                              nscoord* aSnappedLeftEdge,
+                              nscoord* aSnappedRightEdge);
   // primary frame paint method called from nsDisplayText
   // The private DrawText() is what applies the text to a graphics context
   void PaintText(nsRenderingContext* aRenderingContext, nsPoint aPt,
-                 const nsRect& aDirtyRect);
+                 const nsRect& aDirtyRect, const nsCharClipDisplayItem& aItem);
   // helper: paint quirks-mode CSS text decorations
   void PaintTextDecorations(gfxContext* aCtx, const gfxRect& aDirtyRect,
                             const gfxPoint& aFramePt,
                             const gfxPoint& aTextBaselinePt,
                             nsTextPaintStyle& aTextStyle,
                             PropertyProvider& aProvider,
+                            const nsCharClipDisplayItem::ClipEdges& aClipEdges,
                             const nscolor* aOverrideColor = nsnull);
   // helper: paint text frame when we're impacted by at least one selection.
-  // Return PR_FALSE if the text was not painted and we should continue with
+  // Return false if the text was not painted and we should continue with
   // the fast path.
-  PRBool PaintTextWithSelection(gfxContext* aCtx,
-                                const gfxPoint& aFramePt,
-                                const gfxPoint& aTextBaselinePt,
-                                const gfxRect& aDirtyRect,
-                                PropertyProvider& aProvider,
-                                nsTextPaintStyle& aTextPaintStyle);
+  bool PaintTextWithSelection(gfxContext* aCtx,
+                              const gfxPoint& aFramePt,
+                              const gfxPoint& aTextBaselinePt,
+                              const gfxRect& aDirtyRect,
+                              PropertyProvider& aProvider,
+                              PRUint32 aContentOffset,
+                              PRUint32 aContentLength,
+                              nsTextPaintStyle& aTextPaintStyle,
+                              const nsCharClipDisplayItem::ClipEdges& aClipEdges);
   // helper: paint text with foreground and background colors determined
   // by selection(s). Also computes a mask of all selection types applying to
   // our text, returned in aAllTypes.
-  void PaintTextWithSelectionColors(gfxContext* aCtx,
+  // Return false if the text was not painted and we should continue with
+  // the fast path.
+  bool PaintTextWithSelectionColors(gfxContext* aCtx,
                                     const gfxPoint& aFramePt,
                                     const gfxPoint& aTextBaselinePt,
                                     const gfxRect& aDirtyRect,
                                     PropertyProvider& aProvider,
+                                    PRUint32 aContentOffset,
+                                    PRUint32 aContentLength,
                                     nsTextPaintStyle& aTextPaintStyle,
                                     SelectionDetails* aDetails,
                                     SelectionType* aAllTypes);
@@ -309,6 +340,8 @@ public:
                                      const gfxPoint& aTextBaselinePt,
                                      const gfxRect& aDirtyRect,
                                      PropertyProvider& aProvider,
+                                     PRUint32 aContentOffset,
+                                     PRUint32 aContentLength,
                                      nsTextPaintStyle& aTextPaintStyle,
                                      SelectionDetails* aDetails,
                                      SelectionType aSelectionType);
@@ -428,7 +461,9 @@ protected:
                       const gfxPoint& aFramePt,
                       const gfxPoint& aTextBaselinePt,
                       gfxContext* aCtx,
-                      const nscolor& aForegroundColor);
+                      const nscolor& aForegroundColor,
+                      const nsCharClipDisplayItem::ClipEdges& aClipEdges,
+                      nscoord aLeftSideOffset);
 
   struct TextDecorations {
     PRUint8 mDecorations;

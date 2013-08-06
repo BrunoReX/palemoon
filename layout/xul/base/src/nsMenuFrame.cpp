@@ -53,18 +53,13 @@
 #include "nsINameSpaceManager.h"
 #include "nsMenuPopupFrame.h"
 #include "nsMenuBarFrame.h"
-#include "nsIView.h"
 #include "nsIDocument.h"
-#include "nsIDOMNSDocument.h"
-#include "nsIDOMDocument.h"
 #include "nsIDOMElement.h"
-#include "nsIDOMText.h"
 #include "nsILookAndFeel.h"
 #include "nsIComponentManager.h"
 #include "nsWidgetsCID.h"
 #include "nsBoxLayoutState.h"
 #include "nsIScrollableFrame.h"
-#include "nsIViewManager.h"
 #include "nsBindingManager.h"
 #include "nsIServiceManager.h"
 #include "nsCSSFrameConstructor.h"
@@ -83,6 +78,9 @@
 #include "nsEventStateManager.h"
 #include "nsIDOMXULMenuListElement.h"
 #include "mozilla/Services.h"
+#include "mozilla/Preferences.h"
+
+using namespace mozilla;
 
 #define NS_MENU_POPUP_LIST_INDEX 0
 
@@ -873,6 +871,24 @@ nsMenuFrame::IsMenu()
   return mIsMenu;
 }
 
+nsMenuListType
+nsMenuFrame::GetParentMenuListType()
+{
+  if (mMenuParent && mMenuParent->IsMenu()) {
+    nsMenuPopupFrame* popupFrame = static_cast<nsMenuPopupFrame*>(mMenuParent);
+    nsIFrame* parentMenu = popupFrame->GetParent();
+    if (parentMenu) {
+      nsCOMPtr<nsIDOMXULMenuListElement> menulist = do_QueryInterface(parentMenu->GetContent());
+      if (menulist) {
+        PRBool isEditable = PR_FALSE;
+        menulist->GetEditable(&isEditable);
+        return isEditable ? eEditableMenuList : eReadonlyMenuList;
+      }
+    }
+  }
+  return eNotMenuList;
+}
+
 nsresult
 nsMenuFrame::Notify(nsITimer* aTimer)
 {
@@ -1118,7 +1134,7 @@ nsMenuFrame::BuildAcceleratorText(PRBool aNotify)
 #endif
 
     // Get the accelerator key value from prefs, overriding the default:
-    accelKey = nsContentUtils::GetIntPref("ui.key.accelKey", accelKey);
+    accelKey = Preferences::GetInt("ui.key.accelKey", accelKey);
   }
 
   nsAutoString modifiers;
@@ -1200,18 +1216,9 @@ nsMenuFrame::ShouldBlink()
     return PR_FALSE;
 
   // Don't blink in editable menulists.
-  if (mMenuParent && mMenuParent->IsMenu()) {
-    nsMenuPopupFrame* popupFrame = static_cast<nsMenuPopupFrame*>(mMenuParent);
-    nsIFrame* parentMenu = popupFrame->GetParent();
-    if (parentMenu) {
-      nsCOMPtr<nsIDOMXULMenuListElement> menulist = do_QueryInterface(parentMenu->GetContent());
-      if (menulist) {
-        PRBool isEditable = PR_FALSE;
-        menulist->GetEditable(&isEditable);
-        return !isEditable;
-      }
-    }
-  }
+  if (GetParentMenuListType() == eEditableMenuList)
+    return PR_FALSE;
+
   return PR_TRUE;
 }
 
@@ -1377,13 +1384,26 @@ nsMenuFrame::SizeToPopup(nsBoxLayoutState& aState, nsSize& aSize)
       if (!mPopupFrame)
         return PR_FALSE;
       tmpSize = mPopupFrame->GetPrefSize(aState);
-      aSize.width = tmpSize.width;
+
+      // Produce a size such that:
+      //  (1) the menu and its popup can be the same width
+      //  (2) there's enough room in the menu for the content and its
+      //      border-padding
+      //  (3) there's enough room in the popup for the content and its
+      //      scrollbar
+      nsMargin borderPadding;
+      GetBorderAndPadding(borderPadding);
 
       // if there is a scroll frame, add the desired width of the scrollbar as well
       nsIScrollableFrame* scrollFrame = do_QueryFrame(mPopupFrame->GetFirstChild(nsnull));
+      nscoord scrollbarWidth = 0;
       if (scrollFrame) {
-        aSize.width += scrollFrame->GetDesiredScrollbarSizes(&aState).LeftRight();
+        scrollbarWidth =
+          scrollFrame->GetDesiredScrollbarSizes(&aState).LeftRight();
       }
+
+      aSize.width =
+        tmpSize.width + NS_MAX(borderPadding.LeftRight(), scrollbarWidth);
 
       return PR_TRUE;
     }

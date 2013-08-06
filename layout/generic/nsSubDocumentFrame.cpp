@@ -82,7 +82,6 @@ using mozilla::layout::RenderFrameParent;
 #include "nsWeakReference.h"
 #include "nsIDOMWindow.h"
 #include "nsIDOMDocument.h"
-#include "nsIDOMNSHTMLDocument.h"
 #include "nsDisplayList.h"
 #include "nsUnicharUtils.h"
 #include "nsIScrollableFrame.h"
@@ -719,6 +718,11 @@ nsSubDocumentFrame::AttributeChanged(PRInt32 aNameSpaceID,
       return NS_OK;
     }
 
+    if (mFrameLoader->GetRemoteBrowser()) {
+      // TODO: Implement ContentShellAdded for remote browsers (bug 658304)
+      return NS_OK;
+    }
+
     // Note: This logic duplicates a lot of logic in
     // nsFrameLoader::EnsureDocShell.  We should fix that.
 
@@ -1075,12 +1079,10 @@ nsSubDocumentFrame::ObtainIntrinsicSizeFrame()
       }
     }
 
-#ifdef MOZ_SVG
     if (subDocRoot && subDocRoot->GetContent() &&
         subDocRoot->GetContent()->NodeInfo()->Equals(nsGkAtoms::svg, kNameSpaceID_SVG)) {
       return subDocRoot; // SVG documents have an intrinsic size
     }
-#endif
   }
   return nsnull;
 }

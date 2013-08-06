@@ -219,6 +219,7 @@ nsMathMLFrame::GetPresentationDataFrom(nsIFrame*           aFrame,
       if (display->mDisplay == NS_STYLE_DISPLAY_BLOCK) {
         aPresentationData.flags |= NS_MATHML_DISPLAYSTYLE;
       }
+      aPresentationData.mstyle = frame->GetFirstContinuation();
       break;
     }
     frame = frame->GetParent();
@@ -375,6 +376,34 @@ nsMathMLFrame::ParseNamedSpaceValue(nsIFrame*   aMathMLmstyleFrame,
   else if (aString.EqualsLiteral("veryverythickmathspace")) {
     i = 7;
     namedspaceAtom = nsGkAtoms::veryverythickmathspace_;
+  }
+  else if (aString.EqualsLiteral("negativeveryverythinmathspace")) {
+    i = -1;
+    namedspaceAtom = nsGkAtoms::negativeveryverythinmathspace_;
+  }
+  else if (aString.EqualsLiteral("negativeverythinmathspace")) {
+    i = -2;
+    namedspaceAtom = nsGkAtoms::negativeverythinmathspace_;
+  }
+  else if (aString.EqualsLiteral("negativethinmathspace")) {
+    i = -3;
+    namedspaceAtom = nsGkAtoms::negativethinmathspace_;
+  }
+  else if (aString.EqualsLiteral("negativemediummathspace")) {
+    i = -4;
+    namedspaceAtom = nsGkAtoms::negativemediummathspace_;
+  }
+  else if (aString.EqualsLiteral("negativethickmathspace")) {
+    i = -5;
+    namedspaceAtom = nsGkAtoms::negativethickmathspace_;
+  }
+  else if (aString.EqualsLiteral("negativeverythickmathspace")) {
+    i = -6;
+    namedspaceAtom = nsGkAtoms::negativeverythickmathspace_;
+  }
+  else if (aString.EqualsLiteral("negativeveryverythickmathspace")) {
+    i = -7;
+    namedspaceAtom = nsGkAtoms::negativeveryverythickmathspace_;
   }
 
   if (0 != i) {

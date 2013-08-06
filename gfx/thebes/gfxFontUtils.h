@@ -43,6 +43,7 @@
 #include "gfxTypes.h"
 
 #include "prtypes.h"
+#include "nsAlgorithm.h"
 #include "prcpucfg.h"
 
 #include "nsDataHashtable.h"
@@ -122,7 +123,7 @@ public:
         // first block, check bits
         if ((block = mBlocks[startBlock])) {
             start = aStart;
-            end = PR_MIN(aEnd, ((startBlock+1) << BLOCK_INDEX_SHIFT) - 1);
+            end = NS_MIN(aEnd, ((startBlock+1) << BLOCK_INDEX_SHIFT) - 1);
             for (i = start; i <= end; i++) {
                 if ((block->mBits[(i>>3) & (BLOCK_SIZE - 1)]) & (1 << (i & 0x7)))
                     return PR_TRUE;
@@ -210,7 +211,7 @@ public:
             }
 
             const PRUint32 start = aStart > blockFirstBit ? aStart - blockFirstBit : 0;
-            const PRUint32 end = PR_MIN(aEnd - blockFirstBit, BLOCK_SIZE_BITS - 1);
+            const PRUint32 end = NS_MIN<PRUint32>(aEnd - blockFirstBit, BLOCK_SIZE_BITS - 1);
 
             for (PRUint32 bit = start; bit <= end; ++bit) {
                 block->mBits[bit>>3] |= 1 << (bit & 0x7);
@@ -254,7 +255,7 @@ public:
             }
 
             const PRUint32 start = aStart > blockFirstBit ? aStart - blockFirstBit : 0;
-            const PRUint32 end = PR_MIN(aEnd - blockFirstBit, BLOCK_SIZE_BITS - 1);
+            const PRUint32 end = NS_MIN<PRUint32>(aEnd - blockFirstBit, BLOCK_SIZE_BITS - 1);
 
             for (PRUint32 bit = start; bit <= end; ++bit) {
                 block->mBits[bit>>3] &= ~(1 << (bit & 0x7));
@@ -705,10 +706,26 @@ public:
     DetermineFontDataType(const PRUint8 *aFontData, PRUint32 aFontDataLength);
 
     // checks for valid SFNT table structure, returns true if valid
-    // does *not* guarantee that all font data is valid
+    // does *not* guarantee that all font data is valid, though it does
+    // check that key tables such as 'name' are present and readable.
+    // XXX to be removed if/when we eliminate the option to disable OTS,
+    // which does more thorough validation.
     static PRBool
     ValidateSFNTHeaders(const PRUint8 *aFontData, PRUint32 aFontDataLength);
     
+    // Read the fullname from the sfnt data (used to save the original name
+    // prior to renaming the font for installation).
+    // This is called with sfnt data that has already been validated,
+    // so it should always succeed in finding the name table.
+    static nsresult
+    GetFullNameFromSFNT(const PRUint8* aFontData, PRUint32 aLength,
+                        nsAString& aFullName);
+
+    // helper to get fullname from name table
+    static nsresult
+    GetFullNameFromTable(FallibleTArray<PRUint8>& aNameTable,
+                         nsAString& aFullName);
+
     // create a new name table and build a new font with that name table
     // appended on the end, returns true on success
     static nsresult
@@ -736,6 +753,10 @@ public:
 
     static inline bool IsJoinCauser(PRUint32 ch) {
         return (ch == 0x200D);
+    }
+
+    static inline bool IsJoinControl(PRUint32 ch) {
+        return (ch == 0x200C || ch == 0x200D);
     }
 
     enum {
@@ -883,7 +904,7 @@ public:
         InitLoader();
 
         // start timer
-        mTimer->InitWithFuncCallback(LoaderTimerCallback, this, aDelay, 
+        mTimer->InitWithFuncCallback(LoaderTimerCallback, this, timerInterval,
                                      nsITimer::TYPE_REPEATING_SLACK);
     }
 

@@ -105,6 +105,7 @@ public:
 #if defined(XP_MACOSX)
   virtual nsresult IsRemoteDrawingCoreAnimation(NPP instance, PRBool *aDrawing) = 0;
 #endif
+
   /**
    * The next three methods are the third leg in the trip to
    * PluginInstanceParent.  They approximately follow the ReadbackSink

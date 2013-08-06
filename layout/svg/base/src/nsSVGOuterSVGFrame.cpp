@@ -283,7 +283,8 @@ nsSVGOuterSVGFrame::GetIntrinsicRatio()
   nsSVGLength2 &height = content->mLengthAttributes[nsSVGSVGElement::HEIGHT];
 
   if (!width.IsPercentage() && !height.IsPercentage()) {
-    nsSize ratio(width.GetAnimValue(content), height.GetAnimValue(content));
+    nsSize ratio(NSToCoordRoundWithClamp(width.GetAnimValue(content)),
+                 NSToCoordRoundWithClamp(height.GetAnimValue(content)));
     if (ratio.width < 0) {
       ratio.width = 0;
     }
@@ -304,7 +305,8 @@ nsSVGOuterSVGFrame::GetIntrinsicRatio()
     if (viewBoxHeight < 0.0f) {
       viewBoxHeight = 0.0f;
     }
-    return nsSize(viewBoxWidth, viewBoxHeight);
+    return nsSize(NSToCoordRoundWithClamp(viewBoxWidth),
+                  NSToCoordRoundWithClamp(viewBoxHeight));
   }
 
   return nsSVGOuterSVGFrameBase::GetIntrinsicRatio();
@@ -678,9 +680,6 @@ nsSVGOuterSVGFrame::IsRedrawSuspended()
 NS_IMETHODIMP
 nsSVGOuterSVGFrame::SuspendRedraw()
 {
-#ifdef DEBUG
-  //printf("suspend redraw (count=%d)\n", mRedrawSuspendCount);
-#endif
   if (++mRedrawSuspendCount != 1)
     return NS_OK;
 
@@ -697,10 +696,6 @@ nsSVGOuterSVGFrame::SuspendRedraw()
 NS_IMETHODIMP
 nsSVGOuterSVGFrame::UnsuspendRedraw()
 {
-#ifdef DEBUG
-//  printf("unsuspend redraw (count=%d)\n", mRedrawSuspendCount);
-#endif
-
   NS_ASSERTION(mRedrawSuspendCount >=0, "unbalanced suspend count!");
 
   if (--mRedrawSuspendCount > 0)

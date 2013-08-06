@@ -94,9 +94,10 @@
 #include "mozilla/dom/Element.h"
 #include "nsGenericElement.h"
 #include "nsNthIndexCache.h"
+#include "mozilla/Preferences.h"
 
+using namespace mozilla;
 using namespace mozilla::dom;
-namespace css = mozilla::css;
 
 #define VISITED_PSEUDO_PREF "layout.css.visited_links_enabled"
 
@@ -843,9 +844,7 @@ struct RuleCascadeData {
 #endif
 
   nsTArray<nsFontFaceRuleContainer> mFontFaceRules;
-#ifdef MOZ_CSS_ANIMATIONS
   nsTArray<nsCSSKeyframesRule*> mKeyframesRules;
-#endif
 
   // Looks up or creates the appropriate list in |mAttributeSelectors|.
   // Returns null only on allocation failure.
@@ -961,11 +960,8 @@ NS_IMPL_ISUPPORTS1(nsCSSRuleProcessor, nsIStyleRuleProcessor)
 /* static */ nsresult
 nsCSSRuleProcessor::Startup()
 {
-  nsContentUtils::AddBoolPrefVarCache(VISITED_PSEUDO_PREF,
-                                      &gSupportVisitedPseudo);
-  // We want to default to true, not false as AddBoolPrefVarCache does.
-  gSupportVisitedPseudo =
-    nsContentUtils::GetBoolPref(VISITED_PSEUDO_PREF, PR_TRUE);
+  Preferences::AddBoolVarCache(&gSupportVisitedPseudo, VISITED_PSEUDO_PREF,
+                               PR_TRUE);
 
   gPrivateBrowsingObserver = new nsPrivateBrowsingObserver();
   NS_ENSURE_TRUE(gPrivateBrowsingObserver, NS_ERROR_OUT_OF_MEMORY);
@@ -1151,14 +1147,9 @@ static void GetLang(nsIContent* aContent, nsString& aLang)
 nsEventStates
 nsCSSRuleProcessor::GetContentState(Element* aElement)
 {
-  nsIPresShell* shell = aElement->GetOwnerDoc()->GetShell();
-  nsPresContext* presContext;
-  nsEventStates state;
-  if (shell && (presContext = shell->GetPresContext())) {
-    state = presContext->EventStateManager()->GetContentState(aElement);
-  } else {
-    state = aElement->IntrinsicState();
-  }
+  // FIXME: RequestLinkStateUpdate is a hack; see bug 660959.
+  aElement->RequestLinkStateUpdate();
+  nsEventStates state = aElement->State();
 
   // If we are not supposed to mark visited links as such, be sure to
   // flip the bits appropriately.  We want to do this here, rather
@@ -1177,7 +1168,9 @@ nsCSSRuleProcessor::GetContentState(Element* aElement)
 PRBool
 nsCSSRuleProcessor::IsLink(Element* aElement)
 {
-  nsEventStates state = aElement->IntrinsicState();
+  // FIXME: RequestLinkStateUpdate is a hack; see bug 660959.
+  aElement->RequestLinkStateUpdate();
+  nsEventStates state = aElement->State();
   return state.HasAtLeastOneOfStates(NS_EVENT_STATE_VISITED | NS_EVENT_STATE_UNVISITED);
 }
 
@@ -2172,7 +2165,7 @@ void ContentEnumFunc(css::StyleRule* aRule, nsCSSSelector* aSelector,
                                      data->mTreeMatchContext,
                                      !nodeContext.mIsRelevantLink)) {
       aRule->RuleMatched();
-      data->mRuleWalker->Forward(static_cast<nsIStyleRule*>(aRule));
+      data->mRuleWalker->Forward(aRule);
       // nsStyleSet will deal with the !important rule
     }
   }
@@ -2219,7 +2212,7 @@ nsCSSRuleProcessor::RulesMatching(AnonBoxRuleProcessorData* aData)
       for (RuleValue *value = rules.Elements(), *end = value + rules.Length();
            value != end; ++value) {
         value->mRule->RuleMatched();
-        aData->mRuleWalker->Forward(static_cast<nsIStyleRule*>(value->mRule));
+        aData->mRuleWalker->Forward(value->mRule);
       }
     }
   }
@@ -2478,7 +2471,6 @@ nsCSSRuleProcessor::AppendFontFaceRules(
   return PR_TRUE;
 }
 
-#ifdef MOZ_CSS_ANIMATIONS
 // Append all the currently-active keyframes rules to aArray.  Return
 // true for success and false for failure.
 PRBool
@@ -2495,7 +2487,6 @@ nsCSSRuleProcessor::AppendKeyframesRules(
   
   return PR_TRUE;
 }
-#endif
 
 nsresult
 nsCSSRuleProcessor::ClearRuleCascades()
@@ -2773,17 +2764,13 @@ static PLDHashTableOps gRulesByWeightOps = {
 struct CascadeEnumData {
   CascadeEnumData(nsPresContext* aPresContext,
                   nsTArray<nsFontFaceRuleContainer>& aFontFaceRules,
-#ifdef MOZ_CSS_ANIMATIONS
                   nsTArray<nsCSSKeyframesRule*>& aKeyframesRules,
-#endif
                   nsMediaQueryResultCacheKey& aKey,
                   PLArenaPool& aArena,
                   PRUint8 aSheetType)
     : mPresContext(aPresContext),
       mFontFaceRules(aFontFaceRules),
-#ifdef MOZ_CSS_ANIMATIONS
       mKeyframesRules(aKeyframesRules),
-#endif
       mCacheKey(aKey),
       mArena(aArena),
       mSheetType(aSheetType)
@@ -2801,9 +2788,7 @@ struct CascadeEnumData {
 
   nsPresContext* mPresContext;
   nsTArray<nsFontFaceRuleContainer>& mFontFaceRules;
-#ifdef MOZ_CSS_ANIMATIONS
   nsTArray<nsCSSKeyframesRule*>& mKeyframesRules;
-#endif
   nsMediaQueryResultCacheKey& mCacheKey;
   PLArenaPool& mArena;
   // Hooray, a manual PLDHashTable since nsClassHashtable doesn't
@@ -2859,7 +2844,6 @@ CascadeRuleEnumFunc(css::Rule* aRule, void* aData)
     ptr->mRule = fontFaceRule;
     ptr->mSheetType = data->mSheetType;
   }
-#ifdef MOZ_CSS_ANIMATIONS
   else if (css::Rule::KEYFRAMES_RULE == type) {
     nsCSSKeyframesRule *keyframesRule =
       static_cast<nsCSSKeyframesRule*>(aRule);
@@ -2867,7 +2851,6 @@ CascadeRuleEnumFunc(css::Rule* aRule, void* aData)
       return PR_FALSE;
     }
   }
-#endif
 
   return PR_TRUE;
 }
@@ -2968,9 +2951,7 @@ nsCSSRuleProcessor::RefreshRuleCascade(nsPresContext* aPresContext)
                           eCompatibility_NavQuirks == aPresContext->CompatibilityMode()));
     if (newCascade) {
       CascadeEnumData data(aPresContext, newCascade->mFontFaceRules,
-#ifdef MOZ_CSS_ANIMATIONS
                            newCascade->mKeyframesRules,
-#endif
                            newCascade->mCacheKey,
                            newCascade->mRuleHash.Arena(),
                            mSheetType);

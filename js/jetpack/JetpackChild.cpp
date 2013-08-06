@@ -44,8 +44,6 @@
 #include "mozilla/jetpack/Handle.h"
 #include "mozilla/IntentionalCrash.h"
 
-#include "jsarray.h"
-
 #include <stdio.h>
 
 namespace mozilla {
@@ -574,7 +572,7 @@ JetpackChild::GCZeal(JSContext* cx, uintN argc, jsval *vp)
   if (!JS_ValueToECMAUint32(cx, argv[0], &zeal))
     return JS_FALSE;
 
-  JS_SetGCZeal(cx, PRUint8(zeal));
+  JS_SetGCZeal(cx, PRUint8(zeal), JS_DEFAULT_ZEAL_FREQ, JS_FALSE);
   return JS_TRUE;
 }
 #endif

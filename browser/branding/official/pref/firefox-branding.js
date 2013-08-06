@@ -21,7 +21,7 @@ pref("app.update.cert.checkAttributes", false);
 pref("app.update.cert.requireBuiltIn", false);
 
 // Release notes and vendor URLs
-pref("app.releaseNotesURL", "http://www.palemoon.org/releasenotes.shtml");
+pref("app.releaseNotesURL", "http://www.palemoon.org/releasenotes-ng.shtml");
 pref("app.vendorURL", "http://www.palemoon.org/");
 
 pref("browser.search.param.ms-pc", "MOZI");
@@ -32,9 +32,9 @@ pref("browser.search.param.yahoo-fr-ja", "mozff");
 //Palemoon tweaks
 pref("network.prefetch-next", false); //prefetching engine off by default!
 pref("network.http.pipelining"      , true); //pipelining on by default, haven't seen any issues
-pref("network.http.pipelining.ssl"  , false); // disable pipelining over SSL
+pref("network.http.pipelining.ssl"  , true); 
 pref("network.http.proxy.pipelining", false); // pipeline proxy requests - breaks some proxies! (406)
-pref("network.http.pipelining.maxrequests" , 16);  // Max number of requests in the pipeline
+pref("network.http.pipelining.maxrequests" , 12);  // Max number of requests in the pipeline
 
 pref("browser.tabs.insertRelatedAfterCurrent", false); //use old method of tabbed browsing instead of "Chrome" style
 pref("general.warnOnAboutConfig", false); //about:config warning. annoying. I don't give warranty.
@@ -114,3 +114,6 @@ pref("browser.geolocation.warning.infoURL", "http://www.mozilla.com/%LOCALE%/fir
 
 //give people a choice for add-on updates.
 pref("extensions.update.autoUpdateDefault", false);
+
+//Pale Moon 7 specific
+pref("browser.urlbar.trimURLs", false); //stop being a derp, Mozilla!

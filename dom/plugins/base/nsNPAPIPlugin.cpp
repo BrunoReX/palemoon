@@ -81,7 +81,7 @@
 #include "nsIObserverService.h"
 #include <prinrval.h>
 
-#ifdef XP_MACOSX
+#ifdef MOZ_WIDGET_COCOA
 #include <Carbon/Carbon.h>
 #include <ApplicationServices/ApplicationServices.h>
 #include <OpenGL/OpenGL.h>
@@ -2159,13 +2159,6 @@ _getvalue(NPP npp, NPNVariable variable, void *result)
     return NPERR_GENERIC_ERROR;
   }
 
-#if (MOZ_PLATFORM_MAEMO == 5)
-  case NPNVSupportsWindowlessLocal: {
-    *(NPBool*)result = PR_TRUE;
-    return NPERR_NO_ERROR;
-  }
-#endif
-
 #ifdef XP_MACOSX
   case NPNVpluginDrawingModel: {
     if (npp) {
@@ -2282,12 +2275,6 @@ _setvalue(NPP npp, NPPVariable variable, void *result)
       return inst->SetWindowless(bWindowless);
 #endif
     }
-#if (MOZ_PLATFORM_MAEMO == 5)
-    case NPPVpluginWindowlessLocalBool: {
-      NPBool bWindowlessLocal = (result != nsnull);
-      return inst->SetWindowlessLocal(bWindowlessLocal);
-    }
-#endif
     case NPPVpluginTransparentBool: {
       NPBool bTransparent = (result != nsnull);
       return inst->SetTransparent(bTransparent);

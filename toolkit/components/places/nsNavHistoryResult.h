@@ -98,14 +98,20 @@ private:
   NS_DECL_NSINAVBOOKMARKOBSERVER                                        \
   NS_IMETHOD OnVisit(nsIURI* aURI, PRInt64 aVisitId, PRTime aTime,      \
                      PRInt64 aSessionId, PRInt64 aReferringId,          \
-                     PRUint32 aTransitionType, PRUint32* aAdded);       \
-  NS_IMETHOD OnTitleChanged(nsIURI* aURI, const nsAString& aPageTitle); \
-  NS_IMETHOD OnBeforeDeleteURI(nsIURI *aURI);                           \
-  NS_IMETHOD OnDeleteURI(nsIURI *aURI);                                 \
+                     PRUint32 aTransitionType, const nsACString& aGUID, \
+                     PRUint32* aAdded);                                 \
+  NS_IMETHOD OnTitleChanged(nsIURI* aURI, const nsAString& aPageTitle,  \
+                            const nsACString& aGUID);                   \
+  NS_IMETHOD OnBeforeDeleteURI(nsIURI *aURI, const nsACString& aGUID,   \
+                               PRUint16 aReason);                       \
+  NS_IMETHOD OnDeleteURI(nsIURI *aURI, const nsACString& aGUID,         \
+                         PRUint16 aReason);                             \
   NS_IMETHOD OnClearHistory();                                          \
-  NS_IMETHOD OnPageChanged(nsIURI *aURI, PRUint32 aWhat,                \
-                           const nsAString &aValue);                    \
-  NS_IMETHOD OnDeleteVisits(nsIURI* aURI, PRTime aVisitTime);
+  NS_IMETHOD OnPageChanged(nsIURI *aURI, PRUint32 aChangedAttribute,    \
+                           const nsAString &aNewValue,                  \
+                           const nsACString &aGUID);                    \
+  NS_IMETHOD OnDeleteVisits(nsIURI* aURI, PRTime aVisitTime,            \
+                            const nsACString& aGUID, PRUint16 aReason);
 
 // nsNavHistoryResult
 //

@@ -1224,37 +1224,43 @@ pageaction:not([image]) > hbox >.pageaction-image {
   border-bottom: @border_width_tiny@ solid #cacdd5;
 }
 
-/* XXX should be a richlistitem */
-.prefbox {
+setting {
   padding: @padding_xsmall@;
   border-bottom: @border_width_tiny@ solid rgb(207,207,207);
   min-height: @touch_row@; /* row size */
   -moz-box-align: center;
+  -moz-box-orient: horizontal;
 }
 
-.setting-group > .prefbox {
+.setting-label {
+  -moz-box-flex: 1;
+}
+
+.setting-group > setting {
   border-bottom: none;
 }
 
-.setting-subgroup > .prefbox {
+.setting-subgroup > setting {
   border-bottom: none;
   -moz-margin-start: @margin_xxxnormal@;
 }
 
-.setting-subgroup + :not(.setting-subgroup) > .prefbox {
+.setting-subgroup + :not(.setting-subgroup) > setting {
   border-top: @border_width_tiny@ solid rgb(207,207,207);
 }
 
 /* Put setting textboxes on a separate row in portrait */
 @media (@orientation@: portrait) {
-  .setting-integer,
-  .setting-string {
+  setting[type="integer"],
+  setting[type="string"],
+  setting[type="file"],
+  setting[type="directory"] {
     -moz-box-align: start;
     -moz-box-orient: vertical;
   }
 
-  .setting-integer > .setting-input > textbox,
-  .setting-string > .setting-input > textbox {
+  setting[type="integer"] > .setting-input > textbox,
+  setting[type="string"] > .setting-input > textbox {
     width: 499px; /* textboxes seem to need a width in order to flex */
     -moz-box-flex: 1;
   }
@@ -1264,17 +1270,17 @@ pageaction:not([image]) > hbox >.pageaction-image {
   -moz-margin-start: 28px;  /* sized based on the 32px addon image */
 }
 
-.options-box > setting:last-child > .prefbox {
+.options-box > setting:last-child {
   border-bottom: 0;
 }
 
 /* XXX should be a richlistitem description.title */
-.preftitle {
+.preferences-title {
   font-size: @font_normal@ !important;
 }
 
 /* XXX should be a richlistitem description.normal */
-.prefdesc {
+.preferences-description {
   font-size: @font_small@ !important;
   color: grey;
 }
@@ -1457,16 +1463,16 @@ pageaction:not([image]) > hbox >.pageaction-image {
   min-width: 5.5em;
 }
 
-.syncsetup-link {
-  text-decoration: underline;
-}
-
 .syncsetup-label {
   color: #fff;
 }
 
 #syncsetup-customserver {
   -moz-margin-start: @margin_xnormal@;
+}
+
+#sync-message {
+  padding-bottom: 2em;
 }
 
 /* content scrollbars */
@@ -1525,3 +1531,20 @@ pageaction:not([image]) > hbox >.pageaction-image {
   90% { -moz-transform: translateX(@sidebar_width_minimum@); }
   to { -moz-transform: translateX(0); }
 }
+
+#selectionhandle-start,
+#selectionhandle-end {
+  min-width: 35px !important;
+  width: 35px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+#selectionhandle-start {
+  list-style-image: url("chrome://browser/skin/images/handle-start.png");
+}
+
+#selectionhandle-end {
+  list-style-image: url("chrome://browser/skin/images/handle-end.png");
+}
+

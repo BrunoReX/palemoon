@@ -53,6 +53,7 @@ public:
   // rest is brought forward from GfxInfoBase.
   NS_SCRIPTABLE NS_IMETHOD GetD2DEnabled(PRBool *aD2DEnabled);
   NS_SCRIPTABLE NS_IMETHOD GetDWriteEnabled(PRBool *aDWriteEnabled);
+  NS_SCRIPTABLE NS_IMETHOD GetAzureEnabled(PRBool *aAzureEnabled);
   NS_SCRIPTABLE NS_IMETHOD GetDWriteVersion(nsAString & aDwriteVersion);
   NS_SCRIPTABLE NS_IMETHOD GetCleartypeParameters(nsAString & aCleartypeParams);
   NS_SCRIPTABLE NS_IMETHOD GetAdapterDescription(nsAString & aAdapterDescription);
@@ -78,7 +79,7 @@ private:
   nsCString mVersion;
   nsCString mAdapterDescription;
   bool mIsMesa, mIsNVIDIA, mIsFGLRX;
-  int mMajorVersion, mMinorVersion;
+  int mMajorVersion, mMinorVersion, mRevisionVersion;
 
   void AddCrashReportAnnotations();
   void GetData();

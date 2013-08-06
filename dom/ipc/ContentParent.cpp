@@ -77,6 +77,7 @@
 #if defined(ANDROID) || defined(LINUX)
 #include <sys/time.h>
 #include <sys/resource.h>
+#include "nsSystemInfo.h"
 #endif
 
 #ifdef MOZ_PERMISSIONS
@@ -219,8 +220,17 @@ ContentParent::OnChannelConnected(int32 pid)
             nice = atoi(relativeNicenessStr);
         }
 
-        if (nice != 0) {
-            setpriority(PRIO_PROCESS, pid, getpriority(PRIO_PROCESS, pid) + nice);
+        /* make the GUI thread have higher priority on single-cpu devices */
+        nsCOMPtr<nsIPropertyBag2> infoService = do_GetService(NS_SYSTEMINFO_CONTRACTID);
+        if (infoService) {
+            PRInt32 cpus;
+            nsresult rv = infoService->GetPropertyAsInt32(NS_LITERAL_STRING("cpucount"), &cpus);
+            if (NS_FAILED(rv)) {
+                cpus = 1;
+            }
+            if (nice != 0 && cpus == 1) {
+                setpriority(PRIO_PROCESS, pid, getpriority(PRIO_PROCESS, pid) + nice);
+            }
         }
 #endif
     }
@@ -552,6 +562,20 @@ ContentParent::RecvGetSystemColors(const PRUint32& colorsCount, InfallibleTArray
     return true;
 }
 
+bool
+ContentParent::RecvGetIconForExtension(const nsCString& aFileExt, const PRUint32& aIconSize, InfallibleTArray<PRUint8>* bits)
+{
+#ifdef ANDROID
+    if (!AndroidBridge::Bridge())
+        return false;
+
+    bits->AppendElements(aIconSize * aIconSize * 4);
+
+    AndroidBridge::Bridge()->GetIconForExtension(aFileExt, aIconSize, bits->Elements());
+#endif
+    return true;
+}
+
 NS_IMPL_THREADSAFE_ISUPPORTS3(ContentParent,
                               nsIObserver,
                               nsIThreadObserver,
@@ -684,25 +708,24 @@ ContentParent::DeallocPMemoryReportRequest(PMemoryReportRequestParent* actor)
 void
 ContentParent::SetChildMemoryReporters(const InfallibleTArray<MemoryReport>& report)
 {
-    nsCOMPtr<nsIMemoryReporterManager> mgr = do_GetService("@mozilla.org/memory-reporter-manager;1");
+    nsCOMPtr<nsIMemoryReporterManager> mgr =
+        do_GetService("@mozilla.org/memory-reporter-manager;1");
     for (PRInt32 i = 0; i < mMemoryReporters.Count(); i++)
         mgr->UnregisterReporter(mMemoryReporters[i]);
 
     for (PRUint32 i = 0; i < report.Length(); i++) {
-
-        nsCString prefix = report[i].prefix();
-        nsCString path   = report[i].path();
-        PRInt32   kind   = report[i].kind();
-        nsCString desc   = report[i].desc();
-        PRInt64 memoryUsed = report[i].memoryUsed();
+        nsCString process  = report[i].process();
+        nsCString path     = report[i].path();
+        PRInt32   kind     = report[i].kind();
+        PRInt32   units    = report[i].units();
+        PRInt64   amount   = report[i].amount();
+        nsCString desc     = report[i].desc();
         
-        nsRefPtr<nsMemoryReporter> r = new nsMemoryReporter(prefix,
-                                                            path,
-                                                            kind,
-                                                            desc,
-                                                            memoryUsed);
-      mMemoryReporters.AppendObject(r);
-      mgr->RegisterReporter(r);
+        nsRefPtr<nsMemoryReporter> r =
+            new nsMemoryReporter(process, path, kind, units, amount, desc);
+
+        mMemoryReporters.AppendObject(r);
+        mgr->RegisterReporter(r);
     }
 
     nsCOMPtr<nsIObserverService> obs =

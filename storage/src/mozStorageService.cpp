@@ -54,8 +54,7 @@
 #include "nsIXPConnect.h"
 #include "nsIObserverService.h"
 #include "mozilla/Services.h"
-#include "nsIPrefService.h"
-#include "nsIPrefBranch.h"
+#include "mozilla/Preferences.h"
 
 #include "sqlite3.h"
 #include "test_quota.c"
@@ -64,6 +63,7 @@
 #include "nsIMemoryReporter.h"
 
 #include "mozilla/FunctionTimer.h"
+#include "mozilla/Util.h"
 
 namespace {
 
@@ -133,17 +133,17 @@ namespace storage {
 //// Memory Reporting
 
 static PRInt64
-GetStorageSQLiteMemoryUsed(void *)
+GetStorageSQLiteMemoryUsed()
 {
   return ::sqlite3_memory_used();
 }
 
 NS_MEMORY_REPORTER_IMPLEMENT(StorageSQLiteMemoryUsed,
     "explicit/storage/sqlite",
-    MR_HEAP,
-    "Memory used by SQLite.",
+    KIND_HEAP,
+    UNITS_BYTES,
     GetStorageSQLiteMemoryUsed,
-    nsnull)
+    "Memory used by SQLite.")
 
 ////////////////////////////////////////////////////////////////////////////////
 //// Helpers
@@ -185,10 +185,8 @@ public:
     // We need to obtain the toolkit.storage.synchronous preferences on the main
     // thread because the preference service can only be accessed there.  This
     // is cached in the service for all future Open[Unshared]Database calls.
-    nsCOMPtr<nsIPrefBranch> pref(do_GetService(NS_PREFSERVICE_CONTRACTID));
-    PRInt32 synchronous = PREF_TS_SYNCHRONOUS_DEFAULT;
-    if (pref)
-      (void)pref->GetIntPref(PREF_TS_SYNCHRONOUS, &synchronous);
+    PRInt32 synchronous =
+      Preferences::GetInt(PREF_TS_SYNCHRONOUS, PREF_TS_SYNCHRONOUS_DEFAULT);
     ::PR_ATOMIC_SET(mSynchronousPrefValPtr, synchronous);
 
     // Register our SQLite memory reporter.  Registration can only happen on
@@ -296,7 +294,7 @@ Service::~Service()
   if (rc != SQLITE_OK)
     NS_WARNING("sqlite3 did not shutdown cleanly.");
 
-  bool shutdownObserved = !sXPConnect;
+  DebugOnly<bool> shutdownObserved = !sXPConnect;
   NS_ASSERTION(shutdownObserved, "Shutdown was not observed!");
 
   gService = nsnull;

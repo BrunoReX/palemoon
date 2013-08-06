@@ -81,7 +81,7 @@ nsHTMLLinkAccessible::NativeState()
     states |= states::SELECTABLE;
   }
 
-  nsEventStates state = mContent->IntrinsicState();
+  nsEventStates state = mContent->AsElement()->State();
   if (state.HasAtLeastOneOfStates(NS_EVENT_STATE_VISITED |
                                   NS_EVENT_STATE_UNVISITED)) {
     states |= states::LINKED;
@@ -166,14 +166,14 @@ nsHTMLLinkAccessible::DoAction(PRUint8 aIndex)
 // HyperLinkAccessible
 
 bool
-nsHTMLLinkAccessible::IsHyperLink()
+nsHTMLLinkAccessible::IsLink()
 {
   // Expose HyperLinkAccessible unconditionally.
   return true;
 }
 
 already_AddRefed<nsIURI>
-nsHTMLLinkAccessible::GetAnchorURI(PRUint32 aAnchorIndex)
+nsHTMLLinkAccessible::AnchorURIAt(PRUint32 aAnchorIndex)
 {
   return aAnchorIndex == 0 ? mContent->GetHrefURI() : nsnull;
 }
@@ -187,7 +187,7 @@ nsHTMLLinkAccessible::IsLinked()
   if (IsDefunct())
     return PR_FALSE;
 
-  nsEventStates state = mContent->IntrinsicState();
+  nsEventStates state = mContent->AsElement()->State();
   return state.HasAtLeastOneOfStates(NS_EVENT_STATE_VISITED |
                                      NS_EVENT_STATE_UNVISITED);
 }

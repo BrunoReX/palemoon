@@ -69,7 +69,6 @@
 #include "nsIDOMElement.h"
 #include "nsIDOMNodeList.h"
 #include "nsIDOMDocument.h"
-#include "nsIDOMNSDocument.h"
 #include "nsIDOMXULElement.h"
 #include "nsIDocument.h"
 #include "nsIContent.h"
@@ -1845,7 +1844,7 @@ nsTreeBodyFrame::RowCountChanged(PRInt32 aIndex, PRInt32 aCount)
   NS_ASSERTION(rowCount == mRowCount, "row count did not change by the amount suggested, check caller");
 #endif
 
-  PRInt32 count = PR_ABS(aCount);
+  PRInt32 count = NS_ABS(aCount);
   PRInt32 last = GetLastVisibleRow();
   if (aIndex >= mTopRowIndex && aIndex <= last)
     InvalidateRange(aIndex, last);
@@ -3394,6 +3393,9 @@ nsTreeBodyFrame::PaintImage(PRInt32              aRowIndex,
   // Resolve style for the image.
   nsStyleContext* imageContext = GetPseudoStyleContext(nsCSSAnonBoxes::moztreeimage);
 
+  // Obtain opacity value for the image.
+  float opacity = imageContext->GetStyleDisplay()->mOpacity;
+
   // Obtain the margins for the image and then deflate our rect by that
   // amount.  The image is assumed to be contained within the deflated rect.
   nsRect imageRect(aImageRect);
@@ -3500,10 +3502,20 @@ nsTreeBodyFrame::PaintImage(PRInt32              aRowIndex,
       nsLayoutUtils::GetWholeImageDestination(rawImageSize, sourceRect,
           nsRect(destRect.TopLeft(), imageDestSize));
 
+    gfxContext* ctx = aRenderingContext.ThebesContext();
+    if (opacity != 1.0f) {
+      ctx->PushGroup(gfxASurface::CONTENT_COLOR_ALPHA);
+    }
+
     nsLayoutUtils::DrawImage(&aRenderingContext, image,
         nsLayoutUtils::GetGraphicsFilterForFrame(this),
         wholeImageDest, destRect, destRect.TopLeft(), aDirtyRect,
         imgIContainer::FLAG_NONE);
+
+    if (opacity != 1.0f) {
+      ctx->PopGroupToSource();
+      ctx->Paint(opacity);
+    }
   }
 
   // Update the aRemainingWidth and aCurrX values.
@@ -3540,6 +3552,9 @@ nsTreeBodyFrame::PaintText(PRInt32              aRowIndex,
   // Resolve style for the text.  It contains all the info we need to lay ourselves
   // out and to paint.
   nsStyleContext* textContext = GetPseudoStyleContext(nsCSSAnonBoxes::moztreecelltext);
+
+  // Obtain opacity value for the image.
+  float opacity = textContext->GetStyleDisplay()->mOpacity;
 
   // Obtain the margins for the text and then deflate our rect by that 
   // amount.  The text is assumed to be contained within the deflated rect.
@@ -3607,8 +3622,19 @@ nsTreeBodyFrame::PaintText(PRInt32              aRowIndex,
   PRUint8 direction = aTextRTL ? NS_STYLE_DIRECTION_RTL :
                                  NS_STYLE_DIRECTION_LTR;
 
+  gfxContext* ctx = aRenderingContext.ThebesContext();
+  if (opacity != 1.0f) {
+    ctx->PushGroup(gfxASurface::CONTENT_COLOR_ALPHA);
+  }
+
   nsLayoutUtils::DrawString(this, &aRenderingContext, text.get(), text.Length(),
                             textRect.TopLeft() + nsPoint(0, baseline), direction);
+
+  if (opacity != 1.0f) {
+    ctx->PopGroupToSource();
+    ctx->Paint(opacity);
+  }
+
 #ifdef MOZ_TIMELINE
   NS_TIMELINE_STOP_TIMER("Render Outline Text");
   NS_TIMELINE_MARK_TIMER("Render Outline Text");

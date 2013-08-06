@@ -66,7 +66,6 @@ VPATH += $(srcdir)/..
 VPATH += $(srcdir)/../compiler
 VPATH += $(srcdir)/../compiler/preprocessor
 VPATH += $(srcdir)/../common
-VPATH += $(srcdir)/geometry
 
 # Translator/compiler first
 
@@ -128,8 +127,6 @@ endif
 
 CPPSRCS	+= \
 	debug.cpp \
-	IndexDataManager.cpp \
-	VertexDataManager.cpp \
 	Blit.cpp \
 	Buffer.cpp \
 	Context.cpp \
@@ -157,3 +154,5 @@ include $(topsrcdir)/config/rules.mk
 EXTRA_DSO_LDOPTS = "$(MOZ_DIRECTX_SDK_PATH)/lib/x86/d3d9.lib" \
                    "$(MOZ_DIRECTX_SDK_PATH)/lib/x86/d3dx9.lib" \
 		   "$(MOZ_DIRECTX_SDK_PATH)/lib/x86/D3DCompiler.lib"
+
+EXTRA_DSO_LDOPTS += $(MOZALLOC_LIB)

@@ -15,6 +15,7 @@ browser.jar:
   skin/classic/browser/Geolocation-16.png
   skin/classic/browser/Geolocation-64.png
   skin/classic/browser/Go-arrow.png
+* skin/classic/browser/highlighter.css
   skin/classic/browser/home.png
   skin/classic/browser/hud-style-check-box-checked.png
   skin/classic/browser/hud-style-check-box-empty.png
@@ -42,7 +43,6 @@ browser.jar:
   skin/classic/browser/section_collapsed-rtl.png
   skin/classic/browser/section_expanded.png
   skin/classic/browser/Secure-Glyph-White.png
-  skin/classic/browser/Secure-background.gif
   skin/classic/browser/Toolbar.png
   skin/classic/browser/toolbarbutton-dropmarker.png
   skin/classic/browser/urlbar-arrow.png

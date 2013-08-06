@@ -73,7 +73,7 @@
 #include "nsCExternalHandlerService.h"
 #include "nsNetUtil.h"
 #include "nsMimeTypes.h"
-#include "nsIEventListenerManager.h"
+#include "nsEventListenerManager.h"
 #include "nsContentUtils.h"
 #include "nsThreadUtils.h"
 #include "nsJSUtils.h"
@@ -140,11 +140,9 @@ NS_NewDOMDocument(nsIDOMDocument** aInstancePtrResult,
       isHTML = PR_TRUE;
       isXHTML = PR_TRUE;
     }
-#ifdef MOZ_SVG
     else if (publicId.EqualsLiteral("-//W3C//DTD SVG 1.1//EN")) {
       rv = NS_NewSVGDocument(getter_AddRefs(d));
     }
-#endif
     // XXX Add support for XUL documents.
     else {
       rv = NS_NewXMLDocument(getter_AddRefs(d));
@@ -409,7 +407,7 @@ nsXMLDocument::Load(const nsAString& aUrl, PRBool *aReturn)
   // be loaded.  Note that we need to hold a strong ref to |principal|
   // here, because ResetToURI will null out our node principal before
   // setting the new one.
-  nsCOMPtr<nsIEventListenerManager> elm(mListenerManager);
+  nsRefPtr<nsEventListenerManager> elm(mListenerManager);
   mListenerManager = nsnull;
 
   // When we are called from JS we can find the load group for the page,

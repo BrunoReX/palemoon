@@ -64,7 +64,6 @@ DEFINES += -D_IMPL_NS_LAYOUT
 _TEST_FILES =	\
 		border_radius_hit_testing_iframe.html \
 		bug369950-subframe.xml \
-		bug495648.rdf \
 		decoration_line_rendering.js \
 		test_after_paint_pref.html \
 		test_border_radius_hit_testing.html \
@@ -89,7 +88,6 @@ _TEST_FILES =	\
 		test_bug435293-scale.html \
 		test_bug435293-interaction.html \
 		test_bug435293-skew.html \
-		test_bug495648.xul \
 		test_reftests_with_caret.html \
 		     bug106855-1.html \
 		     bug106855-2.html \
@@ -136,17 +134,25 @@ _TEST_FILES =	\
 		     bug632215-ref.html \
 		     bug633044-1.html \
 		     bug633044-1-ref.html \
+		     bug634406-1.html \
+		     bug634406-1-ref.html \
 		     bug644428-1.html \
 		     bug644428-1-ref.html \
 		     bug646382-1.html \
 		     bug646382-1-ref.html \
 		     bug646382-2.html \
 		     bug646382-2-ref.html \
+		     bug664087-1.html \
+		     bug664087-1-ref.html \
+		     bug664087-2.html \
+		     bug664087-2-ref.html \
 		test_bug514127.html \
 		test_bug518777.html \
 		test_bug548545.xhtml \
 		test_bug558663.html \
 		test_bug559499.html \
+		test_bug582181-1.html \
+		test_bug582181-2.html \
 		test_flush_on_paint.html \
 		test_mozPaintCount.html \
 		test_scroll_selection_into_view.html \
@@ -330,6 +336,7 @@ _TEST_FILES += \
 		test_bug588174.html \
 		test_bug607529.html \
 		file_bug607529.html \
+		test_bug644768.html \
 		$(NULL)
 endif
 

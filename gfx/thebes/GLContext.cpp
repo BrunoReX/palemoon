@@ -53,6 +53,8 @@
 
 #include "gfxCrashReporterUtils.h"
 
+#include "mozilla/Util.h" // for DebugOnly
+
 namespace mozilla {
 namespace gl {
 
@@ -1380,7 +1382,8 @@ GLContext::UploadSurfaceToTexture(gfxASurface *aSurface,
     if (!imageSurface || 
         (imageSurface->Format() != gfxASurface::ImageFormatARGB32 &&
          imageSurface->Format() != gfxASurface::ImageFormatRGB24 &&
-         imageSurface->Format() != gfxASurface::ImageFormatRGB16_565)) {
+         imageSurface->Format() != gfxASurface::ImageFormatRGB16_565 &&
+         imageSurface->Format() != gfxASurface::ImageFormatA8)) {
         // We can't get suitable pixel data for the surface, make a copy
         nsIntRect bounds = aDstRegion.GetBounds();
         imageSurface = 
@@ -1427,6 +1430,12 @@ GLContext::UploadSurfaceToTexture(gfxASurface *aSurface,
             format = LOCAL_GL_RGB;
             type = LOCAL_GL_UNSIGNED_SHORT_5_6_5;
             shader = RGBALayerProgramType;
+            break;
+        case gfxASurface::ImageFormatA8:
+            format = LOCAL_GL_LUMINANCE;
+            type = LOCAL_GL_UNSIGNED_BYTE;
+            // We don't have a specific luminance shader
+            shader = ShaderProgramType(0);
             break;
         default:
             NS_ASSERTION(false, "Unhandled image surface format!");
@@ -1730,7 +1739,7 @@ GLContext::UseBlitProgram()
             fGetShaderInfoLog(shaders[i], len, (GLint*) &len, (char*) log.BeginWriting());
             log.SetLength(len);
 
-            printf_stderr("Shader %d compilation failed:\n%s\n", nsPromiseFlatCString(log).get());
+            printf_stderr("Shader %d compilation failed:\n%s\n", log.get());
             return;
         }
 
@@ -1754,7 +1763,7 @@ GLContext::UseBlitProgram()
         fGetProgramInfoLog(mBlitProgram, len, (GLint*) &len, (char*) log.BeginWriting());
         log.SetLength(len);
 
-        printf_stderr("Program linking failed:\n%s\n", nsPromiseFlatCString(log).get());
+        printf_stderr("Program linking failed:\n%s\n", log.get());
         return;
     }
 
@@ -1777,7 +1786,7 @@ GLContext::SetBlitFramebufferForDestTexture(GLuint aTexture)
                           0);
 
     if (aTexture) {
-        GLenum status = fCheckFramebufferStatus(LOCAL_GL_FRAMEBUFFER);
+        DebugOnly<GLenum> status = fCheckFramebufferStatus(LOCAL_GL_FRAMEBUFFER);
 
         // Note: if you are hitting this assertion, it is likely that
         // your texture is not texture complete -- that is, you

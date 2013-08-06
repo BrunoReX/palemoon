@@ -113,6 +113,7 @@ CPPSRCS		= \
 		Declaration.cpp \
 		nsCSSKeywords.cpp \
 		Loader.cpp \
+		nsAnimationManager.cpp \
 		nsCSSParser.cpp \
 		nsCSSProps.cpp \
 		nsCSSPseudoClasses.cpp \
@@ -149,12 +150,6 @@ CPPSRCS		= \
 		StyleRule.cpp \
 		$(NULL)
 
-ifdef MOZ_CSS_ANIMATIONS
-CPPSRCS		+= \
-		nsAnimationManager.cpp \
-		$(NULL)
-endif
-
 FORCE_STATIC_LIB = 1
 
 include $(topsrcdir)/config/rules.mk
@@ -183,7 +178,3 @@ install:: $(_FILES)
 	$(SYSINSTALL) $(IFLAGS1) $^ $(DESTDIR)$(mozappdir)/res
 
 DEFINES += -D_IMPL_NS_LAYOUT
-
-# Pale Moon: Kill LTCG/SSE2 (PGO bug)
-# CXXFLAGS := $(CXXFLAGS:-O2=-O1)
-# CXXFLAGS := $(filter-out $(CXXFLAGS),%SSE2 %SSE)

@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2: */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *
@@ -66,6 +66,9 @@
 #include "nsComponentManagerUtils.h"
 #include "nsMaiInterfaceDocument.h"
 #include "nsMaiInterfaceImage.h"
+
+nsAccessibleWrap::EAvailableAtkSignals nsAccessibleWrap::gAvailableAtkSignals =
+  eUnknown;
 
 //defined in nsApplicationAccessibleWrap.cpp
 extern "C" GType g_atk_hyperlink_impl_type;
@@ -450,10 +453,9 @@ nsAccessibleWrap::CreateMaiInterfaces(void)
         interfacesBits |= 1 << MAI_INTERFACE_IMAGE;
     }
 
-    // HyperLinkAccessible
-    if (IsHyperLink()) {
-       interfacesBits |= 1 << MAI_INTERFACE_HYPERLINK_IMPL;
-    }
+  // HyperLinkAccessible
+  if (IsLink())
+    interfacesBits |= 1 << MAI_INTERFACE_HYPERLINK_IMPL;
 
     if (!nsAccUtils::MustPrune(this)) {  // These interfaces require children
       //nsIAccessibleHypertext
@@ -1077,6 +1079,16 @@ nsAccessibleWrap::FirePlatformEvent(AccEvent* aEvent)
         }
       } break;
 
+    case nsIAccessibleEvent::EVENT_NAME_CHANGE:
+      {
+        nsString newName;
+        accessible->GetName(newName);
+        NS_ConvertUTF16toUTF8 utf8Name(newName);
+        if (!atkObj->name || !utf8Name.Equals(atkObj->name))
+          atk_object_set_name(atkObj, utf8Name.get());
+
+        break;
+      }
     case nsIAccessibleEvent::EVENT_VALUE_CHANGE:
       {
         MAI_LOG_DEBUG(("\n\nReceived: EVENT_VALUE_CHANGE\n"));
@@ -1359,25 +1371,29 @@ nsAccessibleWrap::FireAtkTextChangedEvent(AccEvent* aEvent,
     PRBool isFromUserInput = aEvent->IsFromUserInput();
     char* signal_name = nsnull;
 
-    if (gHaveNewTextSignals) {
-        nsAutoString text;
-        event->GetModifiedText(text);
-        signal_name = g_strconcat(isInserted ? "text-insert" : "text-remove",
-                                  isFromUserInput ? "" : "::system", NULL);
-        g_signal_emit_by_name(aObject, signal_name, start, length,
-                              NS_ConvertUTF16toUTF8(text).get());
-    } else {
-        // XXX remove this code and the gHaveNewTextSignals check when we can
-        // stop supporting old atk since it doesn't really work anyway
-        // see bug 619002
-        signal_name = g_strconcat(isInserted ? "text_changed::insert" :
-                                  "text_changed::delete",
-                                  isFromUserInput ? "" : kNonUserInputEvent, NULL);
-        g_signal_emit_by_name(aObject, signal_name, start, length);
-    }
+  if (gAvailableAtkSignals == eUnknown)
+    gAvailableAtkSignals = g_signal_lookup("text-insert", ATK_TYPE_TEXT) ?
+      eHaveNewAtkTextSignals : eNoNewAtkSignals;
 
-    g_free(signal_name);
-    return NS_OK;
+  if (gAvailableAtkSignals == eNoNewAtkSignals) {
+    // XXX remove this code and the gHaveNewTextSignals check when we can
+    // stop supporting old atk since it doesn't really work anyway
+    // see bug 619002
+    signal_name = g_strconcat(isInserted ? "text_changed::insert" :
+                              "text_changed::delete",
+                              isFromUserInput ? "" : kNonUserInputEvent, NULL);
+    g_signal_emit_by_name(aObject, signal_name, start, length);
+  } else {
+    nsAutoString text;
+    event->GetModifiedText(text);
+    signal_name = g_strconcat(isInserted ? "text-insert" : "text-remove",
+                              isFromUserInput ? "" : "::system", NULL);
+    g_signal_emit_by_name(aObject, signal_name, start, length,
+                          NS_ConvertUTF16toUTF8(text).get());
+  }
+
+  g_free(signal_name);
+  return NS_OK;
 }
 
 nsresult

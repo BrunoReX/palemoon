@@ -70,6 +70,9 @@
 #include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsDisplayList.h"
+#include "mozilla/Preferences.h"
+
+using namespace mozilla;
 
 PRBool nsSliderFrame::gMiddlePref = PR_FALSE;
 PRInt32 nsSliderFrame::gSnapMultiplier;
@@ -117,8 +120,8 @@ nsSliderFrame::Init(nsIContent*      aContent,
   if (!gotPrefs) {
     gotPrefs = PR_TRUE;
 
-    gMiddlePref = nsContentUtils::GetBoolPref("middlemouse.scrollbarPosition");
-    gSnapMultiplier = nsContentUtils::GetIntPref("slider.snapMultiplier");
+    gMiddlePref = Preferences::GetBool("middlemouse.scrollbarPosition");
+    gSnapMultiplier = Preferences::GetInt("slider.snapMultiplier");
   }
 
   mCurPos = GetCurrentPosition(aContent);
@@ -856,21 +859,11 @@ nsSliderFrame::SetInitialChildList(nsIAtom*        aListName,
 }
 
 nsresult
-nsSliderMediator::MouseDown(nsIDOMEvent* aMouseEvent)
+nsSliderMediator::HandleEvent(nsIDOMEvent* aEvent)
 {
   // Only process the event if the thumb is not being dragged.
   if (mSlider && !mSlider->isDraggingThumb())
-    return mSlider->MouseDown(aMouseEvent);
-
-  return NS_OK;
-}
-
-nsresult
-nsSliderMediator::MouseUp(nsIDOMEvent* aMouseEvent)
-{
-  // Only process the event if the thumb is not being dragged.
-  if (mSlider && !mSlider->isDraggingThumb())
-    return mSlider->MouseUp(aMouseEvent);
+    return mSlider->MouseDown(aEvent);
 
   return NS_OK;
 }
@@ -882,11 +875,14 @@ nsSliderFrame::MouseDown(nsIDOMEvent* aMouseEvent)
   printf("Begin dragging\n");
 #endif
 
+  nsCOMPtr<nsIDOMMouseEvent> mouseEvent(do_QueryInterface(aMouseEvent));
+  if (!mouseEvent)
+    return NS_OK;
+
   if (mContent->AttrValueIs(kNameSpaceID_None, nsGkAtoms::disabled,
                             nsGkAtoms::_true, eCaseMatters))
     return NS_OK;
 
-  nsCOMPtr<nsIDOMMouseEvent> mouseEvent(do_QueryInterface(aMouseEvent));
   PRUint16 button = 0;
   mouseEvent->GetButton(&button);
   if (!(button == 0 || (button == 1 && gMiddlePref)))
@@ -952,16 +948,6 @@ nsSliderFrame::MouseDown(nsIDOMEvent* aMouseEvent)
   return NS_OK;
 }
 
-nsresult
-nsSliderFrame::MouseUp(nsIDOMEvent* aMouseEvent)
-{
-#ifdef DEBUG_SLIDER
-  printf("Finish dragging\n");
-#endif
-
-  return NS_OK;
-}
-
 void
 nsSliderFrame::DragThumb(PRBool aGrabMouseEvents)
 {
@@ -995,7 +981,8 @@ nsSliderFrame::AddListener()
   nsIFrame* thumbFrame = mFrames.FirstChild();
   if (thumbFrame) {
     thumbFrame->GetContent()->
-      AddEventListenerByIID(mMediator, NS_GET_IID(nsIDOMMouseListener));
+      AddEventListener(NS_LITERAL_STRING("mousedown"), mMediator, PR_FALSE,
+                       PR_FALSE);
   }
 }
 
@@ -1009,7 +996,7 @@ nsSliderFrame::RemoveListener()
     return;
 
   thumbFrame->GetContent()->
-    RemoveEventListenerByIID(mMediator, NS_GET_IID(nsIDOMMouseListener));
+    RemoveEventListener(NS_LITERAL_STRING("mousedown"), mMediator, PR_FALSE);
 }
 
 NS_IMETHODIMP
@@ -1151,6 +1138,5 @@ void nsSliderFrame::Notify(void)
     }
 }
 
-NS_IMPL_ISUPPORTS2(nsSliderMediator,
-                   nsIDOMMouseListener,
+NS_IMPL_ISUPPORTS1(nsSliderMediator,
                    nsIDOMEventListener)

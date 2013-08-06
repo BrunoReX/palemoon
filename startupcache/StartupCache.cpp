@@ -67,6 +67,7 @@
 #include "mozilla/FunctionTimer.h"
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
+#include "nsIProtocolHandler.h"
 
 #ifdef IS_BIG_ENDIAN
 #define SC_ENDIAN "big"
@@ -142,7 +143,9 @@ StartupCache::Init()
     NS_WARNING("Startup cache is only available in the chrome process");
     return NS_ERROR_NOT_AVAILABLE;
   }
-
+  // workaround for bug 653936
+  nsCOMPtr<nsIProtocolHandler> jarInitializer(do_GetService(NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX "jar"));
+  
   nsresult rv;
   mTable.Init();
 #ifdef DEBUG
@@ -252,7 +255,7 @@ StartupCache::GetBuffer(const char* id, char** outbuf, PRUint32* length)
 
   if (mozilla::Omnijar::GetReader(mozilla::Omnijar::APP)) {
     // no need to checksum omnijarred entries
-    nsZipItemPtr<char> zipItem(mozilla::Omnijar::GetReader(mozilla::Omnijar::APP), id);
+    nsZipItemPtr<char> zipItem(mozilla::Omnijar::GetReader(mozilla::Omnijar::APP), id, true);
     if (zipItem) {
       *outbuf = zipItem.Forget();
       *length = zipItem.Length();
@@ -262,7 +265,7 @@ StartupCache::GetBuffer(const char* id, char** outbuf, PRUint32* length)
 
   if (mozilla::Omnijar::GetReader(mozilla::Omnijar::GRE)) {
     // no need to checksum omnijarred entries
-    nsZipItemPtr<char> zipItem(mozilla::Omnijar::GetReader(mozilla::Omnijar::GRE), id);
+    nsZipItemPtr<char> zipItem(mozilla::Omnijar::GetReader(mozilla::Omnijar::GRE), id, true);
     if (zipItem) {
       *outbuf = zipItem.Forget();
       *length = zipItem.Length();

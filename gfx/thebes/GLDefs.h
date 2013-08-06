@@ -40,7 +40,8 @@
 
 #define LOCALGL_H_
 
-#if !defined(__gl_h_)
+#if !defined(__gltypes_h_) && !defined(__gl_h_)
+#define __gltypes_h_
 #define __gl_h_
 
 #include <stddef.h>
@@ -64,8 +65,10 @@ typedef double GLclampd;
 typedef void GLvoid;
 
 typedef char GLchar;
+#ifndef __gl2_h_
 typedef ptrdiff_t GLsizeiptr;
 typedef ptrdiff_t GLintptr;
+#endif
 
 #ifndef GLAPIENTRY
 # ifdef WIN32
@@ -77,7 +80,7 @@ typedef ptrdiff_t GLintptr;
 # endif
 #endif
 
-#endif /* __gl_h_ */
+#endif /* #if !defined(__gltypes_h_) && !defined(__gl_h_) */
 
 #define LOCAL_GL_VERSION_1_1 1
 #define LOCAL_GL_ACCUM 0x0100

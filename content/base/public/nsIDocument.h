@@ -20,6 +20,7 @@
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
+ *   Ms2ger <ms2ger@gmail.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either of the GNU General Public License Version 2 or later (the "GPL"),
@@ -94,7 +95,6 @@ class nsIDOMDocument;
 class nsIDOMDocumentType;
 class nsScriptLoader;
 class nsIContentSink;
-class nsIScriptEventManager;
 class nsHTMLStyleSheet;
 class nsHTMLCSSStyleSheet;
 class nsILayoutHistoryState;
@@ -110,6 +110,7 @@ class nsFrameLoader;
 class nsIBoxObject;
 class imgIRequest;
 class nsISHEntry;
+class nsDOMNavigationTiming;
 
 namespace mozilla {
 namespace css {
@@ -123,9 +124,9 @@ class Element;
 } // namespace mozilla
 
 
-#define NS_IDOCUMENT_IID      \
-{ 0x26ef6218, 0xcd5e, 0x4953,  \
- { 0xbb, 0x57, 0xb8, 0x50, 0x29, 0xa1, 0xae, 0x40 } }
+#define NS_IDOCUMENT_IID \
+{ 0x18e4d4bd, 0x006b, 0x4008, \
+  { 0x90, 0x05, 0x27, 0x57, 0x35, 0xf0, 0xd4, 0x85 } }
 
 // Flag for AddStyleSheet().
 #define NS_STYLESHEET_FROM_CATALOG                (1 << 0)
@@ -361,7 +362,7 @@ public:
   /**
    * Get the Content-Type of this document.
    * (This will always return NS_OK, but has this signature to be compatible
-   *  with nsIDOMNSDocument::GetContentType())
+   *  with nsIDOMDocument::GetContentType())
    */
   NS_IMETHOD GetContentType(nsAString& aContentType) = 0;
 
@@ -479,8 +480,6 @@ public:
 
   void SetBFCacheEntry(nsISHEntry* aSHEntry) {
     mSHEntry = aSHEntry;
-    // Doing this just to keep binary compat for the gecko 2.0 release
-    mShellIsHidden = !!aSHEntry;
   }
 
   nsISHEntry* GetBFCacheEntry() const { return mSHEntry; }
@@ -758,7 +757,8 @@ public:
   virtual void SetReadyStateInternal(ReadyState rs) = 0;
   virtual ReadyState GetReadyStateEnum() = 0;
 
-  // notify that a content node changed state
+  // notify that a content node changed state.  This must happen under
+  // a scriptblocker but NOT within a begin/end update.
   virtual void ContentStateChanged(nsIContent* aContent,
                                    nsEventStates aStateMask) = 0;
 
@@ -838,8 +838,6 @@ public:
     return container;
   }
 
-  virtual nsIScriptEventManager* GetScriptEventManager() = 0;
-
   /**
    * Set and get XML declaration. If aVersion is null there is no declaration.
    * aStandalone takes values -1, 0 and 1 indicating respectively that there
@@ -864,7 +862,7 @@ public:
 
   virtual PRBool IsScriptEnabled() = 0;
 
-  virtual nsresult AddXMLEventsContent(nsIContent * aXMLEventsElement) = 0;
+  virtual void AddXMLEventsContent(nsIContent * aXMLEventsElement) = 0;
 
   /**
    * Create an element with the specified name, prefix and namespace ID.
@@ -1079,7 +1077,7 @@ public:
                                      nsIDOMNodeList** aResult) = 0;
 
   /**
-   * Helper for nsIDOMNSDocument::elementFromPoint implementation that allows
+   * Helper for nsIDOMDocument::elementFromPoint implementation that allows
    * ignoring the scroll frame and/or avoiding layout flushes.
    *
    * @see nsIDOMWindowUtils::elementFromPoint
@@ -1519,6 +1517,25 @@ public:
 
   virtual nsresult GetStateObject(nsIVariant** aResult) = 0;
 
+  virtual nsDOMNavigationTiming* GetNavigationTiming() const = 0;
+
+  virtual nsresult SetNavigationTiming(nsDOMNavigationTiming* aTiming) = 0;
+
+  virtual Element* FindImageMap(const nsAString& aNormalizedMapName) = 0;
+
+#define DEPRECATED_OPERATION(_op) e##_op,
+  enum DeprecatedOperations {
+#include "nsDeprecatedOperationList.h"
+    eDeprecatedOperationCount
+  };
+#undef DEPRECATED_OPERATION
+  void WarnOnceAbout(DeprecatedOperations aOperation);
+
+  PRInt64 SizeOf() const;
+
+private:
+  PRUint32 mWarnedAbout;
+
 protected:
   ~nsIDocument()
   {
@@ -1620,10 +1637,6 @@ protected:
   // documents created to satisfy a GetDocument() on a window when there's no
   // document in it.
   PRPackedBool mIsInitialDocumentInWindow;
-
-  // True if we're currently bfcached. This is only here for binary compat.
-  // Remove once the gecko 2.0 has branched and just use mSHEntry instead.
-  PRPackedBool mShellIsHidden;
 
   PRPackedBool mIsRegularHTML;
   PRPackedBool mIsXUL;
@@ -1796,10 +1809,8 @@ NS_NewHTMLDocument(nsIDocument** aInstancePtrResult);
 nsresult
 NS_NewXMLDocument(nsIDocument** aInstancePtrResult);
 
-#ifdef MOZ_SVG
 nsresult
 NS_NewSVGDocument(nsIDocument** aInstancePtrResult);
-#endif
 
 nsresult
 NS_NewImageDocument(nsIDocument** aInstancePtrResult);

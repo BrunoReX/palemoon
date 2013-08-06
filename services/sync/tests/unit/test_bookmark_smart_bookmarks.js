@@ -49,7 +49,7 @@ function clearBookmarks() {
   
 // Verify that Places smart bookmarks have their annotation uploaded and
 // handled locally.
-function test_annotation_uploaded() {
+add_test(function test_annotation_uploaded() {
   let startCount = smartBookmarkCount();
   
   _("Start count is " + startCount);
@@ -168,13 +168,13 @@ function test_annotation_uploaded() {
   } finally {
     // Clean up.
     store.wipe();
-    server.stop(do_test_finished);
     Svc.Prefs.resetBranch("");
     Records.clearCache();
+    server.stop(run_next_test);
   }
-}
+});
 
-function test_smart_bookmarks_duped() {
+add_test(function test_smart_bookmarks_duped() {
   let parent = PlacesUtils.toolbarFolderId;
   let uri =
     Utils.makeURI("place:redirectsMode=" +
@@ -205,11 +205,11 @@ function test_smart_bookmarks_duped() {
   try {
     engine._syncStartup();
     
-    _("Verify that lazyMap uses the anno, discovering a dupe regardless of URI.");
-    do_check_eq(mostVisitedGUID, engine._lazyMap(record));
+    _("Verify that mapDupe uses the anno, discovering a dupe regardless of URI.");
+    do_check_eq(mostVisitedGUID, engine._mapDupe(record));
     
     record.bmkUri = "http://foo/";
-    do_check_eq(mostVisitedGUID, engine._lazyMap(record));
+    do_check_eq(mostVisitedGUID, engine._mapDupe(record));
     do_check_neq(PlacesUtils.bookmarks.getBookmarkURI(mostVisitedID).spec,
                  record.bmkUri);
     
@@ -224,7 +224,7 @@ function test_smart_bookmarks_duped() {
     _("Handle records without a queryId entry.");
     record.bmkUri = uri;
     delete record.queryId;
-    do_check_eq(mostVisitedGUID, engine._lazyMap(record));
+    do_check_eq(mostVisitedGUID, engine._mapDupe(record));
     
     engine._syncFinish();
 
@@ -235,14 +235,13 @@ function test_smart_bookmarks_duped() {
     Svc.Prefs.resetBranch("");
     Records.clearCache();
   }
-}
+});
 
 function run_test() {
   initTestLogging("Trace");
-  Log4Moz.repository.getLogger("Engine.Bookmarks").level = Log4Moz.Level.Trace;
+  Log4Moz.repository.getLogger("Sync.Engine.Bookmarks").level = Log4Moz.Level.Trace;
 
   generateNewKeys();
 
-  test_annotation_uploaded();
-  test_smart_bookmarks_duped();
+  run_next_test();
 }

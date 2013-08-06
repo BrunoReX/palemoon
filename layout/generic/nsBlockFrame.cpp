@@ -89,6 +89,8 @@
 #include "nsCSSRendering.h"
 #include "FrameLayerBuilder.h"
 #include "nsRenderingContext.h"
+#include "TextOverflow.h"
+#include "mozilla/Util.h" // for DebugOnly
 
 #ifdef IBMBIDI
 #include "nsBidiPresUtils.h"
@@ -106,6 +108,7 @@ static const PRUnichar kSquareCharacter = 0x25aa;
 #define DISABLE_FLOAT_BREAKING_IN_COLUMNS
 
 using namespace mozilla;
+using namespace mozilla::css;
 
 #ifdef DEBUG
 #include "nsPrintfCString.h"
@@ -3989,7 +3992,7 @@ nsBlockFrame::SplitFloat(nsBlockReflowState& aState,
   if (nextInFlow) {
     nsContainerFrame *oldParent =
       static_cast<nsContainerFrame*>(nextInFlow->GetParent());
-    nsresult rv = oldParent->StealFrame(aState.mPresContext, nextInFlow);
+    DebugOnly<nsresult> rv = oldParent->StealFrame(aState.mPresContext, nextInFlow);
     NS_ASSERTION(NS_SUCCEEDED(rv), "StealFrame failed");
     if (oldParent != this) {
       ReparentFrame(nextInFlow, oldParent, this);
@@ -6087,15 +6090,17 @@ nsBlockFrame::IsVisibleInSelection(nsISelection* aSelection)
 }
 
 /* virtual */ void
-nsBlockFrame::PaintTextDecorationLine(gfxContext* aCtx, 
-                                      const nsPoint& aPt,
-                                      nsLineBox* aLine,
-                                      nscolor aColor, 
-                                      PRUint8 aStyle,
-                                      gfxFloat aOffset, 
-                                      gfxFloat aAscent, 
-                                      gfxFloat aSize,
-                                      const PRUint8 aDecoration) 
+nsBlockFrame::PaintTextDecorationLine(
+                gfxContext* aCtx, 
+                const nsPoint& aPt,
+                nsLineBox* aLine,
+                nscolor aColor, 
+                PRUint8 aStyle,
+                gfxFloat aOffset, 
+                gfxFloat aAscent, 
+                gfxFloat aSize,
+                const nsCharClipDisplayItem::ClipEdges& aClipEdges,
+                const PRUint8 aDecoration) 
 {
   NS_ASSERTION(!aLine->IsBlock(), "Why did we ask for decorations on a block?");
 
@@ -6103,10 +6108,12 @@ nsBlockFrame::PaintTextDecorationLine(gfxContext* aCtx,
   nscoord width = aLine->mBounds.width;
 
   AdjustForTextIndent(aLine, start, width);
-      
+  nscoord x = start + aPt.x;
+  aClipEdges.Intersect(&x, &width);
+
   // Only paint if we have a positive width
   if (width > 0) {
-    gfxPoint pt(PresContext()->AppUnitsToGfxUnits(start + aPt.x),
+    gfxPoint pt(PresContext()->AppUnitsToGfxUnits(x),
                 PresContext()->AppUnitsToGfxUnits(aLine->mBounds.y + aPt.y));
     gfxSize size(PresContext()->AppUnitsToGfxUnits(width), aSize);
     nsCSSRendering::PaintDecorationLine(
@@ -6121,7 +6128,8 @@ nsBlockFrame::AdjustForTextIndent(const nsLineBox* aLine,
                                   nscoord& start,
                                   nscoord& width)
 {
-  if (!GetPrevContinuation() && aLine == begin_lines().get()) {
+  if (!GetPrevContinuation() && aLine == begin_lines().get() &&
+      (GetStyleVisibility()->mDirection == NS_STYLE_DIRECTION_LTR)) {
     // Adjust for the text-indent.  See similar code in
     // nsLineLayout::BeginLineReflow.
     const nsStyleCoord &textIndent = GetStyleText()->mTextIndent;
@@ -6165,7 +6173,7 @@ static nsresult
 DisplayLine(nsDisplayListBuilder* aBuilder, const nsRect& aLineArea,
             const nsRect& aDirtyRect, nsBlockFrame::line_iterator& aLine,
             PRInt32 aDepth, PRInt32& aDrawnLines, const nsDisplayListSet& aLists,
-            nsBlockFrame* aFrame) {
+            nsBlockFrame* aFrame, TextOverflow* aTextOverflow) {
   // If the line's combined area (which includes child frames that
   // stick outside of the line's bounding box or our bounding box)
   // intersects the dirty rect then paint the line.
@@ -6183,24 +6191,27 @@ DisplayLine(nsDisplayListBuilder* aBuilder, const nsRect& aLineArea,
   // on all the frames on the line, but that might be expensive.  So
   // we approximate it by checking it on aFrame; if it's true for any
   // frame in the line, it's also true for aFrame.
-  if (!intersect && !aBuilder->ShouldDescendIntoFrame(aFrame))
+  PRBool lineInline = aLine->IsInline();
+  PRBool lineMayHaveTextOverflow = aTextOverflow && lineInline;
+  if (!intersect && !aBuilder->ShouldDescendIntoFrame(aFrame) &&
+      !lineMayHaveTextOverflow)
     return NS_OK;
 
+  nsDisplayListCollection collection;
   nsresult rv;
   nsDisplayList aboveTextDecorations;
-  PRBool lineInline = aLine->IsInline();
   if (lineInline) {
     // Display the text-decoration for the hypothetical anonymous inline box
     // that wraps these inlines
-    rv = aFrame->DisplayTextDecorations(aBuilder, aLists.Content(),
+    rv = aFrame->DisplayTextDecorations(aBuilder, collection.Content(),
                                         &aboveTextDecorations, aLine);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
   // Block-level child backgrounds go on the blockBorderBackgrounds list ...
   // Inline-level child backgrounds go on the regular child content list.
-  nsDisplayListSet childLists(aLists,
-      lineInline ? aLists.Content() : aLists.BlockBorderBackgrounds());
+  nsDisplayListSet childLists(collection,
+    lineInline ? collection.Content() : collection.BlockBorderBackgrounds());
   nsIFrame* kid = aLine->mFirstChild;
   PRInt32 n = aLine->GetChildCount();
   while (--n >= 0) {
@@ -6210,7 +6221,13 @@ DisplayLine(nsDisplayListBuilder* aBuilder, const nsRect& aLineArea,
     kid = kid->GetNextSibling();
   }
   
-  aLists.Content()->AppendToTop(&aboveTextDecorations);
+  collection.Content()->AppendToTop(&aboveTextDecorations);
+
+  if (lineMayHaveTextOverflow) {
+    aTextOverflow->ProcessLine(collection, aLine.get());
+  }
+
+  collection.MoveTo(aLists);
   return NS_OK;
 }
 
@@ -6254,6 +6271,10 @@ nsBlockFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
   aBuilder->MarkFramesForDisplayList(this, mAbsoluteContainer.GetChildList(),
                                      aDirtyRect);
 
+  // Prepare for text-overflow processing.
+  nsAutoPtr<TextOverflow> textOverflow(
+    TextOverflow::WillProcessLines(aBuilder, aLists, this));
+
   // Don't use the line cursor if we might have a descendant placeholder ...
   // it might skip lines that contain placeholders but don't themselves
   // intersect with the dirty area.
@@ -6278,7 +6299,7 @@ nsBlockFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
           break;
         }
         rv = DisplayLine(aBuilder, lineArea, aDirtyRect, line, depth, drawnLines,
-                         aLists, this);
+                         aLists, this, textOverflow);
         if (NS_FAILED(rv))
           break;
       }
@@ -6293,7 +6314,7 @@ nsBlockFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
          ++line) {
       nsRect lineArea = line->GetVisualOverflowArea();
       rv = DisplayLine(aBuilder, lineArea, aDirtyRect, line, depth, drawnLines,
-                       aLists, this);
+                       aLists, this, textOverflow);
       if (NS_FAILED(rv))
         break;
       if (!lineArea.IsEmpty()) {
@@ -6310,6 +6331,11 @@ nsBlockFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
     if (NS_SUCCEEDED(rv) && nonDecreasingYs && lineCount >= MIN_LINES_NEEDING_CURSOR) {
       SetupLineCursor();
     }
+  }
+
+  // Finalize text-overflow processing.
+  if (textOverflow) {
+    textOverflow->DidProcessLines();
   }
 
   if (NS_SUCCEEDED(rv) && (nsnull != mBullet) && HaveOutsideBullet()) {

@@ -675,7 +675,7 @@ fails-if(Android) != 376532-3.html 376532-3-ref.html
 == 379178-html.html 379178-html-ref.html
 == 379178-svg.svg 379178-svg-ref.svg
 == 379316-1.html 379316-1-ref.html
-fails-if(Android) random-if(cocoaWidget) fails-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == 379316-2.html 379316-2-ref.html # bug 379786
+fails-if(Android) random-if(cocoaWidget) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == 379316-2.html 379316-2-ref.html # bug 379786
 == 379328-1.html 379328-1-ref.html
 == 379349-1a.xhtml 379349-1-ref.xhtml
 == 379349-1b.xhtml 379349-1-ref.xhtml
@@ -1477,6 +1477,9 @@ random-if(!haveTestPlugin) == 546071-1.html 546071-1-ref.html
 == 551463-1.html 551463-1-ref.html
 == 551699-1.html 551699-1-ref.html
 == 552334-1.html 552334-1-ref.html
+# 553571 depends on MS Indic shaping behavior and Win7 font support;
+# not expected to be reliable on XP or non-Windows platforms
+random-if(!winWidget) random-if(/^Windows\x20NT\x205/.test(http.oscpu)) != 553571-1.html 553571-1-notref.html # expect dotted circle in test, not in ref
 random-if(d2d) == 555388-1.html 555388-1-ref.html
 == 556661-1.html 556661-1-ref.html
 fails-if(Android) == 557087-1.html 557087-ref.html
@@ -1538,7 +1541,8 @@ needs-focus == 568441.html 568441-ref.html
 # 574907 is a windows-only issue, result on other platforms depends on details of font support
 random-if(!winWidget) == 574907-1.html 574907-1-ref.html
 random-if(!winWidget) == 574907-2.html 574907-2-ref.html
-random-if(!winWidget) fails-if(winWidget&&!d2d) != 574907-3.html 574907-3-notref.html
+# 574907-3 only worked under directwrite, and even there it now depends on the rendering mode; marking as random for now
+random-if(!winWidget) fails-if(winWidget&&!d2d) random-if(winWidget&&d2d) != 574907-3.html 574907-3-notref.html
 == 577838-1.html 577838-1-ref.html
 == 577838-2.html 577838-2-ref.html
 fails-if(Android) random-if(layersGPUAccelerated) fails-if(/^Windows\x20NT\x205\.1/.test(http.oscpu)) fails-if(/Mac\x20OS\x20X\x2010\.5/.test(http.oscpu)) == 579323-1.html 579323-1-ref.html # bug 623450 for WinXP and bug 627560 for OSX 10.5
@@ -1560,7 +1564,7 @@ asserts(0-1) == 582146-1.html about:blank
 == 584699-1.html 584699-1-ref.html
 == 585598-2.xhtml 585598-2-ref.xhtml
 == 586400-1.html 586400-1-ref.html
-fails-if(Android) fails-if(cocoaWidget) == 586683-1.html 586683-1-ref.html
+fails-if(Android) == 586683-1.html 586683-1-ref.html
 == 589615-1a.xhtml 589615-1-ref.html
 == 589615-1b.html 589615-1-ref.html
 == 589672-1.html 589672-1-ref.html
@@ -1613,7 +1617,6 @@ fails-if(Android) HTTP(..) == 619511-1.html 619511-1-ref.html
 random-if(winWidget) == 621918-1.svg 621918-1-ref.svg # 1-pixel diacritic positioning discrepancy in rotated text (may depend on platform fonts)
 random-if(winWidget) HTTP(..) == 621918-2.svg 621918-2-ref.svg # same 1px issue as above, and HTTP(..) for filters.svg, used to mask antialiasing issues where glyphs touch
 == 622585-1.html 622585-1-ref.html
-HTTP(..) != 624359-1.html 624359-1-notref.html # http(..) for @font-face, to ensure consistent behavior
 fails-if(Android) == 625409-1.html 625409-1-ref.html
 == 627393-1.html about:blank
 == 630835-1.html about:blank
@@ -1621,6 +1624,7 @@ fails-if(Android) == 625409-1.html 625409-1-ref.html
 fails-if(Android) == 632423-1.html 632423-1-ref.html
 skip-if(Android) fails-if(winWidget) == 632781-verybig.html 632781-ref.html # large canvas elements are not drawn on Windows, see bug 633936
 == 632781-normalsize.html 632781-ref.html
+== 633344-1.html 633344-1-ref.html
 fails-if(Android) == 634232-1.html 634232-1-ref.html
 fails-if(Android) == 635302-1.html 635302-1-ref.html
 == 635373-1.html 635373-1-ref.html
@@ -1628,13 +1632,23 @@ fails-if(Android) == 635302-1.html 635302-1-ref.html
 fails-if(http.platform=="X11"&&!layersGPUAccelerated) == 635373-3.html 635373-3-ref.html
 HTTP(..) == 635639-1.html 635639-1-ref.html
 HTTP(..) == 635639-2.html 635639-2-ref.html
+== 637597-1.html 637597-1-ref.html
+== 637852-1.html 637852-1-ref.html
+== 637852-2.html 637852-2-ref.html
+== 637852-3.html 637852-3-ref.html
 == 641770-1.html 641770-1-ref.html
 == 641856-1.html 641856-1-ref.html
 == 645491-1.html 645491-1-ref.html
+== 645768-1.html 645768-1-ref.html
 fails-if(layersGPUAccelerated&&cocoaWidget) == 650228-1.html 650228-1-ref.html # Quartz alpha blending doesn't match GL alpha blending
 == 653930-1.html 653930-1-ref.html
 HTTP(..) == 654057-1.html 654057-1-ref.html
 fails-if(layersGPUAccelerated&&cocoaWidget) == 654950-1.html 654950-1-ref.html # Quartz alpha blending doesn't match GL alpha blending
 == 652775-1.html 652775-1-ref.html
+== 655549-1.html 655549-1-ref.html
 == 658952.html 658952-ref.html
+== 664127-1.xul 664127-1-ref.xul
+== 660682-1.html 660682-1-ref.html
+!= 669015-1.xul 669015-1-notref.xul
+== 668319-1.xul about:blank
 == 670442-1.html 670442-1-ref.html

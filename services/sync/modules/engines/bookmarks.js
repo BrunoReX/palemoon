@@ -68,7 +68,9 @@ Cu.import("resource://gre/modules/PlacesUtils.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://services-sync/engines.js");
 Cu.import("resource://services-sync/record.js");
+Cu.import("resource://services-sync/async.js");
 Cu.import("resource://services-sync/util.js");
+Cu.import("resource://services-sync/constants.js");
 
 Cu.import("resource://services-sync/main.js");      // For access to Service.
 
@@ -108,7 +110,7 @@ PlacesItem.prototype = {
   },
 
   __proto__: CryptoWrapper.prototype,
-  _logName: "Record.PlacesItem",
+  _logName: "Sync.Record.PlacesItem",
 };
 
 Utils.deferGetSet(PlacesItem, "cleartext", ["hasDupe", "parentid", "parentName",
@@ -119,7 +121,7 @@ function Bookmark(collection, id, type) {
 }
 Bookmark.prototype = {
   __proto__: PlacesItem.prototype,
-  _logName: "Record.Bookmark",
+  _logName: "Sync.Record.Bookmark",
 };
 
 Utils.deferGetSet(Bookmark, "cleartext", ["title", "bmkUri", "description",
@@ -130,7 +132,7 @@ function BookmarkQuery(collection, id) {
 }
 BookmarkQuery.prototype = {
   __proto__: Bookmark.prototype,
-  _logName: "Record.BookmarkQuery",
+  _logName: "Sync.Record.BookmarkQuery",
 };
 
 Utils.deferGetSet(BookmarkQuery, "cleartext", ["folderName",
@@ -141,7 +143,7 @@ function BookmarkFolder(collection, id, type) {
 }
 BookmarkFolder.prototype = {
   __proto__: PlacesItem.prototype,
-  _logName: "Record.Folder",
+  _logName: "Sync.Record.Folder",
 };
 
 Utils.deferGetSet(BookmarkFolder, "cleartext", ["description", "title",
@@ -152,7 +154,7 @@ function Livemark(collection, id) {
 }
 Livemark.prototype = {
   __proto__: BookmarkFolder.prototype,
-  _logName: "Record.Livemark",
+  _logName: "Sync.Record.Livemark",
 };
 
 Utils.deferGetSet(Livemark, "cleartext", ["siteUri", "feedUri"]);
@@ -162,7 +164,7 @@ function BookmarkSeparator(collection, id) {
 }
 BookmarkSeparator.prototype = {
   __proto__: PlacesItem.prototype,
-  _logName: "Record.Separator",
+  _logName: "Sync.Record.Separator",
 };
 
 Utils.deferGetSet(BookmarkSeparator, "cleartext", "pos");
@@ -261,9 +263,126 @@ BookmarksEngine.prototype = {
     }, null);
 
     // Expose the exception if something inside the batch failed
-    if (batchEx!= null) {
+    if (batchEx != null) {
       throw batchEx;
     }
+  },
+
+  _guidMapFailed: false,
+  _buildGUIDMap: function _buildGUIDMap() {
+    let guidMap = {};
+    for (let guid in this._store.getAllIDs()) {
+      // Figure out with which key to store the mapping.
+      let key;
+      let id = this._store.idForGUID(guid);
+      switch (PlacesUtils.bookmarks.getItemType(id)) {
+        case PlacesUtils.bookmarks.TYPE_BOOKMARK:
+
+          // Smart bookmarks map to their annotation value.
+          let queryId;
+          try {
+            queryId = PlacesUtils.annotations.getItemAnnotation(
+              id, SMART_BOOKMARKS_ANNO);
+          } catch(ex) {}
+          
+          if (queryId)
+            key = "q" + queryId;
+          else
+            key = "b" + PlacesUtils.bookmarks.getBookmarkURI(id).spec + ":" +
+                  PlacesUtils.bookmarks.getItemTitle(id);
+          break;
+        case PlacesUtils.bookmarks.TYPE_FOLDER:
+          key = "f" + PlacesUtils.bookmarks.getItemTitle(id);
+          break;
+        case PlacesUtils.bookmarks.TYPE_SEPARATOR:
+          key = "s" + PlacesUtils.bookmarks.getItemIndex(id);
+          break;
+        default:
+          continue;
+      }
+
+      // The mapping is on a per parent-folder-name basis.
+      let parent = PlacesUtils.bookmarks.getFolderIdForItem(id);
+      if (parent <= 0)
+        continue;
+
+      let parentName = PlacesUtils.bookmarks.getItemTitle(parent);
+      if (guidMap[parentName] == null)
+        guidMap[parentName] = {};
+
+      // If the entry already exists, remember that there are explicit dupes.
+      let entry = new String(guid);
+      entry.hasDupe = guidMap[parentName][key] != null;
+
+      // Remember this item's GUID for its parent-name/key pair.
+      guidMap[parentName][key] = entry;
+      this._log.trace("Mapped: " + [parentName, key, entry, entry.hasDupe]);
+    }
+
+    return guidMap;
+  },
+
+  // Helper function to get a dupe GUID for an item.
+  _mapDupe: function _mapDupe(item) {
+    // Figure out if we have something to key with.
+    let key;
+    let altKey;
+    switch (item.type) {
+      case "query":
+        // Prior to Bug 610501, records didn't carry their Smart Bookmark
+        // anno, so we won't be able to dupe them correctly. This altKey
+        // hack should get them to dupe correctly.
+        if (item.queryId) {
+          key = "q" + item.queryId;
+          altKey = "b" + item.bmkUri + ":" + item.title;
+          break;
+        }
+        // No queryID? Fall through to the regular bookmark case.
+      case "bookmark":
+      case "microsummary":
+        key = "b" + item.bmkUri + ":" + item.title;
+        break;
+      case "folder":
+      case "livemark":
+        key = "f" + item.title;
+        break;
+      case "separator":
+        key = "s" + item.pos;
+        break;
+      default:
+        return;
+    }
+
+    // Figure out if we have a map to use!
+    // This will throw in some circumstances. That's fine.
+    let guidMap = this._guidMap;
+
+    // Give the GUID if we have the matching pair.
+    this._log.trace("Finding mapping: " + item.parentName + ", " + key);
+    let parent = guidMap[item.parentName];
+    
+    if (!parent) {
+      this._log.trace("No parent => no dupe.");
+      return undefined;
+    }
+      
+    let dupe = parent[key];
+    
+    if (dupe) {
+      this._log.trace("Mapped dupe: " + dupe);
+      return dupe;
+    }
+    
+    if (altKey) {
+      dupe = parent[altKey];
+      if (dupe) {
+        this._log.trace("Mapped dupe using altKey " + altKey + ": " + dupe);
+        return dupe;
+      }
+    }
+    
+    this._log.trace("No dupe found for key " + key + "/" + altKey + ".");
+    return undefined;
   },
 
   _syncStartup: function _syncStart() {
@@ -273,117 +392,22 @@ BookmarksEngine.prototype = {
     if (this.lastSync == 0)
       archiveBookmarks();
 
-    // Lazily create a mapping of folder titles and separator positions to GUID
-    this.__defineGetter__("_lazyMap", function() {
-      delete this._lazyMap;
-
-      let lazyMap = {};
-      for (let guid in this._store.getAllIDs()) {
-        // Figure out what key to store the mapping
-        let key;
-        let id = this._store.idForGUID(guid);
-        switch (PlacesUtils.bookmarks.getItemType(id)) {
-          case PlacesUtils.bookmarks.TYPE_BOOKMARK:
-
-            // Smart bookmarks map to their annotation value.
-            let queryId;
-            try {
-              queryId = PlacesUtils.annotations.getItemAnnotation(
-                id, SMART_BOOKMARKS_ANNO);
-            } catch(ex) {}
-            
-            if (queryId)
-              key = "q" + queryId;
-            else
-              key = "b" + PlacesUtils.bookmarks.getBookmarkURI(id).spec + ":" +
-                    PlacesUtils.bookmarks.getItemTitle(id);
-            break;
-          case PlacesUtils.bookmarks.TYPE_FOLDER:
-            key = "f" + PlacesUtils.bookmarks.getItemTitle(id);
-            break;
-          case PlacesUtils.bookmarks.TYPE_SEPARATOR:
-            key = "s" + PlacesUtils.bookmarks.getItemIndex(id);
-            break;
-          default:
-            continue;
-        }
-
-        // The mapping is on a per parent-folder-name basis
-        let parent = PlacesUtils.bookmarks.getFolderIdForItem(id);
-        if (parent <= 0)
-          continue;
-
-        let parentName = PlacesUtils.bookmarks.getItemTitle(parent);
-        if (lazyMap[parentName] == null)
-          lazyMap[parentName] = {};
-
-        // If the entry already exists, remember that there are explicit dupes
-        let entry = new String(guid);
-        entry.hasDupe = lazyMap[parentName][key] != null;
-
-        // Remember this item's guid for its parent-name/key pair
-        lazyMap[parentName][key] = entry;
-        this._log.trace("Mapped: " + [parentName, key, entry, entry.hasDupe]);
+    this.__defineGetter__("_guidMap", function() {
+      // Create a mapping of folder titles and separator positions to GUID.
+      // We do this lazily so that we don't do any work unless we reconcile
+      // incoming items.
+      let guidMap;
+      try {
+        guidMap = this._buildGUIDMap();
+      } catch (ex) {
+        this._log.warn("Got exception \"" + Utils.exceptionStr(ex) +
+                       "\" building GUID map." +
+                       " Skipping all other incoming items.");
+        throw {code: Engine.prototype.eEngineAbortApplyIncoming,
+               cause: ex};
       }
-
-      // Expose a helper function to get a dupe guid for an item
-      return this._lazyMap = function(item) {
-        // Figure out if we have something to key with
-        let key;
-        let altKey;
-        switch (item.type) {
-          case "query":
-            // Prior to Bug 610501, records didn't carry their Smart Bookmark
-            // anno, so we won't be able to dupe them correctly. This altKey
-            // hack should get them to dupe correctly.
-            if (item.queryId) {
-              key = "q" + item.queryId;
-              altKey = "b" + item.bmkUri + ":" + item.title;
-              break;
-            }
-            // No queryID? Fall through to the regular bookmark case.
-          case "bookmark":
-          case "microsummary":
-            key = "b" + item.bmkUri + ":" + item.title;
-            break;
-          case "folder":
-          case "livemark":
-            key = "f" + item.title;
-            break;
-          case "separator":
-            key = "s" + item.pos;
-            break;
-          default:
-            return;
-        }
-
-        // Give the guid if we have the matching pair
-        this._log.trace("Finding mapping: " + item.parentName + ", " + key);
-        let parent = lazyMap[item.parentName];
-        
-        if (!parent) {
-          this._log.trace("No parent => no dupe.");
-          return undefined;
-        }
-          
-        let dupe = parent[key];
-        
-        if (dupe) {
-          this._log.trace("Mapped dupe: " + dupe);
-          return dupe;
-        }
-        
-        if (altKey) {
-          dupe = parent[altKey];
-          if (dupe) {
-            this._log.trace("Mapped dupe using altKey " + altKey + ": " + dupe);
-            return dupe;
-          }
-        }
-        
-        this._log.trace("No dupe found for key " + key + "/" + altKey + ".");
-        return undefined;
-      };
+      delete this._guidMap;
+      return this._guidMap = guidMap;
     });
 
     this._store._childrenToOrder = {};
@@ -403,14 +427,18 @@ BookmarksEngine.prototype = {
 
   _syncFinish: function _syncFinish() {
     SyncEngine.prototype._syncFinish.call(this);
-    delete this._lazyMap;
     this._tracker._ensureMobileQuery();
+  },
+
+  _syncCleanup: function _syncCleanup() {
+    SyncEngine.prototype._syncCleanup.call(this);
+    delete this._guidMap;
   },
 
   _createRecord: function _createRecord(id) {
     // Create the record like normal but mark it as having dupes if necessary
     let record = SyncEngine.prototype._createRecord.call(this, id);
-    let entry = this._lazyMap(record);
+    let entry = this._mapDupe(record);
     if (entry != null && entry.hasDupe)
       record.hasDupe = true;
     return record;
@@ -420,7 +448,7 @@ BookmarksEngine.prototype = {
     // Don't bother finding a dupe if the incoming item has duplicates
     if (item.hasDupe)
       return;
-    return this._lazyMap(item);
+    return this._mapDupe(item);
   },
 
   _handleDupe: function _handleDupe(item, dupeId) {
@@ -932,7 +960,7 @@ BookmarksStore.prototype = {
   _getChildGUIDsForId: function _getChildGUIDsForId(itemid) {
     let stmt = this._childGUIDsStm;
     stmt.params.parent = itemid;
-    let rows = Utils.queryAsync(stmt, this._childGUIDsCols);
+    let rows = Async.querySpinningly(stmt, this._childGUIDsCols);
     return rows.map(function (row) {
       if (row.guid) {
         return row.guid;
@@ -1019,7 +1047,7 @@ BookmarksStore.prototype = {
       record = new BookmarkSeparator(collection, id);
       if (parent > 0)
         record.parentName = PlacesUtils.bookmarks.getItemTitle(parent);
-      // Create a positioning identifier for the separator, used by _lazyMap
+      // Create a positioning identifier for the separator, used by _mapDupe
       record.pos = PlacesUtils.bookmarks.getItemIndex(placeId);
       break;
 
@@ -1075,7 +1103,7 @@ BookmarksStore.prototype = {
     let stmt = this._setGUIDStm;
     stmt.params.guid = guid;
     stmt.params.item_id = id;
-    Utils.queryAsync(stmt);
+    Async.querySpinningly(stmt);
     return guid;
   },
 
@@ -1096,7 +1124,7 @@ BookmarksStore.prototype = {
     stmt.params.item_id = id;
 
     // Use the existing GUID if it exists
-    let result = Utils.queryAsync(stmt, this._guidForIdCols)[0];
+    let result = Async.querySpinningly(stmt, this._guidForIdCols)[0];
     if (result && result.guid)
       return result.guid;
 
@@ -1122,7 +1150,7 @@ BookmarksStore.prototype = {
     // guid might be a String object rather than a string.
     stmt.params.guid = guid.toString();
 
-    let results = Utils.queryAsync(stmt, this._idForGUIDCols);
+    let results = Async.querySpinningly(stmt, this._idForGUIDCols);
     this._log.trace("Number of rows matching GUID " + guid + ": "
                     + results.length);
     
@@ -1149,7 +1177,7 @@ BookmarksStore.prototype = {
     // Add in the bookmark's frecency if we have something
     if (record.bmkUri != null) {
       this._frecencyStm.params.url = record.bmkUri;
-      let result = Utils.queryAsync(this._frecencyStm, this._frecencyCols);
+      let result = Async.querySpinningly(this._frecencyStm, this._frecencyCols);
       if (result.length)
         index += result[0].frecency;
     }
@@ -1293,9 +1321,9 @@ BookmarksTracker.prototype = {
       this._upScore();
   },
 
-  /* Every add/remove/change is worth 10 points */
+  /* Every add/remove/change will trigger a sync for MULTI_DEVICE */
   _upScore: function BMT__upScore() {
-    this.score += 10;
+    this.score += SCORE_INCREMENT_XLARGE;
   },
 
   /**

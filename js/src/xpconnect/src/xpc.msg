@@ -162,14 +162,6 @@ XPC_MSG_DEF(NS_ERROR_OBJECT_IS_IMMUTABLE            , "Can not modify immutable 
 XPC_MSG_DEF(NS_ERROR_LOSS_OF_SIGNIFICANT_DATA       , "Data conversion failed because significant data would be lost")
 XPC_MSG_DEF(NS_SUCCESS_LOSS_OF_INSIGNIFICANT_DATA   , "Data conversion succeeded but data was rounded to fit")
 
-#ifdef XPC_IDISPATCH_SUPPORT
-XPC_MSG_DEF(NS_ERROR_XPC_COM_UNKNOWN                , "Unknown COM error occurred")
-XPC_MSG_DEF(NS_ERROR_XPC_COM_ERROR                  , "COM Error")
-XPC_MSG_DEF(NS_ERROR_XPC_COM_INVALID_CLASS_ID       , "Invalid class ID")
-XPC_MSG_DEF(NS_ERROR_XPC_COM_CREATE_FAILED          , "Unable to create an instance of the desired COM class")
-XPC_MSG_DEF(NS_ERROR_XPC_IDISPATCH_NOT_ENABLED      , "IDispatch support is not enabled")
-#endif
-
 /* network related codes (from nsNetError.h) */
 
 XPC_MSG_DEF(NS_BINDING_FAILED                       , "The async request failed for some unknown reason")
@@ -182,6 +174,7 @@ XPC_MSG_DEF(NS_ERROR_NO_CONTENT                     , "Channel opened successful
 XPC_MSG_DEF(NS_ERROR_IN_PROGRESS                    , "The requested action could not be completed while the object is busy")
 XPC_MSG_DEF(NS_ERROR_ALREADY_OPENED                 , "Channel is already open")
 XPC_MSG_DEF(NS_ERROR_INVALID_CONTENT_ENCODING       , "The content encoding of the source document is incorrect")
+XPC_MSG_DEF(NS_ERROR_CORRUPTED_CONTENT              , "Corrupted content was received from server")
 XPC_MSG_DEF(NS_ERROR_ALREADY_CONNECTED              , "The connection is already established")
 XPC_MSG_DEF(NS_ERROR_NOT_CONNECTED                  , "The connection does not exist")
 XPC_MSG_DEF(NS_ERROR_CONNECTION_REFUSED             , "The connection was refused")
@@ -195,12 +188,15 @@ XPC_MSG_DEF(NS_ERROR_NOT_RESUMABLE                  , "This request is not resum
 XPC_MSG_DEF(NS_ERROR_ENTITY_CHANGED                 , "It was attempted to resume the request, but the entity has changed in the meantime")
 XPC_MSG_DEF(NS_ERROR_REDIRECT_LOOP                  , "The request failed as a result of a detected redirection loop")
 XPC_MSG_DEF(NS_ERROR_UNSAFE_CONTENT_TYPE            , "The request failed because the content type returned by the server was not a type expected by the channel")
+XPC_MSG_DEF(NS_ERROR_REMOTE_XUL                     , "Attempt to access remote XUL document that is not in website's whitelist")
+
 XPC_MSG_DEF(NS_ERROR_FTP_LOGIN                      , "FTP error while logging in")
 XPC_MSG_DEF(NS_ERROR_FTP_CWD                        , "FTP error while changing directory")
 XPC_MSG_DEF(NS_ERROR_FTP_PASV                       , "FTP error while changing to passive mode")
 XPC_MSG_DEF(NS_ERROR_FTP_PWD                        , "FTP error while retrieving current directory")
 XPC_MSG_DEF(NS_ERROR_FTP_LIST                       , "FTP error while retrieving a directory listing")
 XPC_MSG_DEF(NS_ERROR_UNKNOWN_HOST                   , "The lookup of the hostname failed")
+XPC_MSG_DEF(NS_ERROR_DNS_LOOKUP_QUEUE_FULL          , "The DNS lookup queue is full")
 XPC_MSG_DEF(NS_ERROR_UNKNOWN_PROXY_HOST             , "The lookup of the proxy hostname failed")
 XPC_MSG_DEF(NS_ERROR_UNKNOWN_SOCKET_TYPE            , "The specified socket type does not exist")
 XPC_MSG_DEF(NS_ERROR_SOCKET_CREATE_FAILED           , "The specified socket type could not be created")

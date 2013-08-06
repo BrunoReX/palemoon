@@ -104,7 +104,7 @@ nsNPAPIPluginInstance::nsNPAPIPluginInstance(nsNPAPIPlugin* plugin)
   nsCOMPtr<nsIPrefBranch> prefs(do_GetService(NS_PREFSERVICE_CONTRACTID));
   if (prefs) {
     PRBool useLayersPref;
-    nsresult rv = prefs->GetBoolPref("mozilla.plugins.use_layers", &useLayersPref);
+    nsresult rv = prefs->GetBoolPref("plugins.use_layers", &useLayersPref);
     if (NS_SUCCEEDED(rv))
       mUsePluginLayersPref = useLayersPref;
   }
@@ -596,15 +596,6 @@ nsresult nsNPAPIPluginInstance::HandleEvent(void* event, PRInt16* result)
 
 nsresult nsNPAPIPluginInstance::GetValueFromPlugin(NPPVariable variable, void* value)
 {
-#if (MOZ_PLATFORM_MAEMO == 5)
-  // The maemo flash plugin does not remember this.  It sets the
-  // value, but doesn't support the get value.
-  if (variable == NPPVpluginWindowlessLocalBool) {
-    *(NPBool*)value = mWindowlessLocal;
-    return NS_OK;
-  }
-#endif
-
   if (!mPlugin || !mPlugin->GetLibrary())
     return NS_ERROR_FAILURE;
 

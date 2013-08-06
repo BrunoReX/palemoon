@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2: */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *
@@ -127,6 +127,20 @@ protected:
     AtkObject *mAtkObject;
 
 private:
+
+  /*
+   * do we have text-remove and text-insert signals if not we need to use
+   * text-changed see nsAccessibleWrap::FireAtkTextChangedEvent() and
+   * bug 619002
+   */
+  enum EAvailableAtkSignals {
+    eUnknown,
+    eHaveNewAtkTextSignals,
+    eNoNewAtkSignals
+  };
+
+  static EAvailableAtkSignals gAvailableAtkSignals;
+
     PRUint16 CreateMaiInterfaces(void);
 };
 

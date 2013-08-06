@@ -11,7 +11,10 @@
 do_load_httpd_js();
 Cu.import("resource://gre/modules/Services.jsm");
 
-const PATH = "/submit/telemetry/test-ping"
+const PATH = "/submit/telemetry/test-ping";
+const SERVER = "http://localhost:4444";
+const IGNORE_HISTOGRAM = "test::ignore_me";
+
 const BinaryInputStream = Components.Constructor(
   "@mozilla.org/binaryinputstream;1",
   "nsIBinaryInputStream",
@@ -20,22 +23,32 @@ const BinaryInputStream = Components.Constructor(
 var httpserver = new nsHttpServer();
 
 function telemetry_ping () {
-  let tp = Cc["@mozilla.org/base/telemetry-ping;1"].getService(Ci.nsIObserver);
-  tp.observe(tp, "test-ping", "http://localhost:4444");
+  const TelemetryPing = Cc["@mozilla.org/base/telemetry-ping;1"].getService(Ci.nsIObserver);
+  TelemetryPing.observe(null, "test-ping", SERVER);
+}
+
+function nonexistentServerObserver(aSubject, aTopic, aData) {
+  Services.obs.removeObserver(nonexistentServerObserver, aTopic);
+
+  httpserver.start(4444);
+
+  // Provide a dummy function so it returns 200 instead of 404 to telemetry.
+  httpserver.registerPathHandler(PATH, function () {});
+  Services.obs.addObserver(telemetryObserver, "telemetry-test-xhr-complete", false);
+  telemetry_ping();
 }
 
 function telemetryObserver(aSubject, aTopic, aData) {
   Services.obs.removeObserver(telemetryObserver, aTopic);
   httpserver.registerPathHandler(PATH, checkHistograms);
+  const Telemetry = Cc["@mozilla.org/base/telemetry;1"].getService(Ci.nsITelemetry);
+  Telemetry.newHistogram(IGNORE_HISTOGRAM, 1, 2, 3, Telemetry.HISTOGRAM_BOOLEAN);
   telemetry_ping();
 }
 
 function run_test() {
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
-  httpserver.start(4444);
-
-  Services.obs.addObserver(telemetryObserver, "telemetry-test-xhr-complete", false);
-
+  Services.obs.addObserver(nonexistentServerObserver, "telemetry-test-xhr-complete", false);
   telemetry_ping();
   // spin the event loop
   do_test_pending();
@@ -55,35 +68,36 @@ function checkHistograms(request, response) {
   let payload = Cc["@mozilla.org/dom/json;1"].createInstance(Ci.nsIJSON)
                                              .decode(readBytesFromInputStream(s))
 
-  do_check_true(payload.info.uptime >= 0)
+  do_check_eq(request.getHeader("content-type"), "application/json; charset=UTF-8");
+  do_check_true(payload.simpleMeasurements.uptime >= 0)
 
   // get rid of the non-deterministic field
-  payload.info.uptime = 0;
   const expected_info = {
-    uptime: 0,
     reason: "test-ping",
     OS: "XPCShell", 
-    XPCOMABI: "noarch-spidermonkey", 
-    ID: "xpcshell@tests.mozilla.org", 
-    version: "1", 
-    name: "XPCShell", 
+    appID: "xpcshell@tests.mozilla.org", 
+    appVersion: "1", 
+    appName: "XPCShell", 
     appBuildID: "2007010101",
     platformBuildID: "2007010101"
   };
 
-  do_check_eq(uneval(payload.info), 
-              uneval(expected_info));
+  for (let f in expected_info) {
+    do_check_eq(payload.info[f], expected_info[f]);
+  }
 
-  const TELEMETRY_PING = "telemetry.ping (ms)";
-  const TELEMETRY_SUCCESS = "telemetry.success (No, Yes)";
-  do_check_true(TELEMETRY_PING in payload.histograms)
+  const TELEMETRY_PING = "TELEMETRY_PING";
+  const TELEMETRY_SUCCESS = "TELEMETRY_SUCCESS";
+  do_check_true(TELEMETRY_PING in payload.histograms);
+  do_check_false(IGNORE_HISTOGRAM in payload.histograms);
 
-  // There should be one successful report from the previos telemetry ping
+  // There should be one successful report from the previous telemetry ping.
   const expected_tc = {
     range: [1, 2],
     bucket_count: 3,
-    histogram_type: 1,
-    values: {1:0, 2:1}
+    histogram_type: 2,
+    values: {0:1, 1:1, 2:0},
+    sum: 1
   }
   let tc = payload.histograms[TELEMETRY_SUCCESS]
   do_check_eq(uneval(tc), 

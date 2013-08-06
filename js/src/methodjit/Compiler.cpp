@@ -120,9 +120,6 @@ mjit::Compiler::Compiler(JSContext *cx, StackFrame *fp)
 #endif
     oomInVector(false),
     applyTricks(NoApplyTricks)
-#if defined DEBUG
-    ,pcProfile(NULL)
-#endif
 {
 }
 
@@ -200,15 +197,6 @@ mjit::Compiler::performCompilation(JITScript **jitp)
         jumpMap[i] = Label();
 #endif
 
-#if defined(JS_METHODJIT_SPEW) && defined(DEBUG)
-    if (IsJaegerSpewChannelActive(JSpew_PCProf)) {
-        pcProfile = (int *)cx->malloc_(sizeof(int) * script->length);
-        if (!pcProfile)
-            return Compile_Error;
-        memset(pcProfile, 0, script->length * sizeof(int));
-    }
-#endif
-    
 #ifdef JS_METHODJIT_SPEW
     Profiler prof;
     prof.start();
@@ -231,12 +219,6 @@ mjit::Compiler::performCompilation(JITScript **jitp)
     CHECK_STATUS(generateEpilogue());
     CHECK_STATUS(finishThisUp(jitp));
 
-#if defined(JS_METHODJIT_SPEW) && defined(DEBUG)
-    /* Transfer ownership to JITScript */
-    (*jitp)->pcProfile = pcProfile;
-    pcProfile = NULL;
-#endif
-
 #ifdef JS_METHODJIT_SPEW
     prof.stop();
     JaegerSpew(JSpew_Prof, "compilation took %d us\n", prof.time_us());
@@ -252,10 +234,6 @@ mjit::Compiler::performCompilation(JITScript **jitp)
 
 mjit::Compiler::~Compiler()
 {
-#ifdef DEBUG
-    if (pcProfile)
-        cx->free_(pcProfile);
-#endif
     cx->free_(jumpMap);
     cx->free_(savedTraps);
 }
@@ -269,6 +247,9 @@ mjit::TryCompile(JSContext *cx, StackFrame *fp)
     if (fp->script()->hasSharps)
         return Compile_Abort;
 #endif
+    bool ok = cx->compartment->ensureJaegerCompartmentExists(cx);
+    if (!ok)
+        return Compile_Abort;
 
     // Ensure that constructors have at least one slot.
     if (fp->isConstructing() && !fp->script()->nslots)
@@ -398,8 +379,10 @@ mjit::Compiler::generatePrologue()
     if (isConstructing)
         constructThis();
 
-    if (debugMode() || Probes::callTrackingActive(cx))
+    if (debugMode())
         INLINE_STUBCALL(stubs::ScriptDebugPrologue);
+    else if (Probes::callTrackingActive(cx))
+        INLINE_STUBCALL(stubs::ScriptProbeOnlyPrologue);
 
     return Compile_Okay;
 }
@@ -433,7 +416,7 @@ mjit::Compiler::finishThisUp(JITScript **jitp)
 
     JSC::ExecutablePool *execPool;
     uint8 *result =
-        (uint8 *)script->compartment->jaegerCompartment->execAlloc()->alloc(codeSize, &execPool);
+        (uint8 *)script->compartment->jaegerCompartment()->execAlloc()->alloc(codeSize, &execPool);
     if (!result) {
         js_ReportOutOfMemory(cx);
         return Compile_Error;
@@ -503,7 +486,7 @@ mjit::Compiler::finishThisUp(JITScript **jitp)
             analyze::Bytecode *opinfo = analysis->maybeCode(i);
             if (opinfo && opinfo->safePoint) {
                 Label L = jumpMap[i];
-                JS_ASSERT(L.isValid());
+                JS_ASSERT(L.isSet());
                 jitNmap[ix].bcOff = i;
                 jitNmap[ix].ncode = (uint8 *)(result + masm.distanceOf(L));
                 ix++;
@@ -625,7 +608,7 @@ mjit::Compiler::finishThisUp(JITScript **jitp)
     cursor += sizeof(ic::EqualityICInfo) * jit->nEqualityICs;
     for (size_t i = 0; i < jit->nEqualityICs; i++) {
         uint32 offs = uint32(equalityICs[i].jumpTarget - script->code);
-        JS_ASSERT(jumpMap[offs].isValid());
+        JS_ASSERT(jumpMap[offs].isSet());
         jitEqualityICs[i].target = fullCode.locationOf(jumpMap[offs]);
         jitEqualityICs[i].stubEntry = stubCode.locationOf(equalityICs[i].stubEntry);
         jitEqualityICs[i].stubCall = stubCode.locationOf(equalityICs[i].stubCall);
@@ -650,7 +633,7 @@ mjit::Compiler::finishThisUp(JITScript **jitp)
             continue;
 
         uint32 offs = uint32(traceICs[i].jumpTarget - script->code);
-        JS_ASSERT(jumpMap[offs].isValid());
+        JS_ASSERT(jumpMap[offs].isSet());
         jitTraceICs[i].traceHint = fullCode.locationOf(traceICs[i].traceHint);
         jitTraceICs[i].jumpTarget = fullCode.locationOf(jumpMap[offs]);
         jitTraceICs[i].stubEntry = stubCode.locationOf(traceICs[i].stubEntry);
@@ -768,7 +751,8 @@ mjit::Compiler::finishThisUp(JITScript **jitp)
         if (pics[i].kind == ic::PICInfo::SET ||
             pics[i].kind == ic::PICInfo::SETMETHOD) {
             jitPics[i].u.vr = pics[i].vr;
-        } else if (pics[i].kind != ic::PICInfo::NAME) {
+        } else if (pics[i].kind != ic::PICInfo::NAME &&
+                   pics[i].kind != ic::PICInfo::CALLNAME) {
             if (pics[i].hasTypeCheck) {
                 int32 distance = stubcc.masm.distanceOf(pics[i].typeCheck) -
                                  stubcc.masm.distanceOf(pics[i].slowPathStart);
@@ -800,7 +784,7 @@ mjit::Compiler::finishThisUp(JITScript **jitp)
 
     for (size_t i = 0; i < jumpTableOffsets.length(); i++) {
         uint32 offset = jumpTableOffsets[i];
-        JS_ASSERT(jumpMap[offset].isValid());
+        JS_ASSERT(jumpMap[offset].isSet());
         jumpVec[i] = (void *)(result + masm.distanceOf(jumpMap[offset]));
     }
 
@@ -833,9 +817,6 @@ mjit::Compiler::finishThisUp(JITScript **jitp)
     JS_ASSERT(size_t(cursor - (uint8*)jit) == dataSize);
 
     *jitp = jit;
-
-    /* We tolerate a race in the stats. */
-    cx->runtime->mjitDataSize += dataSize;
 
     return Compile_Okay;
 }
@@ -901,24 +882,6 @@ mjit::Compiler::generateMethod()
         JSOp op = JSOp(*PC);
         int trap = stubs::JSTRAP_NONE;
         if (op == JSOP_TRAP) {
-
-#if defined(JS_METHODJIT_SPEW) && defined(DEBUG)
-        if (IsJaegerSpewChannelActive(JSpew_PCProf)) {
-            RegisterID r1 = frame.allocReg();
-            RegisterID r2 = frame.allocReg();
-
-            if (IsJaegerSpewChannelActive(JSpew_PCProf)) {
-                masm.move(ImmPtr(pcProfile), r1);
-                Address pcCounter(r1, sizeof(int) * (PC - script->code));
-                masm.load32(pcCounter, r2);
-                masm.add32(Imm32(1), r2);
-                masm.store32(r2, pcCounter);
-            }
-
-            frame.freeReg(r1);
-            frame.freeReg(r2);
-        }
-#endif
             if (!trapper.untrap(PC))
                 return Compile_Error;
             op = JSOp(*PC);
@@ -926,6 +889,20 @@ mjit::Compiler::generateMethod()
         }
         if (script->singleStepMode && scanner.firstOpInLine(PC - script->code))
             trap |= stubs::JSTRAP_SINGLESTEP;
+
+        if (cx->hasRunOption(JSOPTION_PCCOUNT) && script->pcCounters) {
+            RegisterID r1 = frame.allocReg();
+            RegisterID r2 = frame.allocReg();
+
+            masm.move(ImmPtr(&script->pcCounters.get(JSRUNMODE_METHODJIT, PC - script->code)), r1);
+            Address pcCounter(r1);
+            masm.load32(pcCounter, r2);
+            masm.add32(Imm32(1), r2);
+            masm.store32(r2, pcCounter);
+
+            frame.freeReg(r1);
+            frame.freeReg(r2);
+        }
 
         analyze::Bytecode *opinfo = analysis->maybeCode(PC);
 
@@ -1220,7 +1197,7 @@ mjit::Compiler::generateMethod()
             FrameEntry *top = frame.peek(-1);
             if (top->isConstant() && top->getValue().isPrimitive()) {
                 int32_t i;
-                ValueToECMAInt32(cx, top->getValue(), &i);
+                JS_ALWAYS_TRUE(ValueToECMAInt32(cx, top->getValue(), &i));
                 i = ~i;
                 frame.pop();
                 frame.push(Int32Value(i));
@@ -1235,7 +1212,7 @@ mjit::Compiler::generateMethod()
             FrameEntry *top = frame.peek(-1);
             if (top->isConstant() && top->getValue().isPrimitive()) {
                 double d;
-                ValueToNumber(cx, top->getValue(), &d);
+                JS_ALWAYS_TRUE(ValueToNumber(cx, top->getValue(), &d));
                 d = -d;
                 frame.pop();
                 frame.push(NumberValue(d));
@@ -1419,14 +1396,6 @@ mjit::Compiler::generateMethod()
           }
           END_CASE(JSOP_SETELEM);
 
-          BEGIN_CASE(JSOP_CALLNAME)
-            prepareStubCall(Uses(0));
-            masm.move(Imm32(fullAtomIndex(PC)), Registers::ArgReg1);
-            INLINE_STUBCALL(stubs::CallName);
-            frame.pushSynced();
-            frame.pushSynced();
-          END_CASE(JSOP_CALLNAME)
-
           BEGIN_CASE(JSOP_EVAL)
           {
             JaegerSpew(JSpew_Insns, " --- EVAL --- \n");
@@ -1446,8 +1415,12 @@ mjit::Compiler::generateMethod()
           END_CASE(JSOP_CALL)
 
           BEGIN_CASE(JSOP_NAME)
-            jsop_name(script->getAtom(fullAtomIndex(PC)));
+            jsop_name(script->getAtom(fullAtomIndex(PC)), false);
           END_CASE(JSOP_NAME)
+
+          BEGIN_CASE(JSOP_CALLNAME)
+            jsop_name(script->getAtom(fullAtomIndex(PC)), true);
+          END_CASE(JSOP_CALLNAME)
 
           BEGIN_CASE(JSOP_DOUBLE)
           {
@@ -2089,7 +2062,7 @@ JSC::MacroAssembler::Label
 mjit::Compiler::labelOf(jsbytecode *pc)
 {
     uint32 offs = uint32(pc - script->code);
-    JS_ASSERT(jumpMap[offs].isValid());
+    JS_ASSERT(jumpMap[offs].isSet());
     return jumpMap[offs];
 }
 
@@ -2903,8 +2876,8 @@ mjit::Compiler::compareTwoValues(JSContext *cx, JSOp op, const Value &lhs, const
         double ld, rd;
         
         /* These should be infallible w/ primitives. */
-        ValueToNumber(cx, lhs, &ld);
-        ValueToNumber(cx, rhs, &rd);
+        JS_ALWAYS_TRUE(ValueToNumber(cx, lhs, &ld));
+        JS_ALWAYS_TRUE(ValueToNumber(cx, rhs, &rd));
         switch(op) {
           case JSOP_LT:
             return ld < rd;
@@ -3551,9 +3524,9 @@ mjit::Compiler::jsop_setprop(JSAtom *atom, bool usePropCache)
 }
 
 void
-mjit::Compiler::jsop_name(JSAtom *atom)
+mjit::Compiler::jsop_name(JSAtom *atom, bool isCall)
 {
-    PICGenInfo pic(ic::PICInfo::NAME, JSOp(*PC), true);
+    PICGenInfo pic(isCall ? ic::PICInfo::CALLNAME : ic::PICInfo::NAME, JSOp(*PC), true);
 
     RESERVE_IC_SPACE(masm);
 
@@ -3572,7 +3545,7 @@ mjit::Compiler::jsop_name(JSAtom *atom)
         pic.slowPathStart = stubcc.linkExit(inlineJump, Uses(0));
         stubcc.leave();
         passICAddress(&pic);
-        pic.slowPathCall = OOL_STUBCALL(ic::Name);
+        pic.slowPathCall = OOL_STUBCALL(isCall ? ic::CallName : ic::Name);
         CHECK_OOL_SPACE();
     }
     pic.fastPathRejoin = masm.label();
@@ -3582,8 +3555,10 @@ mjit::Compiler::jsop_name(JSAtom *atom)
     labels.setInlineJump(masm, pic.fastPathStart, inlineJump);
 
     frame.pushRegs(pic.shapeReg, pic.objReg);
+    if (isCall)
+        frame.pushSynced();
 
-    stubcc.rejoin(Changes(1));
+    stubcc.rejoin(Changes(isCall ? 2 : 1));
 
     pics.append(pic);
 }
@@ -3692,11 +3667,13 @@ mjit::Compiler::jsop_bindname(JSAtom *atom, bool usePropCache)
 #else /* !JS_POLYIC */
 
 void
-mjit::Compiler::jsop_name(JSAtom *atom)
+mjit::Compiler::jsop_name(JSAtom *atom, bool isCall)
 {
     prepareStubCall(Uses(0));
-    INLINE_STUBCALL(stubs::Name);
+    INLINE_STUBCALL(isCall ? stubs::CallName : stubs::Name);
     frame.pushSynced();
+    if (isCall)
+        frame.pushSynced();
 }
 
 bool
@@ -3881,7 +3858,7 @@ mjit::Compiler::jsop_nameinc(JSOp op, VoidStubAtom stub, uint32 index)
     if (pop || (op == JSOP_INCNAME || op == JSOP_DECNAME)) {
         /* These cases are easy, the original value is not observed. */
 
-        jsop_name(atom);
+        jsop_name(atom, false);
         // V
 
         frame.push(Int32Value(amt));
@@ -3912,7 +3889,7 @@ mjit::Compiler::jsop_nameinc(JSOp op, VoidStubAtom stub, uint32 index)
     } else {
         /* The pre-value is observed, making this more tricky. */
 
-        jsop_name(atom);
+        jsop_name(atom, false);
         // V
 
         jsop_pos();

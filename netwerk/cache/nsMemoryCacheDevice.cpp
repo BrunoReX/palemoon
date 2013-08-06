@@ -69,7 +69,8 @@ nsMemoryCacheDevice::nsMemoryCacheDevice()
       mTotalSize(0),
       mInactiveSize(0),
       mEntryCount(0),
-      mMaxEntryCount(0)
+      mMaxEntryCount(0),
+      mMaxEntrySize(-1) // -1 means "no limit"
 {
     for (int i=0; i<kQueueCount; ++i)
         PR_INIT_CLIST(&mEvictionList[i]);
@@ -297,7 +298,13 @@ nsMemoryCacheDevice::GetFileForEntry( nsCacheEntry *    entry,
 bool
 nsMemoryCacheDevice::EntryIsTooBig(PRInt64 entrySize)
 {
-    return entrySize > mSoftLimit;
+    CACHE_LOG_DEBUG(("nsMemoryCacheDevice::EntryIsTooBig "
+                     "[size=%d max=%d soft=%d]\n",
+                     entrySize, mMaxEntrySize, mSoftLimit));
+    if (mMaxEntrySize == -1)
+        return entrySize > mSoftLimit;
+    else
+        return (entrySize > mSoftLimit || entrySize > mMaxEntrySize);
 }
 
 
@@ -405,9 +412,9 @@ nsMemoryCacheDevice::EvictionList(nsCacheEntry * entry, PRInt32  deltaSize)
     // compute which eviction queue this entry should go into,
     // based on floor(log2(size/nref))
     PRInt32  size       = deltaSize + (PRInt32)entry->Size();
-    PRInt32  fetchCount = PR_MAX(1, entry->FetchCount());
+    PRInt32  fetchCount = NS_MAX(1, entry->FetchCount());
 
-    return PR_MIN(PR_FloorLog2(size / fetchCount), kQueueCount - 1);
+    return NS_MIN(PR_FloorLog2(size / fetchCount), kQueueCount - 1);
 }
 
 
@@ -488,6 +495,16 @@ nsMemoryCacheDevice::SetCapacity(PRInt32  capacity)
     AdjustMemoryLimits(softLimit, hardLimit);
 }
 
+void
+nsMemoryCacheDevice::SetMaxEntrySize(PRInt32 maxSizeInKilobytes)
+{
+    // Internal unit is bytes. Changing this only takes effect *after* the
+    // change and has no consequences for existing cache-entries
+    if (maxSizeInKilobytes >= 0)
+        mMaxEntrySize = maxSizeInKilobytes * 1024;
+    else
+        mMaxEntrySize = -1;
+}
 
 #ifdef DEBUG
 static PLDHashOperator

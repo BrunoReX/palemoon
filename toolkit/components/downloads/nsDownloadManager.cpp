@@ -1851,25 +1851,32 @@ nsDownloadManager::OnEndUpdateBatch()
 NS_IMETHODIMP
 nsDownloadManager::OnVisit(nsIURI *aURI, PRInt64 aVisitID, PRTime aTime,
                            PRInt64 aSessionID, PRInt64 aReferringID,
-                           PRUint32 aTransitionType, PRUint32 *aAdded)
+                           PRUint32 aTransitionType, const nsACString& aGUID,
+                           PRUint32 *aAdded)
 {
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsDownloadManager::OnTitleChanged(nsIURI *aURI, const nsAString &aPageTitle)
+nsDownloadManager::OnTitleChanged(nsIURI *aURI,
+                                  const nsAString &aPageTitle,
+                                  const nsACString &aGUID)
 {
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsDownloadManager::OnBeforeDeleteURI(nsIURI *aURI)
+nsDownloadManager::OnBeforeDeleteURI(nsIURI *aURI,
+                                     const nsACString& aGUID,
+                                     PRUint16 aReason)
 {
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsDownloadManager::OnDeleteURI(nsIURI *aURI)
+nsDownloadManager::OnDeleteURI(nsIURI *aURI,
+                               const nsACString& aGUID,
+                               PRUint16 aReason)
 {
   return RemoveDownloadsForURI(aURI);
 }
@@ -1881,14 +1888,18 @@ nsDownloadManager::OnClearHistory()
 }
 
 NS_IMETHODIMP
-nsDownloadManager::OnPageChanged(nsIURI *aURI, PRUint32 aWhat,
-                                 const nsAString &aValue)
+nsDownloadManager::OnPageChanged(nsIURI *aURI,
+                                 PRUint32 aChangedAttribute,
+                                 const nsAString& aNewValue,
+                                 const nsACString &aGUID)
 {
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsDownloadManager::OnDeleteVisits(nsIURI *aURI, PRTime aVisitTime)
+nsDownloadManager::OnDeleteVisits(nsIURI *aURI, PRTime aVisitTime,
+                                  const nsACString& aGUID,
+                                  PRUint16 aReason)
 {
   // Don't bother removing downloads until the page is removed.
   return NS_OK;

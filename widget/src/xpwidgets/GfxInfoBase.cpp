@@ -50,7 +50,6 @@
 #include "nsIObserverService.h"
 #include "nsIDOMElement.h"
 #include "nsIDOMNode.h"
-#include "nsIDOM3Node.h"
 #include "nsIDOMNodeList.h"
 #include "nsTArray.h"
 #include "mozilla/Preferences.h"
@@ -197,13 +196,14 @@ RemovePrefForFeature(PRInt32 aFeature)
 static bool
 GetPrefValueForDriverVersion(nsCString& aVersion)
 {
-  return NS_SUCCEEDED(Preferences::GetChar(SUGGESTED_VERSION_PREF, &aVersion));
+  return NS_SUCCEEDED(Preferences::GetCString(SUGGESTED_VERSION_PREF,
+                                              &aVersion));
 }
 
 static void
-SetPrefValueForDriverVersion(const nsString& aVersion)
+SetPrefValueForDriverVersion(const nsAString& aVersion)
 {
-  Preferences::SetChar(SUGGESTED_VERSION_PREF, aVersion);
+  Preferences::SetString(SUGGESTED_VERSION_PREF, aVersion);
 }
 
 static void
@@ -216,12 +216,8 @@ RemovePrefForDriverVersion()
 static bool
 BlacklistNodeToTextValue(nsIDOMNode *aBlacklistNode, nsAString& aValue)
 {
-  nsCOMPtr<nsIDOM3Node> dom3 = do_QueryInterface(aBlacklistNode);
-  if (!dom3)
-    return false;
-
   nsAutoString value;
-  if (NS_FAILED(dom3->GetTextContent(value)))
+  if (NS_FAILED(aBlacklistNode->GetTextContent(value)))
     return false;
 
   value.Trim(" \t\r\n");
@@ -669,7 +665,7 @@ NS_IMETHODIMP GfxInfoBase::GetFailures(PRUint32 *failureCount NS_OUTPARAM, char 
 
     /* copy over the failure messages into the array we just allocated */
     for (PRUint32 i = 0; i < *failureCount; i++) {
-      nsPromiseFlatCString flattenedFailureMessage(mFailures[i]);
+      nsCString& flattenedFailureMessage(mFailures[i]);
       (*failures)[i] = (char*)nsMemory::Clone(flattenedFailureMessage.get(), flattenedFailureMessage.Length() + 1);
 
       if (!(*failures)[i]) {

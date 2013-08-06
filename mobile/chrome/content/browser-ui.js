@@ -39,6 +39,7 @@
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/AddonManager.jsm");
 
 [
   ["AllPagesList", "popup_autocomplete", "cmd_openLocation"],
@@ -297,8 +298,8 @@ var BrowserUI = {
     if (this._activePanel)
       this._activePanel.close();
 
-    // The readOnly state of the field enabled/disabled the VKB
-    let isReadOnly = !(aPanel == AllPagesList && Util.isPortrait() && (willShowPanel || !this._edit.readOnly));
+    // If the keyboard will cover the full screen, we do not want to show it right away.
+    let isReadOnly = (aPanel != AllPagesList || this._isKeyboardFullscreen() || (!willShowPanel && this._edit.readOnly));
     this._edit.readOnly = isReadOnly;
     if (isReadOnly)
       this._edit.blur();
@@ -353,6 +354,24 @@ var BrowserUI = {
       return;
     this._popup = null;
     this._dispatchPopupChanged(false);
+  },
+
+  // Will the on-screen keyboard cover the whole screen when opened?
+  _isKeyboardFullscreen: function _isKeyboardFullscreen() {
+#ifdef ANDROID
+    if (!Util.isPortrait()) {
+      switch (Services.prefs.getIntPref("widget.ime.android.landscape_fullscreen")) {
+        case 1:
+          return true;
+        case -1: {
+          let threshold = Services.prefs.getIntPref("widget.ime.android.fullscreen_threshold");
+          let dpi = Util.displayDPI;
+          return (window.innerHeight * 100 < threshold * dpi);
+        }
+      }
+    }
+#endif
+    return false;
   },
 
   _dispatchPopupChanged: function _dispatchPopupChanged(aVisible) {
@@ -513,9 +532,11 @@ var BrowserUI = {
       DownloadsView.init();
       ConsoleView.init();
 
-      // Pre-start the content process
-      Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime)
-          .ensureContentProcess();
+      if (Services.prefs.getBoolPref("browser.tabs.remote")) {
+          // Pre-start the content process
+          Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime)
+                                           .ensureContentProcess();
+      }
 
 #ifdef MOZ_SERVICES_SYNC
       // Init the sync system
@@ -535,17 +556,14 @@ var BrowserUI = {
       CharsetMenu.init();
 
       // If some add-ons were disabled during during an application update, alert user
-      if (Services.prefs.prefHasUserValue("extensions.disabledAddons")) {
-        let addons = Services.prefs.getCharPref("extensions.disabledAddons").split(",");
-        if (addons.length > 0) {
-          let disabledStrings = Strings.browser.GetStringFromName("alertAddonsDisabled");
-          let label = PluralForm.get(addons.length, disabledStrings).replace("#1", addons.length);
-          let image = "chrome://browser/skin/images/alert-addons-30.png";
+      let addonIDs = AddonManager.getStartupChanges("disabled");
+      if (addonIDs.length > 0) {
+        let disabledStrings = Strings.browser.GetStringFromName("alertAddonsDisabled");
+        let label = PluralForm.get(addonIDs.length, disabledStrings).replace("#1", addonIDs.length);
+        let image = "chrome://browser/skin/images/alert-addons-30.png";
 
-          let alerts = Cc["@mozilla.org/toaster-alerts-service;1"].getService(Ci.nsIAlertsService);
-          alerts.showAlertNotification(image, Strings.browser.GetStringFromName("alertAddons"), label, false, "", null);
-        }
-        Services.prefs.clearUserPref("extensions.disabledAddons");
+        let alerts = Cc["@mozilla.org/toaster-alerts-service;1"].getService(Ci.nsIAlertsService);
+        alerts.showAlertNotification(image, Strings.browser.GetStringFromName("alertAddons"), label, false, "", null);
       }
 
 #ifdef MOZ_UPDATER

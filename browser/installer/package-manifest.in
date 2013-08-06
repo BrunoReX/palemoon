@@ -63,7 +63,15 @@
 @BINPATH@/@MOZ_CHILD_PROCESS_NAME@
 #endif
 #ifdef XP_WIN32
-#ifndef MOZ_MEMORY
+#ifdef MOZ_MEMORY
+#ifdef WIN32_OLD_STYLE_JEMALLOC
+@BINPATH@/mozcrt19.dll
+@BINPATH@/mozcpp19.dll
+#else
+@BINPATH@/jemalloc.dll
+#endif
+#endif
+#else
 #if _MSC_VER == 1400
 @BINPATH@/Microsoft.VC80.CRT.manifest
 @BINPATH@/msvcm80.dll
@@ -78,10 +86,7 @@
 @BINPATH@/msvcp100.dll
 @BINPATH@/msvcr100.dll
 #endif
-#else
-@BINPATH@/mozcrt19.dll
-@BINPATH@/mozcpp19.dll
-#endif
+
 #endif
 
 [browser]
@@ -138,7 +143,6 @@
 @BINPATH@/components/content_canvas.xpt
 @BINPATH@/components/content_htmldoc.xpt
 @BINPATH@/components/content_html.xpt
-@BINPATH@/components/content_xmldoc.xpt
 @BINPATH@/components/content_xslt.xpt
 @BINPATH@/components/content_xtf.xpt
 @BINPATH@/components/cookie.xpt
@@ -262,6 +266,7 @@
 @BINPATH@/components/xuldoc.xpt
 @BINPATH@/components/xultmpl.xpt
 @BINPATH@/components/zipwriter.xpt
+@BINPATH@/components/telemetry.xpt
 
 ; JavaScript components
 @BINPATH@/components/ConsoleAPI.manifest
@@ -413,10 +418,10 @@
 @BINPATH@/extensions/{972ce4c6-7e08-4474-a285-3208198ce6fd}/install.rdf
 @BINPATH@/extensions/{972ce4c6-7e08-4474-a285-3208198ce6fd}/icon.png
 @BINPATH@/extensions/{972ce4c6-7e08-4474-a285-3208198ce6fd}/preview.png
+@BINPATH@/extensions/statusbar@palemoon.org.xpi
 #ifdef SHIP_FEEDBACK
 @BINPATH@/distribution/extensions/testpilot@labs.mozilla.com.xpi
 #endif
-@BINPATH@/extensions/statusbar@palemoon.org.xpi
 @BINPATH@/chrome/toolkit@JAREXT@
 @BINPATH@/chrome/toolkit.manifest
 #ifdef XP_UNIX

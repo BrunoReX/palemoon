@@ -43,7 +43,6 @@
 #include "nsAccessNode.h"
 
 #include "nsIDocument.h"
-#include "nsIDOM3Node.h"
 #include "nsIDOMDocument.h"
 #include "nsIDOMHTMLDocument.h"
 #include "nsIDOMHTMLElement.h"
@@ -53,7 +52,7 @@
 #include "nsIDOMXULElement.h"
 #include "nsIDocShell.h"
 #include "nsIContentViewer.h"
-#include "nsIEventListenerManager.h"
+#include "nsEventListenerManager.h"
 #include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "nsIScrollableFrame.h"
@@ -63,6 +62,7 @@
 #include "nsPIDOMWindow.h"
 #include "nsGUIEvent.h"
 #include "nsIView.h"
+#include "nsLayoutUtils.h"
 
 #include "nsContentCID.h"
 #include "nsComponentManagerUtils.h"
@@ -78,7 +78,7 @@ PRBool
 nsCoreUtils::HasClickListener(nsIContent *aContent)
 {
   NS_ENSURE_TRUE(aContent, PR_FALSE);
-  nsIEventListenerManager* listenerManager =
+  nsEventListenerManager* listenerManager =
     aContent->GetListenerManager(PR_FALSE);
 
   return listenerManager &&
@@ -753,6 +753,30 @@ nsCoreUtils::IsColumnHidden(nsITreeColumn *aColumn)
                               nsAccessibilityAtoms::_true, eCaseMatters);
 }
 
+bool
+nsCoreUtils::CheckVisibilityInParentChain(nsIFrame* aFrame)
+{
+  nsIView* view = aFrame->GetClosestView();
+  if (view && !view->IsEffectivelyVisible())
+    return false;
+
+  nsIPresShell* presShell = aFrame->PresContext()->GetPresShell();
+  while (presShell) {
+    if (!presShell->IsActive()) {
+      return false;
+    }
+
+    nsIFrame* rootFrame = presShell->GetRootFrame();
+    presShell = nsnull;
+    if (rootFrame) {
+      nsIFrame* frame = nsLayoutUtils::GetCrossDocParentFrame(rootFrame);
+      if (frame) {
+        presShell = frame->PresContext()->GetPresShell();
+      }
+    }
+  }
+  return true;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsAccessibleDOMStringList

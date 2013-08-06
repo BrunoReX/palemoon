@@ -193,9 +193,7 @@ public:
 
   nsresult SetQuirkMode(PRBool aQuirkMode);
 
-#ifdef  MOZ_SVG
   nsresult SetSVGMode(PRBool aSVGMode);
-#endif
 
   nsresult SetChildLoader(mozilla::css::Loader* aChildLoader);
 
@@ -253,7 +251,6 @@ public:
                                PRUint32 aLineNumber, // for error reporting
                                nsCSSSelectorList **aSelectorList);
 
-#ifdef MOZ_CSS_ANIMATIONS
   already_AddRefed<nsCSSKeyframeRule>
   ParseKeyframeRule(const nsSubstring& aBuffer,
                     nsIURI*            aURL,
@@ -263,7 +260,6 @@ public:
                                    nsIURI* aURL, // for error reporting
                                    PRUint32 aLineNumber, // for error reporting
                                    nsTArray<float>& aSelectorList);
-#endif
 
 protected:
   class nsAutoParseCompoundProperty;
@@ -299,11 +295,9 @@ protected:
                    PRUint32 aLineNumber, nsIURI* aBaseURI,
                    nsIPrincipal* aSheetPrincipal);
   void ReleaseScanner(void);
-#ifdef MOZ_SVG
   PRBool IsSVGMode() const {
     return mScanner.IsSVGMode();
   }
-#endif
 
   PRBool GetToken(PRBool aSkipWS);
   void UngetToken();
@@ -365,11 +359,9 @@ protected:
                                   nsCSSValue& aValue);
 
   PRBool ParsePageRule(RuleAppendFunc aAppendFunc, void* aProcessData);
-#ifdef MOZ_CSS_ANIMATIONS
   PRBool ParseKeyframesRule(RuleAppendFunc aAppendFunc, void* aProcessData);
   already_AddRefed<nsCSSKeyframeRule> ParseKeyframeRule();
   PRBool ParseKeyframeSelectorList(nsTArray<float>& aSelectorList);
-#endif
 
   enum nsSelectorParsingStatus {
     // we have parsed a selector and we saw a token that cannot be
@@ -540,15 +532,11 @@ protected:
                                         nsCSSValue* aValues,
                                         size_t aNumProperties);
   PRBool ParseTransition();
-#ifdef MOZ_CSS_ANIMATIONS
   PRBool ParseAnimation();
-#endif
 
-#ifdef MOZ_SVG
   PRBool ParsePaint(nsCSSProperty aPropID);
   PRBool ParseDasharray();
   PRBool ParseMarker();
-#endif
 
   // Reused utility parsing routines
   void AppendValue(nsCSSProperty aPropID, const nsCSSValue& aValue);
@@ -801,7 +789,6 @@ CSSParserImpl::SetQuirkMode(PRBool aQuirkMode)
   return NS_OK;
 }
 
-#ifdef MOZ_SVG
 nsresult
 CSSParserImpl::SetSVGMode(PRBool aSVGMode)
 {
@@ -810,7 +797,6 @@ CSSParserImpl::SetSVGMode(PRBool aSVGMode)
   mScanner.SetSVGMode(aSVGMode);
   return NS_OK;
 }
-#endif
 
 nsresult
 CSSParserImpl::SetChildLoader(mozilla::css::Loader* aChildLoader)
@@ -825,9 +811,7 @@ CSSParserImpl::Reset()
   NS_ASSERTION(! mScannerInited, "resetting with scanner active");
   SetStyleSheet(nsnull);
   SetQuirkMode(PR_FALSE);
-#ifdef MOZ_SVG
   SetSVGMode(PR_FALSE);
-#endif // MOZ_SVG
   SetChildLoader(nsnull);
 }
 
@@ -1295,7 +1279,6 @@ CSSParserImpl::ParseSelectorString(const nsSubstring& aSelectorString,
 }
 
 
-#ifdef MOZ_CSS_ANIMATIONS
 already_AddRefed<nsCSSKeyframeRule>
 CSSParserImpl::ParseKeyframeRule(const nsSubstring&  aBuffer,
                                  nsIURI*             aURI,
@@ -1344,7 +1327,6 @@ CSSParserImpl::ParseKeyframeSelectorString(const nsSubstring& aSelectorString,
 
   return success;
 }
-#endif
 
 //----------------------------------------------------------------------
 
@@ -1576,11 +1558,9 @@ CSSParserImpl::ParseAtRule(RuleAppendFunc aAppendFunc,
     parseFunc = &CSSParserImpl::ParsePageRule;
     newSection = eCSSSection_General;
 
-#ifdef MOZ_CSS_ANIMATIONS
   } else if (mToken.mIdent.LowerCaseEqualsLiteral("-moz-keyframes")) {
     parseFunc = &CSSParserImpl::ParseKeyframesRule;
     newSection = eCSSSection_General;
-#endif
 
   } else {
     if (!NonMozillaVendorIdentifier(mToken.mIdent)) {
@@ -2312,7 +2292,6 @@ CSSParserImpl::ParsePageRule(RuleAppendFunc aAppendFunc, void* aData)
   return PR_FALSE;
 }
 
-#ifdef MOZ_CSS_ANIMATIONS
 PRBool
 CSSParserImpl::ParseKeyframesRule(RuleAppendFunc aAppendFunc, void* aData)
 {
@@ -2407,7 +2386,6 @@ CSSParserImpl::ParseKeyframeSelectorList(nsTArray<float>& aSelectorList)
     }
   }
 }
-#endif
 
 void
 CSSParserImpl::SkipUntil(PRUnichar aStopSymbol)
@@ -4587,7 +4565,6 @@ CSSParserImpl::ParseVariant(nsCSSValue& aValue,
     }
   }
 
-#ifdef  MOZ_SVG
   if (IsSVGMode() && !IsParsingCompoundProperty()) {
     // STANDARD: SVG Spec states that lengths and coordinates can be unitless
     // in which case they default to user-units (1 px = 1 user unit)
@@ -4597,7 +4574,6 @@ CSSParserImpl::ParseVariant(nsCSSValue& aValue,
       return PR_TRUE;
     }
   }
-#endif
 
   if (((aVariantMask & VARIANT_URL) != 0) &&
       eCSSToken_URL == tk->mType) {
@@ -5569,14 +5545,10 @@ CSSParserImpl::ParsePropertyByFunction(nsCSSProperty aPropID)
     return ParseMozTransformOrigin();
   case eCSSProperty_transition:
     return ParseTransition();
-#ifdef MOZ_CSS_ANIMATIONS
   case eCSSProperty_animation:
     return ParseAnimation();
-#endif
   case eCSSProperty_transition_property:
     return ParseTransitionProperty();
-
-#ifdef MOZ_SVG
   case eCSSProperty_fill:
   case eCSSProperty_stroke:
     return ParsePaint(aPropID);
@@ -5584,8 +5556,6 @@ CSSParserImpl::ParsePropertyByFunction(nsCSSProperty aPropID)
     return ParseDasharray();
   case eCSSProperty_marker:
     return ParseMarker();
-#endif
-
   default:
     NS_ABORT_IF_FALSE(PR_FALSE, "should not be called");
     return PR_FALSE;
@@ -5636,13 +5606,11 @@ CSSParserImpl::ParseSingleValueProperty(nsCSSValue& aValue,
     return PR_FALSE;
   }
 
-#ifdef MOZ_MATHML
   // We only allow 'script-level' when unsafe rules are enabled, because
   // otherwise it could interfere with rulenode optimizations if used in
   // a non-MathML-enabled document.
   if (aPropID == eCSSProperty_script_level && !mUnsafeRulesEnabled)
     return PR_FALSE;
-#endif
 
   const PRInt32 *kwtable = nsCSSProps::kKeywordTableTable[aPropID];
   switch (nsCSSProps::ValueRestrictions(aPropID)) {
@@ -8381,7 +8349,6 @@ CSSParserImpl::ParseTransition()
   return PR_TRUE;
 }
 
-#ifdef MOZ_CSS_ANIMATIONS
 PRBool
 CSSParserImpl::ParseAnimation()
 {
@@ -8399,7 +8366,7 @@ CSSParserImpl::ParseAnimation()
     // Must check 'animation-name' after 'animation-timing-function',
     // 'animation-direction', 'animation-fill-mode',
     // 'animation-iteration-count', and 'animation-play-state' since
-    // 'animation-property' accepts any keyword.
+    // 'animation-name' accepts any keyword.
     eCSSProperty_animation_name
   };
   static const PRUint32 numProps = NS_ARRAY_LENGTH(kAnimationProperties);
@@ -8432,7 +8399,6 @@ CSSParserImpl::ParseAnimation()
   }
   return PR_TRUE;
 }
-#endif
 
 PRBool
 CSSParserImpl::ParseShadowItem(nsCSSValue& aValue, PRBool aIsBoxShadow)
@@ -8582,7 +8548,6 @@ CSSParserImpl::SetDefaultNamespaceOnSelector(nsCSSSelector& aSelector)
   }
 }
 
-#ifdef MOZ_SVG
 PRBool
 CSSParserImpl::ParsePaint(nsCSSProperty aPropID)
 {
@@ -8649,7 +8614,6 @@ CSSParserImpl::ParseMarker()
   }
   return PR_FALSE;
 }
-#endif
 
 } // anonymous namespace
 
@@ -8717,14 +8681,12 @@ nsCSSParser::SetQuirkMode(PRBool aQuirkMode)
     SetQuirkMode(aQuirkMode);
 }
 
-#ifdef  MOZ_SVG
 nsresult
 nsCSSParser::SetSVGMode(PRBool aSVGMode)
 {
   return static_cast<CSSParserImpl*>(mImpl)->
     SetSVGMode(aSVGMode);
 }
-#endif
 
 nsresult
 nsCSSParser::SetChildLoader(mozilla::css::Loader* aChildLoader)
@@ -8828,7 +8790,6 @@ nsCSSParser::ParseSelectorString(const nsSubstring&  aSelectorString,
     ParseSelectorString(aSelectorString, aURI, aLineNumber, aSelectorList);
 }
 
-#ifdef MOZ_CSS_ANIMATIONS
 already_AddRefed<nsCSSKeyframeRule>
 nsCSSParser::ParseKeyframeRule(const nsSubstring& aBuffer,
                                nsIURI*            aURI,
@@ -8848,4 +8809,3 @@ nsCSSParser::ParseKeyframeSelectorString(const nsSubstring& aSelectorString,
     ParseKeyframeSelectorString(aSelectorString, aURI, aLineNumber,
                                 aSelectorList);
 }
-#endif

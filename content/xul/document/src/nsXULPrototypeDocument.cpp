@@ -190,13 +190,20 @@ nsXULPrototypeDocument::~nsXULPrototypeDocument()
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsXULPrototypeDocument)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_0(nsXULPrototypeDocument)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsXULPrototypeDocument)
+    tmp->mPrototypeWaiters.Clear();
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsXULPrototypeDocument)
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NATIVE_MEMBER(mRoot,
                                                     nsXULPrototypeElement)
+    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mGlobalObject");
     cb.NoteXPCOMChild(static_cast<nsIScriptGlobalObject*>(tmp->mGlobalObject));
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NATIVE_MEMBER(mNodeInfoManager,
                                                     nsNodeInfoManager)
+    for (PRUint32 i = 0; i < tmp->mPrototypeWaiters.Length(); ++i) {
+        NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mPrototypeWaiters[i]");
+        cb.NoteXPCOMChild(static_cast<nsINode*>(tmp->mPrototypeWaiters[i].get()));
+    }
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsXULPrototypeDocument)
@@ -317,7 +324,11 @@ nsXULPrototypeDocument::Read(nsIObjectInputStream* aStream)
         rv |= aStream->ReadString(localName);
 
         nsCOMPtr<nsINodeInfo> nodeInfo;
+        // Using PR_UINT16_MAX here as we don't know which nodeinfos will be
+        // used for attributes and which for elements. And that doesn't really
+        // matter.
         rv |= mNodeInfoManager->GetNodeInfo(localName, prefix, namespaceURI,
+                                            PR_UINT16_MAX,
                                             getter_AddRefs(nodeInfo));
         if (!nodeInfos.AppendObject(nodeInfo))
             rv |= NS_ERROR_OUT_OF_MEMORY;
@@ -369,7 +380,8 @@ GetNodeInfos(nsXULPrototypeElement* aPrototype,
         nsAttrName* name = &aPrototype->mAttributes[i].mName;
         if (name->IsAtom()) {
             ni = aPrototype->mNodeInfo->NodeInfoManager()->
-                GetNodeInfo(name->Atom(), nsnull, kNameSpaceID_None);
+                GetNodeInfo(name->Atom(), nsnull, kNameSpaceID_None,
+                            nsIDOMNode::ATTRIBUTE_NODE);
             NS_ENSURE_TRUE(ni, NS_ERROR_OUT_OF_MEMORY);
         }
         else {
@@ -418,6 +430,13 @@ nsXULPrototypeDocument::Write(nsIObjectOutputStream* aStream)
     rv |= aStream->WriteObject(mNodeInfoManager->DocumentPrincipal(),
                                PR_TRUE);
     
+#ifdef DEBUG
+    // XXX Worrisome if we're caching things without system principal.
+    if (!nsContentUtils::IsSystemPrincipal(mNodeInfoManager->DocumentPrincipal())) {
+        NS_WARNING("Serializing document without system principal");
+    }
+#endif
+
     // nsINodeInfo table
     nsCOMArray<nsINodeInfo> nodeInfos;
     if (mRoot)

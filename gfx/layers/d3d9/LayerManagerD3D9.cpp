@@ -46,9 +46,8 @@
 #include "gfxWindowsPlatform.h"
 #include "nsIGfxInfo.h"
 #include "nsServiceManagerUtils.h"
-#include "nsIPrefService.h"
-#include "nsIPrefBranch2.h"
 #include "gfxFailure.h"
+#include "mozilla/Preferences.h"
 
 #include "gfxCrashReporterUtils.h"
 
@@ -75,15 +74,9 @@ LayerManagerD3D9::Initialize()
 {
   ScopedGfxFeatureReporter reporter("D3D9 Layers");
 
-  nsCOMPtr<nsIPrefBranch2> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
-
   /* XXX: this preference and blacklist code should move out of the layer manager */
-  PRBool forceAccelerate = PR_FALSE;
-  if (prefs) {
-    // we should use AddBoolPrefVarCache
-    prefs->GetBoolPref("layers.acceleration.force-enabled",
-                       &forceAccelerate);
-  }
+  PRBool forceAccelerate =
+    Preferences::GetBool("layers.acceleration.force-enabled", PR_FALSE);
 
   nsCOMPtr<nsIGfxInfo> gfxInfo = do_GetService("@mozilla.org/gfx/info;1");
   if (gfxInfo) {
@@ -250,6 +243,56 @@ LayerManagerD3D9::CreateImageContainer()
 {
   nsRefPtr<ImageContainer> container = new ImageContainerD3D9(device());
   return container.forget();
+}
+
+already_AddRefed<ShadowThebesLayer>
+LayerManagerD3D9::CreateShadowThebesLayer()
+{
+  if (LayerManagerD3D9::mDestroyed) {
+    NS_WARNING("Call on destroyed layer manager");
+    return nsnull;
+  }
+  return nsRefPtr<ShadowThebesLayerD3D9>(new ShadowThebesLayerD3D9(this)).forget();
+}
+
+already_AddRefed<ShadowContainerLayer>
+LayerManagerD3D9::CreateShadowContainerLayer()
+{
+  if (LayerManagerD3D9::mDestroyed) {
+    NS_WARNING("Call on destroyed layer manager");
+    return nsnull;
+  }
+  return nsRefPtr<ShadowContainerLayerD3D9>(new ShadowContainerLayerD3D9(this)).forget();
+}
+
+already_AddRefed<ShadowImageLayer>
+LayerManagerD3D9::CreateShadowImageLayer()
+{
+  if (LayerManagerD3D9::mDestroyed) {
+    NS_WARNING("Call on destroyed layer manager");
+    return nsnull;
+  }
+  return nsRefPtr<ShadowImageLayerD3D9>(new ShadowImageLayerD3D9(this)).forget();
+}
+
+already_AddRefed<ShadowColorLayer>
+LayerManagerD3D9::CreateShadowColorLayer()
+{
+  if (LayerManagerD3D9::mDestroyed) {
+    NS_WARNING("Call on destroyed layer manager");
+    return nsnull;
+  }
+  return nsRefPtr<ShadowColorLayerD3D9>(new ShadowColorLayerD3D9(this)).forget();
+}
+
+already_AddRefed<ShadowCanvasLayer>
+LayerManagerD3D9::CreateShadowCanvasLayer()
+{
+  if (LayerManagerD3D9::mDestroyed) {
+    NS_WARNING("Call on destroyed layer manager");
+    return nsnull;
+  }
+  return nsRefPtr<ShadowCanvasLayerD3D9>(new ShadowCanvasLayerD3D9(this)).forget();
 }
 
 void ReleaseTexture(void *texture)

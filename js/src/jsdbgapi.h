@@ -52,6 +52,9 @@ JS_BEGIN_EXTERN_C
 extern JS_PUBLIC_API(JSCrossCompartmentCall *)
 JS_EnterCrossCompartmentCallScript(JSContext *cx, JSScript *target);
 
+extern JS_PUBLIC_API(JSCrossCompartmentCall *)
+JS_EnterCrossCompartmentCallStackFrame(JSContext *cx, JSStackFrame *target);
+
 #ifdef __cplusplus
 JS_END_EXTERN_C
 
@@ -59,6 +62,7 @@ namespace JS {
 
 class JS_PUBLIC_API(AutoEnterScriptCompartment)
 {
+  protected:
     JSCrossCompartmentCall *call;
 
   public:
@@ -72,6 +76,12 @@ class JS_PUBLIC_API(AutoEnterScriptCompartment)
         if (call && call != reinterpret_cast<JSCrossCompartmentCall*>(1))
             JS_LeaveCrossCompartmentCall(call);
     }
+};
+
+class JS_PUBLIC_API(AutoEnterFrameCompartment) : public AutoEnterScriptCompartment
+{
+  public:
+    bool enter(JSContext *cx, JSStackFrame *target);
 };
 
 } /* namespace JS */
@@ -107,9 +117,9 @@ extern JS_PUBLIC_API(JSBool)
 JS_GetDebugMode(JSContext *cx);
 
 /*
- * Turn on/off debugging mode for a single compartment. This must be
- * called from the main thread and the compartment must be associated
- * with the main thread.
+ * Turn on/off debugging mode for a single compartment. This should only be
+ * used when no code from this compartment is running or on the stack in any
+ * thread.
  */
 JS_FRIEND_API(JSBool)
 JS_SetDebugModeForCompartment(JSContext *cx, JSCompartment *comp, JSBool debug);
@@ -216,6 +226,11 @@ JS_LineNumberToPC(JSContext *cx, JSScript *script, uintN lineno);
 
 extern JS_PUBLIC_API(jsbytecode *)
 JS_EndPC(JSContext *cx, JSScript *script);
+
+extern JS_PUBLIC_API(JSBool)
+JS_GetLinePCs(JSContext *cx, JSScript *script,
+              uintN startLine, uintN maxLines,
+              uintN* count, uintN** lines, jsbytecode*** pcs);
 
 extern JS_PUBLIC_API(uintN)
 JS_GetFunctionArgumentCount(JSContext *cx, JSFunction *fun);
@@ -574,6 +589,12 @@ JS_SetFunctionCallback(JSContext *cx, JSFunctionCallback fcb);
 extern JS_PUBLIC_API(JSFunctionCallback)
 JS_GetFunctionCallback(JSContext *cx);
 #endif /* MOZ_TRACE_JSCALLS */
+
+extern JS_PUBLIC_API(void)
+JS_DumpProfile(JSContext *cx, JSScript *script);
+
+extern JS_PUBLIC_API(void)
+JS_DumpAllProfiles(JSContext *cx);
 
 JS_END_EXTERN_C
 

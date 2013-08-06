@@ -289,6 +289,10 @@ NotificationController::WillRefresh(mozilla::TimeStamp aTime)
       return;
   }
 
+  // Process invalidation list of the document after all accessible tree
+  // modification are done.
+  mDocument->ProcessInvalidationList();
+
   // If a generic notification occurs after this point then we may be allowed to
   // process it synchronously.
   mObservingState = eRefreshObserving;
@@ -515,14 +519,14 @@ NotificationController::CoalesceTextChangeEventsFor(AccShowEvent* aTailEvent,
   if (!textEvent)
     return;
 
-  if (aTailEvent->mAccessible->GetIndexInParent() ==
-      aThisEvent->mAccessible->GetIndexInParent() + 1) {
+  if (aTailEvent->mAccessible->IndexInParent() ==
+      aThisEvent->mAccessible->IndexInParent() + 1) {
     // If tail target was inserted after this target, i.e. tail target is next
     // sibling of this target.
     aTailEvent->mAccessible->AppendTextTo(textEvent->mModifiedText);
 
-  } else if (aTailEvent->mAccessible->GetIndexInParent() ==
-             aThisEvent->mAccessible->GetIndexInParent() -1) {
+  } else if (aTailEvent->mAccessible->IndexInParent() ==
+             aThisEvent->mAccessible->IndexInParent() -1) {
     // If tail target was inserted before this target, i.e. tail target is
     // previous sibling of this target.
     nsAutoString startText;

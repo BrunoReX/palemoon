@@ -295,9 +295,8 @@ nsInProcessTabChildGlobal::InitTabChildGlobal()
   nsContentUtils::GetSecurityManager()->GetSystemPrincipal(getter_AddRefs(mPrincipal));
 
   JS_SetNativeStackQuota(cx, 128 * sizeof(size_t) * 1024);
-  JS_SetScriptStackQuota(cx, 25 * sizeof(size_t) * 1024 * 1024);
 
-  JS_SetOptions(cx, JS_GetOptions(cx) | JSOPTION_JIT | JSOPTION_ANONFUNFIX | JSOPTION_PRIVATE_IS_NSISUPPORTS);
+  JS_SetOptions(cx, JS_GetOptions(cx) | JSOPTION_JIT | JSOPTION_PRIVATE_IS_NSISUPPORTS);
   JS_SetVersion(cx, JSVERSION_LATEST);
   JS_SetErrorReporter(cx, ContentScriptErrorReporter);
 
@@ -310,7 +309,7 @@ nsInProcessTabChildGlobal::InitTabChildGlobal()
                          nsIXPConnect::FLAG_SYSTEM_GLOBAL_OBJECT;
 
   nsISupports* scopeSupports =
-    NS_ISUPPORTS_CAST(nsPIDOMEventTarget*, this);
+    NS_ISUPPORTS_CAST(nsIDOMEventTarget*, this);
   JS_SetContextPrivate(cx, scopeSupports);
 
   nsresult rv =

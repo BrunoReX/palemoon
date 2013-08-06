@@ -58,7 +58,9 @@
 #include "nsCRT.h"
 #include "nsIParserService.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/Preferences.h"
 
+using namespace mozilla;
 using namespace mozilla::dom;
 
 #define PREF_STRUCTS "converter.html2txt.structs"
@@ -206,28 +208,27 @@ nsPlainTextSerializer::Init(PRUint32 aFlags, PRUint32 aWrapColumn,
 
   if (mFlags & nsIDocumentEncoder::OutputFormatted) {
     // Get some prefs that controls how we do formatted output
-    mStructs = nsContentUtils::GetBoolPref(PREF_STRUCTS, mStructs);
+    mStructs = Preferences::GetBool(PREF_STRUCTS, mStructs);
 
     mHeaderStrategy =
-      nsContentUtils::GetIntPref(PREF_HEADER_STRATEGY, mHeaderStrategy);
+      Preferences::GetInt(PREF_HEADER_STRATEGY, mHeaderStrategy);
 
     // The quotesPreformatted pref is a temporary measure. See bug 69638.
     mQuotesPreformatted =
-      nsContentUtils::GetBoolPref("editor.quotesPreformatted",
-                                  mQuotesPreformatted);
+      Preferences::GetBool("editor.quotesPreformatted", mQuotesPreformatted);
 
     // DontWrapAnyQuotes is set according to whether plaintext mail
     // is wrapping to window width -- see bug 134439.
     // We'll only want this if we're wrapping and formatted.
     if (mFlags & nsIDocumentEncoder::OutputWrap || mWrapColumn > 0) {
       mDontWrapAnyQuotes =
-        nsContentUtils::GetBoolPref("mail.compose.wrap_to_window_width",
-                                    mDontWrapAnyQuotes);
+        Preferences::GetBool("mail.compose.wrap_to_window_width",
+                             mDontWrapAnyQuotes);
     }
   }
 
   // XXX We should let the caller pass this in.
-  if (nsContentUtils::GetBoolPref("browser.frames.enabled")) {
+  if (Preferences::GetBool("browser.frames.enabled")) {
     mFlags &= ~nsIDocumentEncoder::OutputNoFramesContent;
   }
   else {
@@ -390,10 +391,10 @@ nsPlainTextSerializer::AppendElementStart(Element* aElement,
 {
   NS_ENSURE_ARG(aElement);
 
-  mContent = aElement;
+  mElement = aElement;
 
   nsresult rv;
-  PRInt32 id = GetIdForContent(mContent);
+  PRInt32 id = GetIdForContent(mElement);
 
   PRBool isContainer = IsContainer(id);
 
@@ -406,7 +407,7 @@ nsPlainTextSerializer::AppendElementStart(Element* aElement,
     rv = DoAddLeaf(nsnull, id, EmptyString());
   }
 
-  mContent = 0;
+  mElement = nsnull;
   mOutputString = nsnull;
 
   if (id == eHTMLTag_head) {
@@ -422,10 +423,10 @@ nsPlainTextSerializer::AppendElementEnd(Element* aElement,
 {
   NS_ENSURE_ARG(aElement);
 
-  mContent = aElement;
+  mElement = aElement;
 
   nsresult rv;
-  PRInt32 id = GetIdForContent(mContent);
+  PRInt32 id = GetIdForContent(mElement);
 
   PRBool isContainer = IsContainer(id);
 
@@ -436,7 +437,7 @@ nsPlainTextSerializer::AppendElementEnd(Element* aElement,
     rv = DoCloseContainer(id);
   }
 
-  mContent = 0;
+  mElement = nsnull;
   mOutputString = nsnull;
 
   if (id == eHTMLTag_head) {
@@ -541,7 +542,7 @@ nsPlainTextSerializer::IsEnabled(PRInt32 aTag, PRBool* aReturn)
 }
 
 /**
- * aNode may be null when we're working with the DOM, but then mContent is
+ * aNode may be null when we're working with the DOM, but then mElement is
  * useable instead.
  */
 nsresult
@@ -1070,7 +1071,7 @@ nsPlainTextSerializer::DoCloseContainer(PRInt32 aTag)
 }
 
 /**
- * aNode may be null when we're working with the DOM, but then mContent is
+ * aNode may be null when we're working with the DOM, but then mElement is
  * useable instead.
  */
 nsresult
@@ -1826,8 +1827,8 @@ nsPlainTextSerializer::GetAttributeValue(const nsIParserNode* aNode,
                                          nsIAtom* aName,
                                          nsString& aValueRet)
 {
-  if (mContent) {
-    if (mContent->GetAttr(kNameSpaceID_None, aName, aValueRet)) {
+  if (mElement) {
+    if (mElement->GetAttr(kNameSpaceID_None, aName, aValueRet)) {
       return NS_OK;
     }
   }

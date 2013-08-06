@@ -42,7 +42,6 @@
 #include "nsContentUtils.h"
 #include "nsIXPConnect.h"
 #include "jsapi.h"
-#include "jsarray.h"
 #include "jsinterp.h"
 #include "nsJSUtils.h"
 #include "nsNetUtil.h"
@@ -216,9 +215,7 @@ nsFrameMessageManager::GetParamsForMessage(nsAString& aMessageName,
 
   if (argc >= 2) {
     jsval v = argv[1];
-    if (JS_TryJSON(ctx, &v)) {
-      JS_Stringify(ctx, &v, nsnull, JSVAL_NULL, JSONCreator, &aJSON);
-    }
+    JS_Stringify(ctx, &v, nsnull, JSVAL_NULL, JSONCreator, &aJSON);
   }
   return NS_OK;
 }
@@ -449,16 +446,14 @@ nsFrameMessageManager::ReceiveMessage(nsISupports* aTarget,
           JSObject* thisObject = JSVAL_TO_OBJECT(thisValue);
 
           if (!tac.enter(ctx, thisObject) ||
-              !JS_WrapValue(ctx, argv.jsval_addr()) ||
-              !JS_WrapValue(ctx, &funval))
+              !JS_WrapValue(ctx, argv.jsval_addr()))
             return NS_ERROR_UNEXPECTED;
 
           JS_CallFunctionValue(ctx, thisObject,
                                funval, 1, argv.jsval_addr(), &rval);
           if (aJSONRetVal) {
             nsString json;
-            if (JS_TryJSON(ctx, &rval) &&
-                JS_Stringify(ctx, &rval, nsnull, JSVAL_NULL,
+            if (JS_Stringify(ctx, &rval, nsnull, JSVAL_NULL,
                              JSONCreator, &json)) {
               aJSONRetVal->AppendElement(json);
             }

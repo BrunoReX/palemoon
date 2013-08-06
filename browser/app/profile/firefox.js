@@ -70,6 +70,7 @@ pref("extensions.blocklist.interval", 86400);
 pref("extensions.blocklist.level", 2);
 pref("extensions.blocklist.url", "https://addons.mozilla.org/blocklist/3/%APP_ID%/%APP_VERSION%/%PRODUCT%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/%PING_COUNT%/%TOTAL_PING_COUNT%/%DAYS_SINCE_LAST_PING%/");
 pref("extensions.blocklist.detailsURL", "https://www.mozilla.com/%LOCALE%/blocklist/");
+pref("extensions.blocklist.itemURL", "https://addons.mozilla.org/%LOCALE%/%APP%/blocked/%blockID%");
 
 pref("extensions.update.autoUpdateDefault", true);
 
@@ -164,10 +165,6 @@ pref("app.update.url", "https://aus3.mozilla.org/update/3/%PRODUCT%/%VERSION%/%B
 //pref("app.update.url.override", "");
 
 // app.update.interval is in branding section
-
-// Interval: Time before prompting the user again to restart to install the
-//           latest download (in seconds) default=1 day
-pref("app.update.nagTimer.restart", 86400);
 
 // Give the user x seconds to react before showing the big UI. default=12 hours
 pref("app.update.promptWaitTime", 43200);
@@ -300,6 +297,7 @@ pref("browser.urlbar.match.url", "@");
 pref("browser.urlbar.default.behavior", 0);
 
 pref("browser.urlbar.formatting.enabled", true);
+pref("browser.urlbar.trimURLs", true);
 
 // Number of milliseconds to wait for the http headers (and thus
 // the Content-Disposition filename) before giving up and falling back to 
@@ -569,6 +567,7 @@ pref("plugins.hide_infobar_for_missing_plugin", false);
 pref("plugins.hide_infobar_for_outdated_plugin", false);
 
 #ifdef XP_MACOSX
+pref("plugins.use_layers", false);
 pref("plugins.hide_infobar_for_carbon_failure_plugin", false);
 #endif
 
@@ -1001,8 +1000,10 @@ pref("services.sync.prefs.sync.spellchecker.dictionary", true);
 pref("services.sync.prefs.sync.xpinstall.whitelist.required", true);
 #endif
 
-// Disable the error console and inspector
+// Disable the error console
 pref("devtools.errorconsole.enabled", false);
+
+// Disable the Inspector
 pref("devtools.inspector.enabled", false);
 
 // Enable the Scratchpad tool.
@@ -1028,6 +1029,12 @@ pref("devtools.hud.loglimit.network", 200);
 pref("devtools.hud.loglimit.cssparser", 200);
 pref("devtools.hud.loglimit.exception", 200);
 pref("devtools.hud.loglimit.console", 200);
+
+// The developer tools editor configuration:
+// - tabsize: how many spaces to use when a Tab character is displayed.
+// - expandtab: expand Tab characters to spaces.
+pref("devtools.editor.tabsize", 4);
+pref("devtools.editor.expandtab", true);
 
 // Whether the character encoding menu is under the main Firefox button. This
 // preference is a string so that localizers can alter it.

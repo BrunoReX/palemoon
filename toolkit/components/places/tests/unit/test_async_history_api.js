@@ -86,13 +86,15 @@ function TitleChangedObserver(aURI,
 TitleChangedObserver.prototype = {
   __proto__: NavHistoryObserver.prototype,
   onTitleChanged: function(aURI,
-                           aTitle)
+                           aTitle,
+                           aGUID)
   {
-    do_log_info("onTitleChanged(" + aURI.spec + ", " + aTitle + ")");
+    do_log_info("onTitleChanged(" + aURI.spec + ", " + aTitle + ", " + aGUID + ")");
     if (!this.uri.equals(aURI)) {
       return;
     }
     do_check_eq(aTitle, this.expectedTitle);
+    do_check_guid_for_uri(aURI, aGUID);
     this.callback();
   },
 };
@@ -107,9 +109,11 @@ TitleChangedObserver.prototype = {
  *        being visited.
  */
 function VisitObserver(aURI,
+                       aGUID,
                        aCallback)
 {
   this.uri = aURI;
+  this.guid = aGUID;
   this.callback = aCallback;
 }
 VisitObserver.prototype = {
@@ -119,12 +123,13 @@ VisitObserver.prototype = {
                     aTime,
                     aSessionId,
                     aReferringId,
-                    aTransitionType)
+                    aTransitionType,
+                    aGUID)
   {
     do_log_info("onVisit(" + aURI.spec + ", " + aVisitId + ", " + aTime +
                 ", " + aSessionId + ", " + aReferringId + ", " +
-                aTransitionType + ")");
-    if (!this.uri.equals(aURI)) {
+                aTransitionType + ", " + aGUID + ")"); 
+    if (!this.uri.equals(aURI) || this.guid != aGUID) {
       return;
     }
     this.callback(aTime, aTransitionType);
@@ -1173,6 +1178,7 @@ function test_visit_notifies()
   // There are two observers we need to see for each visit.  One is an
   // nsINavHistoryObserver and the other is the uri-visit-saved observer topic.
   let place = {
+    guid: "abcdefghijkl",
     uri: NetUtil.newURI(TEST_DOMAIN + "test_visit_notifies"),
     visits: [
       new VisitInfo(),
@@ -1186,8 +1192,9 @@ function test_visit_notifies()
       waitForAsyncUpdates(run_next_test);
     }
   }
-  let visitObserver = new VisitObserver(place.uri, function(aVisitDate,
-                                                            aTransitionType) {
+  let visitObserver = new VisitObserver(place.uri, place.guid,
+                                        function(aVisitDate,
+                                                 aTransitionType) {
     let visit = place.visits[0];
     do_check_eq(visit.visitDate, aVisitDate);
     do_check_eq(visit.transitionType, aTransitionType);

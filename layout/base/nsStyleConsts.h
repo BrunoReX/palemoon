@@ -20,7 +20,7 @@
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
- *   Mats Palmgren <mats.palmgren@bredband.net>
+ *   Mats Palmgren <matspal@gmail.com>
  *   Jonathon Jongsma <jonathon.jongsma@collabora.co.uk>, Collabora Ltd.
  *
  * Alternatively, the contents of this file may be used under the terms of
@@ -233,9 +233,10 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_VOLUME_X_LOUD            5
 
 // See nsStyleColor
-#define NS_STYLE_COLOR_MOZ_USE_TEXT_COLOR      1
+#define NS_STYLE_COLOR_MOZ_USE_TEXT_COLOR 1
+#define NS_STYLE_COLOR_INHERIT_FROM_BODY  2  /* Can't come from CSS directly */
 #ifdef GFX_HAS_INVERT
-#define NS_STYLE_COLOR_INVERT             2
+#define NS_STYLE_COLOR_INVERT             3
 #endif
 
 // See nsStyleColor
@@ -246,7 +247,6 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_COLOR_MOZ_VISITEDHYPERLINKTEXT       -5
 #define NS_COLOR_MOZ_ACTIVEHYPERLINKTEXT        -6
 
-#ifdef MOZ_CSS_ANIMATIONS
 // See nsStyleDisplay
 #define NS_STYLE_ANIMATION_DIRECTION_NORMAL       0
 #define NS_STYLE_ANIMATION_DIRECTION_ALTERNATE    1
@@ -263,7 +263,6 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 // See nsStyleDisplay
 #define NS_STYLE_ANIMATION_PLAY_STATE_RUNNING     0
 #define NS_STYLE_ANIMATION_PLAY_STATE_PAUSED      1
-#endif
 
 // See nsStyleBackground
 #define NS_STYLE_BG_ATTACHMENT_SCROLL     0
@@ -558,11 +557,6 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_LIST_STYLE_KATAKANA              16
 #define NS_STYLE_LIST_STYLE_HIRAGANA_IROHA        17
 #define NS_STYLE_LIST_STYLE_KATAKANA_IROHA        18
-#define NS_STYLE_LIST_STYLE_OLD_LOWER_ROMAN       19
-#define NS_STYLE_LIST_STYLE_OLD_UPPER_ROMAN       20
-#define NS_STYLE_LIST_STYLE_OLD_LOWER_ALPHA       21
-#define NS_STYLE_LIST_STYLE_OLD_UPPER_ALPHA       22
-#define NS_STYLE_LIST_STYLE_OLD_DECIMAL           23
 #define NS_STYLE_LIST_STYLE_MOZ_CJK_HEAVENLY_STEM     24
 #define NS_STYLE_LIST_STYLE_MOZ_CJK_EARTHLY_BRANCH    25
 #define NS_STYLE_LIST_STYLE_MOZ_TRAD_CHINESE_INFORMAL 26
@@ -660,6 +654,11 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_TEXT_DECORATION_STYLE_DOUBLE   4
 #define NS_STYLE_TEXT_DECORATION_STYLE_WAVY     5
 #define NS_STYLE_TEXT_DECORATION_STYLE_MAX      NS_STYLE_TEXT_DECORATION_STYLE_WAVY
+
+// See nsStyleTextOverflow
+#define NS_STYLE_TEXT_OVERFLOW_CLIP     0
+#define NS_STYLE_TEXT_OVERFLOW_ELLIPSIS 1
+#define NS_STYLE_TEXT_OVERFLOW_STRING   2
 
 // See nsStyleText
 #define NS_STYLE_TEXT_TRANSFORM_NONE            0

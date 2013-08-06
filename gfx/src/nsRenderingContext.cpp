@@ -78,7 +78,7 @@ static PRInt32 FindSafeLength(const char *aString, PRUint32 aLength,
                               PRUint32 aMaxChunkLength)
 {
     // Since it's ASCII, we don't need to worry about clusters or RTL
-    return PR_MIN(aLength, aMaxChunkLength);
+    return NS_MIN(aLength, aMaxChunkLength);
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -481,7 +481,7 @@ nsRenderingContext::GetMaxChunkLength()
 {
     if (!mFontMetrics)
         return 1;
-    return PR_MIN(mFontMetrics->GetMaxStringLength(), MAX_GFX_TEXT_BUF_SIZE);
+    return NS_MIN(mFontMetrics->GetMaxStringLength(), MAX_GFX_TEXT_BUF_SIZE);
 }
 
 nscoord
@@ -540,7 +540,6 @@ nsRenderingContext::GetWidth(const PRUnichar *aString, PRUint32 aLength)
     return width;
 }
 
-#ifdef MOZ_MATHML
 nsBoundingMetrics
 nsRenderingContext::GetBoundingMetrics(const PRUnichar* aString,
                                        PRUint32 aLength)
@@ -565,7 +564,6 @@ nsRenderingContext::GetBoundingMetrics(const PRUnichar* aString,
     }
     return totalMetrics;
 }
-#endif
 
 void
 nsRenderingContext::DrawString(const char *aString, PRUint32 aLength,

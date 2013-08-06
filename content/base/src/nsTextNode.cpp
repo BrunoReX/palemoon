@@ -40,10 +40,8 @@
  */
 
 #include "nsTextNode.h"
-#include "nsIDOM3Text.h"
 #include "nsContentUtils.h"
 #include "nsIDOMEventListener.h"
-#include "nsIDOMEventTarget.h"
 #include "nsIDOMMutationEvent.h"
 #include "nsIAttribute.h"
 #include "nsIDocument.h"
@@ -142,8 +140,10 @@ NS_NewTextNode(nsIContent** aInstancePtrResult,
 }
 
 nsTextNode::nsTextNode(already_AddRefed<nsINodeInfo> aNodeInfo)
-  : nsGenericTextNode(aNodeInfo)
+  : nsGenericDOMDataNode(aNodeInfo)
 {
+  NS_ABORT_IF_FALSE(mNodeInfo->NodeType() == nsIDOMNode::TEXT_NODE,
+                    "Bad NodeType in aNodeInfo");
 }
 
 nsTextNode::~nsTextNode()
@@ -159,36 +159,9 @@ DOMCI_NODE_DATA(Text, nsTextNode)
 NS_INTERFACE_TABLE_HEAD(nsTextNode)
   NS_NODE_INTERFACE_TABLE3(nsTextNode, nsIDOMNode, nsIDOMText,
                            nsIDOMCharacterData)
-  NS_INTERFACE_MAP_ENTRY_TEAROFF(nsIDOM3Text, new nsText3Tearoff(this))
   NS_INTERFACE_MAP_ENTRIES_CYCLE_COLLECTION(nsTextNode)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(Text)
 NS_INTERFACE_MAP_END_INHERITING(nsGenericDOMDataNode)
-
-NS_IMETHODIMP
-nsTextNode::GetNodeName(nsAString& aNodeName)
-{
-  aNodeName.AssignLiteral("#text");
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsTextNode::GetNodeValue(nsAString& aNodeValue)
-{
-  return nsGenericDOMDataNode::GetNodeValue(aNodeValue);
-}
-
-NS_IMETHODIMP
-nsTextNode::SetNodeValue(const nsAString& aNodeValue)
-{
-  return nsGenericDOMDataNode::SetNodeValue(aNodeValue);
-}
-
-NS_IMETHODIMP
-nsTextNode::GetNodeType(PRUint16* aNodeType)
-{
-  *aNodeType = (PRUint16)nsIDOMNode::TEXT_NODE;
-  return NS_OK;
-}
 
 PRBool
 nsTextNode::IsNodeOfType(PRUint32 aFlags) const
@@ -240,7 +213,6 @@ nsTextNode::List(FILE* out, PRInt32 aIndent) const
   for (index = aIndent; --index >= 0; ) fputs("  ", out);
 
   fprintf(out, "Text@%p", static_cast<const void*>(this));
-  fprintf(out, " intrinsicstate=[%llx]", IntrinsicState().GetInternalValue());
   fprintf(out, " flags=[%08x]", static_cast<unsigned int>(GetFlags()));
   fprintf(out, " primaryframe=%p", static_cast<void*>(GetPrimaryFrame()));
   fprintf(out, " refcount=%d<", mRefCnt.get());

@@ -57,7 +57,7 @@ using namespace js::mjit;
 
 
 js::mjit::CompilerAllocPolicy::CompilerAllocPolicy(JSContext *cx, Compiler &compiler)
-: ContextAllocPolicy(cx),
+: TempAllocPolicy(cx),
   oomFlag(&compiler.oomInVector)
 {
 }
@@ -118,14 +118,14 @@ extern "C" void JaegerTrampolineReturn();
 extern "C" void JS_FASTCALL
 PushActiveVMFrame(VMFrame &f)
 {
-    f.entryfp->script()->compartment->jaegerCompartment->pushActiveFrame(&f);
+    f.entryfp->script()->compartment->jaegerCompartment()->pushActiveFrame(&f);
     f.regs.fp()->setNativeReturnAddress(JS_FUNC_TO_DATA_PTR(void*, JaegerTrampolineReturn));
 }
 
 extern "C" void JS_FASTCALL
 PopActiveVMFrame(VMFrame &f)
 {
-    f.entryfp->script()->compartment->jaegerCompartment->popActiveFrame();
+    f.entryfp->script()->compartment->jaegerCompartment()->popActiveFrame();
 }
 
 extern "C" void JS_FASTCALL
@@ -631,7 +631,8 @@ JaegerCompartment::Initialize()
     
     TrampolineCompiler tc(execAlloc_, &trampolines);
     if (!tc.compile()) {
-        delete execAlloc_;
+        js::Foreground::delete_(execAlloc_);
+        execAlloc_ = NULL;
         return false;
     }
 
@@ -846,12 +847,7 @@ static inline void Destroy(T &t)
 
 mjit::JITScript::~JITScript()
 {
-#if defined DEBUG && (defined JS_CPU_X86 || defined JS_CPU_X64) 
-    void *addr = code.m_code.executableAddress();
-    memset(addr, 0xcc, code.m_size);
-#endif
-
-    code.m_executablePool->release();
+    code.release();
 
 #if defined JS_POLYIC
     ic::GetElementIC *getElems_ = getElems();
@@ -877,6 +873,17 @@ mjit::JITScript::~JITScript()
     for (uint32 i = 0; i < nCallICs; i++)
         callICs_[i].releasePools();
 #endif
+}
+
+size_t
+JSScript::jitDataSize()
+{
+    size_t n = 0;
+    if (jitNormal)
+        n += jitNormal->scriptDataSize(); 
+    if (jitCtor)
+        n += jitCtor->scriptDataSize(); 
+    return n;
 }
 
 /* Please keep in sync with Compiler::finishThisUp! */
@@ -909,14 +916,6 @@ mjit::ReleaseScriptCode(JSContext *cx, JSScript *script)
     JITScript *jscr;
 
     if ((jscr = script->jitNormal)) {
-        cx->runtime->mjitDataSize -= jscr->scriptDataSize();
-#ifdef DEBUG
-        if (jscr->pcProfile) {
-            cx->free_(jscr->pcProfile);
-            jscr->pcProfile = NULL;
-        }
-#endif
-
         jscr->~JITScript();
         cx->free_(jscr);
         script->jitNormal = NULL;
@@ -924,14 +923,6 @@ mjit::ReleaseScriptCode(JSContext *cx, JSScript *script)
     }
 
     if ((jscr = script->jitCtor)) {
-        cx->runtime->mjitDataSize -= jscr->scriptDataSize();
-#ifdef DEBUG
-        if (jscr->pcProfile) {
-            cx->free_(jscr->pcProfile);
-            jscr->pcProfile = NULL;
-        }
-#endif
-
         jscr->~JITScript();
         cx->free_(jscr);
         script->jitCtor = NULL;
@@ -1026,43 +1017,4 @@ JITScript::nativeToPC(void *returnAddress) const
 
     JS_ASSERT((uint8*)ic.funGuard.executableAddress() + ic.joinPointOffset == returnAddress);
     return ic.pc;
-}
-
-#ifdef JS_METHODJIT_SPEW
-static void
-DumpProfile(JSContext *cx, JSScript *script, JITScript* jit, bool isCtor)
-{
-    JS_ASSERT(!cx->runtime->gcRunning);
-
-#ifdef DEBUG
-    if (IsJaegerSpewChannelActive(JSpew_PCProf) && jit->pcProfile) {
-        // Display hit counts for every JS code line
-        AutoArenaAllocator(&cx->tempPool);
-        Sprinter sprinter;
-        INIT_SPRINTER(cx, &sprinter, &cx->tempPool, 0);
-        js_Disassemble(cx, script, true, &sprinter, jit->pcProfile);
-        fprintf(stdout, "--- PC PROFILE %s:%d%s ---\n", script->filename, script->lineno,
-                isCtor ? " (constructor)" : "");
-        fprintf(stdout, "%s\n", sprinter.base);
-        fprintf(stdout, "--- END PC PROFILE %s:%d%s ---\n", script->filename, script->lineno,
-                isCtor ? " (constructor)" : "");
-    }
-#endif
-}
-#endif
-
-void
-mjit::DumpAllProfiles(JSContext *cx)
-{
-#ifdef JS_METHODJIT_SPEW
-    for (JSScript *script = (JSScript *) JS_LIST_HEAD(&cx->compartment->scripts);
-         script != (JSScript *) &cx->compartment->scripts;
-         script = (JSScript *) JS_NEXT_LINK((JSCList *)script))
-    {
-        if (script->jitCtor)
-            DumpProfile(cx, script, script->jitCtor, true);
-        if (script->jitNormal)
-            DumpProfile(cx, script, script->jitNormal, false);
-    }
-#endif
 }

@@ -51,9 +51,7 @@ class nsIPrincipal;
 class nsIURI;
 struct nsCSSSelectorList;
 class nsMediaList;
-#ifdef MOZ_CSS_ANIMATIONS
 class nsCSSKeyframeRule;
-#endif
 
 namespace mozilla {
 namespace css {
@@ -88,10 +86,8 @@ public:
   // Set whether or not to emulate Nav quirks
   nsresult SetQuirkMode(PRBool aQuirkMode);
 
-#ifdef  MOZ_SVG
   // Set whether or not we are in an SVG element
   nsresult SetSVGMode(PRBool aSVGMode);
-#endif
 
   // Set loader to use for child sheets
   nsresult SetChildLoader(mozilla::css::Loader* aChildLoader);
@@ -192,7 +188,6 @@ public:
                                PRUint32            aLineNumber,
                                nsCSSSelectorList** aSelectorList);
 
-#ifdef MOZ_CSS_ANIMATIONS
   /*
    * Parse a keyframe rule (which goes inside an @keyframes rule).
    * Return it if the parse was successful.
@@ -210,7 +205,6 @@ public:
                                    nsIURI*            aURL,
                                    PRUint32           aLineNumber,
                                    nsTArray<float>&   aSelectorList);
-#endif
 
 protected:
   // This is a CSSParserImpl*, but if we expose that type name in this

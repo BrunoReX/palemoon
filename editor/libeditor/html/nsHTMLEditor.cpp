@@ -168,11 +168,6 @@ nsHTMLEditor::~nsHTMLEditor()
   // free any default style propItems
   RemoveAllDefaultProperties();
 
-  while (mStyleSheetURLs.Length())
-  {
-    RemoveOverrideStyleSheet(mStyleSheetURLs[0]);
-  }
-
   if (mLinkHandler && mDocWeak)
   {
     nsCOMPtr<nsIPresShell> ps = GetPresShell();
@@ -359,6 +354,11 @@ nsHTMLEditor::PreDestroy(PRBool aDestroyingFrames)
     document->RemoveMutationObserver(this);
   }
 
+  while (mStyleSheetURLs.Length())
+  {
+    RemoveOverrideStyleSheet(mStyleSheetURLs[0]);
+  }
+
   return nsPlaintextEditor::PreDestroy(aDestroyingFrames);
 }
 
@@ -443,11 +443,9 @@ nsresult
 nsHTMLEditor::CreateEventListeners()
 {
   // Don't create the handler twice
-  if (mEventListener)
-    return NS_OK;
-  mEventListener = do_QueryInterface(
-    static_cast<nsIDOMKeyListener*>(new nsHTMLEditorEventListener()));
-  NS_ENSURE_TRUE(mEventListener, NS_ERROR_OUT_OF_MEMORY);
+  if (!mEventListener) {
+    mEventListener = new nsHTMLEditorEventListener();
+  }
   return NS_OK;
 }
 
@@ -473,10 +471,9 @@ nsHTMLEditor::RemoveEventListeners()
     return;
   }
 
-  nsCOMPtr<nsPIDOMEventTarget> piTarget = GetPIDOMEventTarget();
-  nsCOMPtr<nsIDOMEventTarget> target = do_QueryInterface(piTarget);
+  nsCOMPtr<nsIDOMEventTarget> target = GetDOMEventTarget();
 
-  if (piTarget && target)
+  if (target)
   {
     // Both mMouseMotionListenerP and mResizeEventListenerP can be
     // registerd with other targets than the DOM event receiver that
@@ -487,11 +484,10 @@ nsHTMLEditor::RemoveEventListeners()
 
     if (mMouseMotionListenerP)
     {
-      // mMouseMotionListenerP might be registerd either by IID or
-      // name, unregister by both.
-      piTarget->RemoveEventListenerByIID(mMouseMotionListenerP,
-                                         NS_GET_IID(nsIDOMMouseMotionListener));
-
+      // mMouseMotionListenerP might be registerd either as bubbling or
+      // capturing, unregister by both.
+      target->RemoveEventListener(NS_LITERAL_STRING("mousemove"),
+                                  mMouseMotionListenerP, PR_FALSE);
       target->RemoveEventListener(NS_LITERAL_STRING("mousemove"),
                                   mMouseMotionListenerP, PR_TRUE);
     }
@@ -5826,15 +5822,15 @@ nsHTMLEditor::IsActiveInDOMWindow()
   return PR_TRUE;
 }
 
-already_AddRefed<nsPIDOMEventTarget>
-nsHTMLEditor::GetPIDOMEventTarget()
+already_AddRefed<nsIDOMEventTarget>
+nsHTMLEditor::GetDOMEventTarget()
 {
   // Don't use getDocument here, because we have no way of knowing
   // whether Init() was ever called.  So we need to get the document
   // ourselves, if it exists.
   NS_PRECONDITION(mDocWeak, "This editor has not been initialized yet");
-  nsCOMPtr<nsPIDOMEventTarget> piTarget = do_QueryReferent(mDocWeak.get());
-  return piTarget.forget();
+  nsCOMPtr<nsIDOMEventTarget> target = do_QueryReferent(mDocWeak.get());
+  return target.forget();
 }
 
 PRBool

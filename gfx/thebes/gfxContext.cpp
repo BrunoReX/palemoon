@@ -398,10 +398,10 @@ gfxContext::UserToDevice(const gfxRect& rect) const
     ymax = ymin;
     for (int i = 0; i < 3; i++) {
         cairo_user_to_device(mCairo, &x[i], &y[i]);
-        xmin = PR_MIN(xmin, x[i]);
-        xmax = PR_MAX(xmax, x[i]);
-        ymin = PR_MIN(ymin, y[i]);
-        ymax = PR_MAX(ymax, y[i]);
+        xmin = NS_MIN(xmin, x[i]);
+        xmax = NS_MAX(xmax, x[i]);
+        ymin = NS_MIN(ymin, y[i]);
+        ymax = NS_MAX(ymax, y[i]);
     }
 
     return gfxRect(xmin, ymin, xmax - xmin, ymax - ymin);
@@ -545,7 +545,28 @@ gfxContext::SetDash(gfxFloat *dashes, int ndash, gfxFloat offset)
 {
     cairo_set_dash(mCairo, dashes, ndash, offset);
 }
-//void getDash() const;
+
+bool
+gfxContext::CurrentDash(FallibleTArray<gfxFloat>& dashes, gfxFloat* offset) const
+{
+    int count = cairo_get_dash_count(mCairo);
+    if (count <= 0 || !dashes.SetLength(count)) {
+        return false;
+    }
+    cairo_get_dash(mCairo, dashes.Elements(), offset);
+    return true;
+}
+
+gfxFloat
+gfxContext::CurrentDashOffset() const
+{
+    if (cairo_get_dash_count(mCairo) <= 0) {
+        return 0.0;
+    }
+    gfxFloat offset;
+    cairo_get_dash(mCairo, NULL, &offset);
+    return offset;
+}
 
 void
 gfxContext::SetLineWidth(gfxFloat width)

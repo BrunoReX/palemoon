@@ -39,21 +39,16 @@
 /* code for HTML client-side image maps */
 
 #include "nsImageMap.h"
+
 #include "nsString.h"
 #include "nsReadableUtils.h"
 #include "nsRenderingContext.h"
 #include "nsPresContext.h"
 #include "nsIURL.h"
-#include "nsIURL.h"
 #include "nsIServiceManager.h"
 #include "nsNetUtil.h"
 #include "nsTextFragment.h"
 #include "mozilla/dom/Element.h"
-#include "nsIDOMHTMLElement.h"
-#include "nsIDOMHTMLMapElement.h"
-#include "nsIDOMHTMLAreaElement.h"
-#include "nsIDOMHTMLAnchorElement.h"
-#include "nsIDOMHTMLCollection.h"
 #include "nsIDocument.h"
 #include "nsINameSpaceManager.h"
 #include "nsGkAtoms.h"
@@ -156,6 +151,7 @@ void Area::ParseCoords(const nsAString& aSpec)
     mCoords = nsnull;
     if (*cp == '\0')
     {
+      nsMemory::Free(cp);
       return;
     }
 
@@ -169,6 +165,7 @@ void Area::ParseCoords(const nsAString& aSpec)
     }
     if (*n_str == '\0')
     {
+      nsMemory::Free(cp);
       return;
     }
 
@@ -253,6 +250,7 @@ void Area::ParseCoords(const nsAString& aSpec)
     value_list = new nscoord[cnt];
     if (!value_list)
     {
+      nsMemory::Free(cp);
       return;
     }
 
@@ -295,7 +293,7 @@ void Area::ParseCoords(const nsAString& aSpec)
     mNumCoords = cnt;
     mCoords = value_list;
 
-    NS_Free(cp);
+    nsMemory::Free(cp);
   }
 }
 
@@ -705,9 +703,8 @@ nsImageMap::~nsImageMap()
   NS_ASSERTION(mAreas.Length() == 0, "Destroy was not called");
 }
 
-NS_IMPL_ISUPPORTS3(nsImageMap,
+NS_IMPL_ISUPPORTS2(nsImageMap,
                    nsIMutationObserver,
-                   nsIDOMFocusListener,
                    nsIDOMEventListener)
 
 nsresult
@@ -742,24 +739,26 @@ nsImageMap::FreeAreas()
                  "Unexpected primary frame");
     area->mArea->SetPrimaryFrame(nsnull);
 
-    area->mArea->RemoveEventListenerByIID(this, NS_GET_IID(nsIDOMFocusListener));
+    area->mArea->RemoveEventListener(NS_LITERAL_STRING("focus"), this,
+                                     PR_FALSE);
+    area->mArea->RemoveEventListener(NS_LITERAL_STRING("blur"), this,
+                                     PR_FALSE);
     delete area;
   }
   mAreas.Clear();
 }
 
 nsresult
-nsImageMap::Init(nsIPresShell* aPresShell, nsIFrame* aImageFrame, nsIDOMHTMLMapElement* aMap)
+nsImageMap::Init(nsIPresShell* aPresShell, nsIFrame* aImageFrame, nsIContent* aMap)
 {
-  NS_PRECONDITION(nsnull != aMap, "null ptr");
-  if (nsnull == aMap) {
+  NS_PRECONDITION(aMap, "null ptr");
+  if (!aMap) {
     return NS_ERROR_NULL_POINTER;
   }
   mPresShell = aPresShell;
   mImageFrame = aImageFrame;
 
-  mMap = do_QueryInterface(aMap);
-  NS_ASSERTION(mMap, "aMap is not an nsIContent!");
+  mMap = aMap;
   mMap->AddMutationObserver(this);
 
   // "Compile" the areas in the map into faster access versions
@@ -862,7 +861,10 @@ nsImageMap::AddArea(nsIContent* aArea)
     return NS_ERROR_OUT_OF_MEMORY;
 
   //Add focus listener to track area focus changes
-  aArea->AddEventListenerByIID(this, NS_GET_IID(nsIDOMFocusListener));
+  aArea->AddEventListener(NS_LITERAL_STRING("focus"), this, PR_FALSE,
+                          PR_FALSE);
+  aArea->AddEventListener(NS_LITERAL_STRING("blur"), this, PR_FALSE,
+                          PR_FALSE);
 
   // This is a nasty hack.  It needs to go away: see bug 135040.  Once this is
   // removed, the code added to nsCSSFrameConstructor::RestyleElement,
@@ -964,20 +966,14 @@ nsImageMap::ContentRemoved(nsIDocument *aDocument,
 }
 
 nsresult
-nsImageMap::Focus(nsIDOMEvent* aEvent)
+nsImageMap::HandleEvent(nsIDOMEvent* aEvent)
 {
-  return ChangeFocus(aEvent, PR_TRUE);
-}
+  nsAutoString eventType;
+  aEvent->GetType(eventType);
+  PRBool focus = eventType.EqualsLiteral("focus");
+  NS_ABORT_IF_FALSE(focus == !eventType.EqualsLiteral("blur"),
+                    "Unexpected event type");
 
-nsresult
-nsImageMap::Blur(nsIDOMEvent* aEvent)
-{
-  return ChangeFocus(aEvent, PR_FALSE);
-}
-
-nsresult
-nsImageMap::ChangeFocus(nsIDOMEvent* aEvent, PRBool aFocus)
-{
   //Set which one of our areas changed focus
   nsCOMPtr<nsIDOMEventTarget> target;
   if (NS_SUCCEEDED(aEvent->GetTarget(getter_AddRefs(target))) && target) {
@@ -988,7 +984,7 @@ nsImageMap::ChangeFocus(nsIDOMEvent* aEvent, PRBool aFocus)
         Area* area = mAreas.ElementAt(i);
         if (area->mArea == targetContent) {
           //Set or Remove internal focus
-          area->HasFocus(aFocus);
+          area->HasFocus(focus);
           //Now invalidate the rect
           nsIFrame* imgFrame = targetContent->GetPrimaryFrame();
           if (imgFrame) {
@@ -1001,12 +997,6 @@ nsImageMap::ChangeFocus(nsIDOMEvent* aEvent, PRBool aFocus)
       }
     }
   }
-  return NS_OK;
-}
-
-nsresult
-nsImageMap::HandleEvent(nsIDOMEvent* aEvent)
-{
   return NS_OK;
 }
 

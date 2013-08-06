@@ -98,6 +98,8 @@ class Test:
                         test.jitflags.append('-a')
                     elif name == 'debug':
                         test.jitflags.append('-d')
+                    elif name == 'mjit':
+                        test.jitflags.append('-m')
                     else:
                         print('warning: unrecognized |jit-test| attribute %s'%part)
 
@@ -327,7 +329,7 @@ def run_tests(tests, test_dir, lib_dir, shell_args):
 
         def show_test(test):
             if OPTIONS.show_failed:
-                print('    ' + subprocess.list2cmdline(get_test_cmd(test.path, test.jitflags, lib_dir)))
+                print('    ' + subprocess.list2cmdline(get_test_cmd(test.path, test.jitflags, lib_dir, shell_args)))
             else:
                 print('    ' + ' '.join(test.jitflags + [ test.path ]))
 
@@ -494,6 +496,8 @@ def main(argv):
             job_list.append(new_test)
     
 
+    shell_args = shlex.split(OPTIONS.shell_args)
+
     if OPTIONS.debug:
         if len(job_list) > 1:
             print('Multiple tests match command line arguments, debugger can only run one')
@@ -502,11 +506,9 @@ def main(argv):
             sys.exit(1)
 
         tc = job_list[0]
-        cmd = [ 'gdb', '--args' ] + get_test_cmd(tc.path, tc.jitflags, lib_dir)
+        cmd = [ 'gdb', '--args' ] + get_test_cmd(tc.path, tc.jitflags, lib_dir, shell_args)
         call(cmd)
         sys.exit()
-
-    shell_args = shlex.split(OPTIONS.shell_args)
 
     try:
         ok = run_tests(job_list, test_dir, lib_dir, shell_args)

@@ -22,7 +22,7 @@
  *
  * Contributor(s):
  *   L. David Baron <dbaron@dbaron.org>, Mozilla Corporation
- *   Mats Palmgren <mats.palmgren@bredband.net>
+ *   Mats Palmgren <matspal@gmail.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either of the GNU General Public License Version 2 or later (the "GPL"),
@@ -50,6 +50,7 @@
 #include "nsIAtom.h"
 #include "nsCSSPseudoElements.h"
 #include "nsCSSAnonBoxes.h"
+#include "nsCSSColorUtils.h"
 #include "nsIView.h"
 #include "nsPlaceholderFrame.h"
 #include "nsIScrollableFrame.h"
@@ -98,13 +99,13 @@
 #include "gfxDrawable.h"
 #include "gfxUtils.h"
 #include "nsDataHashtable.h"
+#include "nsTextFrame.h"
+#include "nsFontFaceList.h"
 
-#ifdef MOZ_SVG
 #include "nsSVGUtils.h"
 #include "nsSVGIntegrationUtils.h"
 #include "nsSVGForeignObjectFrame.h"
 #include "nsSVGOuterSVGFrame.h"
-#endif
 
 #ifdef MOZ_XUL
 #include "nsXULPopupManager.h"
@@ -1292,7 +1293,7 @@ nsLayoutUtils::GetFramesForArea(nsIFrame* aFrame, const nsRect& aRect,
 
 #ifdef DEBUG
   if (gDumpEventList) {
-    fprintf(stderr, "Event handling --- (%d,%d):\n", aRect.x, aRect.y);
+    fprintf(stdout, "Event handling --- (%d,%d):\n", aRect.x, aRect.y);
     nsFrame::PrintDisplayList(&builder, list);
   }
 #endif
@@ -1601,7 +1602,7 @@ nsLayoutUtils::PaintFrame(nsRenderingContext* aRenderingContext, nsIFrame* aFram
 
 #ifdef DEBUG
   if (gDumpPaintList) {
-    fprintf(stderr, "Painting --- before optimization (dirty %d,%d,%d,%d):\n",
+    fprintf(stdout, "Painting --- before optimization (dirty %d,%d,%d,%d):\n",
             dirtyRect.x, dirtyRect.y, dirtyRect.width, dirtyRect.height);
     nsFrame::PrintDisplayList(&builder, list);
   }
@@ -1653,10 +1654,10 @@ nsLayoutUtils::PaintFrame(nsRenderingContext* aRenderingContext, nsIFrame* aFram
 
 #ifdef DEBUG
   if (gDumpPaintList) {
-    fprintf(stderr, "Painting --- after optimization:\n");
+    fprintf(stdout, "Painting --- after optimization:\n");
     nsFrame::PrintDisplayList(&builder, list);
 
-    fprintf(stderr, "Painting --- retained layer tree:\n");
+    fprintf(stdout, "Painting --- retained layer tree:\n");
     builder.LayerBuilder()->DumpRetainedLayerTree();
   }
 #endif
@@ -1778,13 +1779,11 @@ struct BoxToBorderRect : public nsLayoutUtils::BoxCallback {
     : mRelativeTo(aRelativeTo), mCallback(aCallback) {}
 
   virtual void AddBox(nsIFrame* aFrame) {
-#ifdef MOZ_SVG
     nsRect r;
     nsIFrame* outer = nsSVGUtils::GetOuterSVGFrameAndCoveredRegion(aFrame, &r);
     if (outer) {
       mCallback->AddRect(r + outer->GetOffsetTo(mRelativeTo));
     } else
-#endif
       mCallback->AddRect(nsRect(aFrame->GetOffsetTo(mRelativeTo), aFrame->GetSize()));
   }
 };
@@ -1812,10 +1811,6 @@ nsLayoutUtils::RectListBuilder::RectListBuilder(nsClientRectList* aList)
 
 void nsLayoutUtils::RectListBuilder::AddRect(const nsRect& aRect) {
   nsRefPtr<nsClientRect> rect = new nsClientRect();
-  if (!rect) {
-    mRV = NS_ERROR_OUT_OF_MEMORY;
-    return;
-  }
 
   rect->SetLayoutRect(aRect);
   mRectList->Append(rect);
@@ -2792,6 +2787,61 @@ nsLayoutUtils::PrefWidthFromInline(nsIFrame* aFrame,
   return data.prevLines;
 }
 
+static nscolor
+DarkenColor(nscolor aColor)
+{
+  PRUint16  hue, sat, value;
+  PRUint8 alpha;
+
+  // convert the RBG to HSV so we can get the lightness (which is the v)
+  NS_RGB2HSV(aColor, hue, sat, value, alpha);
+
+  // The goal here is to send white to black while letting colored
+  // stuff stay colored... So we adopt the following approach.
+  // Something with sat = 0 should end up with value = 0.  Something
+  // with a high sat can end up with a high value and it's ok.... At
+  // the same time, we don't want to make things lighter.  Do
+  // something simple, since it seems to work.
+  if (value > sat) {
+    value = sat;
+    // convert this color back into the RGB color space.
+    NS_HSV2RGB(aColor, hue, sat, value, alpha);
+  }
+  return aColor;
+}
+
+// Check whether we should darken text colors. We need to do this if
+// background images and colors are being suppressed, because that means
+// light text will not be visible against the (presumed light-colored) background.
+static PRBool
+ShouldDarkenColors(nsPresContext* aPresContext)
+{
+  return !aPresContext->GetBackgroundColorDraw() &&
+    !aPresContext->GetBackgroundImageDraw();
+}
+
+nscolor
+nsLayoutUtils::GetTextColor(nsIFrame* aFrame)
+{
+  nscolor color = aFrame->GetVisitedDependentColor(eCSSProperty_color);
+  if (ShouldDarkenColors(aFrame->PresContext())) {
+    color = DarkenColor(color);
+  }
+  return color;
+}
+
+gfxFloat
+nsLayoutUtils::GetSnappedBaselineY(nsIFrame* aFrame, gfxContext* aContext,
+                                   nscoord aY, nscoord aAscent)
+{
+  gfxFloat appUnitsPerDevUnit = aFrame->PresContext()->AppUnitsPerDevPixel();
+  gfxFloat baseline = gfxFloat(aY) + aAscent;
+  gfxRect putativeRect(0, baseline/appUnitsPerDevUnit, 1, 1);
+  if (!aContext->UserToDevicePixelSnapped(putativeRect, PR_TRUE))
+    return baseline;
+  return aContext->DeviceToUser(putativeRect.TopLeft()).y * appUnitsPerDevUnit;
+}
+
 void
 nsLayoutUtils::DrawString(const nsIFrame*      aFrame,
                           nsRenderingContext* aContext,
@@ -2849,6 +2899,62 @@ nsLayoutUtils::GetStringWidth(const nsIFrame*      aFrame,
 #endif // IBMBIDI
   aContext->SetTextRunRTL(PR_FALSE);
   return aContext->GetWidth(aString, aLength);
+}
+
+/* static */ void
+nsLayoutUtils::PaintTextShadow(const nsIFrame* aFrame,
+                               nsRenderingContext* aContext,
+                               const nsRect& aTextRect,
+                               const nsRect& aDirtyRect,
+                               const nscolor& aForegroundColor,
+                               TextShadowCallback aCallback,
+                               void* aCallbackData)
+{
+  const nsStyleText* textStyle = aFrame->GetStyleText();
+  if (!textStyle->mTextShadow)
+    return;
+
+  // Text shadow happens with the last value being painted at the back,
+  // ie. it is painted first.
+  gfxContext* aDestCtx = aContext->ThebesContext();
+  for (PRUint32 i = textStyle->mTextShadow->Length(); i > 0; --i) {
+    nsCSSShadowItem* shadowDetails = textStyle->mTextShadow->ShadowAt(i - 1);
+    nsPoint shadowOffset(shadowDetails->mXOffset,
+                         shadowDetails->mYOffset);
+    nscoord blurRadius = NS_MAX(shadowDetails->mRadius, 0);
+
+    nsRect shadowRect(aTextRect);
+    shadowRect.MoveBy(shadowOffset);
+
+    nsPresContext* presCtx = aFrame->PresContext();
+    nsContextBoxBlur contextBoxBlur;
+    gfxContext* shadowContext = contextBoxBlur.Init(shadowRect, 0, blurRadius,
+                                                    presCtx->AppUnitsPerDevPixel(),
+                                                    aDestCtx, aDirtyRect, nsnull);
+    if (!shadowContext)
+      continue;
+
+    nscolor shadowColor;
+    if (shadowDetails->mHasColor)
+      shadowColor = shadowDetails->mColor;
+    else
+      shadowColor = aForegroundColor;
+
+    // Conjure an nsRenderingContext from a gfxContext for drawing the text
+    // to blur.
+    nsRefPtr<nsRenderingContext> renderingContext = new nsRenderingContext();
+    renderingContext->Init(presCtx->DeviceContext(), shadowContext);
+
+    aDestCtx->Save();
+    aDestCtx->NewPath();
+    aDestCtx->SetColor(gfxRGBA(shadowColor));
+
+    // The callback will draw whatever we want to blur as a shadow.
+    aCallback(renderingContext, shadowOffset, shadowColor, aCallbackData);
+
+    contextBoxBlur.DoPaint();
+    aDestCtx->Restore();
+  }
 }
 
 /* static */ nscoord
@@ -3063,12 +3169,6 @@ GraphicsFilter
 nsLayoutUtils::GetGraphicsFilterForFrame(nsIFrame* aForFrame)
 {
   GraphicsFilter defaultFilter = gfxPattern::FILTER_GOOD;
-#ifdef MOZ_GFX_OPTIMIZE_MOBILE
-  if (!mozilla::supports_neon()) {
-    defaultFilter = gfxPattern::FILTER_NEAREST;
-  }
-#endif
-#ifdef MOZ_SVG
   nsIFrame *frame = nsCSSRendering::IsCanvasFrame(aForFrame) ?
     nsCSSRendering::FindBackgroundStyleFrame(aForFrame) : aForFrame;
 
@@ -3082,9 +3182,6 @@ nsLayoutUtils::GetGraphicsFilterForFrame(nsIFrame* aForFrame)
   default:
     return defaultFilter;
   }
-#else
-  return defaultFilter;
-#endif
 }
 
 /**
@@ -3656,7 +3753,6 @@ nsLayoutUtils::GetTextRunFlagsForStyle(nsStyleContext* aStyleContext,
   if (IsNonzeroCoord(aStyleText->mLetterSpacing)) {
     result |= gfxTextRunFactory::TEXT_DISABLE_OPTIONAL_LIGATURES;
   }
-#ifdef MOZ_SVG
   switch (aStyleContext->GetStyleSVG()->mTextRendering) {
   case NS_STYLE_TEXT_RENDERING_OPTIMIZESPEED:
     result |= gfxTextRunFactory::TEXT_OPTIMIZE_SPEED;
@@ -3670,7 +3766,6 @@ nsLayoutUtils::GetTextRunFlagsForStyle(nsStyleContext* aStyleContext,
   default:
     break;
   }
-#endif
   return result;
 }
 
@@ -3840,12 +3935,8 @@ nsLayoutUtils::SurfaceFromElement(nsIDOMElement *aElement,
     if (wantImageSurface && surf->GetType() != gfxASurface::SurfaceTypeImage) {
       nsRefPtr<gfxImageSurface> imgSurf =
         new gfxImageSurface(size, gfxASurface::ImageFormatARGB32);
-      if (!imgSurf)
-        return result;
 
       nsRefPtr<gfxContext> ctx = new gfxContext(imgSurf);
-      if (!ctx)
-        return result;
       ctx->SetOperator(gfxContext::OPERATOR_SOURCE);
       ctx->DrawSurface(surf, size);
       surf = imgSurf;
@@ -4064,6 +4155,77 @@ nsLayoutUtils::AssertTreeOnlyEmptyNextInFlows(nsIFrame *aSubtreeRoot)
   } while (childList);
 }
 #endif
+
+/* static */
+nsresult
+nsLayoutUtils::GetFontFacesForFrames(nsIFrame* aFrame,
+                                     nsFontFaceList* aFontFaceList)
+{
+  NS_PRECONDITION(aFrame, "NULL frame pointer");
+
+  if (aFrame->GetType() == nsGkAtoms::textFrame) {
+    return GetFontFacesForText(aFrame, 0, PR_INT32_MAX, PR_FALSE,
+                               aFontFaceList);
+  }
+
+  while (aFrame) {
+    nsIAtom* childLists[] = { nsnull, nsGkAtoms::popupList };
+    for (int i = 0; i < NS_ARRAY_LENGTH(childLists); ++i) {
+      nsFrameList children(aFrame->GetChildList(childLists[i]));
+      for (nsFrameList::Enumerator e(children); !e.AtEnd(); e.Next()) {
+        nsIFrame* child = e.get();
+        if (child->GetPrevContinuation()) {
+          continue;
+        }
+        child = nsPlaceholderFrame::GetRealFrameFor(child);
+        nsresult rv = GetFontFacesForFrames(child, aFontFaceList);
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+    }
+    aFrame = GetNextContinuationOrSpecialSibling(aFrame);
+  }
+
+  return NS_OK;
+}
+
+/* static */
+nsresult
+nsLayoutUtils::GetFontFacesForText(nsIFrame* aFrame,
+                                   PRInt32 aStartOffset, PRInt32 aEndOffset,
+                                   PRBool aFollowContinuations,
+                                   nsFontFaceList* aFontFaceList)
+{
+  NS_PRECONDITION(aFrame, "NULL frame pointer");
+
+  if (aFrame->GetType() != nsGkAtoms::textFrame) {
+    return NS_OK;
+  }
+
+  nsTextFrame* curr = static_cast<nsTextFrame*>(aFrame);
+  do {
+    PRInt32 offset = curr->GetContentOffset();
+    PRInt32 fstart = NS_MAX(offset, aStartOffset);
+    PRInt32 fend = NS_MIN(curr->GetContentEnd(), aEndOffset);
+    if (fstart >= fend) {
+      continue;
+    }
+
+    // overlapping with the offset we want
+    curr->EnsureTextRun();
+    gfxTextRun* textRun = curr->GetTextRun();
+    NS_ENSURE_TRUE(textRun, NS_ERROR_OUT_OF_MEMORY);
+
+    gfxSkipCharsIterator iter(textRun->GetSkipChars());
+    PRUint32 skipStart = iter.ConvertOriginalToSkipped(fstart - offset);
+    PRUint32 skipEnd = iter.ConvertOriginalToSkipped(fend - offset);
+    aFontFaceList->AddFontsFromTextRun(textRun,
+                                       skipStart, skipEnd - skipStart,
+                                       curr);
+  } while (aFollowContinuations &&
+           (curr = static_cast<nsTextFrame*>(curr->GetNextContinuation())));
+
+  return NS_OK;
+}
 
 /* static */
 void

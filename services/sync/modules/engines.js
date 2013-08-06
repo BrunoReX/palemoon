@@ -46,6 +46,7 @@ const Ci = Components.interfaces;
 const Cr = Components.results;
 const Cu = Components.utils;
 
+Cu.import("resource://services-sync/async.js");
 Cu.import("resource://services-sync/record.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/ext/Observers.js");
@@ -71,7 +72,7 @@ function Tracker(name) {
   name = name || "Unnamed";
   this.name = this.file = name.toLowerCase();
 
-  this._log = Log4Moz.repository.getLogger("Tracker." + name);
+  this._log = Log4Moz.repository.getLogger("Sync.Tracker." + name);
   let level = Svc.Prefs.get("log.logger.engine." + this.name, "Debug");
   this._log.level = Log4Moz.Level[level];
 
@@ -107,7 +108,7 @@ Tracker.prototype = {
   },
 
   saveChangedIDs: function T_saveChangedIDs() {
-    Utils.delay(function() {
+    Utils.namedTimer(function() {
       Utils.jsonSave("changes/" + this.file, this, this.changedIDs);
     }, 1000, this, "_lazySave");
   },
@@ -189,7 +190,7 @@ function Store(name) {
   name = name || "Unnamed";
   this.name = name.toLowerCase();
 
-  this._log = Log4Moz.repository.getLogger("Store." + name);
+  this._log = Log4Moz.repository.getLogger("Sync.Store." + name);
   let level = Svc.Prefs.get("log.logger.engine." + this.name, "Debug");
   this._log.level = Log4Moz.Level[level];
 
@@ -200,10 +201,9 @@ function Store(name) {
 Store.prototype = {
 
   _sleep: function _sleep(delay) {
-    let cb = Utils.makeSyncCallback();
-    this._timer.initWithCallback({notify: cb}, delay,
-                                 Ci.nsITimer.TYPE_ONE_SHOT);
-    Utils.waitForSyncCallback(cb);
+    let cb = Async.makeSyncCallback();
+    this._timer.initWithCallback(cb, delay, Ci.nsITimer.TYPE_ONE_SHOT);
+    Async.waitForSyncCallback(cb);
   },
 
   applyIncomingBatch: function applyIncomingBatch(records) {
@@ -211,6 +211,11 @@ Store.prototype = {
     for each (let record in records) {
       try {
         this.applyIncoming(record);
+      } catch (ex if (ex.code == Engine.prototype.eEngineAbortApplyIncoming)) {
+        // This kind of exception should have a 'cause' attribute, which is an
+        // originating exception.
+        // ex.cause will carry its stack with it when rethrown.
+        throw ex.cause;
       } catch (ex) {
         this._log.warn("Failed to apply incoming record " + record.id);
         this._log.warn("Encountered exception: " + Utils.exceptionStr(ex));
@@ -273,7 +278,7 @@ XPCOMUtils.defineLazyGetter(this, "Engines", function() {
 
 function EngineManagerSvc() {
   this._engines = {};
-  this._log = Log4Moz.repository.getLogger("Service.Engines");
+  this._log = Log4Moz.repository.getLogger("Sync.EngineManager");
   this._log.level = Log4Moz.Level[Svc.Prefs.get(
     "log.logger.service.engines", "Debug")];
 }
@@ -350,7 +355,7 @@ function Engine(name) {
   this.name = name.toLowerCase();
 
   this._notify = Utils.notify("weave:engine:");
-  this._log = Log4Moz.repository.getLogger("Engine." + this.Name);
+  this._log = Log4Moz.repository.getLogger("Sync.Engine." + this.Name);
   let level = Svc.Prefs.get("log.logger.engine." + this.name, "Debug");
   this._log.level = Log4Moz.Level[level];
 
@@ -361,6 +366,10 @@ Engine.prototype = {
   // _storeObj, and _trackerObj should to be overridden in subclasses
   _storeObj: Store,
   _trackerObj: Tracker,
+
+  // Local 'constant'.
+  // Signal to the engine that processing further records is pointless.
+  eEngineAbortApplyIncoming: "error.engine.abort.applyincoming",
 
   get prefName() this.name,
   get enabled() Svc.Prefs.get("engine." + this.prefName, false),
@@ -417,6 +426,7 @@ Engine.prototype = {
 function SyncEngine(name) {
   Engine.call(this, name || "SyncEngine");
   this.loadToFetch();
+  this.loadPreviousFailed();
 }
 
 // Enumeration to define approaches to handling bad records.
@@ -483,8 +493,12 @@ SyncEngine.prototype = {
 
   get toFetch() this._toFetch,
   set toFetch(val) {
+    // Coerce the array to a string for more efficient comparison.
+    if (val + "" == this._toFetch) {
+      return;
+    }
     this._toFetch = val;
-    Utils.delay(function () {
+    Utils.namedTimer(function () {
       Utils.jsonSave("toFetch/" + this.name, this, val);
     }, 0, this, "_toFetchDelay");
   },
@@ -495,6 +509,28 @@ SyncEngine.prototype = {
     Utils.jsonLoad("toFetch/" + this.name, this, function(toFetch) {
       if (toFetch) {
         this._toFetch = toFetch;
+      }
+    });
+  },
+
+  get previousFailed() this._previousFailed,
+  set previousFailed(val) {
+    // Coerce the array to a string for more efficient comparison.
+    if (val + "" == this._previousFailed) {
+      return;
+    }
+    this._previousFailed = val;
+    Utils.namedTimer(function () {
+      Utils.jsonSave("failed/" + this.name, this, val);
+    }, 0, this, "_previousFailedDelay");
+  },
+
+  loadPreviousFailed: function loadPreviousFailed() {
+    // Initialize to empty if there's no file
+    this._previousFailed = [];
+    Utils.jsonLoad("failed/" + this.name, this, function(previousFailed) {
+      if (previousFailed) {
+        this._previousFailed = previousFailed;
       }
     });
   },
@@ -618,16 +654,36 @@ SyncEngine.prototype = {
     newitems.newer = this.lastSync;
     newitems.full = true;
     newitems.limit = batchSize;
-
-    let count = {applied: 0, failed: 0, reconciled: 0};
+    
+    // applied    => number of items that should be applied.
+    // failed     => number of items that failed in this sync.
+    // newFailed  => number of items that failed for the first time in this sync.
+    // reconciled => number of items that were reconciled.
+    let count = {applied: 0, failed: 0, newFailed: 0, reconciled: 0};
     let handled = [];
     let applyBatch = [];
     let failed = [];
-    let fetchBatch = this.toFetch;
+    let failedInPreviousSync = this.previousFailed;
+    let fetchBatch = Utils.arrayUnion(this.toFetch, failedInPreviousSync);
+    // Reset previousFailed for each sync since previously failed items may not fail again.
+    this.previousFailed = [];
+
+    // Used (via exceptions) to allow the record handler/reconciliation/etc.
+    // methods to signal that they would like processing of incoming records to
+    // cease.
+    let aborting = undefined;
 
     function doApplyBatch() {
       this._tracker.ignoreAll = true;
-      failed = failed.concat(this._store.applyIncomingBatch(applyBatch));
+      try {
+        failed = failed.concat(this._store.applyIncomingBatch(applyBatch));
+      } catch (ex) {
+        // Catch any error that escapes from applyIncomingBatch. At present
+        // those will all be abort events.
+        this._log.warn("Got exception " + Utils.exceptionStr(ex) +
+                       ", aborting processIncoming.");
+        aborting = ex;
+      }
       this._tracker.ignoreAll = false;
       applyBatch = [];
     }
@@ -639,7 +695,7 @@ SyncEngine.prototype = {
       }
       // Persist failed items so we refetch them.
       if (failed.length) {
-        this.toFetch = Utils.arrayUnion(failed, this.toFetch);
+        this.previousFailed = Utils.arrayUnion(failed, this.previousFailed);
         count.failed += failed.length;
         this._log.debug("Records that failed to apply: " + failed);
         failed = [];
@@ -650,6 +706,10 @@ SyncEngine.prototype = {
     // called for every incoming record.
     let self = this;
     newitems.recordHandler = function(item) {
+      if (aborting) {
+        return;
+      }
+
       // Grab a later last modified if possible
       if (self.lastModified == null || item.modified > self.lastModified)
         self.lastModified = item.modified;
@@ -703,6 +763,10 @@ SyncEngine.prototype = {
       let shouldApply;
       try {
         shouldApply = self._reconcile(item);
+      } catch (ex if (ex.code == Engine.prototype.eEngineAbortApplyIncoming)) {
+        self._log.warn("Reconciliation failed: aborting incoming processing.");
+        failed.push(item.id);
+        aborting = ex.cause;
       } catch (ex) {
         self._log.warn("Failed to reconcile incoming record " + item.id);
         self._log.warn("Encountered exception: " + Utils.exceptionStr(ex));
@@ -731,6 +795,10 @@ SyncEngine.prototype = {
       if (!resp.success) {
         resp.failureCode = ENGINE_DOWNLOAD_FAIL;
         throw resp;
+      }
+
+      if (aborting) {
+        throw aborting;
       }
     }
 
@@ -770,7 +838,7 @@ SyncEngine.prototype = {
     batchSize = isMobile ? this.mobileGUIDFetchBatchSize :
                            this.guidFetchBatchSize;
 
-    while (fetchBatch.length) {
+    while (fetchBatch.length && !aborting) {
       // Reuse the original query, but get rid of the restricting params
       // and batch remaining records.
       newitems.limit = 0;
@@ -787,11 +855,18 @@ SyncEngine.prototype = {
       // This batch was successfully applied. Not using
       // doApplyBatchAndPersistFailed() here to avoid writing toFetch twice.
       fetchBatch = fetchBatch.slice(batchSize);
-      let newToFetch = Utils.arraySub(this.toFetch, newitems.ids);
-      this.toFetch = Utils.arrayUnion(newToFetch, failed);
-      count.failed += failed.length;
-      this._log.debug("Records that failed to apply: " + failed);
+      this.toFetch = Utils.arraySub(this.toFetch, newitems.ids);
+      this.previousFailed = Utils.arrayUnion(this.previousFailed, failed);
+      if (failed.length) {
+        count.failed += failed.length;
+        this._log.debug("Records that failed to apply: " + failed);
+      }
       failed = [];
+
+      if (aborting) {
+        throw aborting;
+      }
+
       if (this.lastSync < this.lastModified) {
         this.lastSync = this.lastModified;
       }
@@ -800,15 +875,13 @@ SyncEngine.prototype = {
     // Apply remaining items.
     doApplyBatchAndPersistFailed.call(this);
 
-    if (count.failed) {
-      // Notify observers if records failed to apply. Pass the count object
-      // along so that they can make an informed decision on what to do.
-      Observers.notify("weave:engine:sync:apply-failed", count, this.name);
-    }
+    count.newFailed = Utils.arraySub(this.previousFailed, failedInPreviousSync).length;
     this._log.info(["Records:",
                     count.applied, "applied,",
                     count.failed, "failed to apply,",
+                    count.newFailed, "newly failed to apply,",
                     count.reconciled, "reconciled."].join(" "));
+    Observers.notify("weave:engine:sync:applied", count, this.name);
   },
 
   /**
@@ -877,7 +950,7 @@ SyncEngine.prototype = {
       }
 
       // Records differ so figure out which to take
-      let recordAge = Resource.serverTime - item.modified;
+      let recordAge = AsyncResource.serverTime - item.modified;
       let localAge = Date.now() / 1000 - this._modified[item.id];
       this._log.trace("Record age vs local age: " + [recordAge, localAge]);
 
@@ -1051,6 +1124,7 @@ SyncEngine.prototype = {
 
   _resetClient: function SyncEngine__resetClient() {
     this.resetLastSync();
+    this.previousFailed = [];
     this.toFetch = [];
   },
 

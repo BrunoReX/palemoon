@@ -68,6 +68,7 @@
 #include "nsMenuPopupFrame.h"
 #include "nsTextFragment.h"
 #include "nsThemeConstants.h"
+#include "mozilla/Preferences.h"
 
 // The bidi indicator hangs off the caret to one side, to show which
 // direction the typing is in. It needs to be at least 2x2 to avoid looking like 
@@ -78,6 +79,8 @@ static const PRInt32 kMinBidiIndicatorPixels = 2;
 #include "nsIBidiKeyboard.h"
 #include "nsContentUtils.h"
 #endif //IBMBIDI
+
+using namespace mozilla;
 
 /**
  * Find the first frame in an in-order traversal of the frame subtree rooted
@@ -225,7 +228,7 @@ nsresult nsCaret::Init(nsIPresShell *inPresShell)
     StartBlinking();
   }
 #ifdef IBMBIDI
-  mBidiUI = nsContentUtils::GetBoolPref("bidi.browser.ui");
+  mBidiUI = Preferences::GetBool("bidi.browser.ui");
 #endif
 
   return NS_OK;
@@ -629,10 +632,30 @@ nsresult nsCaret::PrimeTimer()
   return NS_OK;
 }
 
+void nsCaret::InvalidateTextOverflowBlock()
+{
+  // If the nearest block has a potential 'text-overflow' marker then
+  // invalidate it.
+  if (mLastContent) {
+    nsIFrame* caretFrame = mLastContent->GetPrimaryFrame();
+    if (caretFrame) {
+      nsIFrame* block = nsLayoutUtils::GetAsBlock(caretFrame) ? caretFrame :
+        nsLayoutUtils::FindNearestBlockAncestor(caretFrame);
+      if (block) {
+        const nsStyleTextReset* style = block->GetStyleTextReset();
+        if (style->mTextOverflow.mType != NS_STYLE_TEXT_OVERFLOW_CLIP) {
+          block->InvalidateOverflowRect();
+        }
+      }
+    }
+  }
+}
 
 //-----------------------------------------------------------------------------
 void nsCaret::StartBlinking()
 {
+  InvalidateTextOverflowBlock();
+
   if (mReadOnly) {
     // Make sure the one draw command we use for a readonly caret isn't
     // done until the selection is set
@@ -656,6 +679,8 @@ void nsCaret::StartBlinking()
 //-----------------------------------------------------------------------------
 void nsCaret::StopBlinking()
 {
+  InvalidateTextOverflowBlock();
+
   if (mDrawn)     // erase the caret if necessary
     DrawCaret(PR_TRUE);
 

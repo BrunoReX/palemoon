@@ -46,6 +46,7 @@ const Ci = Components.interfaces;
 const Cr = Components.results;
 const Cu = Components.utils;
 
+Cu.import("resource://services-sync/async.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/ext/Observers.js");
 Cu.import("resource://services-sync/ext/Preferences.js");
@@ -142,7 +143,12 @@ function AsyncResource(uri) {
   this._onComplete = Utils.bind2(this, this._onComplete);
 }
 AsyncResource.prototype = {
-  _logName: "Net.Resource",
+  _logName: "Sync.AsyncResource",
+
+  // ** {{{ AsyncResource.serverTime }}} **
+  //
+  // Caches the latest server timestamp (X-Weave-Timestamp header).
+  serverTime: null,
 
   // The string to use as the base User-Agent in Sync requests.
   // These strings will look something like
@@ -161,7 +167,7 @@ AsyncResource.prototype = {
   // Wait 5 minutes before killing a request.
   ABORT_TIMEOUT: 300000,
 
-  // ** {{{ Resource.authenticator }}} **
+  // ** {{{ AsyncResource.authenticator }}} **
   //
   // Getter and setter for the authenticator module
   // responsible for this particular resource. The authenticator
@@ -177,7 +183,7 @@ AsyncResource.prototype = {
     this._authenticator = value;
   },
 
-  // ** {{{ Resource.headers }}} **
+  // ** {{{ AsyncResource.headers }}} **
   //
   // Headers to be included when making a request for the resource.
   // Note: Header names should be all lower case, there's no explicit
@@ -192,7 +198,7 @@ AsyncResource.prototype = {
     this._headers[header.toLowerCase()] = value;
   },
 
-  // ** {{{ Resource.uri }}} **
+  // ** {{{ AsyncResource.uri }}} **
   //
   // URI representing this resource.
   get uri() {
@@ -205,7 +211,7 @@ AsyncResource.prototype = {
       this._uri = value;
   },
 
-  // ** {{{ Resource.spec }}} **
+  // ** {{{ AsyncResource.spec }}} **
   //
   // Get the string representation of the URI.
   get spec() {
@@ -214,7 +220,7 @@ AsyncResource.prototype = {
     return null;
   },
 
-  // ** {{{ Resource.data }}} **
+  // ** {{{ AsyncResource.data }}} **
   //
   // Get and set the data encapulated in the resource.
   _data: null,
@@ -223,7 +229,7 @@ AsyncResource.prototype = {
     this._data = value;
   },
 
-  // ** {{{ Resource._createRequest }}} **
+  // ** {{{ AsyncResource._createRequest }}} **
   //
   // This method returns a new IO Channel for requests to be made
   // through. It is never called directly, only {{{_doRequest}}} uses it
@@ -383,25 +389,6 @@ AsyncResource.prototype = {
     // actual fetch, so be warned!
     XPCOMUtils.defineLazyGetter(ret, "obj", function() JSON.parse(ret));
 
-    // Notify if we get a 401 to maybe try again with a new URI.
-    // TODO: more retry logic.
-    if (status == 401) {
-      // Create an object to allow observers to decide if we should try again.
-      let subject = {
-        newUri: "",
-        resource: this,
-        response: ret
-      }
-      Observers.notify("weave:resource:status:401", subject);
-
-      // Do the same type of request but with the new URI.
-      if (subject.newUri != "") {
-        this.uri = subject.newUri;
-        this._doRequest(action, this._data, this._callback);
-        return;
-      }
-    }
-
     this._callback(null, ret);
   },
 
@@ -441,10 +428,7 @@ Resource.prototype = {
 
   __proto__: AsyncResource.prototype,
 
-  // ** {{{ Resource.serverTime }}} **
-  //
-  // Caches the latest server timestamp (X-Weave-Timestamp header).
-  serverTime: null,
+  _logName: "Sync.Resource",
 
   // ** {{{ Resource._request }}} **
   //
@@ -452,7 +436,7 @@ Resource.prototype = {
   // is never called directly, but is used by the high-level
   // {{{get}}}, {{{put}}}, {{{post}}} and {{delete}} methods.
   _request: function Res__request(action, data) {
-    let cb = Utils.makeSyncCallback();
+    let cb = Async.makeSyncCallback();
     function callback(error, ret) {
       if (error)
         cb.throw(error);
@@ -462,7 +446,7 @@ Resource.prototype = {
     // The channel listener might get a failure code
     try {
       this._doRequest(action, data, callback);
-      return Utils.waitForSyncCallback(cb);
+      return Async.waitForSyncCallback(cb);
     } catch(ex) {
       // Combine the channel stack with this request stack.  Need to create
       // a new error object for that.
@@ -530,7 +514,7 @@ ChannelListener.prototype = {
 
     // Save the latest server timestamp when possible.
     try {
-      Resource.serverTime = channel.getResponseHeader("X-Weave-Timestamp") - 0;
+      AsyncResource.serverTime = channel.getResponseHeader("X-Weave-Timestamp") - 0;
     }
     catch(ex) {}
 
@@ -545,8 +529,9 @@ ChannelListener.prototype = {
     this.abortTimer.clear();
 
     let success = Components.isSuccessCode(status);
+    let uri = channel && channel.URI && channel.URI.spec || "<unknown>";
     this._log.trace("Channel for " + channel.requestMethod + " " +
-                    channel.URI.spec + ": isSuccessCode(" + status + ")? " +
+                    uri + ": isSuccessCode(" + status + ")? " +
                     success);
 
     if (this._data == '')
@@ -563,7 +548,7 @@ ChannelListener.prototype = {
     }
 
     this._log.trace("Channel: flags = " + channel.loadFlags +
-                    ", URI = " + channel.URI.spec +
+                    ", URI = " + uri +
                     ", HTTP success? " + channel.requestSucceeded);
     this._onComplete(null, this._data);
   },
@@ -597,7 +582,7 @@ ChannelListener.prototype = {
    * Create or push back the abort timer that kills this request
    */
   delayAbort: function delayAbort() {
-    Utils.delay(this.abortRequest, this._timeout, this, "abortTimer");
+    Utils.namedTimer(this.abortRequest, this._timeout, this, "abortTimer");
   },
 
   abortRequest: function abortRequest() {
@@ -634,7 +619,7 @@ BadCertListener.prototype = {
 
   notifyCertProblem: function certProblem(socketInfo, sslStatus, targetHost) {
     // Silently ignore?
-    let log = Log4Moz.repository.getLogger("Service.CertListener");
+    let log = Log4Moz.repository.getLogger("Sync.CertListener");
     log.level =
       Log4Moz.Level[Svc.Prefs.get("log.logger.network.resources")];
     log.debug("Invalid HTTPS certificate encountered, ignoring!");

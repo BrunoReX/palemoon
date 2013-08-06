@@ -43,11 +43,13 @@
 #include "jsgc.h"
 #include "jsgcmark.h"
 #include "jsiter.h"
+#include "jsmath.h"
 #include "jsproxy.h"
 #include "jsscope.h"
 #include "jstracer.h"
 #include "jswrapper.h"
 #include "assembler/wtf/Platform.h"
+#include "yarr/BumpPointerAllocator.h"
 #include "methodjit/MethodJIT.h"
 #include "methodjit/PolyIC.h"
 #include "methodjit/MonoIC.h"
@@ -69,10 +71,16 @@ JSCompartment::JSCompartment(JSRuntime *rt)
     gcTriggerBytes(0),
     gcLastBytes(0),
     hold(false),
+#ifdef JS_TRACER
+    traceMonitor_(NULL),
+#endif
     data(NULL),
     active(false),
 #ifdef JS_METHODJIT
-    jaegerCompartment(NULL),
+    jaegerCompartment_(NULL),
+#endif
+#if ENABLE_YARR_JIT
+    regExpAllocator(NULL),
 #endif
     propertyTree(thisForCtor()),
     emptyArgumentsShape(NULL),
@@ -84,9 +92,6 @@ JSCompartment::JSCompartment(JSRuntime *rt)
     initialRegExpShape(NULL),
     initialStringShape(NULL),
     debugMode(rt->debugMode),
-#if ENABLE_YARR_JIT
-    regExpAllocator(NULL),
-#endif
     mathCache(NULL)
 {
     JS_INIT_CLIST(&scripts);
@@ -101,7 +106,11 @@ JSCompartment::~JSCompartment()
 #endif
 
 #ifdef JS_METHODJIT
-    Foreground::delete_(jaegerCompartment);
+    Foreground::delete_(jaegerCompartment_);
+#endif
+
+#ifdef JS_TRACER
+    Foreground::delete_(traceMonitor_);
 #endif
 
     Foreground::delete_(mathCache);
@@ -118,46 +127,42 @@ JSCompartment::init()
     chunk = NULL;
     for (unsigned i = 0; i < FINALIZE_LIMIT; i++)
         arenas[i].init();
-    for (unsigned i = 0; i < FINALIZE_LIMIT; i++)
-        freeLists.finalizables[i] = NULL;
+    freeLists.init();
     if (!crossCompartmentWrappers.init())
         return false;
 
-#ifdef DEBUG
-    if (rt->meterEmptyShapes()) {
-        if (!emptyShapes.init())
-            return false;
-    }
-#endif
-
-#ifdef JS_TRACER
-    if (!traceMonitor.init(rt))
-        return false;
-#endif
-
-#if ENABLE_YARR_JIT
-    regExpAllocator = rt->new_<JSC::ExecutableAllocator>();
+    regExpAllocator = rt->new_<WTF::BumpPointerAllocator>();
     if (!regExpAllocator)
         return false;
-#endif
 
     if (!backEdgeTable.init())
         return false;
 
-#ifdef JS_METHODJIT
-    if (!(jaegerCompartment = rt->new_<mjit::JaegerCompartment>()))
-        return false;
-    return jaegerCompartment->Initialize();
-#else
     return true;
-#endif
 }
 
 #ifdef JS_METHODJIT
+bool
+JSCompartment::ensureJaegerCompartmentExists(JSContext *cx)
+{
+    if (jaegerCompartment_)
+        return true;
+
+    mjit::JaegerCompartment *jc = cx->new_<mjit::JaegerCompartment>();
+    if (!jc)
+        return false;
+    if (!jc->Initialize()) {
+        cx->delete_(jc);
+        return false;
+    }
+    jaegerCompartment_ = jc;
+    return true;
+}
+
 size_t
 JSCompartment::getMjitCodeSize() const
 {
-    return jaegerCompartment->execAlloc()->getCodeSize();
+    return jaegerCompartment_ ? jaegerCompartment_->execAlloc()->getCodeSize() : 0;
 }
 #endif
 
@@ -218,7 +223,7 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
      * This loses us some transparency, and is generally very cheesy.
      */
     JSObject *global;
-    if (cx->running()) {
+    if (cx->hasfp()) {
         global = cx->fp()->scopeChain().getGlobal();
     } else {
         global = cx->globalObject;
@@ -281,7 +286,7 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
         if (vp->isObject()) {
             JSObject *obj = &vp->toObject();
             JS_ASSERT(IsCrossCompartmentWrapper(obj));
-            if (obj->getParent() != global) {
+            if (global->getJSClass() != &js_dummy_class && obj->getParent() != global) {
                 do {
                     obj->setParent(global);
                     obj = obj->getProto();
@@ -490,7 +495,8 @@ JSCompartment::sweep(JSContext *cx, uint32 releaseInterval)
         initialStringShape = NULL;
 
 #ifdef JS_TRACER
-    traceMonitor.sweep(cx);
+    if (hasTraceMonitor())
+        traceMonitor()->sweep(cx);
 #endif
 
 #if defined JS_METHODJIT && defined JS_MONOIC
@@ -546,7 +552,8 @@ JSCompartment::purge(JSContext *cx)
      * which will eventually abort any current recording.
      */
     if (cx->runtime->gcRegenShapes)
-        traceMonitor.needFlush = JS_TRUE;
+        if (hasTraceMonitor())
+            traceMonitor()->needFlush = JS_TRUE;
 #endif
 
 #ifdef JS_METHODJIT
@@ -579,6 +586,22 @@ JSCompartment::allocMathCache(JSContext *cx)
         js_ReportOutOfMemory(cx);
     return mathCache;
 }
+
+#ifdef JS_TRACER
+TraceMonitor *
+JSCompartment::allocAndInitTraceMonitor(JSContext *cx)
+{
+    JS_ASSERT(!traceMonitor_);
+    traceMonitor_ = cx->new_<TraceMonitor>();
+    if (!traceMonitor_)
+        return NULL;
+    if (!traceMonitor_->init(cx->runtime)) {
+        Foreground::delete_(traceMonitor_);
+        return NULL;
+    }
+    return traceMonitor_;
+}
+#endif
 
 size_t
 JSCompartment::backEdgeCount(jsbytecode *pc) const

@@ -53,7 +53,7 @@ class nsHttpRequestHead
 {
 public:
     nsHttpRequestHead() : mMethod(nsHttp::Get), mVersion(NS_HTTP_VERSION_1_1) {}
-   ~nsHttpRequestHead() {}
+    ~nsHttpRequestHead() {}
 
     void SetMethod(nsHttpAtom method) { mMethod = method; }
     void SetVersion(nsHttpVersion version) { mVersion = version; }

@@ -35,14 +35,11 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-#include "nsIServiceManager.h"
-#include "nsIPrefService.h"
-#include "nsIPrefBranch2.h"
-
 #include "nsComponentManagerUtils.h"
 #include "nsITimer.h"
 #include "RasterImage.h"
 #include "DiscardTracker.h"
+#include "mozilla/Preferences.h"
 
 namespace mozilla {
 namespace imagelib {
@@ -120,6 +117,35 @@ DiscardTracker::Remove(DiscardTrackerNode *node)
   node->prev = node->next = nsnull;
 }
 
+/*
+ * Discard all the images we're tracking.
+ */
+void
+DiscardTracker::DiscardAll()
+{
+  if (!sInitialized)
+    return;
+
+  // Remove the sentinel from the list so that the only elements in the list
+  // which don't track an image are the head and tail.
+  Remove(&sSentinel);
+
+  // Discard all tracked images.
+  for (DiscardTrackerNode *node = sHead.next;
+       node != &sTail; node = sHead.next) {
+    NS_ABORT_IF_FALSE(node->curr, "empty node!");
+    Remove(node);
+    node->curr->Discard();
+  }
+
+  // Add the sentinel back to the (now empty) list.
+  Reset(&sSentinel);
+
+  // Because the sentinel is the only element in the list, the next timer event
+  // would be a no-op.  Disable the timer as an optimization.
+  TimerOff();
+}
+
 /**
  * Initialize the tracker.
  */
@@ -174,12 +200,7 @@ DiscardTracker::ReloadTimeout()
 
   // read the timeout pref
   PRInt32 discardTimeout;
-  nsCOMPtr<nsIPrefBranch2> branch = do_GetService(NS_PREFSERVICE_CONTRACTID);
-  if (!branch) {
-    NS_WARNING("nsIPrefBranch2 is not available!");
-    return;
-  }
-  rv = branch->GetIntPref(DISCARD_TIMEOUT_PREF, &discardTimeout);
+  rv = Preferences::GetInt(DISCARD_TIMEOUT_PREF, &discardTimeout);
 
   // If we got something bogus, return
   if (!NS_SUCCEEDED(rv) || discardTimeout <= 0)

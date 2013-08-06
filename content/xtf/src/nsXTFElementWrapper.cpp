@@ -49,7 +49,7 @@
 #include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "nsEventStateManager.h"
-#include "nsIEventListenerManager.h"
+#include "nsEventListenerManager.h"
 #include "nsIDOMEvent.h"
 #include "nsGUIEvent.h"
 #include "nsContentUtils.h"
@@ -271,13 +271,12 @@ nsXTFElementWrapper::InsertChildAt(nsIContent* aKid, PRUint32 aIndex,
 }
 
 nsresult
-nsXTFElementWrapper::RemoveChildAt(PRUint32 aIndex, PRBool aNotify, PRBool aMutationEvent)
+nsXTFElementWrapper::RemoveChildAt(PRUint32 aIndex, PRBool aNotify)
 {
-  NS_ASSERTION(aMutationEvent, "Someone tried to inhibit mutations on xtf child removal.");
   nsresult rv;
   if (mNotificationMask & nsIXTFElement::NOTIFY_WILL_REMOVE_CHILD)
     GetXTFElement()->WillRemoveChild(aIndex);
-  rv = nsXTFElementWrapperBase::RemoveChildAt(aIndex, aNotify, aMutationEvent);
+  rv = nsXTFElementWrapperBase::RemoveChildAt(aIndex, aNotify);
   if (mNotificationMask & nsIXTFElement::NOTIFY_CHILD_REMOVED)
     GetXTFElement()->ChildRemoved(aIndex);
   return rv;
@@ -537,7 +536,9 @@ nsXTFElementWrapper::GetExistingAttrNameFromQName(const nsAString& aStr) const
   if (!nodeInfo) {
     nsCOMPtr<nsIAtom> nameAtom = do_GetAtom(aStr);
     if (HandledByInner(nameAtom)) 
-      nodeInfo = mNodeInfo->NodeInfoManager()->GetNodeInfo(nameAtom, nsnull, kNameSpaceID_None).get();
+      nodeInfo = mNodeInfo->NodeInfoManager()->
+        GetNodeInfo(nameAtom, nsnull, kNameSpaceID_None,
+                    nsIDOMNode::ATTRIBUTE_NODE).get();
   }
   
   return nodeInfo;
@@ -915,8 +916,7 @@ nsXTFElementWrapper::SetIntrinsicState(nsEventStates::InternalType aNewState)
                    "Both READONLY and READWRITE are being set.  Yikes!!!");
 
   mIntrinsicState = newStates;
-  mozAutoDocUpdate upd(doc, UPDATE_CONTENT_STATE, PR_TRUE);
-  doc->ContentStateChanged(this, bits);
+  UpdateState(true);
 
   return NS_OK;
 }

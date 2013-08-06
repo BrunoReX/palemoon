@@ -120,6 +120,23 @@ function showPanelWhenReady(aWindow, aPage) {
   }, false);
 }
 
+function haveSystemLocale() {
+  let chrome = Cc["@mozilla.org/chrome/chrome-registry;1"].getService(Ci.nsIXULChromeRegistry);
+  chrome.QueryInterface(Ci.nsIToolkitChromeRegistry);
+  let availableLocales = chrome.getLocalesForPackage("browser");
+
+  let localeService = Cc["@mozilla.org/intl/nslocaleservice;1"].getService(Ci.nsILocaleService);
+  let systemLocale = localeService.getSystemLocale().getCategory("NSILOCALE_CTYPE");
+  systemLocale = systemLocale.split("-")[0];
+  let systemLocaleRegEx = new RegExp("^" + systemLocale);
+
+  while (availableLocales.hasMore()) {
+    let locale = availableLocales.getNext();
+    if (systemLocaleRegEx.test(locale))
+      return true;
+  }
+  return false;
+}
 
 function BrowserCLH() { }
 
@@ -188,20 +205,29 @@ BrowserCLH.prototype = {
 
     // Open the main browser window, if we don't already have one
     let win;
+    let localePickerWin;
     try {
       win = Services.wm.getMostRecentWindow("navigator:browser");
-      if (!win) {
+      localePickerWin = Services.wm.getMostRecentWindow("navigator:localepicker");
+      if (localePickerWin) {
+        localePickerWin.focus();
+        aCmdLine.preventDefault = true;
+        return;
+      } else  if (!win) {
         // Default to the saved homepage
         let defaultURL = getHomePage();
-
-        // Override the default if we have a new profile
-        if (needHomepageOverride() == "new profile")
-            defaultURL = "about:firstrun";
 
         // Override the default if we have a URL passed on command line
         if (uris.length > 0) {
           defaultURL = uris[0].spec;
           uris = uris.slice(1);
+        }
+
+        // Show the locale selector if we have a new profile
+        if (needHomepageOverride() == "new profile" && Services.prefs.getBoolPref("browser.firstrun.show.localepicker") && !haveSystemLocale()) {
+          win = openWindow(null, "chrome://browser/content/localePicker.xul", "_blank", "chrome,dialog=no,all", defaultURL);
+          aCmdLine.preventDefault = true;
+          return;
         }
 
         win = openWindow(null, "chrome://browser/content/browser.xul", "_blank", "chrome,dialog=no,all", defaultURL);

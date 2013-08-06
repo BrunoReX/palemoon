@@ -20,7 +20,7 @@ LIBRARY MOZCRT19
 .
 diff -re crt/src/_sample_.rc crtsrc/_sample_.rc
 41c
-            VALUE "ProductName", "Custom C Runtime"
+            VALUE "ProductName", "Mozilla Custom C Runtime"
 .
 39c
             VALUE "OriginalFilename", "MOZCRT19.DLL"
@@ -35,7 +35,7 @@ diff -re crt/src/_sample_.rc crtsrc/_sample_.rc
             VALUE "InternalName", "MOZCRT19D.DLL"
 .
 27c
-            VALUE "CompanyName", "Moonchild Productions"
+            VALUE "CompanyName", "Mozilla Foundation"
 .
 Only in crtsrc/: build
 diff -re crt/src/crt0.c crtsrc/crt0.c
@@ -165,10 +165,10 @@ diff -re crt/src/makefile.sub crtsrc/makefile.sub
 LIB=link -lib -nologo
 .
 69c
-CFLAGS=$(CFLAGS) -O2 -fp:fast -GS- -DMOZ_MEMORY=1 -DMOZ_MEMORY_WINDOWS=1 -DMOZ_MEMORY_SIZEOF_PTR_2POW=3
+CFLAGS=$(CFLAGS) -O2 -DMOZ_MEMORY=1 -DMOZ_MEMORY_WINDOWS=1 -DMOZ_MEMORY_SIZEOF_PTR_2POW=3
 .
 67c
-CFLAGS=$(CFLAGS) -O2 -fp:fast -GS- -DMOZ_MEMORY=1 -DMOZ_MEMORY_WINDOWS=1 -DMOZ_MEMORY_SIZEOF_PTR_2POW=3
+CFLAGS=$(CFLAGS) -O2 -DMOZ_MEMORY=1 -DMOZ_MEMORY_WINDOWS=1 -DMOZ_MEMORY_SIZEOF_PTR_2POW=3
 .
 diff -re crt/src/malloc.h crtsrc/malloc.h
 189a
@@ -214,7 +214,7 @@ LIBRARY MOZCPP19
 .
 diff -re crt/src/sample_p.rc crtsrc/sample_p.rc
 41c
-            VALUE "ProductName", "Custom C++ Runtime"
+            VALUE "ProductName", "Mozilla Custom C++ Runtime"
 .
 39c
             VALUE "OriginalFilename", "MOZCPP19.DLL"
@@ -229,7 +229,7 @@ diff -re crt/src/sample_p.rc crtsrc/sample_p.rc
             VALUE "InternalName", "MOZCPP19D.DLL"
 .
 27c
-            VALUE "CompanyName", "Moonchild Productions"
+            VALUE "CompanyName", "Mozilla Foundation"
 .
 diff -re crt/src/tidtable.c crtsrc/tidtable.c
 393,394d

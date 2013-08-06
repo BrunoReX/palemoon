@@ -224,13 +224,13 @@ Section "Uninstall"
   ${MUI_INSTALLOPTIONS_READ} $0 "unconfirm.ini" "Field 3" "State"
   ${If} "$0" == "1"
     ${un.DeleteRelativeProfiles} "Moonchild Productions\Pale Moon"
-    RmDir "$APPDATA\Moonchild Productions\Extensions\{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"
-    RmDir "$APPDATA\Moonchild Productions\Extensions"
-    RmDir "$APPDATA\Moonchild Productions"
+    RmDir "$APPDATA\Mozilla\Extensions\{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"
+    RmDir "$APPDATA\Mozilla\Extensions"
+    RmDir "$APPDATA\Mozilla"
   ${EndIf}
 
   SetShellVarContext current  ; Set SHCTX to HKCU
-  ${un.RegCleanMain} "Software\Mozilla"
+  ${un.RegCleanMain} "Software\Moonchild Productions"
   ${un.RegCleanUninstall}
   ${un.DeleteShortcuts}
 

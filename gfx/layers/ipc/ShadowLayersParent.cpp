@@ -148,7 +148,7 @@ bool
 ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
                                InfallibleTArray<EditReply>* reply)
 {
-  MOZ_LAYERS_LOG(("[ParentSide] recieved txn with %d edits", cset.Length()));
+  MOZ_LAYERS_LOG(("[ParentSide] received txn with %d edits", cset.Length()));
 
   if (mDestroyed || layer_manager()->IsDestroyed()) {
     return true;
@@ -211,8 +211,7 @@ ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
       ShadowThebesLayer* thebes = static_cast<ShadowThebesLayer*>(
         AsShadowLayer(otb)->AsLayer());
 
-      thebes->SetFrontBuffer(otb.initialFront(), otb.frontValidRegion(),
-                             otb.xResolution(), otb.yResolution());
+      thebes->SetFrontBuffer(otb.initialFront(), otb.frontValidRegion());
 
       break;
     }
@@ -223,7 +222,7 @@ ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
       ShadowCanvasLayer* canvas = static_cast<ShadowCanvasLayer*>(
         AsShadowLayer(ocb)->AsLayer());
 
-      canvas->Init(ocb.initialFront(), ocb.size());
+      canvas->Init(ocb.initialFront(), ocb.size(), ocb.needYFlip());
 
       break;
     }
@@ -310,7 +309,6 @@ ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
           specific.get_ThebesLayerAttributes();
 
         thebesLayer->SetValidRegion(attrs.validRegion());
-        thebesLayer->SetResolution(attrs.xResolution(), attrs.yResolution());
 
         break;
       }
@@ -391,16 +389,15 @@ ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
 
       ThebesBuffer newBack;
       nsIntRegion newValidRegion;
-      float newXResolution, newYResolution;
       OptionalThebesBuffer readonlyFront;
       nsIntRegion frontUpdatedRegion;
       thebes->Swap(newFront, op.updatedRegion(),
-                   &newBack, &newValidRegion, &newXResolution, &newYResolution,
+                   &newBack, &newValidRegion,
                    &readonlyFront, &frontUpdatedRegion);
       replyv.push_back(
         OpThebesBufferSwap(
           shadow, NULL,
-          newBack, newValidRegion, newXResolution, newYResolution,
+          newBack, newValidRegion,
           readonlyFront, frontUpdatedRegion));
       break;
     }
@@ -434,11 +431,11 @@ ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
       ShadowImageLayer* image =
         static_cast<ShadowImageLayer*>(shadow->AsLayer());
 
-      SurfaceDescriptor newFront = op.newFrontBuffer();
+      SharedImage newFront = op.newFrontBuffer();
       SharedImage newBack;
       image->Swap(op.newFrontBuffer(), &newBack);
-      if (newFront == newBack.get_SurfaceDescriptor()) {
-        newFront = SurfaceDescriptor();
+      if (newFront == newBack) {
+        newFront = SharedImage();
       }
 
       replyv.push_back(OpImageSwap(shadow, NULL,

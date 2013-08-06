@@ -164,13 +164,6 @@ extern JSBool js_IsRuntimeLocked(JSRuntime *rt);
 
 #endif /* !JS_THREADSAFE */
 
-#define JS_LOCK_RUNTIME_VOID(rt,e)                                            \
-    JS_BEGIN_MACRO                                                            \
-        JS_LOCK_RUNTIME(rt);                                                  \
-        e;                                                                    \
-        JS_UNLOCK_RUNTIME(rt);                                                \
-    JS_END_MACRO
-
 #define JS_LOCK_GC(rt)              JS_ACQUIRE_LOCK((rt)->gcLock)
 #define JS_UNLOCK_GC(rt)            JS_RELEASE_LOCK((rt)->gcLock)
 #define JS_AWAIT_GC_DONE(rt)        JS_WAIT_CONDVAR((rt)->gcDone, JS_NO_TIMEOUT)
@@ -218,8 +211,11 @@ js_CompareAndSwap(jsword *w, jsword ov, jsword nv)
 
 #endif
 
-#ifdef JS_THREADSAFE
+#ifdef __cplusplus
+
 namespace js {
+
+#ifdef JS_THREADSAFE
 class AutoLock {
   private:
     JSLock *lock;
@@ -228,10 +224,29 @@ class AutoLock {
     AutoLock(JSLock *lock) : lock(lock) { JS_ACQUIRE_LOCK(lock); }
     ~AutoLock() { JS_RELEASE_LOCK(lock); }
 };
-}  /* namespace js */
 # define JS_AUTO_LOCK_GUARD(name, l) AutoLock name((l));
 #else
 # define JS_AUTO_LOCK_GUARD(name, l)
+#endif
+
+class AutoAtomicIncrement {
+    int32 *p;
+    JS_DECL_USE_GUARD_OBJECT_NOTIFIER
+
+  public:
+    AutoAtomicIncrement(int32 *p JS_GUARD_OBJECT_NOTIFIER_PARAM)
+      : p(p) {
+        JS_GUARD_OBJECT_NOTIFIER_INIT;
+        JS_ATOMIC_INCREMENT(p);
+    }
+
+    ~AutoAtomicIncrement() {
+        JS_ATOMIC_DECREMENT(p);
+    }
+};
+
+} /* namespace js */
+
 #endif
 
 #endif /* jslock_h___ */

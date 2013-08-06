@@ -70,6 +70,7 @@ _MAIN_TEST_FILES = \
   browser_bug608316.js \
   browser_bug610764.js \
   browser_bug618502.js \
+  browser_bug679604.js \
   browser_details.js \
   browser_discovery.js \
   browser_dragdrop.js \
@@ -87,6 +88,8 @@ _MAIN_TEST_FILES = \
   browser_purchase.js \
   browser_openDialog.js \
   browser_types.js \
+  browser_inlinesettings.js \
+  browser_tabsettings.js \
   $(NULL)
 
 _TEST_FILES = \
@@ -115,6 +118,7 @@ _TEST_RESOURCES = \
   browser_eula.xml \
   browser_purchase.xml \
   discovery.html \
+  options.xul \
   redirect.sjs \
   releaseNotes.xhtml \
   $(NULL)

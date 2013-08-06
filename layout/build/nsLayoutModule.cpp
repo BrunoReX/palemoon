@@ -56,12 +56,10 @@
 #include "nsIController.h"
 #include "nsIControllers.h"
 #include "nsIDOMDOMImplementation.h"
-#include "nsIDOMEventGroup.h"
 #include "nsIDOMRange.h"
 #include "nsIDocument.h"
 #include "nsIDocumentEncoder.h"
 #include "nsIDocumentViewer.h"
-#include "nsIEventListenerManager.h"
 #include "nsIFactory.h"
 #include "nsIFrameUtil.h"
 #include "nsIFragmentContentSink.h"
@@ -85,11 +83,9 @@
 #include "nsRuleNode.h"
 #include "nsContentAreaDragDrop.h"
 #include "nsContentList.h"
-#include "nsSyncLoadService.h"
 #include "nsBox.h"
 #include "nsIFrameTraversal.h"
 #include "nsLayoutCID.h"
-#include "nsILanguageAtomService.h"
 #include "nsStyleSheetService.h"
 #include "nsXULPopupManager.h"
 #include "nsFocusManager.h"
@@ -444,6 +440,7 @@ nsresult NS_NewTreeBoxObject(nsIBoxObject** aResult);
 #endif
 
 nsresult NS_NewCanvasRenderingContext2D(nsIDOMCanvasRenderingContext2D** aResult);
+nsresult NS_NewCanvasRenderingContext2DThebes(nsIDOMCanvasRenderingContext2D** aResult);
 nsresult NS_NewCanvasRenderingContextWebGL(nsIDOMWebGLRenderingContext** aResult);
 
 nsresult NS_CreateFrameTraversal(nsIFrameTraversal** aResult);
@@ -462,7 +459,6 @@ nsresult NS_NewHTMLCopyTextEncoder(nsIDocumentEncoder** aResult);
 nsresult NS_NewTextEncoder(nsIDocumentEncoder** aResult);
 nsresult NS_NewXBLService(nsIXBLService** aResult);
 nsresult NS_NewContentPolicy(nsIContentPolicy** aResult);
-nsresult NS_NewDOMEventGroup(nsIDOMEventGroup** aResult);
 
 nsresult NS_NewEventListenerService(nsIEventListenerService** aResult);
 nsresult NS_NewGlobalMessageManager(nsIChromeFrameMessageManager** aResult);
@@ -514,15 +510,11 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(inCSSValueSearch)
 NS_GENERIC_FACTORY_CONSTRUCTOR(inDOMUtils)
 
 MAKE_CTOR(CreateNameSpaceManager,         nsINameSpaceManager,         NS_GetNameSpaceManager)
-MAKE_CTOR(CreateEventListenerManager,     nsIEventListenerManager,     NS_NewEventListenerManager)
-MAKE_CTOR(CreateDOMEventGroup,            nsIDOMEventGroup,            NS_NewDOMEventGroup)
 MAKE_CTOR(CreateDocumentViewer,           nsIDocumentViewer,           NS_NewDocumentViewer)
 MAKE_CTOR(CreateHTMLDocument,             nsIDocument,                 NS_NewHTMLDocument)
 MAKE_CTOR(CreateDOMImplementation,        nsIDOMDOMImplementation,     NS_NewDOMImplementation)
 MAKE_CTOR(CreateXMLDocument,              nsIDocument,                 NS_NewXMLDocument)
-#ifdef MOZ_SVG
 MAKE_CTOR(CreateSVGDocument,              nsIDocument,                 NS_NewSVGDocument)
-#endif
 MAKE_CTOR(CreateImageDocument,            nsIDocument,                 NS_NewImageDocument)
 MAKE_CTOR(CreateDOMSelection,             nsISelection,                NS_NewDomSelection)
 MAKE_CTOR(CreateRange,                    nsIDOMRange,                 NS_NewRange)
@@ -570,7 +562,6 @@ MAKE_CTOR(CreateParentMessageManager,     nsIFrameMessageManager,NS_NewParentPro
 MAKE_CTOR(CreateChildMessageManager,     nsISyncMessageSender,NS_NewChildProcessMessageManager)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsDataDocumentContentPolicy)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsNoDataProtocolContentPolicy)
-NS_GENERIC_FACTORY_CONSTRUCTOR(nsSyncLoadService)
 MAKE_CTOR(CreatePluginDocument,           nsIDocument,                 NS_NewPluginDocument)
 #ifdef MOZ_MEDIA
 MAKE_CTOR(CreateVideoDocument,            nsIDocument,                 NS_NewVideoDocument)
@@ -578,6 +569,7 @@ MAKE_CTOR(CreateVideoDocument,            nsIDocument,                 NS_NewVid
 MAKE_CTOR(CreateFocusManager,             nsIFocusManager,      NS_NewFocusManager)
 
 MAKE_CTOR(CreateCanvasRenderingContext2D, nsIDOMCanvasRenderingContext2D, NS_NewCanvasRenderingContext2D)
+MAKE_CTOR(CreateCanvasRenderingContext2DThebes, nsIDOMCanvasRenderingContext2D, NS_NewCanvasRenderingContext2DThebes)
 MAKE_CTOR(CreateCanvasRenderingContextWebGL, nsIDOMWebGLRenderingContext, NS_NewCanvasRenderingContextWebGL)
 
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsStyleSheetService, Init)
@@ -763,15 +755,11 @@ NS_DEFINE_NAMED_CID(IN_FLASHER_CID);
 NS_DEFINE_NAMED_CID(IN_CSSVALUESEARCH_CID);
 NS_DEFINE_NAMED_CID(IN_DOMUTILS_CID);
 NS_DEFINE_NAMED_CID(NS_NAMESPACEMANAGER_CID);
-NS_DEFINE_NAMED_CID(NS_EVENTLISTENERMANAGER_CID);
-NS_DEFINE_NAMED_CID(NS_DOMEVENTGROUP_CID);
 NS_DEFINE_NAMED_CID(NS_DOCUMENT_VIEWER_CID);
 NS_DEFINE_NAMED_CID(NS_HTMLDOCUMENT_CID);
 NS_DEFINE_NAMED_CID(NS_DOM_IMPLEMENTATION_CID);
 NS_DEFINE_NAMED_CID(NS_XMLDOCUMENT_CID);
-#ifdef MOZ_SVG
 NS_DEFINE_NAMED_CID(NS_SVGDOCUMENT_CID);
-#endif
 NS_DEFINE_NAMED_CID(NS_IMAGEDOCUMENT_CID);
 NS_DEFINE_NAMED_CID(NS_DOMSELECTION_CID);
 NS_DEFINE_NAMED_CID(NS_RANGE_CID);
@@ -785,6 +773,8 @@ NS_DEFINE_NAMED_CID(NS_HTMLOPTIONELEMENT_CID);
 NS_DEFINE_NAMED_CID(NS_HTMLAUDIOELEMENT_CID);
 #endif
 NS_DEFINE_NAMED_CID(NS_CANVASRENDERINGCONTEXT2D_CID);
+NS_DEFINE_NAMED_CID(NS_CANVASRENDERINGCONTEXT2DTHEBES_CID);
+NS_DEFINE_NAMED_CID(NS_CANVASRENDERINGCONTEXT2DAZURE_CID);
 NS_DEFINE_NAMED_CID(NS_CANVASRENDERINGCONTEXTWEBGL_CID);
 NS_DEFINE_NAMED_CID(NS_TEXT_ENCODER_CID);
 NS_DEFINE_NAMED_CID(NS_HTMLCOPY_TEXT_ENCODER_CID);
@@ -819,7 +809,6 @@ NS_DEFINE_NAMED_CID(NS_XTFSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_XMLCONTENTBUILDER_CID);
 #endif
 NS_DEFINE_NAMED_CID(NS_CONTENT_DOCUMENT_LOADER_FACTORY_CID);
-NS_DEFINE_NAMED_CID(NS_SYNCLOADDOMSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_DOM_SCRIPT_OBJECT_FACTORY_CID);
 NS_DEFINE_NAMED_CID(NS_BASE_DOM_EXCEPTION_CID);
 NS_DEFINE_NAMED_CID(NS_JSPROTOCOLHANDLER_CID);
@@ -911,15 +900,11 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
   { &kIN_CSSVALUESEARCH_CID, false, NULL, inCSSValueSearchConstructor },
   { &kIN_DOMUTILS_CID, false, NULL, inDOMUtilsConstructor },
   { &kNS_NAMESPACEMANAGER_CID, false, NULL, CreateNameSpaceManager },
-  { &kNS_EVENTLISTENERMANAGER_CID, false, NULL, CreateEventListenerManager },
-  { &kNS_DOMEVENTGROUP_CID, false, NULL, CreateDOMEventGroup },
   { &kNS_DOCUMENT_VIEWER_CID, false, NULL, CreateDocumentViewer },
   { &kNS_HTMLDOCUMENT_CID, false, NULL, CreateHTMLDocument },
   { &kNS_DOM_IMPLEMENTATION_CID, false, NULL, CreateDOMImplementation },
   { &kNS_XMLDOCUMENT_CID, false, NULL, CreateXMLDocument },
-#ifdef MOZ_SVG
   { &kNS_SVGDOCUMENT_CID, false, NULL, CreateSVGDocument },
-#endif
   { &kNS_IMAGEDOCUMENT_CID, false, NULL, CreateImageDocument },
   { &kNS_DOMSELECTION_CID, false, NULL, CreateDOMSelection },
   { &kNS_RANGE_CID, false, NULL, CreateRange },
@@ -932,6 +917,7 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
 #ifdef MOZ_MEDIA
   { &kNS_HTMLAUDIOELEMENT_CID, false, NULL, CreateHTMLAudioElement },
 #endif
+  { &kNS_CANVASRENDERINGCONTEXT2DTHEBES_CID, false, NULL, CreateCanvasRenderingContext2DThebes },
   { &kNS_CANVASRENDERINGCONTEXT2D_CID, false, NULL, CreateCanvasRenderingContext2D },
   { &kNS_CANVASRENDERINGCONTEXTWEBGL_CID, false, NULL, CreateCanvasRenderingContextWebGL },
   { &kNS_TEXT_ENCODER_CID, false, NULL, CreateTextEncoder },
@@ -967,7 +953,6 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
   { &kNS_XMLCONTENTBUILDER_CID, false, NULL, CreateXMLContentBuilder },
 #endif
   { &kNS_CONTENT_DOCUMENT_LOADER_FACTORY_CID, false, NULL, CreateContentDLF },
-  { &kNS_SYNCLOADDOMSERVICE_CID, false, NULL, nsSyncLoadServiceConstructor },
   { &kNS_DOM_SCRIPT_OBJECT_FACTORY_CID, false, NULL, nsDOMScriptObjectFactoryConstructor },
   { &kNS_BASE_DOM_EXCEPTION_CID, false, NULL, nsBaseDOMExceptionConstructor },
   { &kNS_JSPROTOCOLHANDLER_CID, false, NULL, nsJSProtocolHandler::Create },
@@ -1055,9 +1040,7 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
   { "@mozilla.org/inspector/dom-utils;1", &kIN_DOMUTILS_CID },
   { NS_NAMESPACEMANAGER_CONTRACTID, &kNS_NAMESPACEMANAGER_CID },
   { "@mozilla.org/xml/xml-document;1", &kNS_XMLDOCUMENT_CID },
-#ifdef MOZ_SVG
   { "@mozilla.org/svg/svg-document;1", &kNS_SVGDOCUMENT_CID },
-#endif
   { "@mozilla.org/content/dom-selection;1", &kNS_DOMSELECTION_CID },
   { "@mozilla.org/content/range;1", &kNS_RANGE_CID },
   { "@mozilla.org/content/range-utils;1", &kNS_RANGEUTILS_CID },
@@ -1070,23 +1053,20 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
   { NS_HTMLAUDIOELEMENT_CONTRACTID, &kNS_HTMLAUDIOELEMENT_CID },
 #endif
   { "@mozilla.org/content/canvas-rendering-context;1?id=2d", &kNS_CANVASRENDERINGCONTEXT2D_CID },
+  { "@mozilla.org/content/2dthebes-canvas-rendering-context;1", &kNS_CANVASRENDERINGCONTEXT2DTHEBES_CID },
   { "@mozilla.org/content/canvas-rendering-context;1?id=moz-webgl", &kNS_CANVASRENDERINGCONTEXTWEBGL_CID },
   { "@mozilla.org/content/canvas-rendering-context;1?id=experimental-webgl", &kNS_CANVASRENDERINGCONTEXTWEBGL_CID },
   { NS_DOC_ENCODER_CONTRACTID_BASE "text/xml", &kNS_TEXT_ENCODER_CID },
   { NS_DOC_ENCODER_CONTRACTID_BASE "application/xml", &kNS_TEXT_ENCODER_CID },
   { NS_DOC_ENCODER_CONTRACTID_BASE "application/xhtml+xml", &kNS_TEXT_ENCODER_CID },
-#ifdef MOZ_SVG
   { NS_DOC_ENCODER_CONTRACTID_BASE "image/svg+xml", &kNS_TEXT_ENCODER_CID },
-#endif
   { NS_DOC_ENCODER_CONTRACTID_BASE "text/html", &kNS_TEXT_ENCODER_CID },
   { NS_DOC_ENCODER_CONTRACTID_BASE "text/plain", &kNS_TEXT_ENCODER_CID },
   { NS_HTMLCOPY_ENCODER_CONTRACTID, &kNS_HTMLCOPY_TEXT_ENCODER_CID },
   { NS_CONTENTSERIALIZER_CONTRACTID_PREFIX "text/xml", &kNS_XMLCONTENTSERIALIZER_CID },
   { NS_CONTENTSERIALIZER_CONTRACTID_PREFIX "application/xml", &kNS_XMLCONTENTSERIALIZER_CID },
   { NS_CONTENTSERIALIZER_CONTRACTID_PREFIX "application/xhtml+xml", &kNS_XHTMLCONTENTSERIALIZER_CID },
-#ifdef MOZ_SVG
   { NS_CONTENTSERIALIZER_CONTRACTID_PREFIX "image/svg+xml", &kNS_XMLCONTENTSERIALIZER_CID },
-#endif
   { NS_CONTENTSERIALIZER_CONTRACTID_PREFIX "text/html", &kNS_HTMLCONTENTSERIALIZER_CID },
   { NS_CONTENTSERIALIZER_CONTRACTID_PREFIX "application/vnd.mozilla.xul+xml", &kNS_XMLCONTENTSERIALIZER_CID },
   { NS_CONTENTSERIALIZER_CONTRACTID_PREFIX "text/plain", &kNS_PLAINTEXTSERIALIZER_CID },
@@ -1118,7 +1098,6 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
   { NS_XMLCONTENTBUILDER_CONTRACTID, &kNS_XMLCONTENTBUILDER_CID },
 #endif
   { CONTENT_DLF_CONTRACTID, &kNS_CONTENT_DOCUMENT_LOADER_FACTORY_CID },
-  { NS_SYNCLOADDOMSERVICE_CONTRACTID, &kNS_SYNCLOADDOMSERVICE_CID },
   { NS_JSPROTOCOLHANDLER_CONTRACTID, &kNS_JSPROTOCOLHANDLER_CID },
   { NS_WINDOWCONTROLLER_CONTRACTID, &kNS_WINDOWCONTROLLER_CID },
   { "@mozilla.org/view-manager;1", &kNS_VIEW_MANAGER_CID },

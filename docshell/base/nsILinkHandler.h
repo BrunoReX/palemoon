@@ -48,7 +48,8 @@ class nsGUIEvent;
 
 // Interface ID for nsILinkHandler
 #define NS_ILINKHANDLER_IID \
- { 0x71627c30, 0xd3c5, 0x4ad0,{0xb5, 0x33, 0x6e, 0x01, 0x91, 0xf2, 0x79, 0x32}}
+  { 0xd85670a1, 0x224a, 0x4562, \
+    { 0x87, 0xa9, 0x43, 0xa5, 0x24, 0xe7, 0xd0, 0x1b } }
 
 /**
  * Interface used for handling clicks on links
@@ -66,12 +67,14 @@ public:
    *        string)
    * @param aPostDataStream the POST data to send
    * @param aHeadersDataStream ???
+   * @param aIsTrusted PR_FALSE if the triggerer is an untrusted DOM event.
    */
   NS_IMETHOD OnLinkClick(nsIContent* aContent, 
                          nsIURI* aURI,
                          const PRUnichar* aTargetSpec,
-                         nsIInputStream* aPostDataStream = 0,
-                         nsIInputStream* aHeadersDataStream = 0) = 0;
+                         nsIInputStream* aPostDataStream,
+                         nsIInputStream* aHeadersDataStream,
+                         PRBool aIsTrusted) = 0;
 
   /**
    * Process a click on a link.
@@ -115,35 +118,5 @@ public:
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsILinkHandler, NS_ILINKHANDLER_IID)
-
-
-// Interface ID for nsILinkHandler_5_0
-#define NS_ILINKHANDLER_5_0_IID \
-{ 0xd7e08edf, 0x52f0, 0x49f2, \
-  { 0x86, 0xbc, 0x4d, 0x3e, 0x9f, 0x20, 0x92, 0x38 } }
-class nsILinkHandler_5_0 : public nsILinkHandler
-{
-public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_ILINKHANDLER_5_0_IID)
-  /**
-   * Process a click on a link.
-   *
-   * @param aContent the content for the frame that generated the trigger
-   * @param aURI a URI object that defines the destination for the link
-   * @param aTargetSpec indicates where the link is targeted (may be an empty
-   *        string)
-   * @param aPostDataStream the POST data to send
-   * @param aHeadersDataStream ???
-   * @param aIsTrusted PR_FALSE if the triggerer is an untrusted DOM event.
-   */
-  NS_IMETHOD OnLinkClick(nsIContent* aContent, 
-                         nsIURI* aURI,
-                         const PRUnichar* aTargetSpec,
-                         nsIInputStream* aPostDataStream,
-                         nsIInputStream* aHeadersDataStream,
-                         PRBool aIsTrusted) = 0;
-};
-
-NS_DEFINE_STATIC_IID_ACCESSOR(nsILinkHandler_5_0, NS_ILINKHANDLER_5_0_IID)
 
 #endif /* nsILinkHandler_h___ */

@@ -129,6 +129,8 @@ var PlacesUtils = {
   TYPE_HTML: "text/html",
   // Place entries as raw URL text
   TYPE_UNICODE: "text/unicode",
+  // Used to track the action that populated the clipboard.
+  TYPE_X_MOZ_PLACE_ACTION: "text/x-moz-place-action",
 
   EXCLUDE_FROM_BACKUP_ANNO: "places/excludeFromBackup",
   GUID_ANNO: "placesInternal/GUID",
@@ -163,6 +165,19 @@ var PlacesUtils = {
    */
   _uri: function PU__uri(aSpec) {
     return NetUtil.newURI(aSpec);
+  },
+
+  /**
+   * Wraps a string in a nsISupportsString wrapper.
+   * @param   aString
+   *          The string to wrap.
+   * @returns A nsISupportsString object containing a string.
+   */
+  toISupportsString: function PU_toISupportsString(aString) {
+    let s = Cc["@mozilla.org/supports-string;1"].
+            createInstance(Ci.nsISupportsString);
+    s.data = aString;
+    return s;
   },
 
   getFormattedString: function PU_getFormattedString(key, params) {
@@ -596,8 +611,9 @@ var PlacesUtils = {
       case this.TYPE_X_MOZ_URL: {
         function gatherDataUrl(bNode) {
           if (PlacesUtils.nodeIsLivemarkContainer(bNode)) {
-            let siteURI = PlacesUtils.livemarks.getSiteURI(bNode.itemId).spec;
-            return siteURI + NEWLINE + bNode.title;
+            let uri = PlacesUtils.livemarks.getSiteURI(bNode.itemId) ||
+                      PlacesUtils.livemarks.getFeedURI(bNode.itemId);
+            return uri.spec + NEWLINE + bNode.title;
           }
           if (PlacesUtils.nodeIsURI(bNode))
             return (aOverrideURI || bNode.uri) + NEWLINE + bNode.title;
@@ -625,8 +641,9 @@ var PlacesUtils = {
           // escape out potential HTML in the title
           let escapedTitle = bNode.title ? htmlEscape(bNode.title) : "";
           if (PlacesUtils.nodeIsLivemarkContainer(bNode)) {
-            let siteURI = PlacesUtils.livemarks.getSiteURI(bNode.itemId).spec;
-            return "<A HREF=\"" + siteURI + "\">" + escapedTitle + "</A>" + NEWLINE;
+            let uri = PlacesUtils.livemarks.getSiteURI(bNode.itemId) ||
+                      PlacesUtils.livemarks.getFeedURI(bNode.itemId);
+            return "<A HREF=\"" + uri.spec + "\">" + escapedTitle + "</A>" + NEWLINE;
           }
           if (PlacesUtils.nodeIsContainer(bNode)) {
             asContainer(bNode);
@@ -664,7 +681,8 @@ var PlacesUtils = {
     // Otherwise, we wrap as TYPE_UNICODE.
     function gatherDataText(bNode) {
       if (PlacesUtils.nodeIsLivemarkContainer(bNode))
-        return PlacesUtils.livemarks.getSiteURI(bNode.itemId).spec;
+        return PlacesUtils.livemarks.getSiteURI(bNode.itemId) ||
+               PlacesUtils.livemarks.getFeedURI(bNode.itemId);
       if (PlacesUtils.nodeIsContainer(bNode)) {
         asContainer(bNode);
         let wasOpen = bNode.containerOpen;
@@ -1704,8 +1722,7 @@ var PlacesUtils = {
    * Serialize a JS object to JSON
    */
   toJSONString: function PU_toJSONString(aObj) {
-    var JSON = Cc["@mozilla.org/dom/json;1"].createInstance(Ci.nsIJSON);
-    return JSON.encode(aObj);
+    return JSON.stringify(aObj);
   },
 
   /**
@@ -2590,11 +2607,11 @@ function PlacesRemoveLivemarkTransaction(aFolderId)
   this._container = PlacesUtils.bookmarks.getFolderIdForItem(this._id);
   let annos = PlacesUtils.getAnnotationsForItem(this._id);
   // Exclude livemark service annotations, those will be recreated automatically
-  let annosToExclude = ["livemark/feedURI",
-                        "livemark/siteURI",
-                        "livemark/expiration",
-                        "livemark/loadfailed",
-                        "livemark/loading"];
+  let annosToExclude = [PlacesUtils.LMANNO_FEEDURI,
+                        PlacesUtils.LMANNO_SITEURI,
+                        PlacesUtils.LMANNO_EXPIRATION,
+                        PlacesUtils.LMANNO_LOADFAILED,
+                        PlacesUtils.LMANNO_LOADING];
   this._annotations = annos.filter(function(aValue, aIndex, aArray) {
       return annosToExclude.indexOf(aValue.name) == -1;
     });

@@ -185,9 +185,6 @@ function run_test() {
   }
   do_check_true(didThrow);
 
-  let did401 = false;
-  Observers.add("weave:resource:status:401", function() did401 = true);
-
   _("Test that the BasicAuthenticator doesn't screw up header case.");
   let res1 = new Resource("http://localhost:8080/foo");
   res1.setHeader("Authorization", "Basic foobar");
@@ -208,7 +205,6 @@ function run_test() {
   _("GET a password protected resource (test that it'll fail w/o pass, no throw)");
   let res2 = new Resource("http://localhost:8080/protected");
   content = res2.get();
-  do_check_true(did401);
   do_check_eq(content, "This path exists and is protected - failed");
   do_check_eq(content.status, 401);
   do_check_false(content.success);
@@ -301,14 +297,13 @@ function run_test() {
   do_check_eq(content.status, 200);
   do_check_eq(JSON.stringify(content.obj), JSON.stringify(sample_data));
 
-  _("X-Weave-Timestamp header updates Resource.serverTime");
+  _("X-Weave-Timestamp header updates AsyncResource.serverTime");
   // Before having received any response containing the
-  // X-Weave-Timestamp header, Resource.serverTime is null.
-  do_check_eq(Resource.serverTime, null);
+  // X-Weave-Timestamp header, AsyncResource.serverTime is null.
+  do_check_eq(AsyncResource.serverTime, null);
   let res8 = new Resource("http://localhost:8080/timestamp");
   content = res8.get();
-  do_check_eq(Resource.serverTime, TIMESTAMP);
-
+  do_check_eq(AsyncResource.serverTime, TIMESTAMP);
 
   _("GET: no special request headers");
   let res9 = new Resource("http://localhost:8080/headers");
@@ -394,38 +389,6 @@ function run_test() {
   do_check_eq(error.message, "NS_ERROR_CONNECTION_REFUSED");
   do_check_eq(typeof error.stack, "string");
 
-  let redirRequest;
-  let redirToOpen = function(subject) {
-    subject.newUri = "http://localhost:8080/open";
-    redirRequest = subject;
-  };
-  Observers.add("weave:resource:status:401", redirToOpen);
-
-  _("Notification of 401 can redirect to another uri");
-  did401 = false;
-  let res12 = new Resource("http://localhost:8080/protected");
-  content = res12.get();
-  do_check_eq(res12.spec, "http://localhost:8080/open");
-  do_check_eq(content, "This path exists");
-  do_check_eq(content.status, 200);
-  do_check_true(content.success);
-  do_check_eq(res.data, content);
-  do_check_true(did401);
-  do_check_eq(redirRequest.response, "This path exists and is protected - failed");
-  do_check_eq(redirRequest.response.status, 401);
-  do_check_false(redirRequest.response.success);
-
-  Observers.remove("weave:resource:status:401", redirToOpen);
-
-  _("Removing the observer should result in the original 401");
-  did401 = false;
-  let res13 = new Resource("http://localhost:8080/protected");
-  content = res13.get();
-  do_check_true(did401);
-  do_check_eq(content, "This path exists and is protected - failed");
-  do_check_eq(content.status, 401);
-  do_check_false(content.success);
-
   _("Checking handling of errors in onProgress.");
   let res18 = new Resource("http://localhost:8080/json");
   let onProgress = function(rec) {
@@ -484,6 +447,19 @@ function run_test() {
     error = ex;
   }
   do_check_eq(error.result, Cr.NS_ERROR_NET_TIMEOUT);
+
+  _("Testing URI construction.");
+  let args = [];
+  args.push("newer=" + 1234);
+  args.push("limit=" + 1234);
+  args.push("sort=" + 1234);
+
+  let query = "?" + args.join("&");
+
+  let uri1 = Utils.makeURL("http://foo/" + query);
+  let uri2 = Utils.makeURL("http://foo/");
+  uri2.query = query;
+  do_check_eq(uri1.query, uri2.query);
 
   server.stop(do_test_finished);
 }

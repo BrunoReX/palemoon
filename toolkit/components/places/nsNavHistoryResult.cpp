@@ -2879,6 +2879,7 @@ nsNavHistoryQueryResultNode::OnVisit(nsIURI* aURI, PRInt64 aVisitId,
                                      PRTime aTime, PRInt64 aSessionId,
                                      PRInt64 aReferringId,
                                      PRUint32 aTransitionType,
+                                     const nsACString& aGUID,
                                      PRUint32* aAdded)
 {
   nsNavHistory* history = nsNavHistory::GetHistoryService();
@@ -2994,7 +2995,8 @@ nsNavHistoryQueryResultNode::OnVisit(nsIURI* aURI, PRInt64 aVisitId,
  */
 NS_IMETHODIMP
 nsNavHistoryQueryResultNode::OnTitleChanged(nsIURI* aURI,
-                                            const nsAString& aPageTitle)
+                                            const nsAString& aPageTitle,
+                                            const nsACString& aGUID)
 {
   if (!mExpanded) {
     // When we are not expanded, we don't update, just invalidate and unhook.
@@ -3061,7 +3063,9 @@ nsNavHistoryQueryResultNode::OnTitleChanged(nsIURI* aURI,
 
 
 NS_IMETHODIMP
-nsNavHistoryQueryResultNode::OnBeforeDeleteURI(nsIURI *aURI)
+nsNavHistoryQueryResultNode::OnBeforeDeleteURI(nsIURI* aURI,
+                                               const nsACString& aGUID,
+                                               PRUint16 aReason)
 {
   return NS_OK;
 }
@@ -3071,7 +3075,9 @@ nsNavHistoryQueryResultNode::OnBeforeDeleteURI(nsIURI *aURI)
  * the given URI.
  */
 NS_IMETHODIMP
-nsNavHistoryQueryResultNode::OnDeleteURI(nsIURI *aURI)
+nsNavHistoryQueryResultNode::OnDeleteURI(nsIURI* aURI,
+                                         const nsACString& aGUID,
+                                         PRUint16 aReason)
 {
   if (IsContainersQuery()) {
     // Incremental updates of query returning queries are pretty much
@@ -3138,16 +3144,18 @@ static nsresult setFaviconCallback(
 
 
 NS_IMETHODIMP
-nsNavHistoryQueryResultNode::OnPageChanged(nsIURI *aURI, PRUint32 aWhat,
-                                           const nsAString &aValue)
+nsNavHistoryQueryResultNode::OnPageChanged(nsIURI* aURI,
+                                           PRUint32 aChangedAttribute,
+                                           const nsAString& aNewValue,
+                                           const nsACString& aGUID)
 {
   nsCAutoString spec;
   nsresult rv = aURI->GetSpec(spec);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  switch (aWhat) {
+  switch (aChangedAttribute) {
     case nsINavHistoryObserver::ATTRIBUTE_FAVICON: {
-      NS_ConvertUTF16toUTF8 newFavicon(aValue);
+      NS_ConvertUTF16toUTF8 newFavicon(aNewValue);
       PRBool onlyOneEntry = (mOptions->ResultType() ==
                              nsINavHistoryQueryOptions::RESULTS_AS_URI ||
                              mOptions->ResultType() ==
@@ -3165,7 +3173,10 @@ nsNavHistoryQueryResultNode::OnPageChanged(nsIURI *aURI, PRUint32 aWhat,
 
 
 NS_IMETHODIMP
-nsNavHistoryQueryResultNode::OnDeleteVisits(nsIURI* aURI, PRTime aVisitTime)
+nsNavHistoryQueryResultNode::OnDeleteVisits(nsIURI* aURI,
+                                            PRTime aVisitTime,
+                                            const nsACString& aGUID,
+                                            PRUint16 aReason)
 {
   NS_PRECONDITION(mOptions->QueryType() == nsINavHistoryQueryOptions::QUERY_TYPE_HISTORY,
                   "Bookmarks queries should not get a OnDeleteVisits notification");
@@ -3173,7 +3184,7 @@ nsNavHistoryQueryResultNode::OnDeleteVisits(nsIURI* aURI, PRTime aVisitTime)
     // All visits for this uri have been removed, but the uri won't be removed
     // from the databse, most likely because it's a bookmark.  For a history
     // query this is equivalent to a onDeleteURI notification.
-    nsresult rv = OnDeleteURI(aURI);
+    nsresult rv = OnDeleteURI(aURI, aGUID, aReason);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -5064,12 +5075,14 @@ nsNavHistoryResult::OnItemMoved(PRInt64 aItemId,
 NS_IMETHODIMP
 nsNavHistoryResult::OnVisit(nsIURI* aURI, PRInt64 aVisitId, PRTime aTime,
                             PRInt64 aSessionId, PRInt64 aReferringId,
-                            PRUint32 aTransitionType, PRUint32* aAdded)
+                            PRUint32 aTransitionType, const nsACString& aGUID,
+                            PRUint32* aAdded)
 {
   PRUint32 added = 0;
 
   ENUMERATE_HISTORY_OBSERVERS(OnVisit(aURI, aVisitId, aTime, aSessionId,
-                                      aReferringId, aTransitionType, &added));
+                                      aReferringId, aTransitionType, aGUID,
+                                      &added));
 
   if (!mRootNode->mExpanded)
     return NS_OK;
@@ -5122,24 +5135,30 @@ nsNavHistoryResult::OnVisit(nsIURI* aURI, PRInt64 aVisitId, PRTime aTime,
 
 
 NS_IMETHODIMP
-nsNavHistoryResult::OnTitleChanged(nsIURI* aURI, const nsAString& aPageTitle)
+nsNavHistoryResult::OnTitleChanged(nsIURI* aURI,
+                                   const nsAString& aPageTitle,
+                                   const nsACString& aGUID)
 {
-  ENUMERATE_HISTORY_OBSERVERS(OnTitleChanged(aURI, aPageTitle));
+  ENUMERATE_HISTORY_OBSERVERS(OnTitleChanged(aURI, aPageTitle, aGUID));
   return NS_OK;
 }
 
 
 NS_IMETHODIMP
-nsNavHistoryResult::OnBeforeDeleteURI(nsIURI *aURI)
+nsNavHistoryResult::OnBeforeDeleteURI(nsIURI *aURI,
+                                      const nsACString& aGUID,
+                                      PRUint16 aReason)
 {
   return NS_OK;
 }
 
 
 NS_IMETHODIMP
-nsNavHistoryResult::OnDeleteURI(nsIURI *aURI)
+nsNavHistoryResult::OnDeleteURI(nsIURI *aURI,
+                                const nsACString& aGUID,
+                                PRUint16 aReason)
 {
-  ENUMERATE_HISTORY_OBSERVERS(OnDeleteURI(aURI));
+  ENUMERATE_HISTORY_OBSERVERS(OnDeleteURI(aURI, aGUID, aReason));
   return NS_OK;
 }
 
@@ -5153,10 +5172,12 @@ nsNavHistoryResult::OnClearHistory()
 
 
 NS_IMETHODIMP
-nsNavHistoryResult::OnPageChanged(nsIURI *aURI,
-                                  PRUint32 aWhat, const nsAString &aValue)
+nsNavHistoryResult::OnPageChanged(nsIURI* aURI,
+                                  PRUint32 aChangedAttribute,
+                                  const nsAString& aValue,
+                                  const nsACString& aGUID)
 {
-  ENUMERATE_HISTORY_OBSERVERS(OnPageChanged(aURI, aWhat, aValue));
+  ENUMERATE_HISTORY_OBSERVERS(OnPageChanged(aURI, aChangedAttribute, aValue, aGUID));
   return NS_OK;
 }
 
@@ -5165,8 +5186,11 @@ nsNavHistoryResult::OnPageChanged(nsIURI *aURI,
  * Don't do anything when visits expire.
  */
 NS_IMETHODIMP
-nsNavHistoryResult::OnDeleteVisits(nsIURI* aURI, PRTime aVisitTime)
+nsNavHistoryResult::OnDeleteVisits(nsIURI* aURI,
+                                   PRTime aVisitTime,
+                                   const nsACString& aGUID,
+                                   PRUint16 aReason)
 {
-  ENUMERATE_HISTORY_OBSERVERS(OnDeleteVisits(aURI, aVisitTime));
+  ENUMERATE_HISTORY_OBSERVERS(OnDeleteVisits(aURI, aVisitTime, aGUID, aReason));
   return NS_OK;
 }

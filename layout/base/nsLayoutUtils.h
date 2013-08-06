@@ -22,7 +22,7 @@
  * Contributor(s):
  *   Boris Zbarsky <bzbarsky@mit.edu> (original author)
  *   L. David Baron <dbaron@dbaron.org>, Mozilla Corporation
- *   Mats Palmgren <mats.palmgren@bredband.net>
+ *   Mats Palmgren <matspal@gmail.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either of the GNU General Public License Version 2 or later (the "GPL"),
@@ -52,6 +52,7 @@ class nsDisplayListBuilder;
 class nsDisplayItem;
 class nsFontMetrics;
 class nsClientRectList;
+class nsFontFaceList;
 
 #include "prtypes.h"
 #include "nsStyleContext.h"
@@ -930,6 +931,13 @@ public:
   static nscoord MinWidthFromInline(nsIFrame* aFrame,
                                     nsRenderingContext* aRenderingContext);
 
+  // Get a suitable foreground color for painting text for the frame.
+  static nscolor GetTextColor(nsIFrame* aFrame);
+
+  // Get a baseline y position in app units that is snapped to device pixels.
+  static gfxFloat GetSnappedBaselineY(nsIFrame* aFrame, gfxContext* aContext,
+                                      nscoord aY, nscoord aAscent);
+
   static void DrawString(const nsIFrame*      aFrame,
                          nsRenderingContext* aContext,
                          const PRUnichar*     aString,
@@ -941,6 +949,23 @@ public:
                                 nsRenderingContext* aContext,
                                 const PRUnichar*     aString,
                                 PRInt32              aLength);
+
+  /**
+   * Helper function for drawing text-shadow. The callback's job
+   * is to draw whatever needs to be blurred onto the given context.
+   */
+  typedef void (* TextShadowCallback)(nsRenderingContext* aCtx,
+                                      nsPoint aShadowOffset,
+                                      const nscolor& aShadowColor,
+                                      void* aData);
+
+  static void PaintTextShadow(const nsIFrame*     aFrame,
+                              nsRenderingContext* aContext,
+                              const nsRect&       aTextRect,
+                              const nsRect&       aDirtyRect,
+                              const nscolor&      aForegroundColor,
+                              TextShadowCallback  aCallback,
+                              void*               aCallbackData);
 
   /**
    * Gets the baseline to vertically center text from a font within a
@@ -1343,6 +1368,25 @@ public:
       (aPresContext->Type() == nsPresContext::eContext_PrintPreview ||
        aPresContext->Type() == nsPresContext::eContext_PageLayout);
   }
+
+  /**
+   * Adds all font faces used in the frame tree starting from aFrame
+   * to the list aFontFaceList.
+   */
+  static nsresult GetFontFacesForFrames(nsIFrame* aFrame,
+                                        nsFontFaceList* aFontFaceList);
+
+  /**
+   * Adds all font faces used within the specified range of text in aFrame,
+   * and optionally its continuations, to the list in aFontFaceList.
+   * Pass 0 and PR_INT32_MAX for aStartOffset and aEndOffset to specify the
+   * entire text is to be considered.
+   */
+  static nsresult GetFontFacesForText(nsIFrame* aFrame,
+                                      PRInt32 aStartOffset,
+                                      PRInt32 aEndOffset,
+                                      PRBool aFollowContinuations,
+                                      nsFontFaceList* aFontFaceList);
 
   static void Shutdown();
 

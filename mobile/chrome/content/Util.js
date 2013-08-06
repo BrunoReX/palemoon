@@ -162,7 +162,7 @@ let Util = {
   },
 
   isTablet: function isTablet() {
-    let dpi = Util.getWindowUtils(window).displayDPI;
+    let dpi = this.displayDPI;
     if (dpi <= 96)
       return (window.innerWidth > 1024);
 
@@ -183,10 +183,16 @@ let Util = {
   },
 
   get isKeyboardOpened() {
-    if (this.isParentProcess())
+    let isChromeWindow = this.isParentProcess() && window["ViewableAreaObserver"];
+    if (isChromeWindow)
       return ViewableAreaObserver.isKeyboardOpened;
 
     return (sendSyncMessage("Content:IsKeyboardOpened", {}))[0];
+  },
+
+  get displayDPI() {
+    delete this.displayDPI;
+    return this.displayDPI = this.getWindowUtils(window).displayDPI;
   }
 };
 

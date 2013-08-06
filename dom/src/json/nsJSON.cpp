@@ -23,6 +23,7 @@
  * Contributor(s):
  *   Dave Camp <dcamp@mozilla.com>
  *   Robert Sayre <sayrer@gmail.com>
+ *   Nils Maier <maierman@web.de>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -39,14 +40,7 @@
  * ***** END LICENSE BLOCK ***** */
 
 #include "jsapi.h"
-#include "jsdtoa.h"
-#include "jsprvtd.h"
-#include "jsbool.h"
-#include "jsarena.h"
-#include "jscntxt.h"
-#include "jsinterp.h"
-#include "jsiter.h"
-#include "jstypes.h"
+#include "jsdbgapi.h"
 #include "nsIServiceManager.h"
 #include "nsJSON.h"
 #include "nsIXPConnect.h"
@@ -82,9 +76,6 @@ nsJSON::~nsJSON()
 {
 }
 
-//
-// AString encode(in JSObject value, [optional] in JSObject whitelist);
-//
 NS_IMETHODIMP
 nsJSON::Encode(nsAString &aJSON)
 {
@@ -126,11 +117,6 @@ static nsresult CheckCharset(const char* aCharset)
   return NS_OK;
 }
 
-//
-// void EncodeToStream(in nsIOutputStream stream
-//                     /* in JSObject value,
-//                     /* [optional] in JSObject whitelist */);
-//
 NS_IMETHODIMP
 nsJSON::EncodeToStream(nsIOutputStream *aStream,
                        const char* aCharset,
@@ -240,9 +226,22 @@ nsJSON::EncodeInternal(nsJSONWriter *writer)
   if (!xpc)
     return NS_ERROR_FAILURE;
 
+  // Now fish for the JS argument. If it's a call to encode, we'll
+  // want the first argument. If it's a call to encodeToStream,
+  // we'll want the forth.
+  const PRUint32 firstArg = writer->mStream ? 3 : 0;
+
   nsAXPCNativeCallContext *cc = nsnull;
   rv = xpc->GetCurrentNativeCallContext(&cc);
   NS_ENSURE_SUCCESS(rv, rv);
+
+  PRUint32 argc = 0;
+  rv = cc->GetArgc(&argc);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // If the argument wasn't provided, there's nothing to serialize.
+  if (argc <= firstArg)
+    return NS_OK;
 
   JSContext *cx = nsnull;
   rv = cc->GetJSContext(&cx);
@@ -250,41 +249,64 @@ nsJSON::EncodeInternal(nsJSONWriter *writer)
 
   JSAutoRequest ar(cx);
 
-  PRUint32 argc = 0;
-  rv = cc->GetArgc(&argc);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Now fish for the JS arguments. If it's a call to encode, we'll
-  // want the first two arguments. If it's a call to encodeToStream,
-  // we'll want the fourth and fifth;
-  PRUint32 firstArg = writer->mStream ? 3 : 0;
-
   // Get the object we're going to serialize.
-  JSObject *inputObj = nsnull;
   jsval *argv = nsnull;
   rv = cc->GetArgvPtr(&argv);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (argc <= firstArg ||
-      !(JSVAL_IS_OBJECT(argv[firstArg]) &&
-        (inputObj = JSVAL_TO_OBJECT(argv[firstArg])))) {
-    // return if it's not something we can deal with
+  // If the argument wasn't provided, there's nothing to serialize.
+  if (argc <= firstArg)
     return NS_ERROR_INVALID_ARG;
-  }
 
   jsval *vp = &argv[firstArg];
-  JSBool ok = JS_TryJSON(cx, vp);
-  JSType type;
-  if (!(ok && !JSVAL_IS_PRIMITIVE(*vp) &&
-        (type = JS_TypeOfValue(cx, *vp)) != JSTYPE_FUNCTION &&
-        type != JSTYPE_XML)) {
+  
+  // Backward compatibility:
+  // nsIJSON does not allow to serialize anything other than objects
+  JSObject *obj;
+  if (!JSVAL_IS_OBJECT(*vp) || !(obj = JSVAL_TO_OBJECT(*vp)))
     return NS_ERROR_INVALID_ARG;
-  }
 
-  ok = JS_Stringify(cx, vp, NULL, JSVAL_NULL, WriteCallback, writer);
-  if (!ok)
+  /* Backward compatibility:
+   * Manually call toJSON if implemented by the object and check that
+   * the result is still an object
+   * Note: It is perfectly fine to not implement toJSON, so it is
+   * perfectly fine for GetMethod to fail
+   */
+  jsval toJSON;
+  if (JS_GetMethod(cx, obj, "toJSON", NULL, &toJSON) &&
+      !JSVAL_IS_PRIMITIVE(toJSON) &&
+      JS_ObjectIsCallable(cx, JSVAL_TO_OBJECT(toJSON))) {
+
+    // If toJSON is implemented, it must not throw
+    if (!JS_CallFunctionValue(cx, obj, toJSON, 0, NULL, vp)) {
+      if (JS_IsExceptionPending(cx))
+        // passing NS_OK will throw the pending exception
+        return NS_OK;
+
+      // No exception, but still failed
+      return NS_ERROR_FAILURE;
+    }
+
+    // Backward compatibility:
+    // nsIJSON does not allow to serialize anything other than objects
+    if (JSVAL_IS_PRIMITIVE(*vp))
+      return NS_ERROR_INVALID_ARG;
+  }
+  // GetMethod may have thrown
+  else if (JS_IsExceptionPending(cx))
+    // passing NS_OK will throw the pending exception
+    return NS_OK;
+
+  // Backward compatibility:
+  // function/xml shall not pass, just "plain" objects and arrays
+  JSType type = JS_TypeOfValue(cx, *vp);
+  if (type == JSTYPE_FUNCTION || type == JSTYPE_XML)
+    return NS_ERROR_INVALID_ARG;
+
+  // We're good now; try to stringify
+  if (!JS_Stringify(cx, vp, NULL, JSVAL_NULL, WriteCallback, writer))
     return NS_ERROR_FAILURE;
-    
+
   return NS_OK;
 }
 

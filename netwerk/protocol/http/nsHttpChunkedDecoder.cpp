@@ -76,7 +76,7 @@ nsHttpChunkedDecoder::HandleChunkedContent(char *buf,
 
     while (count) {
         if (mChunkRemaining) {
-            PRUint32 amt = PR_MIN(mChunkRemaining, count);
+            PRUint32 amt = NS_MIN(mChunkRemaining, count);
 
             count -= amt;
             mChunkRemaining -= amt;
@@ -138,8 +138,6 @@ nsHttpChunkedDecoder::ParseChunkRemaining(char *buf,
                 // allocate a header array for the trailers on demand
                 if (!mTrailers) {
                     mTrailers = new nsHttpHeaderArray();
-                    if (!mTrailers)
-                        return NS_ERROR_OUT_OF_MEMORY;
                 }
                 mTrailers->ParseHeaderLine(buf);
             }

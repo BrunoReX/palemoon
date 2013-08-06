@@ -93,12 +93,14 @@
 #include "nsEventDispatcher.h"
 #include "nsIDOMEvent.h"
 #include "nsIPrivateDOMEvent.h"
-#include "nsContentUtils.h"
 #include "nsDisplayList.h"
+#include "mozilla/Preferences.h"
 
 // Needed for Print Preview
 #include "nsIDocument.h"
 #include "nsIURI.h"
+
+using namespace mozilla;
 
 //define DEBUG_REDRAW
 
@@ -1246,7 +1248,7 @@ nsBoxFrame::AttributeChanged(PRInt32 aNameSpaceID,
 void
 nsBoxFrame::GetDebugPref(nsPresContext* aPresContext)
 {
-    gDebug = nsContentUtils::GetBoolPref("xul.debug.box");
+    gDebug = Preferences::GetBool("xul.debug.box");
 }
 
 class nsDisplayXULDebug : public nsDisplayItem {
@@ -2013,21 +2015,6 @@ nsBoxFrame::CheckBoxOrder(nsBoxLayoutState& aState)
 
   nsIFrame* head = MergeSort(aState, mFrames.FirstChild());
   mFrames = nsFrameList(head, nsLayoutUtils::GetLastSibling(head));
-}
-
-NS_IMETHODIMP
-nsBoxFrame::SetLayoutManager(nsIBoxLayout* aLayout)
-{
-  mLayoutManager = aLayout;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsBoxFrame::GetLayoutManager(nsIBoxLayout** aLayout)
-{
-  *aLayout = mLayoutManager;
-  NS_IF_ADDREF(*aLayout);
-  return NS_OK;
 }
 
 nsresult

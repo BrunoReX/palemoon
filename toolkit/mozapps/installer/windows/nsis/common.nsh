@@ -4623,7 +4623,7 @@
 
         SetRegView 64
       !else
-        ${Unless} ${AtLeastWin2000}
+        ${Unless} ${AtLeastWinXP}
           ; XXX-rstrong - some systems fail the AtLeastWin2000 test for an
           ; unknown reason. To work around this also check if the Windows NT
           ; registry Key exists and if it does if the first char in

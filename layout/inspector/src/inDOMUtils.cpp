@@ -58,6 +58,7 @@
 #include "nsComputedDOMStyle.h"
 #include "nsEventStateManager.h"
 #include "nsIAtom.h"
+#include "nsIRange.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -146,6 +147,38 @@ inDOMUtils::GetParentForNode(nsIDOMNode* aNode,
   }
 
   NS_IF_ADDREF(*aParent = parent);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+inDOMUtils::GetChildrenForNode(nsIDOMNode* aNode,
+                               PRBool aShowingAnonymousContent,
+                               nsIDOMNodeList** aChildren)
+{
+  NS_ENSURE_ARG_POINTER(aNode);
+  NS_PRECONDITION(aChildren, "Must have an out parameter");
+
+  nsCOMPtr<nsIDOMNodeList> kids;
+
+  if (aShowingAnonymousContent) {
+    nsCOMPtr<nsIContent> content = do_QueryInterface(aNode);
+    if (content) {
+      nsRefPtr<nsBindingManager> bindingManager =
+        inLayoutUtils::GetBindingManagerFor(aNode);
+      if (bindingManager) {
+        bindingManager->GetAnonymousNodesFor(content, getter_AddRefs(kids));
+        if (!kids) {
+          bindingManager->GetContentListFor(content, getter_AddRefs(kids));
+        }
+      }
+    }
+  }
+
+  if (!kids) {
+    aNode->GetChildNodes(getter_AddRefs(kids));
+  }
+
+  kids.forget(aChildren);
   return NS_OK;
 }
 
@@ -257,20 +290,13 @@ NS_IMETHODIMP
 inDOMUtils::GetContentState(nsIDOMElement *aElement, nsEventStates::InternalType* aState)
 {
   *aState = 0;
+  nsCOMPtr<nsIContent> content = do_QueryInterface(aElement);
+  NS_ENSURE_ARG_POINTER(content);
 
-  NS_ENSURE_ARG_POINTER(aElement);
-
-  nsRefPtr<nsEventStateManager> esm = inLayoutUtils::GetEventStateManagerFor(aElement);
-  if (esm) {
-    nsCOMPtr<nsIContent> content;
-    content = do_QueryInterface(aElement);
-    // NOTE: if this method is removed,
-    // please remove GetInternalValue from nsEventStates
-    *aState = esm->GetContentState(content).GetInternalValue();
-    return NS_OK;
-  }
-
-  return NS_ERROR_FAILURE;
+  // NOTE: if this method is removed,
+  // please remove GetInternalValue from nsEventStates
+  *aState = content->AsElement()->State().GetInternalValue();
+  return NS_OK;
 }
 
 /* static */ nsresult
@@ -305,4 +331,14 @@ inDOMUtils::GetRuleNodeForContent(nsIContent* aContent,
     sContext.forget(aStyleContext);
   }
   return NS_OK;
+}
+
+NS_IMETHODIMP
+inDOMUtils::GetUsedFontFaces(nsIDOMRange* aRange,
+                             nsIDOMFontFaceList** aFontFaceList)
+{
+  nsCOMPtr<nsIRange> range = do_QueryInterface(aRange);
+  NS_ENSURE_TRUE(range, NS_ERROR_UNEXPECTED);
+
+  return range->GetUsedFontFaces(aFontFaceList);
 }

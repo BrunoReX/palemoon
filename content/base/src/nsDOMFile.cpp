@@ -46,7 +46,6 @@
 #include "nsICharsetAlias.h"
 #include "nsICharsetDetector.h"
 #include "nsICharsetConverterManager.h"
-#include "nsIConsoleService.h"
 #include "nsIConverterInputStream.h"
 #include "nsIDocument.h"
 #include "nsIDOMDocument.h"
@@ -55,7 +54,6 @@
 #include "nsIIPCSerializable.h"
 #include "nsIMIMEService.h"
 #include "nsIPlatformCharset.h"
-#include "nsIScriptError.h"
 #include "nsISeekableStream.h"
 #include "nsIUnicharInputStream.h"
 #include "nsIUnicodeDecoder.h"
@@ -66,7 +64,7 @@
 #include "nsStringStream.h"
 #include "CheckedInt.h"
 #include "nsJSUtils.h"
-#include "nsPrintfCString.h"
+#include "mozilla/Preferences.h"
 
 #include "plbase64.h"
 #include "prmem.h"
@@ -144,7 +142,6 @@ NS_INTERFACE_MAP_BEGIN(nsDOMFile)
   NS_INTERFACE_MAP_ENTRY(nsIDOMBlob)
   NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIDOMFile, mIsFullFile)
   NS_INTERFACE_MAP_ENTRY(nsIXHRSendable)
-  NS_INTERFACE_MAP_ENTRY(nsICharsetDetectionObserver)
   NS_INTERFACE_MAP_ENTRY(nsIJSNativeInitializer)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO_CONDITIONAL(File, mIsFullFile)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO_CONDITIONAL(Blob, !mIsFullFile)
@@ -173,20 +170,6 @@ nsDOMFile::NewFile(nsISupports* *aNewObject)
   nsCOMPtr<nsISupports> file = do_QueryObject(new nsDOMFile(nsnull));
   file.forget(aNewObject);
   return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMFile::GetFileName(nsAString &aFileName)
-{
-  WarnDeprecated(NS_LITERAL_CSTRING("fileName").get());
-  return GetName(aFileName);
-}
-
-NS_IMETHODIMP
-nsDOMFile::GetFileSize(PRUint64 *aFileSize)
-{
-  WarnDeprecated(NS_LITERAL_CSTRING("fileSize").get());
-  return GetSize(aFileSize);
 }
 
 NS_IMETHODIMP
@@ -363,237 +346,6 @@ nsDOMFile::GetInternalUrl(nsIPrincipal* aPrincipal, nsAString& aURL)
 }
 
 NS_IMETHODIMP
-nsDOMFile::GetAsText(const nsAString &aCharset, nsAString &aResult)
-{
-  WarnDeprecated(NS_LITERAL_CSTRING("getAsText").get());
-
-  aResult.Truncate();
-
-  nsCOMPtr<nsIInputStream> stream;
-  nsresult rv = GetInternalStream(getter_AddRefs(stream));
-  NS_ENSURE_SUCCESS(rv, DOMFileResult(rv));
-
-  nsCAutoString charsetGuess;
-  if (!aCharset.IsEmpty()) {
-    CopyUTF16toUTF8(aCharset, charsetGuess);
-  } else {
-    rv = GuessCharset(stream, charsetGuess);
-    NS_ENSURE_SUCCESS(rv, DOMFileResult(rv));
-
-    nsCOMPtr<nsISeekableStream> seekable = do_QueryInterface(stream);
-    if (!seekable) return NS_ERROR_FAILURE;
-    rv = seekable->Seek(nsISeekableStream::NS_SEEK_SET, 0);
-    NS_ENSURE_SUCCESS(rv, DOMFileResult(rv));
-  }
-
-  nsCAutoString charset;
-  nsCOMPtr<nsICharsetAlias> alias =
-    do_GetService(NS_CHARSETALIAS_CONTRACTID, &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  rv = alias->GetPreferred(charsetGuess, charset);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return DOMFileResult(ConvertStream(stream, charset.get(), aResult));
-}
-
-NS_IMETHODIMP
-nsDOMFile::GetAsDataURL(nsAString &aResult)
-{
-  WarnDeprecated(NS_LITERAL_CSTRING("getAsDataURL").get());
-
-  aResult.AssignLiteral("data:");
-
-  nsresult rv;
-  if (!mContentType.Length()) {
-    nsCOMPtr<nsIMIMEService> mimeService =
-      do_GetService(NS_MIMESERVICE_CONTRACTID, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    nsCAutoString contentType;
-    rv = mimeService->GetTypeFromFile(mFile, contentType);
-    if (NS_SUCCEEDED(rv)) {
-      CopyUTF8toUTF16(contentType, mContentType);
-    }
-  }
-
-  if (mContentType.Length()) {
-    aResult.Append(mContentType);
-  } else {
-    aResult.AppendLiteral("application/octet-stream");
-  }
-  aResult.AppendLiteral(";base64,");
-
-  nsCOMPtr<nsIInputStream> stream;
-  rv = GetInternalStream(getter_AddRefs(stream));
-  NS_ENSURE_SUCCESS(rv, DOMFileResult(rv));
-
-  char readBuf[4096];
-  PRUint32 leftOver = 0;
-  PRUint32 numRead;
-  do {
-    rv = stream->Read(readBuf + leftOver, sizeof(readBuf) - leftOver, &numRead);
-    NS_ENSURE_SUCCESS(rv, DOMFileResult(rv));
-
-    PRUint32 numEncode = numRead + leftOver;
-    leftOver = 0;
-
-    if (numEncode == 0) break;
-
-    // unless this is the end of the file, encode in multiples of 3
-    if (numRead > 0) {
-      leftOver = numEncode % 3;
-      numEncode -= leftOver;
-    }
-
-    // out buffer should be at least 4/3rds the read buf, plus a terminator
-    char *base64 = PL_Base64Encode(readBuf, numEncode, nsnull);
-    if (!base64) {
-      return DOMFileResult(NS_ERROR_OUT_OF_MEMORY);
-    }
-    nsDependentCString str(base64);
-    PRUint32 strLen = str.Length();
-    PRUint32 oldLength = aResult.Length();
-    AppendASCIItoUTF16(str, aResult);
-    PR_Free(base64);
-    if (aResult.Length() - oldLength != strLen) {
-      return DOMFileResult(NS_ERROR_OUT_OF_MEMORY);
-    }
-
-    if (leftOver) {
-      memmove(readBuf, readBuf + numEncode, leftOver);
-    }
-  } while (numRead > 0);
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMFile::GetAsBinary(nsAString &aResult)
-{
-  WarnDeprecated(NS_LITERAL_CSTRING("getAsBinary").get());
-
-  aResult.Truncate();
-
-  nsCOMPtr<nsIInputStream> stream;
-  nsresult rv = GetInternalStream(getter_AddRefs(stream));
-  NS_ENSURE_SUCCESS(rv, DOMFileResult(rv));
-
-  PRUint32 numRead;
-  do {
-    char readBuf[4096];
-    rv = stream->Read(readBuf, sizeof(readBuf), &numRead);
-    NS_ENSURE_SUCCESS(rv, DOMFileResult(rv));
-    PRUint32 oldLength = aResult.Length();
-    AppendASCIItoUTF16(Substring(readBuf, readBuf + numRead), aResult);
-    if (aResult.Length() - oldLength != numRead) {
-      return DOMFileResult(NS_ERROR_OUT_OF_MEMORY);
-    }
-  } while (numRead > 0);
-
-  return NS_OK;
-}
-
-nsresult
-nsDOMFile::GuessCharset(nsIInputStream *aStream,
-                        nsACString &aCharset)
-{
-
-  if (!mCharset.IsEmpty()) {
-    aCharset = mCharset;
-    return NS_OK;
-  }
-
-  // First try the universal charset detector
-  nsCOMPtr<nsICharsetDetector> detector
-    = do_CreateInstance(NS_CHARSET_DETECTOR_CONTRACTID_BASE
-                        "universal_charset_detector");
-  if (!detector) {
-    // No universal charset detector, try the default charset detector
-    const nsAdoptingString& detectorName =
-      nsContentUtils::GetLocalizedStringPref("intl.charset.detector");
-    if (!detectorName.IsEmpty()) {
-      nsCAutoString detectorContractID;
-      detectorContractID.AssignLiteral(NS_CHARSET_DETECTOR_CONTRACTID_BASE);
-      AppendUTF16toUTF8(detectorName, detectorContractID);
-      detector = do_CreateInstance(detectorContractID.get());
-    }
-  }
-
-  nsresult rv;
-  if (detector) {
-    detector->Init(this);
-
-    PRBool done;
-    PRUint32 numRead;
-    do {
-      char readBuf[4096];
-      rv = aStream->Read(readBuf, sizeof(readBuf), &numRead);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      rv = detector->DoIt(readBuf, numRead, &done);
-      NS_ENSURE_SUCCESS(rv, rv);
-    } while (!done && numRead > 0);
-
-    rv = detector->Done();
-    NS_ENSURE_SUCCESS(rv, rv);
-  } else {
-    // no charset detector available, check the BOM
-    unsigned char sniffBuf[4];
-    PRUint32 numRead;
-    rv = aStream->Read(reinterpret_cast<char*>(sniffBuf),
-                       sizeof(sniffBuf), &numRead);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    if (numRead >= 4 &&
-        sniffBuf[0] == 0x00 &&
-        sniffBuf[1] == 0x00 &&
-        sniffBuf[2] == 0xfe &&
-        sniffBuf[3] == 0xff) {
-      mCharset = "UTF-32BE";
-    } else if (numRead >= 4 &&
-               sniffBuf[0] == 0xff &&
-               sniffBuf[1] == 0xfe &&
-               sniffBuf[2] == 0x00 &&
-               sniffBuf[3] == 0x00) {
-      mCharset = "UTF-32LE";
-    } else if (numRead >= 2 &&
-               sniffBuf[0] == 0xfe &&
-               sniffBuf[1] == 0xff) {
-      mCharset = "UTF-16BE";
-    } else if (numRead >= 2 &&
-               sniffBuf[0] == 0xff &&
-               sniffBuf[1] == 0xfe) {
-      mCharset = "UTF-16LE";
-    } else if (numRead >= 3 &&
-               sniffBuf[0] == 0xef &&
-               sniffBuf[1] == 0xbb &&
-               sniffBuf[2] == 0xbf) {
-      mCharset = "UTF-8";
-    }
-  }
-
-  if (mCharset.IsEmpty()) {
-    // no charset detected, default to the system charset
-    nsCOMPtr<nsIPlatformCharset> platformCharset =
-      do_GetService(NS_PLATFORMCHARSET_CONTRACTID, &rv);
-    if (NS_SUCCEEDED(rv)) {
-      rv = platformCharset->GetCharset(kPlatformCharsetSel_PlainTextInFile,
-                                       mCharset);
-    }
-  }
-
-  if (mCharset.IsEmpty()) {
-    // no sniffed or default charset, try UTF-8
-    mCharset.AssignLiteral("UTF-8");
-  }
-
-  aCharset = mCharset;
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsDOMFile::GetSendInfo(nsIInputStream** aBody,
                        nsACString& aContentType,
                        nsACString& aCharset)
@@ -613,14 +365,6 @@ nsDOMFile::GetSendInfo(nsIInputStream** aBody,
   aCharset.Truncate();
 
   stream.forget(aBody);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMFile::Notify(const char* aCharset, nsDetectionConfident aConf)
-{
-  mCharset.Assign(aCharset);
-
   return NS_OK;
 }
 
@@ -682,87 +426,6 @@ nsDOMFile::Initialize(nsISupports* aOwner,
 
   mFile = file;
   return NS_OK;
-}
-
-/* static */ void
-nsDOMFile::WarnDeprecated(const char* aAPI)
-{
-  nsPIDOMWindow* piWindow = nsContentUtils::GetWindowFromCaller();
-
-  if (!piWindow)
-    return;
-
-  nsCOMPtr<nsIDocument> doc = do_QueryInterface(piWindow->GetExtantDocument());
-  if (!doc)
-    return;
-
-  nsIURI* uri = doc->GetDocumentURI();
-  PRUint64 windowID = doc->OuterWindowID();
-
-  nsCAutoString spec;
-  if (uri)
-    uri->GetSpec(spec);
-
-  // This is hardcoded here in English since we're past string freeze.
-  
-  nsPrintfCString warningText
-  (500,
-   "Use of File.%s is deprecated. To upgrade your code, use standard properties or use the DOM FileReader object. For more help https://developer.mozilla.org/en/DOM/FileReader",
-   aAPI);
-
-  NS_ConvertASCIItoUTF16 utf16WarningText(warningText);
-
-  nsCOMPtr<nsIScriptError2> warning =
-    do_CreateInstance(NS_SCRIPTERROR_CONTRACTID);
-  nsresult rv = warning->InitWithWindowID(utf16WarningText.get(),
-                                          NS_ConvertUTF8toUTF16(spec).get(),
-                                          nsnull, 0, 0,
-                                          nsIScriptError::warningFlag,
-                                          "DOM File API", windowID);
-  NS_ENSURE_SUCCESS(rv, /* */);
-
-  nsCOMPtr<nsIConsoleService> consoleSvc =
-    do_GetService(NS_CONSOLESERVICE_CONTRACTID);
-
-  nsCOMPtr<nsIConsoleMessage> logWarning = do_QueryInterface(warning);
-  if (consoleSvc)
-    consoleSvc->LogMessage(logWarning);
-}
-
-nsresult
-nsDOMFile::ConvertStream(nsIInputStream *aStream,
-                         const char *aCharset,
-                         nsAString &aResult)
-{
-  aResult.Truncate();
-
-  nsCOMPtr<nsIConverterInputStream> converterStream =
-    do_CreateInstance("@mozilla.org/intl/converter-input-stream;1");
-  if (!converterStream) return NS_ERROR_FAILURE;
-
-  nsresult rv = converterStream->Init
-                  (aStream, aCharset,
-                   8192,
-                   nsIConverterInputStream::DEFAULT_REPLACEMENT_CHARACTER);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsIUnicharInputStream> unicharStream =
-    do_QueryInterface(converterStream);
-  if (!unicharStream) return NS_ERROR_FAILURE;
-
-  PRUint32 numChars;
-  nsString result;
-  rv = unicharStream->ReadString(8192, result, &numChars);
-  while (NS_SUCCEEDED(rv) && numChars > 0) {
-    PRUint32 oldLength = aResult.Length();
-    aResult.Append(result);
-    if (aResult.Length() - oldLength != result.Length()) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-    rv = unicharStream->ReadString(8192, result, &numChars);
-  }
-
-  return rv;
 }
 
 // nsDOMMemoryFile Implementation
