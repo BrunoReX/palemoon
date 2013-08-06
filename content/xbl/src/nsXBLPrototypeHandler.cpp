@@ -56,7 +56,6 @@
 #include "nsIURI.h"
 #include "nsIDOMHTMLTextAreaElement.h"
 #include "nsIDOMHTMLInputElement.h"
-#include "nsIDOMText.h"
 #include "nsFocusManager.h"
 #include "nsEventListenerManager.h"
 #include "nsIDOMEventTarget.h"
@@ -65,7 +64,7 @@
 #include "nsIDOMNSEvent.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowRoot.h"
-#include "nsIDOMWindowInternal.h"
+#include "nsIDOMWindow.h"
 #include "nsIServiceManager.h"
 #include "nsIScriptError.h"
 #include "nsXPIDLString.h"
@@ -570,7 +569,7 @@ nsXBLPrototypeHandler::GetController(nsIDOMEventTarget* aTarget)
   }
 
   if (!controllers) {
-    nsCOMPtr<nsIDOMWindowInternal> domWindow(do_QueryInterface(aTarget));
+    nsCOMPtr<nsIDOMWindow> domWindow(do_QueryInterface(aTarget));
     if (domWindow)
       domWindow->GetControllers(getter_AddRefs(controllers));
   }

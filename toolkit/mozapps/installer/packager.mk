@@ -254,7 +254,7 @@ DIST_FILES = \
   components \
   defaults \
   modules \
-  hyphenation \
+  hyphenation/hyph_en_US.dic \
   res \
   lib \
   lib.id \
@@ -383,6 +383,32 @@ MAKE_SDK = $(CREATE_FINAL_TAR) - $(MOZ_APP_NAME)-sdk | bzip2 -vf > $(SDK)
 endif
 
 ifdef MOZ_OMNIJAR
+
+ifdef GENERATE_CACHE
+ifneq (1_,$(if $(CROSS_COMPILE),1,0)_$(UNIVERSAL_BINARY))
+ifdef RUN_TEST_PROGRAM
+_ABS_RUN_TEST_PROGRAM = $(call core_abspath,$(RUN_TEST_PROGRAM))
+endif
+
+ifdef LIBXUL_SDK
+PRECOMPILE_DIR=XCurProcD
+PRECOMPILE_RESOURCE=app
+PRECOMPILE_GRE=$(LIBXUL_DIST)/bin
+else
+PRECOMPILE_DIR=GreD
+PRECOMPILE_RESOURCE=gre
+PRECOMPILE_GRE=$$PWD
+endif
+
+GENERATE_CACHE = \
+  $(_ABS_RUN_TEST_PROGRAM) $(LIBXUL_DIST)/bin/xpcshell$(BIN_SUFFIX) -g "$(PRECOMPILE_GRE)" -a "$$PWD" -f $(MOZILLA_DIR)/toolkit/mozapps/installer/precompile_cache.js -e "populate_startupcache('$(PRECOMPILE_DIR)', 'omni.jar', 'startupCache.zip');" && \
+  rm -rf jsloader && \
+  $(UNZIP) startupCache.zip && \
+  rm startupCache.zip && \
+  $(ZIP) -r9m omni.jar jsloader/resource/$(PRECOMPILE_RESOURCE)
+endif
+endif
+
 GENERATE_CACHE ?= true
 
 OMNIJAR_FILES	= \
@@ -691,6 +717,9 @@ endif
 ifdef MOZ_PKG_REMOVALS
 	$(SYSINSTALL) $(IFLAGS1) $(MOZ_PKG_REMOVALS_GEN) $(DIST)/$(STAGEPATH)$(MOZ_PKG_DIR)$(_BINPATH)
 endif # MOZ_PKG_REMOVALS
+ifdef MOZ_POST_STAGING_CMD
+	cd $(DIST)/$(STAGEPATH)$(MOZ_PKG_DIR)$(_BINPATH) && $(MOZ_POST_STAGING_CMD)
+endif # MOZ_POST_STAGING_CMD
 ifndef LIBXUL_SDK
 # Package JavaScript Shell
 	@echo "Packaging JavaScript Shell..."

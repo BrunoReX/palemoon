@@ -1591,7 +1591,7 @@ gfxFont::SetupGlyphExtents(gfxContext *aContext, PRUint32 aGlyphID, PRBool aNeed
         extents.y_bearing >= -fontMetrics.maxAscent &&
         extents.height + extents.y_bearing <= fontMetrics.maxDescent) {
         PRUint32 appUnitsWidth =
-            PRUint32(NS_ceil((extents.x_bearing + extents.width)*appUnitsPerDevUnit));
+            PRUint32(ceil((extents.x_bearing + extents.width)*appUnitsPerDevUnit));
         if (appUnitsWidth < gfxGlyphExtents::INVALID_WIDTH) {
             aExtents->SetContainedGlyphWidthAppUnits(aGlyphID, PRUint16(appUnitsWidth));
             return;
@@ -1710,9 +1710,9 @@ RoundToNearestMultiple(double aValue, double aFraction)
 void gfxFont::CalculateDerivedMetrics(Metrics& aMetrics)
 {
     aMetrics.maxAscent =
-        NS_ceil(RoundToNearestMultiple(aMetrics.maxAscent, 1/1024.0));
+        ceil(RoundToNearestMultiple(aMetrics.maxAscent, 1/1024.0));
     aMetrics.maxDescent =
-        NS_ceil(RoundToNearestMultiple(aMetrics.maxDescent, 1/1024.0));
+        ceil(RoundToNearestMultiple(aMetrics.maxDescent, 1/1024.0));
 
     if (aMetrics.xHeight <= 0) {
         // only happens if we couldn't find either font metrics
@@ -1825,13 +1825,13 @@ gfxFont::SanitizeMetrics(gfxFont::Metrics *aMetrics, PRBool aIsBadUnderlineFont)
     // If strikeout line is overflowed from the ascent, the line should be resized and moved for
     // that being in the ascent space.
     // Note that the strikeoutOffset is *middle* of the strikeout line position.
-    gfxFloat halfOfStrikeoutSize = NS_floor(aMetrics->strikeoutSize / 2.0 + 0.5);
+    gfxFloat halfOfStrikeoutSize = floor(aMetrics->strikeoutSize / 2.0 + 0.5);
     if (halfOfStrikeoutSize + aMetrics->strikeoutOffset > aMetrics->maxAscent) {
         if (aMetrics->strikeoutSize > aMetrics->maxAscent) {
             aMetrics->strikeoutSize = NS_MAX(aMetrics->maxAscent, 1.0);
-            halfOfStrikeoutSize = NS_floor(aMetrics->strikeoutSize / 2.0 + 0.5);
+            halfOfStrikeoutSize = floor(aMetrics->strikeoutSize / 2.0 + 0.5);
         }
-        gfxFloat ascent = NS_floor(aMetrics->maxAscent + 0.5);
+        gfxFloat ascent = floor(aMetrics->maxAscent + 0.5);
         aMetrics->strikeoutOffset = NS_MAX(halfOfStrikeoutSize, ascent / 2.0);
     }
 
@@ -2060,6 +2060,7 @@ gfxFontGroup::BuildFontList()
 PRBool
 gfxFontGroup::FindPlatformFont(const nsAString& aName,
                                const nsACString& aGenericName,
+                               PRBool aUseFontSet,
                                void *aClosure)
 {
     gfxFontGroup *fontGroup = static_cast<gfxFontGroup*>(aClosure);
@@ -2068,21 +2069,23 @@ gfxFontGroup::FindPlatformFont(const nsAString& aName,
     PRBool needsBold;
     gfxFontEntry *fe = nsnull;
 
-    // First, look up in the user font set...
-    // If the fontSet matches the family, we must not look for a platform
-    // font of the same name, even if we fail to actually get a fontEntry
-    // here; we'll fall back to the next name in the CSS font-family list.
     PRBool foundFamily = PR_FALSE;
-    gfxUserFontSet *fs = fontGroup->GetUserFontSet();
-    if (fs) {
-        // If the fontSet matches the family, but the font has not yet finished
-        // loading (nor has its load timeout fired), the fontGroup should wait
-        // for the download, and not actually draw its text yet.
-        PRBool waitForUserFont = PR_FALSE;
-        fe = fs->FindFontEntry(aName, *fontStyle, foundFamily,
-                               needsBold, waitForUserFont);
-        if (!fe && waitForUserFont) {
-            fontGroup->mSkipDrawing = PR_TRUE;
+    if (aUseFontSet) {
+        // First, look up in the user font set...
+        // If the fontSet matches the family, we must not look for a platform
+        // font of the same name, even if we fail to actually get a fontEntry
+        // here; we'll fall back to the next name in the CSS font-family list.
+        gfxUserFontSet *fs = fontGroup->GetUserFontSet();
+        if (fs) {
+            // If the fontSet matches the family, but the font has not yet finished
+            // loading (nor has its load timeout fired), the fontGroup should wait
+            // for the download, and not actually draw its text yet.
+            PRBool waitForUserFont = PR_FALSE;
+            fe = fs->FindFontEntry(aName, *fontStyle, foundFamily,
+                                   needsBold, waitForUserFont);
+            if (!fe && waitForUserFont) {
+                fontGroup->mSkipDrawing = PR_TRUE;
+            }
         }
     }
 
@@ -2144,7 +2147,7 @@ gfxFontGroup::ForEachFont(FontCreationCallback fc,
                           void *closure)
 {
     return ForEachFontInternal(mFamilies, mStyle.language,
-                               PR_TRUE, PR_TRUE, fc, closure);
+                               PR_TRUE, PR_TRUE, PR_TRUE, fc, closure);
 }
 
 PRBool
@@ -2154,19 +2157,22 @@ gfxFontGroup::ForEachFont(const nsAString& aFamilies,
                           void *closure)
 {
     return ForEachFontInternal(aFamilies, aLanguage,
-                               PR_FALSE, PR_TRUE, fc, closure);
+                               PR_FALSE, PR_TRUE, PR_TRUE, fc, closure);
 }
 
 struct ResolveData {
     ResolveData(gfxFontGroup::FontCreationCallback aCallback,
                 nsACString& aGenericFamily,
+                PRBool aUseFontSet,
                 void *aClosure) :
         mCallback(aCallback),
         mGenericFamily(aGenericFamily),
+        mUseFontSet(aUseFontSet),
         mClosure(aClosure) {
     }
     gfxFontGroup::FontCreationCallback mCallback;
     nsCString mGenericFamily;
+    PRBool mUseFontSet;
     void *mClosure;
 };
 
@@ -2175,6 +2181,7 @@ gfxFontGroup::ForEachFontInternal(const nsAString& aFamilies,
                                   nsIAtom *aLanguage,
                                   PRBool aResolveGeneric,
                                   PRBool aResolveFontName,
+                                  PRBool aUseFontSet,
                                   FontCreationCallback fc,
                                   void *closure)
 {
@@ -2267,18 +2274,19 @@ gfxFontGroup::ForEachFontInternal(const nsAString& aFamilies,
             }
         }
 
+        NS_LossyConvertUTF16toASCII gf(genericFamily);
         if (generic) {
             ForEachFontInternal(family, groupAtom, PR_FALSE,
-                                aResolveFontName, fc, closure);
+                                aResolveFontName, PR_FALSE,
+                                fc, closure);
         } else if (!family.IsEmpty()) {
-            NS_LossyConvertUTF16toASCII gf(genericFamily);
             if (aResolveFontName) {
-                ResolveData data(fc, gf, closure);
+                ResolveData data(fc, gf, aUseFontSet, closure);
                 PRBool aborted = PR_FALSE, needsBold;
                 nsresult rv = NS_OK;
                 PRBool foundFamily = PR_FALSE;
                 PRBool waitForUserFont = PR_FALSE;
-                if (mUserFontSet &&
+                if (aUseFontSet && mUserFontSet &&
                     mUserFontSet->FindFontEntry(family, mStyle, foundFamily,
                                                 needsBold, waitForUserFont))
                 {
@@ -2298,7 +2306,7 @@ gfxFontGroup::ForEachFontInternal(const nsAString& aFamilies,
                     return PR_FALSE;
             }
             else {
-                if (!fc(family, gf, closure))
+                if (!fc(family, gf, aUseFontSet, closure))
                     return PR_FALSE;
             }
         }
@@ -2310,7 +2318,8 @@ gfxFontGroup::ForEachFontInternal(const nsAString& aFamilies,
             prefName.Append(groupString);
             nsAdoptingString value = Preferences::GetString(prefName.get());
             if (value) {
-                ForEachFontInternal(value, groupAtom, PR_FALSE, aResolveFontName,
+                ForEachFontInternal(value, groupAtom, PR_FALSE,
+                                    aResolveFontName, PR_FALSE,
                                     fc, closure);
             }
         }
@@ -2325,7 +2334,8 @@ PRBool
 gfxFontGroup::FontResolverProc(const nsAString& aName, void *aClosure)
 {
     ResolveData *data = reinterpret_cast<ResolveData*>(aClosure);
-    return (data->mCallback)(aName, data->mGenericFamily, data->mClosure);
+    return (data->mCallback)(aName, data->mGenericFamily, data->mUseFontSet,
+                             data->mClosure);
 }
 
 gfxTextRun *
@@ -2531,7 +2541,7 @@ gfxFontGroup::InitScriptRun(gfxContext *aContext,
                     gfxFloat wid = mainFont->SynthesizeSpaceWidth(ch);
                     if (wid >= 0.0) {
                         nscoord advance =
-                            aTextRun->GetAppUnitsPerDevUnit() * NS_floor(wid + 0.5);
+                            aTextRun->GetAppUnitsPerDevUnit() * floor(wid + 0.5);
                         gfxTextRun::CompressedGlyph g;
                         if (gfxTextRun::CompressedGlyph::IsSimpleAdvance(advance)) {
                             aTextRun->SetSimpleGlyph(index,
@@ -3498,7 +3508,7 @@ gfxTextRun::AdjustAdvancesForSyntheticBold(PRUint32 aStart, PRUint32 aLength)
                 
                 if (glyphData->IsSimpleGlyph()) {
                     // simple glyphs ==> just add the advance
-                    PRUint32 advance = glyphData->GetSimpleAdvance() + synAppUnitOffset;
+                    PRInt32 advance = glyphData->GetSimpleAdvance() + synAppUnitOffset;
                     if (CompressedGlyph::IsSimpleAdvance(advance)) {
                         glyphData->SetSimpleGlyph(advance, glyphData->GetSimpleGlyph());
                     } else {

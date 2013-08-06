@@ -92,16 +92,25 @@
 #define JSDOUBLE_SIGNBIT (((uint64) 1) << 63)
 #define JSDOUBLE_EXPMASK (((uint64) 0x7ff) << 52)
 #define JSDOUBLE_MANTMASK ((((uint64) 1) << 52) - 1)
+#define JSDOUBLE_HI32_SIGNBIT   0x80000000
 
 static JS_ALWAYS_INLINE JSBool
 JSDOUBLE_IS_NEGZERO(jsdouble d)
 {
+    if (d != 0)
+        return false;
     union {
+        struct {
+#if defined(IS_LITTLE_ENDIAN) && !defined(FPU_IS_ARM_FPA)
+            uint32 lo, hi;
+#else
+            uint32 hi, lo;
+#endif
+        } s;
         jsdouble d;
-        uint64 bits;
     } x;
     x.d = d;
-    return x.bits == JSDOUBLE_SIGNBIT;
+    return (x.s.hi & JSDOUBLE_HI32_SIGNBIT) != 0;
 }
 
 static inline bool
@@ -286,7 +295,6 @@ JSVAL_EXTRACT_NON_DOUBLE_TAG_IMPL(jsval_layout l)
 }
 
 #ifdef __cplusplus
-JS_STATIC_ASSERT(offsetof(jsval_layout, s.payload) == 0);
 JS_STATIC_ASSERT((JSVAL_TYPE_NONFUNOBJ & 0xF) == JSVAL_TYPE_OBJECT);
 JS_STATIC_ASSERT((JSVAL_TYPE_FUNOBJ & 0xF) == JSVAL_TYPE_OBJECT);
 #endif
@@ -734,7 +742,11 @@ class Value
     }
 
     const jsuword *payloadWord() const {
+#if JS_BITS_PER_WORD == 32
         return &data.s.payload.word;
+#elif JS_BITS_PER_WORD == 64
+        return &data.asWord;
+#endif
     }
 
   private:
@@ -843,6 +855,14 @@ PrivateValue(void *ptr)
     return v;
 }
 
+static JS_ALWAYS_INLINE Value
+PrivateUint32Value(uint32 ui)
+{
+    Value v;
+    v.setPrivateUint32(ui);
+    return v;
+}
+
 static JS_ALWAYS_INLINE void
 ClearValueRange(Value *vec, uintN len, bool useHoles)
 {
@@ -936,6 +956,8 @@ typedef void
 
 class AutoIdVector;
 
+class PropertyName;
+
 /*
  * Prepare to make |obj| non-extensible; in particular, fully resolve its properties.
  * On error, return false.
@@ -962,6 +984,9 @@ static inline CheckAccessOp      Valueify(JSCheckAccessOp f)    { return (CheckA
 static inline JSCheckAccessOp    Jsvalify(CheckAccessOp f)      { return (JSCheckAccessOp)f; }
 static inline EqualityOp         Valueify(JSEqualityOp f);      /* Same type as JSHasInstanceOp */
 static inline JSEqualityOp       Jsvalify(EqualityOp f);        /* Same type as HasInstanceOp */
+
+static inline PropertyName       *Valueify(JSPropertyName *n)     { return (PropertyName *)n; }
+static inline JSPropertyName     *Jsvalify(PropertyName *n)       { return (JSPropertyName *)n; }
 
 static const PropertyOp       PropertyStub       = (PropertyOp)JS_PropertyStub;
 static const StrictPropertyOp StrictPropertyStub = (StrictPropertyOp)JS_StrictPropertyStub;
@@ -1007,9 +1032,15 @@ struct ClassExtension {
     JSObjectOp          innerObject;
     JSIteratorOp        iteratorObject;
     void               *unused;
+
+    /*
+     * isWrappedNative is true only if the class is an XPCWrappedNative.
+     * WeakMaps use this to override the wrapper disposal optimization.
+     */
+    bool                isWrappedNative;
 };
 
-#define JS_NULL_CLASS_EXT   {NULL,NULL,NULL,NULL,NULL}
+#define JS_NULL_CLASS_EXT   {NULL,NULL,NULL,NULL,NULL,false}
 
 struct ObjectOps {
     js::LookupPropOp        lookupProperty;
@@ -1094,32 +1125,56 @@ static JS_ALWAYS_INLINE PropertyDescriptor *   Valueify(JSPropertyDescriptor *p)
 # define JS_VALUEIFY(type, v) js::Valueify(v)
 # define JS_JSVALIFY(type, v) js::Jsvalify(v)
 
-static inline JSNative JsvalifyNative(Native n)   { return (JSNative)n; }
+static inline JSNative JsvalifyNative(Native n)   { return (JSNative) n; }
 static inline JSNative JsvalifyNative(JSNative n) { return n; }
-static inline Native ValueifyNative(JSNative n)   { return (Native)n; }
+static inline Native ValueifyNative(JSNative n)   { return (Native) n; }
 static inline Native ValueifyNative(Native n)     { return n; }
+static inline JSPropertyOp CastNativeToJSPropertyOp(Native n) { return (JSPropertyOp) n; }
+static inline JSStrictPropertyOp CastNativeToJSStrictPropertyOp(Native n) {
+    return (JSStrictPropertyOp) n;
+}
 
 # define JS_VALUEIFY_NATIVE(n) js::ValueifyNative(n)
 # define JS_JSVALIFY_NATIVE(n) js::JsvalifyNative(n)
+# define JS_CAST_NATIVE_TO_JSPROPERTYOP(n) js::CastNativeToJSPropertyOp(n)
+# define JS_CAST_NATIVE_TO_JSSTRICTPROPERTYOP(n) js::CastNativeToJSStrictPropertyOp(n)
 
 #else
 
-# define JS_VALUEIFY(type, v) ((type)(v))
-# define JS_JSVALIFY(type, v) ((type)(v))
+# define JS_VALUEIFY(type, v) ((type) (v))
+# define JS_JSVALIFY(type, v) ((type) (v))
 
-# define JS_VALUEIFY_NATIVE(n) ((js::Native)(n))
-# define JS_JSVALIFY_NATIVE(n) ((JSNative)(n))
+# define JS_VALUEIFY_NATIVE(n) ((js::Native) (n))
+# define JS_JSVALIFY_NATIVE(n) ((JSNative) (n))
+# define JS_CAST_NATIVE_TO_JSPROPERTYOP(n) ((JSPropertyOp) (n))
+# define JS_CAST_NATIVE_TO_JSSTRICTPROPERTYOP(n) ((JSStrictPropertyOp) (n))
 
 #endif
 
 /*
  * JSFunctionSpec uses JSAPI jsval in function signatures whereas the engine
- * uses js::Value. To avoid widespread (JSNative) casting, have JS_FN perfom a
+ * uses js::Value. To avoid widespread (JSNative) casting, have JS_FN perform a
  * type-safe cast.
  */
 #undef JS_FN
 #define JS_FN(name,call,nargs,flags)                                          \
      {name, JS_JSVALIFY_NATIVE(call), nargs, (flags) | JSFUN_STUB_GSOPS}
+
+/*
+ * JSPropertySpec uses JSAPI JSPropertyOp and JSStrictPropertyOp in function
+ * signatures, but with JSPROP_NATIVE_ACCESSORS the actual values must be
+ * JSNatives. To avoid widespread casting, have JS_PSG and JS_PSGS perform
+ * type-safe casts.
+ */
+#define JS_PSG(name,getter,flags)                                             \
+    {name, 0, (flags) | JSPROP_SHARED | JSPROP_NATIVE_ACCESSORS,              \
+     JS_CAST_NATIVE_TO_JSPROPERTYOP(getter),                                  \
+     NULL}
+#define JS_PSGS(name,getter,setter,flags)                                     \
+    {name, 0, (flags) | JSPROP_SHARED | JSPROP_NATIVE_ACCESSORS,              \
+     JS_CAST_NATIVE_TO_JSPROPERTYOP(getter),                                  \
+     JS_CAST_NATIVE_TO_JSSTRICTPROPERTYOP(setter)}
+#define JS_PS_END {0, 0, 0, 0, 0}
 
 /******************************************************************************/
 

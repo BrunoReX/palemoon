@@ -123,7 +123,7 @@ CAIRO_VERSION=1.10
 PANGO_VERSION=1.14.0
 GTK2_VERSION=2.10.0
 WINDRES_VERSION=2.14.90
-W32API_VERSION=3.8
+W32API_VERSION=3.14
 GNOMEVFS_VERSION=2.0
 GNOMEUI_VERSION=2.2.0
 GCONF_VERSION=1.2.1
@@ -269,6 +269,12 @@ MOZ_ARG_WITH_STRING(android-platform,
                            location of platform dir, default NDK/build/platforms/android-5/arch-arm],
     android_platform=$withval)
 
+MOZ_ARG_ENABLE_BOOL(android-libstdcxx,
+[  --enable-android-libstdcxx
+                          use GNU libstdc++ instead of STLPort for NDK >= 5],
+    MOZ_ANDROID_LIBSTDCXX=1,
+    MOZ_ANDROID_LIBSTDCXX= )
+
 case "$target" in
 arm-linux*-android*|*-linuxandroid*)
     android_tool_prefix="arm-linux-androideabi"
@@ -297,11 +303,39 @@ case "$target" in
     fi
 
     if test -z "$android_toolchain" ; then
-        android_toolchain="$android_ndk"/build/prebuilt/`uname -s | tr "[[:upper:]]" "[[:lower:]]"`-x86/arm-eabi-4.4.0
+        AC_MSG_CHECKING([for android toolchain directory])
+
+        kernel_name=`uname -s | tr "[[:upper:]]" "[[:lower:]]"`
+
+        android_toolchain="$android_ndk"/build/prebuilt/$kernel_name-x86/arm-eabi-4.4.0
+
+        # With newer NDK, the toolchain path has changed.
+        if ! test -d "$android_toolchain" ; then
+            android_toolchain="$android_ndk"/toolchains/arm-$kernel_name-androideabi-4.4.3/prebuilt/$kernel_name-x86
+        fi
+
+        if test -d "$android_toolchain" ; then
+            AC_MSG_RESULT([$android_toolchain])
+        else
+            AC_MSG_ERROR([not found. You have to specify --with-android-toolchain=/path/to/ndk/toolchain.])
+        fi
     fi
 
     if test -z "$android_platform" ; then
-       android_platform="$android_ndk"/build/platforms/android-"$android_version"/arch-"$target_cpu"
+        AC_MSG_CHECKING([for android platform directory])
+
+        android_platform="$android_ndk"/build/platforms/android-"$android_version"/arch-"$target_cpu"
+
+        # With newer NDK, the platform path has changed.
+        if ! test -d "$android_platform" ; then
+            android_platform="$android_ndk"/platforms/android-"$android_version"/arch-"$target_cpu"
+        fi
+
+        if test -d "$android_platform" ; then
+            AC_MSG_RESULT([$android_platform])
+        else
+            AC_MSG_ERROR([not found. You have to specify --with-android-platform=/path/to/ndk/platform.])
+        fi
     fi
 
     dnl set up compilers
@@ -313,22 +347,38 @@ case "$target" in
     AR="$android_toolchain"/bin/"$android_tool_prefix"-ar
     RANLIB="$android_toolchain"/bin/"$android_tool_prefix"-ranlib
     STRIP="$android_toolchain"/bin/"$android_tool_prefix"-strip
+    OBJCOPY="$android_toolchain"/bin/"$android_tool_prefix"-objcopy
 
-    if test -e "$android_ndk/sources/cxx-stl/stlport/libs/armeabi-v7a/libstlport_static.a" ; then
+    if test -n "$MOZ_ANDROID_LIBSTDCXX" ; then
+       if test ! -e "$android_ndk/sources/cxx-stl/gnu-libstdc++/libs/armeabi-v7a/libstdc++.a" ; then
+          AC_MSG_ERROR([Cannot find path to libstdc++ (NDK version >= 5?)])
+       fi
+       STLPORT_CPPFLAGS="-I$android_ndk/sources/cxx-stl/gnu-libstdc++/include -I$android_ndk/sources/cxx-stl/gnu-libstdc++/libs/armeabi-v7a/include -D_GLIBCXX_PERMIT_BACKWARD_HASH"
+       STLPORT_LDFLAGS="-L$android_ndk/sources/cxx-stl/gnu-libstdc++/libs/armeabi-v7a"
+       STLPORT_LIBS="-lstdc++"
+    elif test -e "$android_ndk/sources/cxx-stl/stlport/libs/armeabi-v7a/libstlport_static.a" ; then
        STLPORT_CPPFLAGS="-I$android_ndk/sources/cxx-stl/stlport/stlport"
-       STLPORT_LDFLAGS="-L$android_ndk/sources/cxx-stl/stlport/libs/armeabi-v7a/  -lstlport_static"
+       STLPORT_LDFLAGS="-L$android_ndk/sources/cxx-stl/stlport/libs/armeabi-v7a/"
+       STLPORT_LIBS="-lstlport_static"
+    elif  test -e "$android_ndk/tmp/ndk-digit/build/install/sources/cxx-stl/stlport/libs/armeabi-v7a/libstlport_static.a" ; then
+       STLPORT_CPPFLAGS="-I$android_ndk/sources/cxx-stl/stlport/stlport"
+       STLPORT_LDFLAGS="-L$android_ndk/tmp/ndk-digit/build/install/sources/cxx-stl/stlport/libs/armeabi-v7a"
+       STLPORT_LIBS="-lstlport_static"
+    elif test "$target" != "arm-android-eabi"; then
+       dnl fail if we're not building with NDKr4
+       AC_MSG_ERROR([Couldn't find path to stlport in the android ndk])
     fi
 
     CPPFLAGS="-I$android_platform/usr/include $STLPORT_CPPFLAGS $CPPFLAGS"
     CFLAGS="-mandroid -I$android_platform/usr/include -fno-short-enums -fno-exceptions $CFLAGS"
     CXXFLAGS="-mandroid -I$android_platform/usr/include -fno-short-enums -fno-exceptions $CXXFLAGS"
-    LIBS="$LIBS $STLPORT_LDFLAGS"
+    LIBS="$LIBS $STLPORT_LIBS"
 
     dnl Add -llog by default, since we use it all over the place.
     dnl Add --allow-shlib-undefined, because libGLESv2 links to an
     dnl undefined symbol (present on the hardware, just not in the
     dnl NDK.)
-    LDFLAGS="-mandroid -L$android_platform/usr/lib -L$android_ndk/sources/cxx-stl/gnu-libstdc++/libs/armeabi-v7a -Wl,-rpath-link=$android_platform/usr/lib --sysroot=$android_platform -llog -Wl,--allow-shlib-undefined $LDFLAGS"
+    LDFLAGS="-mandroid $STLPORT_LDFLAGS -L$android_platform/usr/lib -Wl,-rpath-link=$android_platform/usr/lib --sysroot=$android_platform -llog -Wl,--allow-shlib-undefined $LDFLAGS"
 
     dnl prevent cross compile section from using these flags as host flags
     if test -z "$HOST_CPPFLAGS" ; then
@@ -345,8 +395,8 @@ case "$target" in
     fi
 
     ANDROID_NDK="${android_ndk}"
-    ANDROID_TOOLCHAIN="{android_toolchain}"
-    ANDROID_PLATFORM="{android_platform}"
+    ANDROID_TOOLCHAIN="${android_toolchain}"
+    ANDROID_PLATFORM="${android_platform}"
     ANDROID_SDK="${android_sdk}"
     ANDROID_PLATFORM_TOOLS="${android_platform_tools}"
     ANDROID_VERSION="${android_version}"
@@ -361,6 +411,9 @@ case "$target" in
     MOZ_CHROME_FILE_FORMAT=omni
     ZLIB_DIR=yes
     ;;
+*-linux*)
+    AC_PATH_PROG(OBJCOPY,objcopy)
+    ;;
 esac
 
 AC_SUBST(ANDROID_NDK)
@@ -369,6 +422,7 @@ AC_SUBST(ANDROID_PLATFORM)
 AC_SUBST(ANDROID_SDK)
 AC_SUBST(ANDROID_PLATFORM_TOOLS)
 AC_SUBST(ANDROID_PACKAGE_NAME)
+AC_SUBST(OBJCOPY)
 
 dnl ========================================================
 dnl Checks for compilers.
@@ -870,8 +924,7 @@ EOF
             AC_MSG_ERROR([windres version $WINDRES_VERSION or higher is required to build.])
         fi
 
-        # Server 2003 is the highest version supported
-        MOZ_WINSDK_MAXVER=0x05020000
+        MOZ_WINSDK_MAXVER=0x06010000
     fi # !GNU_CC
 
     AC_DEFINE_UNQUOTED(WINVER,0x$WINVER)
@@ -982,7 +1035,10 @@ AC_SUBST(NSINSTALL_BIN)
 
 MOZ_PATH_PROG(DOXYGEN, doxygen, :)
 MOZ_PATH_PROG(AUTOCONF, autoconf, :)
-MOZ_PATH_PROG(UNZIP, unzip, :)
+MOZ_PATH_PROGS(UNZIP, unzip)
+if test -z "$UNZIP" -o "$UNZIP" = ":"; then
+    AC_MSG_ERROR([unzip not found in \$PATH])
+fi
 MOZ_PATH_PROGS(ZIP, zip)
 if test -z "$ZIP" -o "$ZIP" = ":"; then
     AC_MSG_ERROR([zip not found in \$PATH])
@@ -1337,8 +1393,6 @@ OSF1)
 OS_2)
     HOST_OS_ARCH=OS2
     ;;
-QNX)
-    ;;
 SCO_SV)
     HOST_OS_ARCH=SCOOS
     ;;
@@ -1426,14 +1480,6 @@ OS_2)
     OS_ARCH=OS2
     OS_TARGET=OS2
     OS_RELEASE=`uname -v`
-    ;;
-QNX)
-    if test "$OS_TARGET" != "NTO"; then
-        changequote(,)
-        OS_RELEASE=`uname -v | sed 's/^\([0-9]\)\([0-9]*\)$/\1.\2/'`
-        changequote([,])
-    fi
-    OS_TEST=x86
     ;;
 SCO_SV)
     OS_ARCH=SCOOS
@@ -1544,10 +1590,8 @@ if test "$GNU_CC"; then
     MKCSHLIB='$(CC) $(CFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -Wl,-h,$@ -o $@'
     DSO_LDOPTS='-shared'
     if test "$GCC_USE_GNU_LD"; then
-        # Don't allow undefined symbols in libraries, and remove dead symbols
-        DSO_LDOPTS="$DSO_LDOPTS -Wl,-z,defs -Wl,--gc-sections"
-        CFLAGS="$CFLAGS -ffunction-sections -fdata-sections"
-        CXXFLAGS="$CXXFLAGS -ffunction-sections -fdata-sections"
+        # Don't allow undefined symbols in libraries
+        DSO_LDOPTS="$DSO_LDOPTS -Wl,-z,defs"
     fi
     WARNINGS_AS_ERRORS='-Werror'
     DSO_CFLAGS=''
@@ -1821,7 +1865,9 @@ if test -n "$MOZ_VALGRIND"; then
         AC_MSG_ERROR(
             [--enable-valgrind specified but Valgrind is not installed]))
     AC_DEFINE(MOZ_VALGRIND)
+    MOZ_VALGRIND=1
 fi
+AC_SUBST(MOZ_VALGRIND)
 
 dnl ========================================================
 dnl jprof
@@ -1851,10 +1897,11 @@ dnl ========================================================
 dnl callgrind
 dnl ========================================================
 MOZ_ARG_ENABLE_BOOL(callgrind,
-[  --enable-callgrind      Enable callgrind profiling],
+[  --enable-callgrind      Enable callgrind profiling. Implies --enable-profiling.],
     MOZ_CALLGRIND=1,
     MOZ_CALLGRIND= )
 if test -n "$MOZ_CALLGRIND"; then
+    MOZ_PROFILING=1
     AC_DEFINE(MOZ_CALLGRIND)
 fi
 
@@ -2255,13 +2302,17 @@ ia64*-hpux*)
         MOZ_DEBUG_FLAGS="-g" # We want inlining
     ;;
     esac
-    ;;
 
+    if test -z "$MC"; then 
+        MC=mc.exe  
+    fi
+    ;;
 *-mingw*)
     DSO_CFLAGS=
     DSO_PIC_CFLAGS=
     DLL_SUFFIX=.dll
     RC=rc.exe
+    MC=mc.exe
     # certain versions of cygwin's makedepend barf on the 
     # #include <string> vs -I./dist/include/string issue so don't use it
     SYSTEM_MAKEDEPEND=
@@ -2343,7 +2394,7 @@ ia64*-hpux*)
             LDFLAGS="$LDFLAGS -LARGEADDRESSAWARE -NXCOMPAT"
             dnl For profile-guided optimization
             PROFILE_GEN_CFLAGS="-GL"
-            PROFILE_GEN_LDFLAGS="-LTCG:PGINSTRUMENT"
+            PROFILE_GEN_LDFLAGS="-LTCG:PGINSTRUMENT -OPT:NOWIN98 -OPT:REF -OPT:ICF=3"
             dnl XXX: PGO builds can fail with warnings treated as errors,
             dnl specifically "no profile data available" appears to be
             dnl treated as an error sometimes. This might be a consequence
@@ -2354,7 +2405,7 @@ ia64*-hpux*)
             PROFILE_USE_CFLAGS="-GL -wd4624 -wd4952"
             dnl XXX: should be -LTCG:PGOPTIMIZE, but that fails on libxul.
             dnl Probably also a compiler bug, but what can you do?
-            PROFILE_USE_LDFLAGS="-LTCG:PGUPDATE"
+            PROFILE_USE_LDFLAGS="-LTCG:PGUPDATE -OPT:NOWIN98 -OPT:REF -OPT:ICF=3"
             LDFLAGS="$LDFLAGS -DYNAMICBASE"
         fi
     fi
@@ -2471,37 +2522,6 @@ ia64*-hpux*)
     MKCSHLIB='$(CC) $(CFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -Wl,-soname,lib$(LIBRARY_NAME)$(DLL_SUFFIX) -o $@'
     ;;
 
-*-nto*) 
-	AC_DEFINE(NTO)	
-	AC_DEFINE(_QNX_SOURCE)
-	AC_DEFINE(_i386)
-	OS_TARGET=NTO
-	WARNINGS_AS_ERRORS=''
-	MOZ_OPTIMIZE_FLAGS="-O"
-	MOZ_DEBUG_FLAGS="-gstabs"
-	USE_PTHREADS=1
-	_PEDANTIC=
-	LIBS="$LIBS -lsocket -lstdc++"
-	_DEFINES_CFLAGS='-include $(DEPTH)/mozilla-config.h -DMOZILLA_CLIENT -D_POSIX_C_SOURCE=199506'
-	_DEFINES_CXXFLAGS='-DMOZILLA_CLIENT -include $(DEPTH)/mozilla-config.h -D_POSIX_C_SOURCE=199506'
-	if test "$with_x" != "yes"
-	then
-		_PLATFORM_DEFAULT_TOOLKIT="photon"
-	    TK_CFLAGS='-I/usr/include/photon'
-		TK_LIBS='-lph'
-	fi
-	case "${target_cpu}" in
-	ppc*)
-	AC_DEFINE(HAVE_VA_LIST_AS_ARRAY)	
-	;;
-	esac
-	case "${host_cpu}" in
-	i*86)
-	USE_ELF_DYNSTR_GC=1
-	;;
-	esac
-	;;
-
 *-openbsd*)
     if test "$SO_VERSION"; then
         DLL_SUFFIX=".so.$SO_VERSION"
@@ -2549,6 +2569,7 @@ ia64*-hpux*)
     TARGET_MD_ARCH=os2
     _PLATFORM_DEFAULT_TOOLKIT="cairo-os2"
     RC=rc.exe
+    MC=mc.exe
     RCFLAGS='-n'
     MOZ_USER_DIR="Mozilla"
     ZIP="$ZIP -X"
@@ -2605,20 +2626,6 @@ alpha*-*-osf*)
       COMPAQ_CXX=1
     fi
     AC_DEFINE(NEED_USLEEP_PROTOTYPE)
-    ;;
-
-*-qnx*) 
-    DIRENT_INO=d_stat.st_ino
-    dnl Solves the problems the QNX compiler has with nsCOMPtr.h.
-    AC_DEFINE(NSCAP_DISABLE_TEST_DONTQUERY_CASES)
-    AC_DEFINE(NSCAP_DISABLE_DEBUG_PTR_TYPES)
-    dnl Explicit set STDC_HEADERS to workaround QNX 6.0's failing of std test
-    AC_DEFINE(STDC_HEADERS)
-    if test "$no_x" = "yes"; then
-	    _PLATFORM_DEFAULT_TOOLKIT='photon'
-	    TK_CFLAGS='-I/usr/nto/include/photon'
-	    TK_LIBS='-lphoton -lphrender'
-    fi
     ;;
 
 *-sco*) 
@@ -3863,63 +3870,6 @@ if test "x$ac_cv_va_val_copy" = "xno"; then
 fi
 AC_MSG_RESULT($ac_cv_va_val_copy)
 
-dnl Check for dll-challenged libc's.
-dnl This check is apparently only needed for Linux.
-case "$target" in
-	*-linux*)
-	    dnl ===================================================================
-	    _curdir=`pwd`
-	    export _curdir
-	    rm -rf conftest* _conftest
-	    mkdir _conftest
-	    cat >> conftest.C <<\EOF
-#include <stdio.h>
-#include <link.h>
-#include <dlfcn.h>
-#ifdef _dl_loaded
-void __dump_link_map(void) {
-  struct link_map *map = _dl_loaded;
-  while (NULL != map) {printf("0x%08x %s\n", map->l_addr, map->l_name); map = map->l_next;}
-}
-int main() {
-  dlopen("./conftest1.so",RTLD_LAZY);
-  dlopen("./../_conftest/conftest1.so",RTLD_LAZY);
-  dlopen("CURDIR/_conftest/conftest1.so",RTLD_LAZY);
-  dlopen("CURDIR/_conftest/../_conftest/conftest1.so",RTLD_LAZY);
-  __dump_link_map();
-}
-#else
-/* _dl_loaded isn't defined, so this should be either a libc5 (glibc1) system, or a glibc2 system that doesn't have the multiple load bug (i.e., RH6.0).*/
-int main() { printf("./conftest1.so\n"); }
-#endif
-EOF
-
-	    $PERL -p -i -e "s/CURDIR/\$ENV{_curdir}/g;" conftest.C
-
-	    cat >> conftest1.C <<\EOF
-#include <stdio.h>
-void foo(void) {printf("foo in dll called\n");}
-EOF
-	    ${CXX-g++} -fPIC -c -g conftest1.C
-	    ${CXX-g++} -shared -Wl,-h -Wl,conftest1.so -o conftest1.so conftest1.o
-	    ${CXX-g++} -g conftest.C -o conftest -ldl
-	    cp -f conftest1.so conftest _conftest
-	    cd _conftest
-	    if test `./conftest | grep conftest1.so | wc -l` -gt 1
-	    then
-		echo
-		echo "*** Your libc has a bug that can result in loading the same dynamic"
-		echo "*** library multiple times.  This bug is known to be fixed in glibc-2.0.7-32"
-		echo "*** or later.  However, if you choose not to upgrade, the only effect"
-		echo "*** will be excessive memory usage at runtime."
-		echo
-	    fi
-	    cd ${_curdir}
-	    rm -rf conftest* _conftest
-	    dnl ===================================================================
-	    ;;
-esac
-
 dnl ===================================================================
 dnl ========================================================
 dnl Put your C++ language/feature checks below
@@ -4259,8 +4209,11 @@ if test "$ac_cv_trouble_comparing_to_zero" = yes ; then
 fi
 
 # try harder, when checking for __thread support, see bug 521750 comment #33 and below
+# We pass MOZ_OPTIMIZE_LDFLAGS to the linker because if dead_strip is
+# enabled, the linker in xcode 4.1 will crash. Without this it would crash when
+# linking XUL.
 _SAVE_LDFLAGS=$LDFLAGS
-LDFLAGS="$LDFLAGS $DSO_PIC_CFLAGS $DSO_LDOPTS"
+LDFLAGS="$LDFLAGS $DSO_PIC_CFLAGS $DSO_LDOPTS $MOZ_OPTIMIZE_LDFLAGS"
 AC_CACHE_CHECK(for __thread keyword for TLS variables,
                ac_cv_thread_keyword,
                [AC_TRY_LINK([__thread bool tlsIsMainThread = false;],
@@ -4743,6 +4696,24 @@ fi
 AC_SUBST(SYSTEM_HUNSPELL)
 
 dnl ========================================================
+dnl system libffi Support
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(system-ffi,
+[  --enable-system-ffi       Use system libffi (located with pkgconfig)],
+    MOZ_NATIVE_FFI=1 )
+
+if test -n "$MOZ_NATIVE_FFI"; then
+    # Vanilla libffi 3.0.9 needs a few patches from upcoming version 3.0.10
+    # for non-GCC compilers.
+    if test -z "$GNU_CC"; then
+        PKG_CHECK_MODULES(MOZ_FFI, libffi > 3.0.9)
+    else
+        PKG_CHECK_MODULES(MOZ_FFI, libffi >= 3.0.9)
+    fi
+    MOZ_JS_STATIC_LIBS="$MOZ_JS_STATIC_LIBS $MOZ_FFI_LIBS"
+fi
+
+dnl ========================================================
 dnl Java SDK support
 dnl ========================================================
 
@@ -4766,8 +4737,6 @@ MOZ_OFFICIAL_BRANDING=
 MOZ_FEEDS=1
 MOZ_INSTALLER=1
 MOZ_JSDEBUGGER=1
-MOZ_MORK=
-MOZ_MORKREADER=
 MOZ_AUTH_EXTENSION=1
 MOZ_OGG=1
 MOZ_RAW=
@@ -4799,10 +4768,7 @@ MOZ_REFLOW_PERF=
 MOZ_SAFE_BROWSING=
 MOZ_HELP_VIEWER=
 MOZ_SPELLCHECK=1
-MOZ_SPLASHSCREEN=
-MOZ_STORAGE=1
 MOZ_SVG_DLISTS=
-MOZ_TIMELINE=
 MOZ_TOOLKIT_SEARCH=1
 MOZ_UI_LOCALE=en-US
 MOZ_UNIVERSALCHARDET=1
@@ -4975,7 +4941,6 @@ MOZ_ARG_HEADER(Toolkit Options)
                           Select default toolkit
                           Platform specific defaults:
                             Mac OS X - cairo-cocoa
-                            Neutrino/QNX - photon
                             OS/2 - cairo-os2
                             Win32 - cairo-windows
                             Gtk2 with DirectFB - cairo-gtk2-dfb
@@ -4984,8 +4949,7 @@ MOZ_ARG_HEADER(Toolkit Options)
     [ _DEFAULT_TOOLKIT=$enableval ],
     [ _DEFAULT_TOOLKIT=$_PLATFORM_DEFAULT_TOOLKIT])
 
-    if test "$_DEFAULT_TOOLKIT" = "photon" \
-        -o "$_DEFAULT_TOOLKIT" = "cairo-windows" \
+    if test "$_DEFAULT_TOOLKIT" = "cairo-windows" \
         -o "$_DEFAULT_TOOLKIT" = "cairo-gtk2" \
         -o "$_DEFAULT_TOOLKIT" = "cairo-gtk2-dfb" \
         -o "$_DEFAULT_TOOLKIT" = "cairo-gtk2-x11" \
@@ -5006,10 +4970,6 @@ dnl = Enable the toolkit as needed                         =
 dnl ========================================================
 
 case "$MOZ_WIDGET_TOOLKIT" in
-photon)
-	MOZ_ENABLE_PHOTON=1
-	AC_DEFINE(MOZ_WIDGET_PHOTON)
-    ;;
 
 cairo-windows)
     MOZ_WIDGET_TOOLKIT=windows
@@ -5264,7 +5224,6 @@ AC_SUBST(TK_CFLAGS)
 AC_SUBST(TK_LIBS)
 
 AC_SUBST(MOZ_ENABLE_GTK2)
-AC_SUBST(MOZ_ENABLE_PHOTON)
 AC_SUBST(MOZ_ENABLE_QT)
 AC_SUBST(MOZ_ENABLE_QTNETWORK)
 AC_SUBST(MOZ_ENABLE_QMSYSTEM2)
@@ -5676,6 +5635,23 @@ fi
 AC_SUBST(MOZ_IPDL_TESTS)
 
 dnl ========================================================
+dnl = Turns off code necessary for e10s compatibility
+dnl ========================================================
+dnl This is a temporary flag to be removed in bug 662601 when
+dnl it's no longer needed
+
+MOZ_E10S_COMPAT=
+
+MOZ_ARG_ENABLE_BOOL(e10s-compat,
+[  --enable-e10s-compat     Turns off code for e10s compat],
+    MOZ_E10S_COMPAT=1,
+    MOZ_E10S_COMPAT=)
+
+if test -n "$MOZ_E10S_COMPAT"; then
+    AC_DEFINE(MOZ_E10S_COMPAT)
+fi
+
+dnl ========================================================
 dnl = Disable building dbm
 dnl ========================================================
 MOZ_ARG_DISABLE_BOOL(dbm,
@@ -5978,18 +5954,6 @@ linux*)
 fi
 
 dnl ========================================================
-dnl Splashscreen
-dnl ========================================================
-AC_ARG_ENABLE(splashscreen,
-              [  --enable-splashscreen   display splashscreen while loading (default=no)],
-              [enable_splash="yes"],[enable_splash=""])
-if test "x$enable_splash" = "xyes"; then
-  MOZ_SPLASHSCREEN=1
-  AC_DEFINE(MOZ_SPLASHSCREEN)
-fi
-AC_SUBST(MOZ_SPLASHSCREEN)
-
-dnl ========================================================
 dnl Permissions System
 dnl ========================================================
 MOZ_ARG_DISABLE_BOOL(permissions,
@@ -6080,8 +6044,6 @@ i*86)
   ;;
 x86_64)
   MOZ_DIRECTX_SDK_CPU_SUFFIX=x64
-  # currently we disable ANGLE in 64bit builds
-  MOZ_ANGLE=
   ;;
 esac
 
@@ -6105,7 +6067,7 @@ if test -n "$MOZ_ANGLE"; then
   fi
 
   if test -n "`echo $MOZ_DIRECTX_SDK_REG_KEY | grep 'February 2010'`" ; then
-    AC_MSG_WARN([Found the February 2010 DirectX SDK. This is too old. We now require the June 2010 DirectX SDK, or newer.])
+    AC_MSG_ERROR([Found the February 2010 DirectX SDK. This is too old. We now require the June 2010 DirectX SDK, or newer.  Upgrade your SDK or to explicitly build without ANGLE, reconfigure with --disable-angle.])
   else
     MOZ_DIRECTX_SDK_PATH=`reg query "$MOZ_DIRECTX_SDK_REG_KEY" //v InstallPath | grep REG_SZ | sed 's/.*\([[a-zA-Z]]\)\\:\\\\/\\1\\:\\\\/'`
   fi
@@ -6120,8 +6082,7 @@ if test -n "$MOZ_ANGLE"; then
   fi
 
   if test -z "$MOZ_ANGLE" ; then
-    AC_MSG_WARN([Couldn't find the DirectX SDK, needed for ANGLE. Please install it (June 2010 or newer). To explicitly build without ANGLE, reconfigure with --disable-angle.])
-    AC_MSG_WARN([This will become an error in the future.])
+    AC_MSG_ERROR([Couldn't find the DirectX SDK, needed for ANGLE. Please install it (June 2010 or newer). To explicitly build without ANGLE, reconfigure with --disable-angle.])
   fi
 
   if test -n "$MOZ_ANGLE" ; then
@@ -6129,9 +6090,7 @@ if test -n "$MOZ_ANGLE"; then
     MOZ_D3DX9_VERSION=`dumpbin //headers "$MOZ_DIRECTX_SDK_PATH"/lib/$MOZ_DIRECTX_SDK_CPU_SUFFIX/d3dx9.lib | egrep d3dx9_[[0-9]][[0-9]]\.dll | head -n1 | sed 's/.*\([[0-9]][[0-9]]\).*/\\1/g'`
 
     if test -z "$MOZ_D3DX9_VERSION" ; then
-      MOZ_ANGLE=
-      AC_MSG_WARN([Couldn't determine the D3DX9 version! Disabling ANGLE.])
-      AC_MSG_WARN([This will become an error in the future.])
+      AC_MSG_ERROR([Couldn't determine the D3DX9 version, needed for ANGLE. To explicitly build without ANGLE, reconfigure with --disable-angle.])
     fi
 
     if test -n "$MOZ_ANGLE" ; then
@@ -6559,18 +6518,6 @@ else
 fi
 
 dnl ========================================================
-dnl = Enable mozStorage
-dnl ========================================================
-dnl Implicitly enabled by default if building calendar or places
-MOZ_ARG_ENABLE_BOOL(storage,
-[  --enable-storage        Enable mozStorage module and related components],
-    MOZ_STORAGE=1,
-    MOZ_STORAGE= )
-if test -n "$MOZ_STORAGE"; then
-    AC_DEFINE(MOZ_STORAGE)
-fi
-
-dnl ========================================================
 dnl Check for sqlite
 dnl ========================================================
 
@@ -6928,14 +6875,14 @@ dnl = ARM toolchain tweaks
 dnl ========================================================
 
 dnl Defaults
-case "${target}" in
-arm-android*|arm-linuxandroid*)
+case "${CPU_ARCH}-${OS_TARGET}" in
+arm-Android)
     MOZ_THUMB=yes
     MOZ_ARCH=armv7-a
     MOZ_FPU=vfp
     MOZ_FLOAT_ABI=softfp
     ;;
-arm*-*)
+arm-*)
     if test -n "$MOZ_PLATFORM_MAEMO"; then
         MOZ_THUMB=no
         MOZ_ARCH=armv7-a
@@ -7123,6 +7070,20 @@ AC_SUBST(HAVE_ARM_SIMD)
 AC_SUBST(HAVE_ARM_NEON)
 
 dnl ========================================================
+dnl = XRender Composite
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(egl-xrender-composite,
+[  --enable-egl-xrender-composite   
+                          Enable EGL xrender composite optimizations],
+    MOZ_EGL_XRENDER_COMPOSITE=1)
+
+if test -n "$MOZ_EGL_XRENDER_COMPOSITE"; then
+    AC_DEFINE(MOZ_EGL_XRENDER_COMPOSITE)
+fi
+
+AC_SUBST(MOZ_EGL_XRENDER_COMPOSITE)
+
+dnl ========================================================
 dnl = faststripe theme
 dnl ========================================================
 MOZ_ARG_ENABLE_BOOL(faststripe,
@@ -7276,6 +7237,78 @@ if test -n "$MOZ_DEBUG" -o -n "$MOZ_DEBUG_SYMBOLS"; then
 fi
 
 dnl ========================================================
+dnl = Identical Code Folding
+dnl ========================================================
+
+MOZ_ARG_DISABLE_BOOL(icf,
+[  --disable-icf          Disable Identical Code Folding],
+    MOZ_DISABLE_ICF=1,
+    MOZ_DISABLE_ICF= )
+
+if test "$GNU_CC" -a "$GCC_USE_GNU_LD" -a -z "$MOZ_DISABLE_ICF"; then
+    AC_CACHE_CHECK([whether the linker supports Identical Code Folding],
+        LD_SUPPORTS_ICF,
+        [echo 'int foo() {return 42;}' \
+              'int bar() {return 42;}' \
+              'int main() {return foo() - bar();}' > conftest.${ac_ext}
+        # If the linker supports ICF, foo and bar symbols will have
+        # the same address
+        if AC_TRY_COMMAND([${CC-cc} -o conftest${ac_exeext} $LDFLAGS -Wl,--icf=safe -ffunction-sections conftest.${ac_ext} $LIBS 1>&2]) &&
+           test -s conftest${ac_exeext} &&
+           objdump -t conftest${ac_exeext} | awk '{a[[$6]] = $1} END {if (a[["foo"]] && (a[["foo"]] != a[["bar"]])) { exit 1 }}'; then
+            LD_SUPPORTS_ICF=yes
+        else
+            LD_SUPPORTS_ICF=no
+        fi
+        rm -rf conftest*])
+    if test "$LD_SUPPORTS_ICF" = yes; then
+        LDFLAGS="$LDFLAGS -Wl,--icf=safe"
+        CFLAGS="$CFLAGS -ffunction-sections"
+        CXXFLAGS="$CXXFLAGS -ffunction-sections"
+    fi
+fi
+
+dnl ========================================================
+dnl = Automatically remove dead symbols
+dnl ========================================================
+
+if test "$GNU_CC" -a "$GCC_USE_GNU_LD" -a -n "$MOZ_DEBUG_FLAGS"; then
+   dnl See bug 670659
+   AC_CACHE_CHECK([whether removing dead symbols breaks debugging],
+       GC_SECTIONS_BREAKS_DEBUG_RANGES,
+       [echo 'int foo() {return 42;}' \
+             'int bar() {return 1;}' \
+             'int main() {return foo();}' > conftest.${ac_ext}
+        if AC_TRY_COMMAND([${CC-cc} -o conftest.${ac_objext} $CFLAGS $MOZ_DEBUG_FLAGS -ffunction-sections -c conftest.${ac_ext} 1>&2]) &&
+           AC_TRY_COMMAND([${CC-cc} -o conftest${ac_exeext} $LDFLAGS $MOZ_DEBUG_FLAGS -Wl,--gc-sections conftest.${ac_objext} $LIBS 1>&2]) &&
+           test -s conftest${ac_exeext} -a -s conftest.${ac_objext}; then
+            if test "`$PYTHON "$_topsrcdir"/build/unix/check_debug_ranges.py conftest.${ac_objext} conftest.${ac_ext}`" = \
+                    "`$PYTHON "$_topsrcdir"/build/unix/check_debug_ranges.py conftest${ac_exeext} conftest.${ac_ext}`"; then
+                GC_SECTIONS_BREAKS_DEBUG_RANGES=no
+            else
+                GC_SECTIONS_BREAKS_DEBUG_RANGES=yes
+            fi
+        else
+             dnl We really don't expect to get here, but just in case
+             AC_ERROR([couldn't compile a simple C file])
+        fi
+        rm -rf conftest*])
+    if test "$GC_SECTIONS_BREAKS_DEBUG_RANGES" = no; then
+        DSO_LDOPTS="$DSO_LDOPTS -Wl,--gc-sections"
+        case "$CFLAGS" in
+        *-ffunction-sections*)
+            CFLAGS="$CFLAGS -fdata-sections"
+            CXXFLAGS="$CXXFLAGS -fdata-sections"
+            ;;
+        *)
+            CFLAGS="$CFLAGS -ffunction-sections -fdata-sections"
+            CXXFLAGS="$CXXFLAGS -ffunction-sections -fdata-sections"
+            ;;
+        esac
+    fi
+fi
+
+dnl ========================================================
 dnl = Disable any treating of compile warnings as errors
 dnl ========================================================
 MOZ_ARG_DISABLE_BOOL(warnings-as-errors,
@@ -7405,54 +7438,55 @@ else
     ;;
   *-mingw*)
     AC_DEFINE(MOZ_MEMORY_WINDOWS)
-    dnl This is sort of awful. Will revisit if we add support for more versions
+    AC_MSG_CHECKING([for VC2005/2008++ CRT source])
     if test "$CC_VERSION" == "14.00.50727.762" -o "$CC_VERSION" == "15.00.30729.01"; then
-      WIN32_OLD_STYLE_JEMALLOC=1
-      AC_DEFINE(WIN32_OLD_STYLE_JEMALLOC)
-    elif test "$CC_VERSION" == "16.00.30319.01" -o "$CC_VERSION" == "16.00.40219.01"; then
-      WIN32_NEW_STYLE_JEMALLOC=1
-      AC_DEFINE(WIN32_NEW_STYLE_JEMALLOC)
-    else        
-      AC_MSG_ERROR([Building jemalloc requires exactly Visual C++ 2005 SP1 or 2008 SP1 or 2010 currently.])
-    fi
-    if test -z "$WIN32_CRT_SRC_DIR" -a -n "$WIN32_OLD_STYLE_JEMALLOC"; then
-      if test -z "$VCINSTALLDIR" -o ! -d "$VCINSTALLDIR"; then
-        AC_MSG_ERROR([When building jemalloc, set WIN32_CRT_SRC_DIR to the path to the Visual C++ CRT source (usually VCINSTALLDIR\crt\src, but VCINSTALLDIR is not set, so I can't autodetect it for you).])
-      else
+      if test -z "$WIN32_CRT_SRC_DIR" -a -n "$VCINSTALLDIR"; then
         WIN32_CRT_SRC_DIR="$VCINSTALLDIR\crt\src"
       fi
-    fi
-    dnl cpu check
-    case "${target_cpu}" in
-    i*86)
-      MOZ_CRT_CPU_ARCH=intel
-      ;;
-    x86_64)
-      MOZ_CRT_CPU_ARCH=amd64
-      ;;
-    *)
-      AC_MSG_ERROR([--enable-jemalloc not supported on ${target}])
-      ;;
-    esac
-
-    AC_SUBST(MOZ_CRT_CPU_ARCH)
-
-    if test -n "$WIN32_OLD_STYLE_JEMALLOC"; then
-      if test ! -d "$WIN32_CRT_SRC_DIR"; then
-        AC_MSG_ERROR([Invalid Win32 CRT source directory: ${WIN32_CRT_SRC_DIR}])
+      if test -n "$WIN32_CRT_SRC_DIR" -a -d "$WIN32_CRT_SRC_DIR"; then
+        AC_MSG_RESULT([yes])
+        dnl cpu check
+        case "${target_cpu}" in
+        i*86)
+          MOZ_CRT_CPU_ARCH=intel
+          ;;
+        x86_64)
+          MOZ_CRT_CPU_ARCH=amd64
+          ;;
+        *)
+          AC_MSG_ERROR([--enable-jemalloc not supported on ${target}])
+          ;;
+        esac
+        AC_SUBST(MOZ_CRT_CPU_ARCH)
+        WIN32_OLD_STYLE_JEMALLOC=1
+        AC_DEFINE(WIN32_OLD_STYLE_JEMALLOC)
+        WIN32_CRT_SRC_DIR=`cd "$WIN32_CRT_SRC_DIR" && pwd -W`
+        _objdir_win=`pwd -W`
+        WIN32_CUSTOM_CRT_DIR="$_objdir_win/memory/jemalloc/crtsrc/build/$MOZ_CRT_CPU_ARCH"
+        MOZ_MEMORY_LDFLAGS="-MANIFEST:NO -LIBPATH:\"$WIN32_CUSTOM_CRT_DIR\" -NODEFAULTLIB:msvcrt -NODEFAULTLIB:msvcrtd -NODEFAULTLIB:msvcprt -NODEFAULTLIB:msvcprtd -DEFAULTLIB:mozcrt19 -DEFAULTLIB:mozcpp19"
       fi
-      WIN32_CRT_SRC_DIR=`cd "$WIN32_CRT_SRC_DIR" && pwd -W`
-      _objdir_win=`pwd -W`
-      WIN32_CUSTOM_CRT_DIR="$_objdir_win/memory/jemalloc/crtsrc/build/$MOZ_CRT_CPU_ARCH"
-      MOZ_MEMORY_LDFLAGS="-MANIFEST:NO -LIBPATH:\"$WIN32_CUSTOM_CRT_DIR\" -NODEFAULTLIB:msvcrt -NODEFAULTLIB:msvcrtd -NODEFAULTLIB:msvcprt -NODEFAULTLIB:msvcprtd -DEFAULTLIB:mozcrt19 -DEFAULTLIB:mozcpp19"
-    else
-      MOZ_MEMORY_LDFLAGS='-MANIFEST:NO -LIBPATH:$(DIST)/lib -NODEFAULTLIB:msvcrt -NODEFAULTLIB:msvcrtd -NODEFAULTLIB:msvcprt -NODEFAULTLIB:msvcprtd -DEFAULTLIB:mozcrt'
+    fi
+    if test -z "$WIN32_OLD_STYLE_JEMALLOC"; then
+      AC_MSG_RESULT([no])
+      WIN32_NEW_STYLE_JEMALLOC=1
+      AC_DEFINE(WIN32_NEW_STYLE_JEMALLOC)
+      WIN32_CRT_SRC_DIR=
       if test -z "$MOZ_DEBUG"; then
         WIN32_CRT_LIBS="msvcrt.lib msvcprt.lib"
       else
         WIN32_CRT_LIBS="msvcrtd.lib msvcprtd.lib"
       fi
+      dnl Look for a broken crtdll.obj
+      WIN32_CRTDLL_FULLPATH=`lib -nologo -list $WIN32_CRT_LIBS | grep crtdll\\.obj`
+      lib -NOLOGO -OUT:crtdll.obj $WIN32_CRT_LIBS -EXTRACT:$WIN32_CRTDLL_FULLPATH
+      if grep -q '__imp__\{0,1\}free' crtdll.obj; then
+        MOZ_MEMORY_LDFLAGS='-LIBPATH:$(DIST)/lib -NODEFAULTLIB:msvcrt -NODEFAULTLIB:msvcrtd -NODEFAULTLIB:msvcprt -NODEFAULTLIB:msvcprtd -DEFAULTLIB:mozcrt'
+      else
+        MOZ_MEMORY_LDFLAGS='$(DIST)/../memory/jemalloc/jemalloc.lib'
+      fi
+      rm crtdll.obj
     fi
+
     dnl Also pass this to NSPR/NSS
     DLLFLAGS="$DLLFLAGS $MOZ_MEMORY_LDFLAGS"
     export DLLFLAGS
@@ -7462,12 +7496,12 @@ else
     ;;
   esac
 
-  if test "$OS_ARCH" != "Darwin"; then
+  if test "$OS_ARCH" != "WINNT"; then
     dnl NB: this must be kept in sync with jemalloc.h
     AC_DEFINE(HAVE_JEMALLOC_VALLOC)
-    AC_DEFINE(HAVE_JEMALLOC_POSIX_MEMALIGN)
-    AC_DEFINE(HAVE_JEMALLOC_MEMALIGN)
   fi
+  AC_DEFINE(HAVE_JEMALLOC_POSIX_MEMALIGN)
+  AC_DEFINE(HAVE_JEMALLOC_MEMALIGN)
 fi # MOZ_MEMORY
 AC_SUBST(MOZ_MEMORY)
 AC_SUBST(MOZ_MEMORY_LDFLAGS)
@@ -7534,6 +7568,26 @@ if test -n "$MOZ_GCTIMER"; then
 fi
 
 dnl ========================================================
+dnl ETW - Event Tracing for Windows
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(ETW,
+[  --enable-ETW            Enable ETW (Event Tracing for Windows) event reporting
+                          (needs Windows Vista+ SDK)],
+    MOZ_ETW=1,
+    MOZ_ETW= )
+if test -n "$MOZ_ETW"; then
+    AC_DEFINE(MOZ_ETW)
+fi
+
+if test -n "$MOZ_ETW"; then
+    if test -z "$MOZ_WINSDK_TARGETVER"; then
+        AC_MSG_ERROR([--enable-ETW is only valid on Windows])
+    elif test "$MOZ_WINSDK_TARGETVER" -lt "06000000"; then
+        AC_MSG_ERROR([--enable-ETW requires the Windows Vista SDK or newer])
+    fi
+fi
+
+dnl ========================================================
 dnl Zealous JavaScript GC
 dnl ========================================================
 MOZ_ARG_ENABLE_BOOL(gczeal,
@@ -7542,6 +7596,18 @@ MOZ_ARG_ENABLE_BOOL(gczeal,
     JS_GC_ZEAL= )
 if test -n "$JS_GC_ZEAL"; then
     AC_DEFINE(JS_GC_ZEAL)
+fi
+
+dnl ========================================================
+dnl JS opt-mode assertions and minidump instrumentation
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(js-diagnostics,
+[  --enable-js-diagnostics
+                          Enable JS diagnostic assertions and breakpad data],
+    JS_CRASH_DIAGNOSTICS=1,
+    JS_CRASH_DIAGNOSTICS= )
+if test -n "$JS_CRASH_DIAGNOSTICS"; then
+    AC_DEFINE(JS_CRASH_DIAGNOSTICS)
 fi
 
 dnl ======================================================
@@ -7684,7 +7750,7 @@ MOZ_ARG_ENABLE_BOOL(stdcxx-compat,
 AC_SUBST(STDCXX_COMPAT)
 
 if test -n "$STDCXX_COMPAT"; then
-   eval $($PYTHON $_topsrcdir/build/autoconf/libstdcxx.py)
+   eval $(CXX="$CXX" $PYTHON $_topsrcdir/build/autoconf/libstdcxx.py)
    AC_SUBST(MOZ_LIBSTDCXX_TARGET_VERSION)
    AC_SUBST(MOZ_LIBSTDCXX_HOST_VERSION)
 fi
@@ -7695,19 +7761,6 @@ dnl = Profiling and Instrumenting
 dnl = 
 dnl ========================================================
 MOZ_ARG_HEADER(Profiling and Instrumenting)
-
-dnl ========================================================
-dnl = Enable timeline service, which provides lightweight
-dnl = instrumentation of mozilla for performance measurement.
-dnl = Timeline is off by default.
-dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(timeline,
-[  --enable-timeline       Enable timeline services ],
-    MOZ_TIMELINE=1,
-    MOZ_TIMELINE= )
-if test -n "$MOZ_TIMELINE"; then
-    AC_DEFINE(MOZ_TIMELINE)
-fi
 
 dnl ========================================================
 dnl = Enable NS_FUNCTION_TIMER, which provides Function 
@@ -7828,7 +7881,11 @@ dnl done during packaging with omnijar.
 if test "$MOZ_CHROME_FILE_FORMAT" = "omni"; then
     MOZ_OMNIJAR=1
     AC_DEFINE(MOZ_OMNIJAR)
-    MOZ_CHROME_FILE_FORMAT=flat
+    if test "$OS_ARCH" = "WINNT" -o "$OS_ARCH" = "OS2" -o "$OS_TARGET" = "Android"; then
+        MOZ_CHROME_FILE_FORMAT=flat
+    else
+        MOZ_CHROME_FILE_FORMAT=symlink
+    fi
 elif test "$MOZ_CHROME_FILE_FORMAT" = "jar"; then
     AC_DEFINE(MOZ_CHROME_FILE_FORMAT_JAR)
 fi
@@ -8225,9 +8282,9 @@ MOZ_ARG_ENABLE_BOOL(shared-js,
 
 if test -n "$ENABLE_SHARED_JS"; then
   JS_SHARED_LIBRARY=1
-  MOZ_JS_LIBS=$MOZ_JS_SHARED_LIBS
+  MOZ_JS_LIBS="$MOZ_JS_SHARED_LIBS"
 else
-  MOZ_JS_LIBS=$MOZ_JS_STATIC_LIBS
+  MOZ_JS_LIBS="$MOZ_JS_STATIC_LIBS"
   AC_DEFINE(MOZ_STATIC_JS)
 fi
 AC_SUBST(JS_SHARED_LIBRARY)
@@ -8784,18 +8841,6 @@ fi
 dnl NECKO_ configuration options are not global
 _NON_GLOBAL_ACDEFINES="$_NON_GLOBAL_ACDEFINES NECKO_"
 
-dnl Only build Mork if it's required
-AC_SUBST(MOZ_MORK)
-if test "$MOZ_MORK"; then
-  AC_DEFINE(MOZ_MORK)
-fi
-
-dnl Build the lightweight Mork reader if required
-AC_SUBST(MOZ_MORKREADER)
-if test "$MOZ_MORKREADER"; then
-  AC_DEFINE(MOZ_MORKREADER)
-fi
-
 dnl Build Places if required
 if test "$MOZ_PLACES"; then
   AC_DEFINE(MOZ_PLACES)
@@ -8837,6 +8882,7 @@ AC_SUBST(AS_DASH_C_FLAG)
 AC_SUBST(LD)
 AC_SUBST(RC)
 AC_SUBST(RCFLAGS)
+AC_SUBST(MC)
 AC_SUBST(WINDRES)
 AC_SUBST(IMPLIB)
 AC_SUBST(FILTER)
@@ -8869,11 +8915,11 @@ AC_SUBST(MOZ_JPROF)
 AC_SUBST(MOZ_SHARK)
 AC_SUBST(MOZ_CALLGRIND)
 AC_SUBST(MOZ_VTUNE)
+AC_SUBST(MOZ_ETW)
 AC_SUBST(MOZ_PROFILING)
 AC_SUBST(MOZ_QUANTIFY)
 AC_SUBST(LIBICONV)
 AC_SUBST(MOZ_PLACES)
-AC_SUBST(MOZ_STORAGE)
 AC_SUBST(MOZ_TOOLKIT_SEARCH)
 AC_SUBST(MOZ_FEEDS)
 AC_SUBST(NS_PRINTING)
@@ -8925,7 +8971,6 @@ AC_SUBST(MOZ_OS2_TOOLS)
 
 AC_SUBST(MOZ_POST_DSO_LIB_COMMAND)
 AC_SUBST(MOZ_POST_PROGRAM_COMMAND)
-AC_SUBST(MOZ_TIMELINE)
 
 # The following variables are available to branding and application
 # configuration ($BRANDING/configure.sh and $APPLICATION/confvars.sh):
@@ -9276,6 +9321,20 @@ xpcom/xpcom-config.h
 xpcom/xpcom-private.h
 )
 
+# Hack around an Apple bug that effects the egrep that comes with OS X 10.7.
+# "arch -arch i386 egrep" always uses the 32-bit Intel part of the egrep fat
+# binary, even on 64-bit systems.  It should work on OS X 10.4.5 and up.  We
+# (apparently) only need this hack when egrep's "pattern" is particularly
+# long (as in the following code).  See bug 655339.
+case "$host" in
+*-apple-darwin*)
+    FIXED_EGREP="arch -arch i386 egrep"
+    ;;
+*)
+    FIXED_EGREP="egrep"
+    ;;
+esac
+
 # Save the defines header file before autoconf removes it.
 # (Do not add AC_DEFINE calls after this line.)
   _CONFIG_TMP=confdefs-tmp.h
@@ -9298,10 +9357,29 @@ if test -n "$_NON_GLOBAL_ACDEFINES"; then
     done
 fi
 _EGREP_PATTERN="${_EGREP_PATTERN}dummy_never_defined)"
- 
-  sort confdefs.h | egrep -v "$_EGREP_PATTERN" >> $_CONFIG_TMP
+
+  sort confdefs.h | $FIXED_EGREP -v "$_EGREP_PATTERN" >> $_CONFIG_TMP
+
+  if test "$?" != 0; then
+    AC_MSG_ERROR([Error outputting config definitions])
+  fi
 
   cat >> $_CONFIG_TMP <<\EOF
+
+/* The c99 defining the limit macros (UINT32_MAX for example), says:
+ * C++ implementations should define these macros only when __STDC_LIMIT_MACROS
+ * is defined before <stdint.h> is included. */
+#define __STDC_LIMIT_MACROS
+
+/* Force-include hunspell_alloc_hooks.h for hunspell, so that we don't need to
+ * modify it directly.
+ *
+ * HUNSPELL_STATIC is defined in extensions/spellcheck/hunspell/src/Makefile.in,
+ * unless --enable-system-hunspell is defined.
+ */
+#if defined(HUNSPELL_STATIC)
+#include "hunspell_alloc_hooks.h"
+#endif
 
 #endif /* _MOZILLA_CONFIG_H_ */
 
@@ -9321,7 +9399,10 @@ EOF
 dnl Probably shouldn't call this manually but we always want the output of DEFS
 rm -f confdefs.h.save
 mv confdefs.h confdefs.h.save
-egrep -v "$_EGREP_PATTERN" confdefs.h.save > confdefs.h
+$FIXED_EGREP -v "$_EGREP_PATTERN" confdefs.h.save > confdefs.h
+if test "$?" != 0; then
+  AC_MSG_ERROR([Error outputting confdefs.h])
+fi
 AC_OUTPUT_MAKE_DEFS()
 MOZ_DEFINES=$DEFS
 AC_SUBST(MOZ_DEFINES)

@@ -66,8 +66,6 @@
 #include "nsIDOMNavigator.h"
 #include "nsIDOMNavigatorGeolocation.h"
 #include "nsIDOMNavigatorDesktopNotification.h"
-#include "nsIDOMLocation.h"
-#include "nsIDOMWindowInternal.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIDOMJSWindow.h"
@@ -97,7 +95,6 @@
 #include "prclist.h"
 #include "nsIDOMStorageObsolete.h"
 #include "nsIDOMStorageList.h"
-#include "nsIDOMStorageWindow.h"
 #include "nsIDOMStorageEvent.h"
 #include "nsIDOMStorageIndexedDB.h"
 #include "nsIDOMOfflineResourceList.h"
@@ -276,7 +273,6 @@ class nsGlobalWindow : public nsPIDOMWindow,
                        public nsIDOMJSWindow,
                        public nsIScriptObjectPrincipal,
                        public nsIDOMEventTarget,
-                       public nsIDOMStorageWindow,
                        public nsIDOMStorageIndexedDB,
                        public nsSupportsWeakReference,
                        public nsIInterfaceRequestor,
@@ -325,9 +321,6 @@ public:
   // nsIDOMWindow
   NS_DECL_NSIDOMWINDOW
 
-  // nsIDOMWindowInternal
-  NS_DECL_NSIDOMWINDOWINTERNAL
-
   // nsIDOMWindowPerformance
   NS_DECL_NSIDOMWINDOWPERFORMANCE
 
@@ -370,12 +363,12 @@ public:
                                               nsISupports *aState,
                                               PRBool aForceReuseInnerWindow);
   void DispatchDOMWindowCreated();
-  virtual NS_HIDDEN_(void) SetOpenerWindow(nsIDOMWindowInternal *aOpener,
+  virtual NS_HIDDEN_(void) SetOpenerWindow(nsIDOMWindow* aOpener,
                                            PRBool aOriginalOpener);
   virtual NS_HIDDEN_(void) EnsureSizeUpToDate();
 
-  virtual NS_HIDDEN_(nsIDOMWindow *) EnterModalState();
-  virtual NS_HIDDEN_(void) LeaveModalState(nsIDOMWindow *aWindow);
+  virtual NS_HIDDEN_(nsIDOMWindow*) EnterModalState();
+  virtual NS_HIDDEN_(void) LeaveModalState(nsIDOMWindow* aWindow);
 
   virtual NS_HIDDEN_(PRBool) CanClose();
   virtual NS_HIDDEN_(nsresult) ForceClose();
@@ -383,9 +376,10 @@ public:
   virtual NS_HIDDEN_(void) SetHasOrientationEventListener();
   virtual NS_HIDDEN_(void) MaybeUpdateTouchState();
   virtual NS_HIDDEN_(void) UpdateTouchState();
+  virtual NS_HIDDEN_(PRBool) DispatchCustomEvent(const char *aEventName);
 
-  // nsIDOMStorageWindow
-  NS_DECL_NSIDOMSTORAGEWINDOW
+  // nsIDOMStorageIndexedDB
+  NS_DECL_NSIDOMSTORAGEINDEXEDDB
 
   // nsIInterfaceRequestor
   NS_DECL_NSIINTERFACEREQUESTOR
@@ -544,15 +538,7 @@ public:
     return sWindowsById;
   }
 
-  PRInt64 SizeOf() const {
-    PRInt64 size = sizeof(*this);
-
-    if (IsInnerWindow() && mDoc) {
-      size += mDoc->SizeOf();
-    }
-
-    return size;
-  }
+  PRInt64 SizeOf() const;
 
 private:
   // Enable updates for the accelerometer.
@@ -581,7 +567,7 @@ protected:
   nsresult DefineArgumentsProperty(nsIArray *aArguments);
 
   // Get the parent, returns null if this is a toplevel window
-  nsIDOMWindowInternal *GetParentInternal();
+  nsIDOMWindow* GetParentInternal();
 
   // popup tracking
   PRBool IsPopupSpamWindow()
@@ -728,8 +714,6 @@ protected:
   {
     return GetParentInternal() != nsnull;
   }
-
-  PRBool DispatchCustomEvent(const char *aEventName);
 
   // If aLookForCallerOnJSStack is true, this method will look at the JS stack
   // to determine who the caller is.  If it's false, it'll use |this| as the
@@ -983,6 +967,7 @@ protected:
   static nsIDOMStorageList* sGlobalStorageList;
 
   static WindowByIdTable* sWindowsById;
+  static bool sWarnedAboutWindowInternal;
 };
 
 /*
@@ -1084,6 +1069,8 @@ public:
 
   static bool HasDesktopNotificationSupport();
 
+  PRInt64 SizeOf() const;
+
 protected:
   nsRefPtr<nsMimeTypeArray> mMimeTypes;
   nsRefPtr<nsPluginArray> mPlugins;
@@ -1096,47 +1083,6 @@ nsresult NS_GetNavigatorUserAgent(nsAString& aUserAgent);
 nsresult NS_GetNavigatorPlatform(nsAString& aPlatform);
 nsresult NS_GetNavigatorAppVersion(nsAString& aAppVersion);
 nsresult NS_GetNavigatorAppName(nsAString& aAppName);
-
-class nsIURI;
-
-//*****************************************************************************
-// nsLocation: Script "location" object
-//*****************************************************************************
-
-class nsLocation : public nsIDOMLocation
-{
-public:
-  nsLocation(nsIDocShell *aDocShell);
-  virtual ~nsLocation();
-
-  NS_DECL_ISUPPORTS
-
-  void SetDocShell(nsIDocShell *aDocShell);
-  nsIDocShell *GetDocShell();
-
-  // nsIDOMLocation
-  NS_DECL_NSIDOMLOCATION
-
-protected:
-  // In the case of jar: uris, we sometimes want the place the jar was
-  // fetched from as the URI instead of the jar: uri itself.  Pass in
-  // PR_TRUE for aGetInnermostURI when that's the case.
-  nsresult GetURI(nsIURI** aURL, PRBool aGetInnermostURI = PR_FALSE);
-  nsresult GetWritableURI(nsIURI** aURL);
-  nsresult SetURI(nsIURI* aURL, PRBool aReplace = PR_FALSE);
-  nsresult SetHrefWithBase(const nsAString& aHref, nsIURI* aBase,
-                           PRBool aReplace);
-  nsresult SetHrefWithContext(JSContext* cx, const nsAString& aHref,
-                              PRBool aReplace);
-
-  nsresult GetSourceBaseURL(JSContext* cx, nsIURI** sourceURL);
-  nsresult GetSourceDocument(JSContext* cx, nsIDocument** aDocument);
-
-  nsresult CheckURL(nsIURI *url, nsIDocShellLoadInfo** aLoadInfo);
-
-  nsString mCachedHash;
-  nsWeakPtr mDocShell;
-};
 
 /* factory function */
 nsresult

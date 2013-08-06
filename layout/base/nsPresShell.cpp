@@ -133,10 +133,9 @@
 #include "nsIAttribute.h"
 #include "nsIGlobalHistory2.h"
 #include "nsDisplayList.h"
-#include "nsIRegion.h"
 #include "nsRegion.h"
 #include "nsRenderingContext.h"
-
+#include "nsAutoLayoutPhase.h"
 #ifdef MOZ_REFLOW_PERF
 #include "nsFontMetrics.h"
 #endif
@@ -236,7 +235,6 @@ using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::layers;
 
-PRBool nsIPresShell::gIsAccessibilityActive = PR_FALSE;
 CapturingContentInfo nsIPresShell::gCaptureInfo =
   { PR_FALSE /* mAllowed */,     PR_FALSE /* mRetargetToElement */,
     PR_FALSE /* mPreventDrag */, nsnull /* mContent */ };
@@ -1434,12 +1432,12 @@ public:
     return PL_DHASH_NEXT;
   }
 
-  static PLDHashOperator LiveShellBidiSizeEnumerator(PresShellPtrKey *aEntry,
-                                                     void *userArg)
+  static PLDHashOperator StyleSizeEnumerator(PresShellPtrKey *aEntry,
+                                             void *userArg)
   {
     PresShell *aShell = static_cast<PresShell*>(aEntry->GetKey());
     PRUint32 *val = (PRUint32*)userArg;
-    *val += aShell->mPresContext->GetBidiMemoryUsed();
+    *val += aShell->StyleSet()->SizeOf();
     return PL_DHASH_NEXT;
   }
 
@@ -1450,14 +1448,13 @@ public:
     sLiveShells->EnumerateEntries(aEnumerator, &result);
     return result;
   }
-                  
-                                  
+
   static PRInt64 SizeOfLayoutMemoryReporter() {
     return EstimateShellsMemory(LiveShellSizeEnumerator);
   }
 
-  static PRInt64 SizeOfBidiMemoryReporter() {
-    return EstimateShellsMemory(LiveShellBidiSizeEnumerator);
+  static PRInt64 SizeOfStyleMemoryReporter() {
+    return EstimateShellsMemory(StyleSizeEnumerator);
   }
 
 protected:
@@ -1669,18 +1666,18 @@ nsTHashtable<PresShell::PresShellPtrKey> *nsIPresShell::sLiveShells = 0;
 static PRBool sSynthMouseMove = PR_TRUE;
 
 NS_MEMORY_REPORTER_IMPLEMENT(LayoutPresShell,
-    "explicit/layout/all",
+    "explicit/layout/arenas",
     KIND_HEAP,
     UNITS_BYTES,
     PresShell::SizeOfLayoutMemoryReporter,
     "Memory used by layout PresShell, PresContext, and other related areas.")
 
-NS_MEMORY_REPORTER_IMPLEMENT(LayoutBidi,
-    "explicit/layout/bidi",
+NS_MEMORY_REPORTER_IMPLEMENT(LayoutStyle,
+    "explicit/layout/styledata",
     KIND_HEAP,
     UNITS_BYTES,
-    PresShell::SizeOfBidiMemoryReporter,
-    "Memory used by layout Bidi processor.")
+    PresShell::SizeOfStyleMemoryReporter,
+    "Memory used by the style system.")
 
 PresShell::PresShell()
   : mMouseLocation(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE)
@@ -1710,7 +1707,7 @@ PresShell::PresShell()
   static bool registeredReporter = false;
   if (!registeredReporter) {
     NS_RegisterMemoryReporter(new NS_MEMORY_REPORTER_NAME(LayoutPresShell));
-    NS_RegisterMemoryReporter(new NS_MEMORY_REPORTER_NAME(LayoutBidi));
+    NS_RegisterMemoryReporter(new NS_MEMORY_REPORTER_NAME(LayoutStyle));
     Preferences::AddBoolVarCache(&sSynthMouseMove,
                                  "layout.reflow.synthMouseMove", PR_TRUE);
     registeredReporter = true;
@@ -1866,9 +1863,6 @@ PresShell::Init(nsIDocument* aDocument,
 #ifdef MOZ_XUL
       os->AddObserver(this, "chrome-flush-skin-caches", PR_FALSE);
 #endif
-#ifdef ACCESSIBILITY
-      os->AddObserver(this, "a11y-init-or-shutdown", PR_FALSE);
-#endif
     }
   }
 
@@ -1954,9 +1948,6 @@ PresShell::Destroy()
       os->RemoveObserver(this, "user-sheet-removed");
 #ifdef MOZ_XUL
       os->RemoveObserver(this, "chrome-flush-skin-caches");
-#endif
-#ifdef ACCESSIBILITY
-      os->RemoveObserver(this, "a11y-init-or-shutdown");
 #endif
     }
   }
@@ -2995,6 +2986,12 @@ PresShell::FireResizeEvent()
 void
 PresShell::SetIgnoreFrameDestruction(PRBool aIgnore)
 {
+  if (mPresContext) {
+    // We need to destroy the image loaders first, as they won't be
+    // notified when frames are destroyed once this setting takes effect.
+    // (See bug 673984)
+    mPresContext->DestroyImageLoaders();
+  }
   mIgnoreFrameDestruction = aIgnore;
 }
 
@@ -7004,9 +7001,6 @@ PresShell::HandleEventInternal(nsEvent* aEvent, nsIView *aView,
       accEvent->mAccessible =
         accService->GetRootDocumentAccessible(this, nsContentUtils::IsSafeToRunScript());
 
-      // Ensure this is set in case a11y was activated before any
-      // nsPresShells existed to observe "a11y-init-or-shutdown" topic
-      gIsAccessibilityActive = PR_TRUE;
       return NS_OK;
     }
   }
@@ -8253,12 +8247,6 @@ PresShell::Observe(nsISupports* aSubject,
     return NS_OK;
   }
 
-#ifdef ACCESSIBILITY
-  if (!nsCRT::strcmp(aTopic, "a11y-init-or-shutdown")) {
-    gIsAccessibilityActive = aData && *aData == '1';
-    return NS_OK;
-  }
-#endif
   NS_WARNING("unrecognized topic in PresShell::Observe");
   return NS_ERROR_FAILURE;
 }
@@ -9017,7 +9005,13 @@ void ReflowCountMgr::PaintCount(const char*     aName,
                   NS_FONT_WEIGHT_NORMAL, NS_FONT_STRETCH_NORMAL, 0,
                   nsPresContext::CSSPixelsToAppUnits(11));
 
-      nsRefPtr<nsFontMetrics> fm = aPresContext->GetMetricsFor(font);
+      nsRefPtr<nsFontMetrics> fm;
+      aPresContext->DeviceContext()->GetMetricsFor(font,
+        // We have one frame, therefore we must have a root...
+        aPresContext->FrameManager()->GetRootFrame()->
+          GetStyleVisibility()->mLanguage,
+        aPresContext->GetUserFontSet(), *getter_AddRefs(fm));
+
       aRenderingContext->SetFont(fm);
       char buf[16];
       sprintf(buf, "%d", counter->mCount);
@@ -9349,6 +9343,12 @@ nsIFrame* nsIPresShell::GetAbsoluteContainingBlock(nsIFrame *aFrame)
 }
 
 #ifdef ACCESSIBILITY
+bool
+nsIPresShell::IsAccessibilityActive()
+{
+  return GetAccService() != nsnull;
+}
+
 nsAccessibilityService*
 nsIPresShell::AccService()
 {
@@ -9428,9 +9428,11 @@ PresShell::SetIsActive(PRBool aIsActive)
                                         &aIsActive);
   nsresult rv = UpdateImageLockingState();
 #ifdef ACCESSIBILITY
-  nsAccessibilityService* accService = AccService();
-  if (accService) {
-    accService->PresShellActivated(this);
+  if (aIsActive) {
+    nsAccessibilityService* accService = AccService();
+    if (accService) {
+      accService->PresShellActivated(this);
+    }
   }
 #endif
   return rv;

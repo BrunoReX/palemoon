@@ -44,14 +44,17 @@
 #include "nsAccUtils.h"
 #include "nsBaseWidgetAccessible.h"
 #include "nsCoreUtils.h"
-#include "nsRelUtils.h"
 #include "nsTextEquivUtils.h"
+#include "Relation.h"
 #include "States.h"
 
+#include "nsIAccessibleRelation.h"
 #include "nsIDOMXULDescriptionElement.h"
 #include "nsINameSpaceManager.h"
 #include "nsString.h"
 #include "nsNetUtil.h"
+
+using namespace mozilla::a11y;
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsXULTextAccessible
@@ -86,25 +89,21 @@ nsXULTextAccessible::NativeState()
   return nsHyperTextAccessibleWrap::NativeState() | states::READONLY;
 }
 
-NS_IMETHODIMP
-nsXULTextAccessible::GetRelationByType(PRUint32 aRelationType,
-                                       nsIAccessibleRelation **aRelation)
+Relation
+nsXULTextAccessible::RelationByType(PRUint32 aType)
 {
-  nsresult rv =
-    nsHyperTextAccessibleWrap::GetRelationByType(aRelationType, aRelation);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  if (aRelationType == nsIAccessibleRelation::RELATION_LABEL_FOR) {
+  Relation rel = nsHyperTextAccessibleWrap::RelationByType(aType);
+  if (aType == nsIAccessibleRelation::RELATION_LABEL_FOR) {
     // Caption is the label for groupbox
     nsIContent *parent = mContent->GetParent();
     if (parent && parent->Tag() == nsAccessibilityAtoms::caption) {
-      nsAccessible* parent = GetParent();
+      nsAccessible* parent = Parent();
       if (parent && parent->Role() == nsIAccessibleRole::ROLE_GROUPING)
-        return nsRelUtils::AddTarget(aRelationType, aRelation, parent);
+        rel.AppendTarget(parent);
     }
   }
 
-  return NS_OK;
+  return rel;
 }
 
 
@@ -187,13 +186,10 @@ nsXULLinkAccessible::NativeState()
   return nsHyperTextAccessible::NativeState() | states::LINKED;
 }
 
-NS_IMETHODIMP
-nsXULLinkAccessible::GetNumActions(PRUint8 *aNumActions)
+PRUint8
+nsXULLinkAccessible::ActionCount()
 {
-  NS_ENSURE_ARG_POINTER(aNumActions);
-  
-  *aNumActions = 1;
-  return NS_OK;
+  return 1;
 }
 
 NS_IMETHODIMP

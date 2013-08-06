@@ -280,8 +280,8 @@ private:
 
 // IID for the nsINode interface
 #define NS_INODE_IID \
-{ 0x4776aa9a, 0xa886, 0x40c9, \
- { 0xae, 0x4c, 0x4d, 0x92, 0xe2, 0xf0, 0xd9, 0x61 } }
+{ 0xc7abbb40, 0x2571, 0x4d12, \
+ { 0x8f, 0x89, 0x0d, 0x4f, 0x55, 0xc0, 0x92, 0xf6 } }
 
 /**
  * An internal interface that abstracts some DOMNode-related parts that both
@@ -293,6 +293,10 @@ class nsINode : public nsIDOMEventTarget,
 {
 public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_INODE_IID)
+
+  virtual PRInt64 SizeOf() const {
+    return sizeof(*this);
+  }
 
   friend class nsNodeUtils;
   friend class nsNodeWeakReference;
@@ -1099,6 +1103,26 @@ public:
    */
   nsIContent* GetNextNode(const nsINode* aRoot = nsnull) const
   {
+    return GetNextNodeImpl(aRoot, PR_FALSE);
+  }
+
+  /**
+   * Get the next node in the pre-order tree traversal of the DOM but ignoring
+   * the children of this node.  If aRoot is non-null, then it must be an
+   * ancestor of |this| (possibly equal to |this|) and only nodes that are
+   * descendants of aRoot, not including aRoot itself, will be returned.
+   * Returns null if there are no more nodes to traverse.
+   */
+  nsIContent* GetNextNonChildNode(const nsINode* aRoot = nsnull) const
+  {
+    return GetNextNodeImpl(aRoot, PR_TRUE);
+  }
+
+private:
+
+  nsIContent* GetNextNodeImpl(const nsINode* aRoot,
+                              const PRBool aSkipChildren) const
+  {
     // Can't use nsContentUtils::ContentIsDescendantOf here, since we
     // can't include it here.
 #ifdef DEBUG
@@ -1109,9 +1133,11 @@ public:
       NS_ASSERTION(cur, "aRoot not an ancestor of |this|?");
     }
 #endif
-    nsIContent* kid = GetFirstChild();
-    if (kid) {
-      return kid;
+    if (!aSkipChildren) {
+      nsIContent* kid = GetFirstChild();
+      if (kid) {
+        return kid;
+      }
     }
     if (this == aRoot) {
       return nsnull;
@@ -1130,6 +1156,8 @@ public:
     }
     NS_NOTREACHED("How did we get here?");
   }
+
+public:
 
   /**
    * Get the previous nsIContent in the pre-order tree traversal of the DOM.  If

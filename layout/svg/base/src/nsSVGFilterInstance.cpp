@@ -49,16 +49,20 @@ static double Square(double aX)
 }
 
 float
-nsSVGFilterInstance::GetPrimitiveLength(nsSVGLength2 *aLength) const
+nsSVGFilterInstance::GetPrimitiveNumber(PRUint8 aCtxType, float aValue) const
 {
+  nsSVGLength2 val;
+  val.Init(aCtxType, 0xff, aValue,
+           nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER);
+
   float value;
   if (mPrimitiveUnits == nsIDOMSVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
-    value = nsSVGUtils::ObjectSpace(mTargetBBox, aLength);
+    value = nsSVGUtils::ObjectSpace(mTargetBBox, &val);
   } else {
-    value = nsSVGUtils::UserSpace(mTargetFrame, aLength);
+    value = nsSVGUtils::UserSpace(mTargetFrame, &val);
   }
 
-  switch (aLength->GetCtxType()) {
+  switch (aCtxType) {
   case nsSVGUtils::X:
     return value * mFilterSpaceSize.width / mFilterRect.Width();
   case nsSVGUtils::Y:
@@ -126,7 +130,7 @@ nsSVGFilterInstance::ComputeFilterPrimitiveSubregion(PrimitiveInfo* aPrimitive)
   gfxRect defaultFilterSubregion(0,0,0,0);
   if (fE->SubregionIsUnionOfRegions()) {
     for (PRUint32 i = 0; i < aPrimitive->mInputs.Length(); ++i) {
-      defaultFilterSubregion = 
+      defaultFilterSubregion =
           defaultFilterSubregion.Union(
               aPrimitive->mInputs[i]->mImage.mFilterPrimitiveSubregion);
     }
@@ -367,7 +371,7 @@ nsSVGFilterInstance::BuildSourceImages()
     // (In theory it would be better to minimize error by having filtered SVG
     // graphics temporarily paint to user space when painting the sources and
     // only set a user space to filter space transform on the gfxContext
-    // (since that would elliminate the transform multiplications from user
+    // (since that would eliminate the transform multiplications from user
     // space to device space and back again). However, that would make the
     // code more complex while being hard to get right without introducing
     // subtle bugs, and in practice it probably makes no real difference.)

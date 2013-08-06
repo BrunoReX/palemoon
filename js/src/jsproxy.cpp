@@ -409,19 +409,6 @@ IndicatePropertyNotFound(JSContext *cx, PropertyDescriptor *desc)
 }
 
 static bool
-MakePropertyDescriptorObject(JSContext *cx, jsid id, PropertyDescriptor *desc, Value *vp)
-{
-    if (!desc->obj) {
-        vp->setUndefined();
-        return true;
-    }
-    uintN attrs = desc->attrs;
-    Value getter = (attrs & JSPROP_GETTER) ? CastAsObjectJsval(desc->getter) : UndefinedValue();
-    Value setter = (attrs & JSPROP_SETTER) ? CastAsObjectJsval(desc->setter) : UndefinedValue();
-    return js_NewPropertyDescriptorObject(cx, id, attrs, getter, setter, desc->value, vp);
-}
-
-static bool
 ValueToBool(JSContext *cx, const Value &v, bool *bp)
 {
     *bp = !!js_ValueToBoolean(v);
@@ -554,7 +541,7 @@ JSScriptedProxyHandler::defineProperty(JSContext *cx, JSObject *proxy, jsid id,
     AutoValueRooter tvr(cx);
     AutoValueRooter fval(cx);
     return GetFundamentalTrap(cx, handler, ATOM(defineProperty), fval.addr()) &&
-           MakePropertyDescriptorObject(cx, id, desc, tvr.addr()) &&
+           NewPropertyDescriptorObject(cx, desc, tvr.addr()) &&
            Trap2(cx, handler, fval.value(), id, tvr.value(), tvr.addr());
 }
 
@@ -717,7 +704,7 @@ JSProxy::getPropertyDescriptor(JSContext *cx, JSObject *proxy, jsid id, bool set
     AutoPendingProxyOperation pending(cx, proxy);
     AutoPropertyDescriptorRooter desc(cx);
     return JSProxy::getPropertyDescriptor(cx, proxy, id, set, &desc) &&
-           MakePropertyDescriptorObject(cx, id, &desc, vp);
+           NewPropertyDescriptorObject(cx, &desc, vp);
 }
 
 bool
@@ -736,7 +723,7 @@ JSProxy::getOwnPropertyDescriptor(JSContext *cx, JSObject *proxy, jsid id, bool 
     AutoPendingProxyOperation pending(cx, proxy);
     AutoPropertyDescriptorRooter desc(cx);
     return JSProxy::getOwnPropertyDescriptor(cx, proxy, id, set, &desc) &&
-           MakePropertyDescriptorObject(cx, id, &desc, vp);
+           NewPropertyDescriptorObject(cx, &desc, vp);
 }
 
 bool
@@ -980,11 +967,11 @@ static void
 proxy_TraceObject(JSTracer *trc, JSObject *obj)
 {
     obj->getProxyHandler()->trace(trc, obj);
-    MarkValue(trc, obj->getProxyPrivate(), "private");
-    MarkValue(trc, obj->getProxyExtra(), "extra");
+    MarkCrossCompartmentValue(trc, obj->getProxyPrivate(), "private");
+    MarkCrossCompartmentValue(trc, obj->getProxyExtra(), "extra");
     if (obj->isFunctionProxy()) {
-        MarkValue(trc, GetCall(obj), "call");
-        MarkValue(trc, GetConstruct(obj), "construct");
+        MarkCrossCompartmentValue(trc, GetCall(obj), "call");
+        MarkCrossCompartmentValue(trc, GetConstruct(obj), "construct");
     }
 }
 
@@ -992,8 +979,8 @@ static void
 proxy_TraceFunction(JSTracer *trc, JSObject *obj)
 {
     proxy_TraceObject(trc, obj);
-    MarkValue(trc, GetCall(obj), "call");
-    MarkValue(trc, GetConstruct(obj), "construct");
+    MarkCrossCompartmentValue(trc, GetCall(obj), "call");
+    MarkCrossCompartmentValue(trc, GetConstruct(obj), "construct");
 }
 
 static JSBool
@@ -1175,6 +1162,8 @@ JS_FRIEND_API(JSObject *)
 NewProxyObject(JSContext *cx, JSProxyHandler *handler, const Value &priv, JSObject *proto,
                JSObject *parent, JSObject *call, JSObject *construct)
 {
+    JS_ASSERT_IF(proto, cx->compartment == proto->compartment());
+    JS_ASSERT_IF(parent, cx->compartment == parent->compartment());
     bool fun = call || construct;
     Class *clasp;
     if (fun)

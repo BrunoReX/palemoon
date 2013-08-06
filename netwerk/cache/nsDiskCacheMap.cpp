@@ -322,9 +322,9 @@ nsDiskCacheMap::GrowRecords()
         memmove(newRecords,
                 newArray + bucketIndex * oldRecordsPerBucket,
                 count * sizeof(nsDiskCacheRecord));
-        // Clear the new empty entries
-        for (PRUint32 i = count; i < newRecordsPerBucket; ++i)
-            newRecords[i].SetHashNumber(0);
+        // clear unused records
+        memset(newRecords + count, 0,
+               (newRecordsPerBucket - count) * sizeof(nsDiskCacheRecord));
     }
 
     // Set as the new record array

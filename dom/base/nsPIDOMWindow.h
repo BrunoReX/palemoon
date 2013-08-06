@@ -40,11 +40,11 @@
 #ifndef nsPIDOMWindow_h__
 #define nsPIDOMWindow_h__
 
-#include "nsISupports.h"
+#include "nsIDOMWindow.h"
+
 #include "nsIDOMLocation.h"
 #include "nsIDOMXULCommandDispatcher.h"
 #include "nsIDOMElement.h"
-#include "nsIDOMWindowInternal.h"
 #include "nsIDOMEventTarget.h"
 #include "nsIDOMDocument.h"
 #include "nsCOMPtr.h"
@@ -80,8 +80,8 @@ class nsIArray;
 class nsPIWindowRoot;
 
 #define NS_PIDOMWINDOW_IID \
-{ 0x6c05ae9d, 0x4ad1, 0x4e92, \
-  { 0x9c, 0x95, 0xd3, 0x54, 0xea, 0x0f, 0xb9, 0x48 } }
+{ 0xeee816d2, 0x2f08, 0x4b34, \
+  { 0x97, 0x47, 0x5e, 0x5a, 0xcd, 0xc3, 0x56, 0xfa } }
 
 class nsPIDOMWindow : public nsIDOMWindowInternal
 {
@@ -396,7 +396,7 @@ public:
    * SetOpenerWindow is called.  It might never be true, of course, if the
    * window does not have an opener when it's created.
    */
-  virtual void SetOpenerWindow(nsIDOMWindowInternal *aOpener,
+  virtual void SetOpenerWindow(nsIDOMWindow* aOpener,
                                PRBool aOriginalOpener) = 0;
 
   virtual void EnsureSizeUpToDate() = 0;
@@ -578,6 +578,12 @@ public:
    * Return the window id of this window
    */
   PRUint64 WindowID() const { return mWindowID; }
+
+  /**
+   * Dispatch a custom event with name aEventName targeted at this window.
+   * Returns whether the default action should be performed.
+   */
+  virtual PRBool DispatchCustomEvent(const char *aEventName) = 0;
 
 protected:
   // The nsPIDOMWindow constructor. The aOuterWindow argument should

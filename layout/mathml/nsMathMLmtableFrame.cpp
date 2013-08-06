@@ -540,9 +540,10 @@ nsMathMLmtableOuterFrame::GetRowFrameAt(nsPresContext* aPresContext,
   // Negative indices mean to find upwards from the end.
   if (aRowIndex < 0) {
     aRowIndex = rowCount + aRowIndex;
+  } else {
+    // aRowIndex is 1-based, so convert it to a 0-based index
+    --aRowIndex;
   }
-  // aRowIndex is 1-based, so convert it to a 0-based index
-  --aRowIndex;
 
   // if our inner table says that the index is valid, find the row now
   if (0 <= aRowIndex && aRowIndex <= rowCount) {
@@ -636,8 +637,9 @@ nsMathMLmtableOuterFrame::Reflow(nsPresContext*          aPresContext,
     case eAlign_axis:
     default: {
       // XXX should instead use style data from the row of reference here ?
-      aReflowState.rendContext->SetFont(GetStyleFont()->mFont,
-                                        aPresContext->GetUserFontSet());
+      nsRefPtr<nsFontMetrics> fm;
+      nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm));
+      aReflowState.rendContext->SetFont(fm);
       nscoord axisHeight;
       GetAxisHeight(*aReflowState.rendContext,
                     aReflowState.rendContext->FontMetrics(),

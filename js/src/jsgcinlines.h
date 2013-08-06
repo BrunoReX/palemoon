@@ -203,8 +203,8 @@ NewGCThing(JSContext *cx, unsigned thingKind, size_t thingSize)
         js::gc::RunDebugGC(cx);
 #endif
 
-    js::gc::Cell *cell = cx->compartment->freeLists.getNext(thingKind, thingSize);
-    return static_cast<T *>(cell ? cell : js::gc::RefillFinalizableFreeList(cx, thingKind));
+    void *t = cx->compartment->freeLists.getNext(thingKind, thingSize);
+    return static_cast<T *>(t ? t : js::gc::RefillFinalizableFreeList(cx, thingKind));
 }
 
 inline JSObject *
@@ -256,12 +256,8 @@ js_NewGCShape(JSContext *cx)
 }
 
 #if JS_HAS_XML_SUPPORT
-inline JSXML *
-js_NewGCXML(JSContext *cx)
-{
-    return NewGCThing<JSXML>(cx, js::gc::FINALIZE_XML, sizeof(JSXML));
-}
+extern JSXML *
+js_NewGCXML(JSContext *cx);
 #endif
-
 
 #endif /* jsgcinlines_h___ */

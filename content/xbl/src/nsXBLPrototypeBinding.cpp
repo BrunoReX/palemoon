@@ -55,8 +55,6 @@
 #include "nsIXMLContentSink.h"
 #include "nsContentCID.h"
 #include "nsXMLDocument.h"
-#include "nsIDOMElement.h"
-#include "nsIDOMText.h"
 #include "nsXBLService.h"
 #include "nsXBLBinding.h"
 #include "nsXBLInsertionPoint.h"
@@ -74,6 +72,7 @@
 
 #include "nsIStyleRuleProcessor.h"
 #include "nsXBLResourceLoader.h"
+#include "mozilla/dom/Element.h"
 
 // Helper Classes =====================================================================
 

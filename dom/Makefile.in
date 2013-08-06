@@ -62,7 +62,6 @@ DIRS = \
   interfaces/json \
   interfaces/offline \
   interfaces/geolocation \
-  interfaces/threads \
   interfaces/notification \
   interfaces/svg \
   $(NULL)
@@ -72,7 +71,6 @@ DIRS += interfaces/smil
 endif
 
 DIRS += \
-  public/coreEvents \
   base \
   src \
   locales \
@@ -81,6 +79,7 @@ DIRS += \
   indexedDB \
   system \
   ipc \
+  workers \
   $(NULL)
 
 ifdef ENABLE_TESTS

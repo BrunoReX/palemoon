@@ -66,7 +66,7 @@
 #include "nsIContentViewer.h"
 #include "nsIAtom.h"
 #include "nsGkAtoms.h"
-#include "nsIDOMWindowInternal.h"
+#include "nsIDOMWindow.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsNetCID.h"
@@ -103,6 +103,7 @@
 #include "nsHTMLDNSPrefetch.h"
 #include "nsISupportsPrimitives.h"
 #include "mozilla/Preferences.h"
+#include "nsParserConstants.h"
 
 using namespace mozilla;
 
@@ -335,6 +336,7 @@ nsContentSink::StyleSheetLoaded(nsCSSStyleSheet* aSheet,
                                 PRBool aWasAlternate,
                                 nsresult aStatus)
 {
+  NS_ASSERTION(!mFragmentMode, "How come a fragment parser observed sheets?");
   if (!aWasAlternate) {
     NS_ASSERTION(mPendingSheetCount > 0, "How'd that happen?");
     --mPendingSheetCount;
@@ -515,7 +517,7 @@ nsContentSink::ProcessHeaderData(nsIAtom* aHeader, const nsAString& aValue,
     NS_ENSURE_TRUE(codebaseURI, rv);
 
     nsCOMPtr<nsIPrompt> prompt;
-    nsCOMPtr<nsIDOMWindowInternal> window (do_QueryInterface(mDocument->GetScriptGlobalObject()));
+    nsCOMPtr<nsIDOMWindow> window = do_QueryInterface(mDocument->GetScriptGlobalObject());
     if (window) {
       window->GetPrompter(getter_AddRefs(prompt));
     }
@@ -556,13 +558,6 @@ nsContentSink::DoProcessLinkHeader()
   mDocument->GetHeaderData(nsGkAtoms::link, value);
   ProcessLinkHeader(nsnull, value);
 }
-
-static const PRUnichar kSemiCh = PRUnichar(';');
-static const PRUnichar kCommaCh = PRUnichar(',');
-static const PRUnichar kEqualsCh = PRUnichar('=');
-static const PRUnichar kLessThanCh = PRUnichar('<');
-static const PRUnichar kGreaterThanCh = PRUnichar('>');
-
 
 // check whether the Link header field applies to the context resource
 // see <http://tools.ietf.org/html/rfc5988#section-5.2>
@@ -614,6 +609,9 @@ nsContentSink::ProcessLinkHeader(nsIContent* aElement,
 {
   nsresult rv = NS_OK;
 
+  // keep track where we are within the header field
+  PRBool seenParameters = PR_FALSE;
+
   // parse link content and call process style link
   nsAutoString href;
   nsAutoString rel;
@@ -642,22 +640,31 @@ nsContentSink::ProcessLinkHeader(nsIContent* aElement,
     end = start;
     last = end - 1;
 
+    PRBool needsUnescape = PR_FALSE;
+    
     // look for semicolon or comma
-    while (*end != kNullCh && *end != kSemiCh && *end != kCommaCh) {
+    while (*end != kNullCh && *end != kSemicolon && *end != kComma) {
       PRUnichar ch = *end;
 
-      if (ch == kApostrophe || ch == kQuote || ch == kLessThanCh) {
+      if (ch == kQuote || ch == kLessThan) {
         // quoted string
 
-        PRUnichar quote = *end;
-        if (quote == kLessThanCh) {
-          quote = kGreaterThanCh;
+        PRUnichar quote = ch;
+        if (quote == kLessThan) {
+          quote = kGreaterThan;
         }
-
+        
+        needsUnescape = (ch == kQuote);
+        
         PRUnichar* closeQuote = (end + 1);
 
         // seek closing quote
         while (*closeQuote != kNullCh && quote != *closeQuote) {
+          // in quoted-string, "\" is an escape character
+          if (needsUnescape && *closeQuote == kBackSlash && *(closeQuote + 1) != kNullCh) {
+            ++closeQuote;
+          }
+
           ++closeQuote;
         }
 
@@ -671,14 +678,14 @@ nsContentSink::ProcessLinkHeader(nsIContent* aElement,
 
           ch = *(end + 1);
 
-          if (ch != kNullCh && ch != kSemiCh && ch != kCommaCh) {
+          if (ch != kNullCh && ch != kSemicolon && ch != kComma) {
             // end string here
             *(++end) = kNullCh;
 
             ch = *(end + 1);
 
             // keep going until semi or comma
-            while (ch != kNullCh && ch != kSemiCh && ch != kCommaCh) {
+            while (ch != kNullCh && ch != kSemicolon && ch != kComma) {
               ++end;
 
               ch = *end;
@@ -697,17 +704,20 @@ nsContentSink::ProcessLinkHeader(nsIContent* aElement,
     *end = kNullCh;
 
     if (start < end) {
-      if ((*start == kLessThanCh) && (*last == kGreaterThanCh)) {
+      if ((*start == kLessThan) && (*last == kGreaterThan)) {
         *last = kNullCh;
 
-        if (href.IsEmpty()) { // first one wins
+        // first instance of <...> wins
+        // also, do not allow hrefs after the first param was seen
+        if (href.IsEmpty() && !seenParameters) {
           href = (start + 1);
           href.StripWhitespace();
         }
       } else {
         PRUnichar* equals = start;
+        seenParameters = PR_TRUE;
 
-        while ((*equals != kNullCh) && (*equals != kEqualsCh)) {
+        while ((*equals != kNullCh) && (*equals != kEqual)) {
           equals++;
         }
 
@@ -721,12 +731,26 @@ nsContentSink::ProcessLinkHeader(nsIContent* aElement,
             value++;
           }
 
-          if (((*value == kApostrophe) || (*value == kQuote)) &&
-              (*value == *last)) {
+          if ((*value == kQuote) && (*value == *last)) {
             *last = kNullCh;
             value++;
           }
 
+          if (needsUnescape) {
+            // unescape in-place
+            PRUnichar* unescaped = value;
+            PRUnichar *src = value;
+            
+            while (*src != kNullCh) {
+              if (*src == kBackSlash && *(src + 1) != kNullCh) {
+                src++;
+              }
+              *unescaped++ = *src++;
+            }
+
+            *unescaped = kNullCh;
+          }
+          
           if (attr.LowerCaseEqualsLiteral("rel")) {
             if (rel.IsEmpty()) {
               rel = value;
@@ -759,7 +783,7 @@ nsContentSink::ProcessLinkHeader(nsIContent* aElement,
       }
     }
 
-    if (endCh == kCommaCh) {
+    if (endCh == kComma) {
       // hit a comma, process what we've got so far
 
       href.Trim(" \t\n\r\f"); // trim HTML5 whitespace
@@ -773,6 +797,8 @@ nsContentSink::ProcessLinkHeader(nsIContent* aElement,
       type.Truncate();
       media.Truncate();
       anchor.Truncate();
+      
+      seenParameters = PR_FALSE;
     }
 
     start = ++end;
@@ -857,12 +883,13 @@ nsContentSink::ProcessStyleLink(nsIContent* aElement,
     return NS_OK;
   }
 
+  // If this is a fragment parser, we don't want to observe.
   PRBool isAlternate;
   rv = mCSSLoader->LoadStyleLink(aElement, url, aTitle, aMedia, aAlternate,
-                                 this, &isAlternate);
+                                 mFragmentMode ? nsnull : this, &isAlternate);
   NS_ENSURE_SUCCESS(rv, rv);
   
-  if (!isAlternate) {
+  if (!isAlternate && !mFragmentMode) {
     ++mPendingSheetCount;
     mScriptLoader->AddExecuteBlocker();
   }
@@ -1710,266 +1737,3 @@ nsContentSink::NotifyDocElementCreated(nsIDocument* aDoc)
                       EmptyString().get());
   }
 }
-
-// URIs: action, href, src, longdesc, usemap, cite
-PRBool 
-IsAttrURI(nsIAtom *aName)
-{
-  return (aName == nsGkAtoms::action ||
-          aName == nsGkAtoms::href ||
-          aName == nsGkAtoms::src ||
-          aName == nsGkAtoms::longdesc ||
-          aName == nsGkAtoms::usemap ||
-          aName == nsGkAtoms::cite ||
-          aName == nsGkAtoms::background);
-}
-
-//
-// these two lists are used by the sanitizing fragment serializers
-// Thanks to Mark Pilgrim and Sam Ruby for the initial whitelist
-//
-nsIAtom** const kDefaultAllowedTags [] = {
-  &nsGkAtoms::a,
-  &nsGkAtoms::abbr,
-  &nsGkAtoms::acronym,
-  &nsGkAtoms::address,
-  &nsGkAtoms::area,
-  &nsGkAtoms::article,
-  &nsGkAtoms::aside,
-#ifdef MOZ_MEDIA
-  &nsGkAtoms::audio,
-#endif
-  &nsGkAtoms::b,
-  &nsGkAtoms::bdo,
-  &nsGkAtoms::big,
-  &nsGkAtoms::blockquote,
-  &nsGkAtoms::br,
-  &nsGkAtoms::button,
-  &nsGkAtoms::canvas,
-  &nsGkAtoms::caption,
-  &nsGkAtoms::center,
-  &nsGkAtoms::cite,
-  &nsGkAtoms::code,
-  &nsGkAtoms::col,
-  &nsGkAtoms::colgroup,
-  &nsGkAtoms::command,
-  &nsGkAtoms::datalist,
-  &nsGkAtoms::dd,
-  &nsGkAtoms::del,
-  &nsGkAtoms::details,
-  &nsGkAtoms::dfn,
-  &nsGkAtoms::dir,
-  &nsGkAtoms::div,
-  &nsGkAtoms::dl,
-  &nsGkAtoms::dt,
-  &nsGkAtoms::em,
-  &nsGkAtoms::fieldset,
-  &nsGkAtoms::figcaption,
-  &nsGkAtoms::figure,
-  &nsGkAtoms::font,
-  &nsGkAtoms::footer,
-  &nsGkAtoms::form,
-  &nsGkAtoms::h1,
-  &nsGkAtoms::h2,
-  &nsGkAtoms::h3,
-  &nsGkAtoms::h4,
-  &nsGkAtoms::h5,
-  &nsGkAtoms::h6,
-  &nsGkAtoms::header,
-  &nsGkAtoms::hgroup,
-  &nsGkAtoms::hr,
-  &nsGkAtoms::i,
-  &nsGkAtoms::img,
-  &nsGkAtoms::input,
-  &nsGkAtoms::ins,
-  &nsGkAtoms::kbd,
-  &nsGkAtoms::label,
-  &nsGkAtoms::legend,
-  &nsGkAtoms::li,
-  &nsGkAtoms::listing,
-  &nsGkAtoms::map,
-  &nsGkAtoms::mark,
-  &nsGkAtoms::menu,
-  &nsGkAtoms::meter,
-  &nsGkAtoms::nav,
-  &nsGkAtoms::nobr,
-  &nsGkAtoms::noscript,
-  &nsGkAtoms::ol,
-  &nsGkAtoms::optgroup,
-  &nsGkAtoms::option,
-  &nsGkAtoms::output,
-  &nsGkAtoms::p,
-  &nsGkAtoms::pre,
-  &nsGkAtoms::progress,
-  &nsGkAtoms::q,
-  &nsGkAtoms::rp,
-  &nsGkAtoms::rt,
-  &nsGkAtoms::ruby,
-  &nsGkAtoms::s,
-  &nsGkAtoms::samp,
-  &nsGkAtoms::section,
-  &nsGkAtoms::select,
-  &nsGkAtoms::small,
-#ifdef MOZ_MEDIA
-  &nsGkAtoms::source,
-#endif
-  &nsGkAtoms::span,
-  &nsGkAtoms::strike,
-  &nsGkAtoms::strong,
-  &nsGkAtoms::sub,
-  &nsGkAtoms::summary,
-  &nsGkAtoms::sup,
-  &nsGkAtoms::table,
-  &nsGkAtoms::tbody,
-  &nsGkAtoms::td,
-  &nsGkAtoms::textarea,
-  &nsGkAtoms::tfoot,
-  &nsGkAtoms::th,
-  &nsGkAtoms::thead,
-  &nsGkAtoms::time,
-  &nsGkAtoms::tr,
-  &nsGkAtoms::track,
-  &nsGkAtoms::tt,
-  &nsGkAtoms::u,
-  &nsGkAtoms::ul,
-  &nsGkAtoms::var,
-#ifdef MOZ_MEDIA
-  &nsGkAtoms::video,
-#endif
-  &nsGkAtoms::wbr,
-  nsnull
-};
-
-nsIAtom** const kDefaultAllowedAttributes [] = {
-  &nsGkAtoms::abbr,
-  &nsGkAtoms::accept,
-  &nsGkAtoms::acceptcharset,
-  &nsGkAtoms::accesskey,
-  &nsGkAtoms::action,
-  &nsGkAtoms::align,
-  &nsGkAtoms::alt,
-  &nsGkAtoms::autocomplete,
-  &nsGkAtoms::autofocus,
-#ifdef MOZ_MEDIA
-  &nsGkAtoms::autoplay,
-#endif
-  &nsGkAtoms::axis,
-  &nsGkAtoms::background,
-  &nsGkAtoms::bgcolor,
-  &nsGkAtoms::border,
-  &nsGkAtoms::cellpadding,
-  &nsGkAtoms::cellspacing,
-  &nsGkAtoms::_char,
-  &nsGkAtoms::charoff,
-  &nsGkAtoms::charset,
-  &nsGkAtoms::checked,
-  &nsGkAtoms::cite,
-  &nsGkAtoms::_class,
-  &nsGkAtoms::clear,
-  &nsGkAtoms::cols,
-  &nsGkAtoms::colspan,
-  &nsGkAtoms::color,
-  &nsGkAtoms::contenteditable,
-  &nsGkAtoms::contextmenu,
-#ifdef MOZ_MEDIA
-  &nsGkAtoms::controls,
-#endif
-  &nsGkAtoms::compact,
-  &nsGkAtoms::coords,
-  &nsGkAtoms::datetime,
-  &nsGkAtoms::dir,
-  &nsGkAtoms::disabled,
-  &nsGkAtoms::draggable,
-  &nsGkAtoms::enctype,
-  &nsGkAtoms::face,
-  &nsGkAtoms::_for,
-  &nsGkAtoms::frame,
-  &nsGkAtoms::headers,
-  &nsGkAtoms::height,
-  &nsGkAtoms::hidden,
-  &nsGkAtoms::high,
-  &nsGkAtoms::href,
-  &nsGkAtoms::hreflang,
-  &nsGkAtoms::hspace,
-  &nsGkAtoms::icon,
-  &nsGkAtoms::id,
-  &nsGkAtoms::ismap,
-  &nsGkAtoms::itemid,
-  &nsGkAtoms::itemprop,
-  &nsGkAtoms::itemref,
-  &nsGkAtoms::itemscope,
-  &nsGkAtoms::itemtype,
-  &nsGkAtoms::kind,
-  &nsGkAtoms::label,
-  &nsGkAtoms::lang,
-  &nsGkAtoms::list,
-  &nsGkAtoms::longdesc,
-#ifdef MOZ_MEDIA
-  &nsGkAtoms::loop,
-  &nsGkAtoms::loopend,
-  &nsGkAtoms::loopstart,
-#endif
-  &nsGkAtoms::low,
-  &nsGkAtoms::max,
-  &nsGkAtoms::maxlength,
-  &nsGkAtoms::media,
-  &nsGkAtoms::method,
-  &nsGkAtoms::min,
-  &nsGkAtoms::mozdonotsend,
-  &nsGkAtoms::multiple,
-  &nsGkAtoms::name,
-  &nsGkAtoms::nohref,
-  &nsGkAtoms::noshade,
-  &nsGkAtoms::novalidate,
-  &nsGkAtoms::nowrap,
-  &nsGkAtoms::open,
-  &nsGkAtoms::optimum,
-  &nsGkAtoms::pattern,
-#ifdef MOZ_MEDIA
-  &nsGkAtoms::pixelratio,
-#endif
-  &nsGkAtoms::placeholder,
-#ifdef MOZ_MEDIA
-  &nsGkAtoms::playbackrate,
-  &nsGkAtoms::playcount,
-#endif
-  &nsGkAtoms::pointSize,
-#ifdef MOZ_MEDIA
-  &nsGkAtoms::poster,
-  &nsGkAtoms::preload,
-#endif
-  &nsGkAtoms::prompt,
-  &nsGkAtoms::pubdate,
-  &nsGkAtoms::radiogroup,
-  &nsGkAtoms::readonly,
-  &nsGkAtoms::rel,
-  &nsGkAtoms::required,
-  &nsGkAtoms::rev,
-  &nsGkAtoms::reversed,
-  &nsGkAtoms::role,
-  &nsGkAtoms::rows,
-  &nsGkAtoms::rowspan,
-  &nsGkAtoms::rules,
-  &nsGkAtoms::scoped,
-  &nsGkAtoms::scope,
-  &nsGkAtoms::selected,
-  &nsGkAtoms::shape,
-  &nsGkAtoms::size,
-  &nsGkAtoms::span,
-  &nsGkAtoms::spellcheck,
-  &nsGkAtoms::src,
-  &nsGkAtoms::srclang,
-  &nsGkAtoms::start,
-  &nsGkAtoms::summary,
-  &nsGkAtoms::tabindex,
-  &nsGkAtoms::target,
-  &nsGkAtoms::title,
-  &nsGkAtoms::type,
-  &nsGkAtoms::usemap,
-  &nsGkAtoms::valign,
-  &nsGkAtoms::value,
-  &nsGkAtoms::vspace,
-  &nsGkAtoms::width,
-  &nsGkAtoms::wrap,
-  nsnull
-};

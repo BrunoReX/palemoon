@@ -36,12 +36,12 @@
 #
 # ***** END LICENSE BLOCK *****
 
-MOZ_APP_BASENAME=Palemoon
-MOZ_APP_VENDOR=Moonchild
+MOZ_APP_BASENAME=Firefox
+MOZ_APP_VENDOR=Mozilla
 MOZ_UPDATER=1
 MOZ_PHOENIX=1
 
-MOZ_CHROME_FILE_FORMAT=jar
+MOZ_CHROME_FILE_FORMAT=omni
 MOZ_SAFE_BROWSING=1
 MOZ_SERVICES_SYNC=1
 MOZ_APP_VERSION=$FIREFOX_VERSION
@@ -49,5 +49,5 @@ MOZ_EXTENSIONS_DEFAULT=" gnomevfs"
 # MOZ_APP_DISPLAYNAME will be set by branding/configure.sh
 # Changing either of these values requires a clobber to ensure correct results,
 # because branding dependencies are broken.
-MOZ_BRANDING_DIRECTORY=browser/branding/unofficial
+MOZ_BRANDING_DIRECTORY=browser/branding/aurora
 MOZ_OFFICIAL_BRANDING_DIRECTORY=browser/branding/official

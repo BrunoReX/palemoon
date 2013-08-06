@@ -226,6 +226,10 @@ nsFirstLetterFrame::Reflow(nsPresContext*          aPresContext,
 
     ll.EndLineReflow();
     ll.SetInFirstLetter(PR_FALSE);
+
+    // In the floating first-letter case, we need to set this ourselves;
+    // nsLineLayout::BeginSpan will set it in the other case
+    mBaseline = aMetrics.ascent;
   }
   else {
     // Pretend we are a span and reflow the child frame
@@ -234,7 +238,7 @@ nsFirstLetterFrame::Reflow(nsPresContext*          aPresContext,
 
     ll->SetInFirstLetter(
       mStyleContext->GetPseudo() == nsCSSPseudoElements::firstLetter);
-    ll->BeginSpan(this, &aReflowState, bp.left, availSize.width);
+    ll->BeginSpan(this, &aReflowState, bp.left, availSize.width, &mBaseline);
     ll->ReflowFrame(kid, aReflowStatus, &aMetrics, pushedFrame);
     ll->EndSpan(this);
     ll->SetInFirstLetter(PR_FALSE);
@@ -248,7 +252,6 @@ nsFirstLetterFrame::Reflow(nsPresContext*          aPresContext,
   aMetrics.width += lr;
   aMetrics.height += tb;
   aMetrics.ascent += bp.top;
-  mBaseline = aMetrics.ascent;
 
   // Ensure that the overflow rect contains the child textframe's overflow rect.
   // Note that if this is floating, the overline/underline drawable area is in
@@ -256,41 +259,43 @@ nsFirstLetterFrame::Reflow(nsPresContext*          aPresContext,
   aMetrics.UnionOverflowAreasWithDesiredBounds();
   ConsiderChildOverflow(aMetrics.mOverflowAreas, kid);
 
-  // Create a continuation or remove existing continuations based on
-  // the reflow completion status.
-  if (NS_FRAME_IS_COMPLETE(aReflowStatus)) {
-    if (aReflowState.mLineLayout) {
-      aReflowState.mLineLayout->SetFirstLetterStyleOK(PR_FALSE);
-    }
-    nsIFrame* kidNextInFlow = kid->GetNextInFlow();
-    if (kidNextInFlow) {
-      // Remove all of the childs next-in-flows
-      static_cast<nsContainerFrame*>(kidNextInFlow->GetParent())
-        ->DeleteNextInFlowChild(aPresContext, kidNextInFlow, PR_TRUE);
-    }
-  }
-  else {
-    // Create a continuation for the child frame if it doesn't already
-    // have one.
-    if (!GetStyleDisplay()->IsFloating()) {
-      nsIFrame* nextInFlow;
-      rv = CreateNextInFlow(aPresContext, kid, nextInFlow);
-      if (NS_FAILED(rv)) {
-        return rv;
+  if (!NS_INLINE_IS_BREAK_BEFORE(aReflowStatus)) {
+    // Create a continuation or remove existing continuations based on
+    // the reflow completion status.
+    if (NS_FRAME_IS_COMPLETE(aReflowStatus)) {
+      if (aReflowState.mLineLayout) {
+        aReflowState.mLineLayout->SetFirstLetterStyleOK(PR_FALSE);
       }
-
-      // And then push it to our overflow list
-      const nsFrameList& overflow = mFrames.RemoveFramesAfter(kid);
-      if (overflow.NotEmpty()) {
-        SetOverflowFrames(aPresContext, overflow);
+      nsIFrame* kidNextInFlow = kid->GetNextInFlow();
+      if (kidNextInFlow) {
+        // Remove all of the childs next-in-flows
+        static_cast<nsContainerFrame*>(kidNextInFlow->GetParent())
+          ->DeleteNextInFlowChild(aPresContext, kidNextInFlow, PR_TRUE);
       }
-    } else if (!kid->GetNextInFlow()) {
-      // For floating first letter frames (if a continuation wasn't already
-      // created for us) we need to put the continuation with the rest of the
-      // text that the first letter frame was made out of.
-      nsIFrame* continuation;
-      rv = CreateContinuationForFloatingParent(aPresContext, kid,
-                                               &continuation, PR_TRUE);
+    }
+    else {
+      // Create a continuation for the child frame if it doesn't already
+      // have one.
+      if (!GetStyleDisplay()->IsFloating()) {
+        nsIFrame* nextInFlow;
+        rv = CreateNextInFlow(aPresContext, kid, nextInFlow);
+        if (NS_FAILED(rv)) {
+          return rv;
+        }
+    
+        // And then push it to our overflow list
+        const nsFrameList& overflow = mFrames.RemoveFramesAfter(kid);
+        if (overflow.NotEmpty()) {
+          SetOverflowFrames(aPresContext, overflow);
+        }
+      } else if (!kid->GetNextInFlow()) {
+        // For floating first letter frames (if a continuation wasn't already
+        // created for us) we need to put the continuation with the rest of the
+        // text that the first letter frame was made out of.
+        nsIFrame* continuation;
+        rv = CreateContinuationForFloatingParent(aPresContext, kid,
+                                                 &continuation, PR_TRUE);
+      }
     }
   }
 

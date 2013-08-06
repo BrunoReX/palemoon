@@ -676,7 +676,7 @@ AC_MSG_RESULT([$result])
 
 if test $result = "yes"; then
    PROFILE_GEN_LDFLAGS="-fprofile-generate"
-   PROFILE_USE_CFLAGS="-fprofile-use -fprofile-correction -Wcoverage-mismatch -freorder-blocks-and-partition"
+   PROFILE_USE_CFLAGS="-fprofile-use -fprofile-correction -Wcoverage-mismatch"
    PROFILE_USE_LDFLAGS="-fprofile-use"
 fi
 
@@ -930,14 +930,14 @@ dnl = ARM toolchain tweaks
 dnl ========================================================
 
 dnl Defaults
-case "${target}" in
-arm-android-eabi)
+case "${CPU_ARCH}-${OS_TARGET}" in
+arm-Android)
     MOZ_THUMB=yes
     MOZ_ARCH=armv7-a
     MOZ_FPU=vfp
     MOZ_FLOAT_ABI=softfp
     ;;
-arm*-*)
+arm-*)
     if test -n "$MOZ_PLATFORM_MAEMO"; then
         MOZ_THUMB=no
         MOZ_ARCH=armv7-a
@@ -1309,7 +1309,6 @@ case "$target" in
         i*86*)
             if test -n "$USE_64"; then
                 CPU_ARCH=x86_64
-                CC="$CC -arch x86_64"
             else        
                 CPU_ARCH=i386
             fi
@@ -1318,6 +1317,9 @@ case "$target" in
             CPU_ARCH=ppc
             ;;
     esac
+    if test "`echo $CC | grep -c '\-arch '`" = "0"; then
+        CC="$CC -arch $CPU_ARCH"
+    fi
     DSO_CFLAGS=-fPIC
     DSO_LDOPTS='-dynamiclib -compatibility_version 1 -current_version 1 -all_load -install_name @executable_path/$@ -headerpad_max_install_names'
     _OPTIMIZE_FLAGS=-O2

@@ -67,6 +67,7 @@ GfxInfo::Init()
     mIsMesa = false;
     mIsNVIDIA = false;
     mIsFGLRX = false;
+    mHasTextureFromPixmap = false;
     return GfxInfoBase::Init();
 }
 
@@ -119,6 +120,7 @@ GfxInfo::GetData()
 
     bool error = waiting_for_glxtest_process_failed || exited_with_error_code || received_signal;
 
+    nsCString textureFromPixmap; 
     nsCString *stringToFill = nsnull;
     char *bufptr = buf;
     if (!error) {
@@ -136,8 +138,13 @@ GfxInfo::GetData()
                 stringToFill = &mRenderer;
             else if(!strcmp(line, "VERSION"))
                 stringToFill = &mVersion;
+            else if(!strcmp(line, "TFP"))
+                stringToFill = &textureFromPixmap;
         }
     }
+
+    if (!strcmp(textureFromPixmap.get(), "TRUE"))
+        mHasTextureFromPixmap = true;
 
     const char *spoofedVendor = PR_GetEnv("MOZ_GFX_SPOOF_GL_VENDOR");
     if (spoofedVendor)
@@ -181,6 +188,8 @@ GfxInfo::GetData()
     note.Append(mAdapterDescription);
     note.Append(" -- ");
     note.Append(mVersion);
+    if (mHasTextureFromPixmap)
+        note.Append(" -- texture_from_pixmap");
     note.Append("\n");
 #ifdef MOZ_CRASHREPORTER
     CrashReporter::AppendAppNotesToCrashReport(note);
@@ -248,6 +257,13 @@ GfxInfo::GetFeatureStatusImpl(PRInt32 aFeature, PRInt32 *aStatus, nsAString & aS
     // on Maemo, the glxtest probe doesn't build, and we don't really need GfxInfo anyway
     return NS_OK;
 #endif
+
+    // Disable OpenGL layers when we don't have texture_from_pixmap because it regresses performance. 
+    if (aFeature == nsIGfxInfo::FEATURE_OPENGL_LAYERS && !mHasTextureFromPixmap) {
+        *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION;
+        aSuggestedDriverVersion.AssignLiteral("<Anything with EXT_texture_from_pixmap support>");
+        return NS_OK;
+    }
 
     // whitelist the linux test slaves' current configuration.
     // this is necessary as they're still using the slightly outdated 190.42 driver.
@@ -327,6 +343,13 @@ GfxInfo::GetAdapterDescription(nsAString & aAdapterDescription)
   return NS_OK;
 }
 
+/* readonly attribute DOMString adapterDescription2; */
+NS_IMETHODIMP
+GfxInfo::GetAdapterDescription2(nsAString & aAdapterDescription)
+{
+  return NS_ERROR_FAILURE;
+}
+
 /* readonly attribute DOMString adapterRAM; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterRAM(nsAString & aAdapterRAM)
@@ -335,12 +358,26 @@ GfxInfo::GetAdapterRAM(nsAString & aAdapterRAM)
   return NS_OK;
 }
 
+/* readonly attribute DOMString adapterRAM2; */
+NS_IMETHODIMP
+GfxInfo::GetAdapterRAM2(nsAString & aAdapterRAM)
+{
+  return NS_ERROR_FAILURE;
+}
+
 /* readonly attribute DOMString adapterDriver; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDriver(nsAString & aAdapterDriver)
 {
   aAdapterDriver.AssignLiteral("");
   return NS_OK;
+}
+
+/* readonly attribute DOMString adapterDriver2; */
+NS_IMETHODIMP
+GfxInfo::GetAdapterDriver2(nsAString & aAdapterDriver)
+{
+  return NS_ERROR_FAILURE;
 }
 
 /* readonly attribute DOMString adapterDriverVersion; */
@@ -352,12 +389,26 @@ GfxInfo::GetAdapterDriverVersion(nsAString & aAdapterDriverVersion)
   return NS_OK;
 }
 
+/* readonly attribute DOMString adapterDriverVersion2; */
+NS_IMETHODIMP
+GfxInfo::GetAdapterDriverVersion2(nsAString & aAdapterDriverVersion)
+{
+  return NS_ERROR_FAILURE;
+}
+
 /* readonly attribute DOMString adapterDriverDate; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDriverDate(nsAString & aAdapterDriverDate)
 {
   aAdapterDriverDate.AssignLiteral("");
   return NS_OK;
+}
+
+/* readonly attribute DOMString adapterDriverDate2; */
+NS_IMETHODIMP
+GfxInfo::GetAdapterDriverDate2(nsAString & aAdapterDriverDate)
+{
+  return NS_ERROR_FAILURE;
 }
 
 /* readonly attribute unsigned long adapterVendorID; */
@@ -368,12 +419,33 @@ GfxInfo::GetAdapterVendorID(PRUint32 *aAdapterVendorID)
   return NS_OK;
 }
 
+/* readonly attribute unsigned long adapterVendorID2; */
+NS_IMETHODIMP
+GfxInfo::GetAdapterVendorID2(PRUint32 *aAdapterVendorID)
+{
+  return NS_ERROR_FAILURE;
+}
+
 /* readonly attribute unsigned long adapterDeviceID; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDeviceID(PRUint32 *aAdapterDeviceID)
 {
   *aAdapterDeviceID = 0;
   return NS_OK;
+}
+
+/* readonly attribute unsigned long adapterDeviceID2; */
+NS_IMETHODIMP
+GfxInfo::GetAdapterDeviceID2(PRUint32 *aAdapterDeviceID)
+{
+  return NS_ERROR_FAILURE;
+}
+
+/* readonly attribute boolean isGPU2Active; */
+NS_IMETHODIMP
+GfxInfo::GetIsGPU2Active(PRBool* aIsGPU2Active)
+{
+  return NS_ERROR_FAILURE;
 }
 
 

@@ -124,7 +124,6 @@
 #include "nsDocShellCID.h"
 
 #include "nsIDOMWindow.h"
-#include "nsIDOMWindowInternal.h"
 #include "nsIDocShell.h"
 
 #include "nsCRT.h"
@@ -1770,7 +1769,11 @@ NS_IMETHODIMP nsExternalAppHandler::OnStartRequest(nsIRequest *request, nsISuppo
     nsCOMPtr<nsIURI> referrer;
     if (aChannel)
       NS_GetReferrerFromChannel(aChannel, getter_AddRefs(referrer));
-    dh->AddDownload(mSourceUrl, referrer, mTimeDownloadStarted);
+
+    nsCOMPtr<nsIURI> target;
+    NS_NewFileURI(getter_AddRefs(target), mFinalFileDestination);
+
+    dh->AddDownload(mSourceUrl, referrer, mTimeDownloadStarted, target);
   }
 
   return NS_OK;
@@ -2504,15 +2507,14 @@ PRBool nsExternalAppHandler::GetNeverAskFlagFromPref(const char * prefName, cons
 
 nsresult nsExternalAppHandler::MaybeCloseWindow()
 {
-  nsCOMPtr<nsIDOMWindow> window(do_GetInterface(mWindowContext));
-  nsCOMPtr<nsIDOMWindowInternal> internalWindow = do_QueryInterface(window);
-  NS_ENSURE_STATE(internalWindow);
+  nsCOMPtr<nsIDOMWindow> window = do_GetInterface(mWindowContext);
+  NS_ENSURE_STATE(window);
 
   if (mShouldCloseWindow) {
     // Reset the window context to the opener window so that the dependent
     // dialogs have a parent
-    nsCOMPtr<nsIDOMWindowInternal> opener;
-    internalWindow->GetOpener(getter_AddRefs(opener));
+    nsCOMPtr<nsIDOMWindow> opener;
+    window->GetOpener(getter_AddRefs(opener));
 
     PRBool isClosed;
     if (opener && NS_SUCCEEDED(opener->GetClosed(&isClosed)) && !isClosed) {
@@ -2527,7 +2529,7 @@ nsresult nsExternalAppHandler::MaybeCloseWindow()
       }
 
       mTimer->InitWithCallback(this, 0, nsITimer::TYPE_ONE_SHOT);
-      mWindowToClose = internalWindow;
+      mWindowToClose = window;
     }
   }
 

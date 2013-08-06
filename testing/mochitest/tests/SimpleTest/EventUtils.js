@@ -16,6 +16,13 @@
  *
  * sendMouseEvent({type:'click'}, 'node');
  */
+function getElement(id) {
+  return ((typeof(id) == "string") ?
+    document.getElementById(id) : id); 
+};   
+
+this.$ = this.getElement;
+
 function sendMouseEvent(aEvent, aTarget, aWindow) {
   if (['click', 'mousedown', 'mouseup', 'mouseover', 'mouseout'].indexOf(aEvent.type) == -1) {
     throw new Error("sendMouseEvent doesn't know about event type '"+aEvent.type+"'");
@@ -681,6 +688,11 @@ function _getDOMWindowUtils(aWindow)
                  getInterface(Components.interfaces.nsIDOMWindowUtils);
 }
 
+/*
+ * synthesizeComposition, synthesizeText and synthesizeQuerySelectedText
+ * are only used by layout/base/tests/test_reftests_with_caret.html.
+ */
+
 /**
  * Synthesize a composition event.
  *
@@ -802,130 +814,4 @@ function synthesizeQuerySelectedText(aWindow)
   return utils.sendQueryContentEvent(utils.QUERY_SELECTED_TEXT, 0, 0, 0, 0);
 }
 
-/**
- * Synthesize a query text content event.
- *
- * @param aOffset  The character offset.  0 means the first character in the
- *                 selection root.
- * @param aLength  The length of getting text.  If the length is too long,
- *                 the extra length is ignored.
- * @param aWindow  Optional (If null, current |window| will be used)
- * @return         An nsIQueryContentEventResult object.  If this failed,
- *                 the result might be null.
- */
-function synthesizeQueryTextContent(aOffset, aLength, aWindow)
-{
-  netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
 
-  var utils = _getDOMWindowUtils(aWindow);
-  if (!utils) {
-    return nsnull;
-  }
-  return utils.sendQueryContentEvent(utils.QUERY_TEXT_CONTENT,
-                                     aOffset, aLength, 0, 0);
-}
-
-/**
- * Synthesize a query caret rect event.
- *
- * @param aOffset  The caret offset.  0 means left side of the first character
- *                 in the selection root.
- * @param aWindow  Optional (If null, current |window| will be used)
- * @return         An nsIQueryContentEventResult object.  If this failed,
- *                 the result might be null.
- */
-function synthesizeQueryCaretRect(aOffset, aWindow)
-{
-  netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
-
-  var utils = _getDOMWindowUtils(aWindow);
-  if (!utils) {
-    return nsnull;
-  }
-  return utils.sendQueryContentEvent(utils.QUERY_CARET_RECT,
-                                     aOffset, 0, 0, 0);
-}
-
-/**
- * Synthesize a query text rect event.
- *
- * @param aOffset  The character offset.  0 means the first character in the
- *                 selection root.
- * @param aLength  The length of the text.  If the length is too long,
- *                 the extra length is ignored.
- * @param aWindow  Optional (If null, current |window| will be used)
- * @return         An nsIQueryContentEventResult object.  If this failed,
- *                 the result might be null.
- */
-function synthesizeQueryTextRect(aOffset, aLength, aWindow)
-{
-  netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
-
-  var utils = _getDOMWindowUtils(aWindow);
-  if (!utils) {
-    return nsnull;
-  }
-  return utils.sendQueryContentEvent(utils.QUERY_TEXT_RECT,
-                                     aOffset, aLength, 0, 0);
-}
-
-/**
- * Synthesize a query editor rect event.
- *
- * @param aWindow  Optional (If null, current |window| will be used)
- * @return         An nsIQueryContentEventResult object.  If this failed,
- *                 the result might be null.
- */
-function synthesizeQueryEditorRect(aWindow)
-{
-  netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
-
-  var utils = _getDOMWindowUtils(aWindow);
-  if (!utils) {
-    return nsnull;
-  }
-  return utils.sendQueryContentEvent(utils.QUERY_EDITOR_RECT, 0, 0, 0, 0);
-}
-
-/**
- * Synthesize a character at point event.
- *
- * @param aX, aY   The offset in the client area of the DOM window.
- * @param aWindow  Optional (If null, current |window| will be used)
- * @return         An nsIQueryContentEventResult object.  If this failed,
- *                 the result might be null.
- */
-function synthesizeCharAtPoint(aX, aY, aWindow)
-{
-  netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
-
-  var utils = _getDOMWindowUtils(aWindow);
-  if (!utils) {
-    return nsnull;
-  }
-  return utils.sendQueryContentEvent(utils.QUERY_CHARACTER_AT_POINT,
-                                     0, 0, aX, aY);
-}
-
-/**
- * Synthesize a selection set event.
- *
- * @param aOffset  The character offset.  0 means the first character in the
- *                 selection root.
- * @param aLength  The length of the text.  If the length is too long,
- *                 the extra length is ignored.
- * @param aReverse If true, the selection is from |aOffset + aLength| to
- *                 |aOffset|.  Otherwise, from |aOffset| to |aOffset + aLength|.
- * @param aWindow  Optional (If null, current |window| will be used)
- * @return         True, if succeeded.  Otherwise false.
- */
-function synthesizeSelectionSet(aOffset, aLength, aReverse, aWindow)
-{
-  netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
-
-  var utils = _getDOMWindowUtils(aWindow);
-  if (!utils) {
-    return false;
-  }
-  return utils.sendSelectionSetEvent(aOffset, aLength, aReverse);
-}

@@ -134,7 +134,6 @@ static NS_DEFINE_CID(kXTFServiceCID, NS_XTFSERVICE_CID);
 #include "nsAttrName.h"
 #include "nsIDOMUserDataHandler.h"
 #include "nsContentCreatorFunctions.h"
-#include "nsTPtrArray.h"
 #include "nsGUIEvent.h"
 #include "nsMutationEvent.h"
 #include "nsIMEStateManager.h"
@@ -177,7 +176,6 @@ static NS_DEFINE_CID(kXTFServiceCID, NS_XTFSERVICE_CID);
 #include "nsTextEditorState.h"
 #include "nsIPluginHost.h"
 #include "nsICategoryManager.h"
-#include "nsAHtml5FragmentParser.h"
 #include "nsIViewManager.h"
 
 #ifdef IBMBIDI
@@ -202,6 +200,7 @@ static NS_DEFINE_CID(kXTFServiceCID, NS_XTFSERVICE_CID);
 #include "nsHTMLMediaElement.h"
 #endif
 #include "nsDOMTouchEvent.h"
+#include "nsIScriptElement.h"
 
 #include "mozilla/Preferences.h"
 
@@ -248,7 +247,7 @@ PRUint32 nsContentUtils::sScriptBlockerCount = 0;
 #ifdef DEBUG
 PRUint32 nsContentUtils::sDOMNodeRemovedSuppressCount = 0;
 #endif
-nsCOMArray<nsIRunnable>* nsContentUtils::sBlockedScriptRunners = nsnull;
+nsTArray< nsCOMPtr<nsIRunnable> >* nsContentUtils::sBlockedScriptRunners = nsnull;
 PRUint32 nsContentUtils::sRunnersCountAtFirstBlocker = 0;
 PRUint32 nsContentUtils::sScriptBlockerCountWhereRunnersPrevented = 0;
 nsIInterfaceRequestor* nsContentUtils::sSameOriginChecker = nsnull;
@@ -256,7 +255,18 @@ nsIInterfaceRequestor* nsContentUtils::sSameOriginChecker = nsnull;
 PRBool nsContentUtils::sIsHandlingKeyBoardEvent = PR_FALSE;
 PRBool nsContentUtils::sAllowXULXBL_for_file = PR_FALSE;
 
+nsString* nsContentUtils::sShiftText = nsnull;
+nsString* nsContentUtils::sControlText = nsnull;
+nsString* nsContentUtils::sMetaText = nsnull;
+nsString* nsContentUtils::sAltText = nsnull;
+nsString* nsContentUtils::sModifierSeparator = nsnull;
+
 PRBool nsContentUtils::sInitialized = PR_FALSE;
+
+nsHtml5Parser* nsContentUtils::sHTMLFragmentParser = nsnull;
+nsIParser* nsContentUtils::sXMLFragmentParser = nsnull;
+nsIFragmentContentSink* nsContentUtils::sXMLFragmentSink = nsnull;
+PRBool nsContentUtils::sFragmentParsingActive = PR_FALSE;
 
 static PLDHashTable sEventListenerManagersHash;
 
@@ -371,8 +381,7 @@ nsContentUtils::Init()
     }
   }
 
-  sBlockedScriptRunners = new nsCOMArray<nsIRunnable>;
-  NS_ENSURE_TRUE(sBlockedScriptRunners, NS_ERROR_OUT_OF_MEMORY);
+  sBlockedScriptRunners = new nsTArray< nsCOMPtr<nsIRunnable> >;
 
   Preferences::AddBoolVarCache(&sAllowXULXBL_for_file,
                                "dom.allow_XUL_XBL_for_file");
@@ -380,6 +389,81 @@ nsContentUtils::Init()
   sInitialized = PR_TRUE;
 
   return NS_OK;
+}
+
+void
+nsContentUtils::GetShiftText(nsAString& text)
+{
+  if (!sShiftText)
+    InitializeModifierStrings();
+  text.Assign(*sShiftText);
+}
+
+void
+nsContentUtils::GetControlText(nsAString& text)
+{
+  if (!sControlText)
+    InitializeModifierStrings();
+  text.Assign(*sControlText);
+}
+
+void
+nsContentUtils::GetMetaText(nsAString& text)
+{
+  if (!sMetaText)
+    InitializeModifierStrings();
+  text.Assign(*sMetaText);
+}
+
+void
+nsContentUtils::GetAltText(nsAString& text)
+{
+  if (!sAltText)
+    InitializeModifierStrings();
+  text.Assign(*sAltText);
+}
+
+void
+nsContentUtils::GetModifierSeparatorText(nsAString& text)
+{
+  if (!sModifierSeparator)
+    InitializeModifierStrings();
+  text.Assign(*sModifierSeparator);
+}
+
+void
+nsContentUtils::InitializeModifierStrings()
+{
+  //load the display strings for the keyboard accelerators
+  nsCOMPtr<nsIStringBundleService> bundleService =
+    mozilla::services::GetStringBundleService();
+  nsCOMPtr<nsIStringBundle> bundle;
+  nsresult rv = NS_OK;
+  if (bundleService) {
+    rv = bundleService->CreateBundle( "chrome://global-platform/locale/platformKeys.properties",
+                                      getter_AddRefs(bundle));
+  }
+  
+  NS_ASSERTION(NS_SUCCEEDED(rv) && bundle, "chrome://global/locale/platformKeys.properties could not be loaded");
+  nsXPIDLString shiftModifier;
+  nsXPIDLString metaModifier;
+  nsXPIDLString altModifier;
+  nsXPIDLString controlModifier;
+  nsXPIDLString modifierSeparator;
+  if (bundle) {
+    //macs use symbols for each modifier key, so fetch each from the bundle, which also covers i18n
+    bundle->GetStringFromName(NS_LITERAL_STRING("VK_SHIFT").get(), getter_Copies(shiftModifier));
+    bundle->GetStringFromName(NS_LITERAL_STRING("VK_META").get(), getter_Copies(metaModifier));
+    bundle->GetStringFromName(NS_LITERAL_STRING("VK_ALT").get(), getter_Copies(altModifier));
+    bundle->GetStringFromName(NS_LITERAL_STRING("VK_CONTROL").get(), getter_Copies(controlModifier));
+    bundle->GetStringFromName(NS_LITERAL_STRING("MODIFIER_SEPARATOR").get(), getter_Copies(modifierSeparator));
+  }
+  //if any of these don't exist, we get  an empty string
+  sShiftText = new nsString(shiftModifier);
+  sMetaText = new nsString(metaModifier);
+  sAltText = new nsString(altModifier);
+  sControlText = new nsString(controlModifier);
+  sModifierSeparator = new nsString(modifierSeparator);  
 }
 
 bool nsContentUtils::sImgLoaderInitialized;
@@ -407,172 +491,14 @@ nsContentUtils::InitializeEventTable() {
   NS_ASSERTION(!sStringEventTable, "EventTable already initialized!");
 
   static const EventNameMapping eventArray[] = {
-    { nsGkAtoms::onmousedown,                   NS_MOUSE_BUTTON_DOWN, EventNameType_All, NS_MOUSE_EVENT },
-    { nsGkAtoms::onmouseup,                     NS_MOUSE_BUTTON_UP, EventNameType_All, NS_MOUSE_EVENT },
-    { nsGkAtoms::onclick,                       NS_MOUSE_CLICK, EventNameType_All, NS_MOUSE_EVENT },
-    { nsGkAtoms::ondblclick,                    NS_MOUSE_DOUBLECLICK, EventNameType_HTMLXUL, NS_MOUSE_EVENT },
-    { nsGkAtoms::onmouseover,                   NS_MOUSE_ENTER_SYNTH, EventNameType_All, NS_MOUSE_EVENT },
-    { nsGkAtoms::onmouseout,                    NS_MOUSE_EXIT_SYNTH, EventNameType_All, NS_MOUSE_EVENT },
-    { nsGkAtoms::onMozMouseHittest,             NS_MOUSE_MOZHITTEST, EventNameType_None, NS_MOUSE_EVENT },
-    { nsGkAtoms::onmousemove,                   NS_MOUSE_MOVE, EventNameType_All, NS_MOUSE_EVENT },
-    { nsGkAtoms::oncontextmenu,                 NS_CONTEXTMENU, EventNameType_HTMLXUL, NS_MOUSE_EVENT },
-
-    { nsGkAtoms::onkeydown,                     NS_KEY_DOWN, EventNameType_HTMLXUL, NS_KEY_EVENT },
-    { nsGkAtoms::onkeyup,                       NS_KEY_UP, EventNameType_HTMLXUL, NS_KEY_EVENT },
-    { nsGkAtoms::onkeypress,                    NS_KEY_PRESS, EventNameType_HTMLXUL, NS_KEY_EVENT },
-                                                
-    { nsGkAtoms::onfocus,                       NS_FOCUS_CONTENT, EventNameType_HTMLXUL, NS_FOCUS_EVENT },
-    { nsGkAtoms::onblur,                        NS_BLUR_CONTENT, EventNameType_HTMLXUL, NS_FOCUS_EVENT },
-
-    { nsGkAtoms::onoffline,                     NS_OFFLINE, EventNameType_HTMLXUL, NS_EVENT },
-    { nsGkAtoms::ononline,                      NS_ONLINE, EventNameType_HTMLXUL, NS_EVENT },
-    { nsGkAtoms::onsubmit,                      NS_FORM_SUBMIT, EventNameType_HTMLXUL, NS_EVENT },
-    { nsGkAtoms::onreset,                       NS_FORM_RESET, EventNameType_HTMLXUL, NS_EVENT },
-    { nsGkAtoms::onchange,                      NS_FORM_CHANGE, EventNameType_HTMLXUL, NS_EVENT },
-    { nsGkAtoms::onselect,                      NS_FORM_SELECTED, EventNameType_HTMLXUL, NS_EVENT },
-    { nsGkAtoms::oninvalid,                     NS_FORM_INVALID, EventNameType_HTMLXUL, NS_EVENT },
-    { nsGkAtoms::onload,                        NS_LOAD, EventNameType_All, NS_EVENT },
-    { nsGkAtoms::onpopstate,                    NS_POPSTATE, EventNameType_HTMLXUL, NS_EVENT_NULL },
-    { nsGkAtoms::onunload,                      NS_PAGE_UNLOAD,
-                                                (EventNameType_HTMLXUL | EventNameType_SVGSVG), NS_EVENT },
-    { nsGkAtoms::onhashchange,                  NS_HASHCHANGE, EventNameType_HTMLXUL, NS_EVENT },
-    { nsGkAtoms::onreadystatechange,            NS_READYSTATECHANGE, EventNameType_HTMLXUL },
-    { nsGkAtoms::onbeforeunload,                NS_BEFORE_PAGE_UNLOAD, EventNameType_HTMLXUL, NS_EVENT },
-    { nsGkAtoms::onabort,                       NS_IMAGE_ABORT,
-                                                (EventNameType_HTMLXUL | EventNameType_SVGSVG), NS_EVENT },
-    { nsGkAtoms::onerror,                       NS_LOAD_ERROR,
-                                                (EventNameType_HTMLXUL | EventNameType_SVGSVG), NS_EVENT },
-    { nsGkAtoms::onbeforescriptexecute,         NS_BEFORE_SCRIPT_EXECUTE, EventNameType_HTMLXUL, NS_EVENT },
-    { nsGkAtoms::onafterscriptexecute,          NS_AFTER_SCRIPT_EXECUTE, EventNameType_HTMLXUL, NS_EVENT },
-
-    { nsGkAtoms::onDOMAttrModified,             NS_MUTATION_ATTRMODIFIED, EventNameType_HTMLXUL, NS_MUTATION_EVENT },
-    { nsGkAtoms::onDOMCharacterDataModified,    NS_MUTATION_CHARACTERDATAMODIFIED, EventNameType_HTMLXUL, NS_MUTATION_EVENT },
-    { nsGkAtoms::onDOMNodeInserted,             NS_MUTATION_NODEINSERTED, EventNameType_HTMLXUL, NS_MUTATION_EVENT },
-    { nsGkAtoms::onDOMNodeRemoved,              NS_MUTATION_NODEREMOVED, EventNameType_HTMLXUL, NS_MUTATION_EVENT },
-    { nsGkAtoms::onDOMNodeInsertedIntoDocument, NS_MUTATION_NODEINSERTEDINTODOCUMENT, EventNameType_HTMLXUL, NS_MUTATION_EVENT },
-    { nsGkAtoms::onDOMNodeRemovedFromDocument,  NS_MUTATION_NODEREMOVEDFROMDOCUMENT, EventNameType_HTMLXUL, NS_MUTATION_EVENT },
-    { nsGkAtoms::onDOMSubtreeModified,          NS_MUTATION_SUBTREEMODIFIED, EventNameType_HTMLXUL, NS_MUTATION_EVENT },
-
-    { nsGkAtoms::onDOMActivate,                 NS_UI_ACTIVATE, EventNameType_HTMLXUL, NS_UI_EVENT },
-    { nsGkAtoms::onDOMFocusIn,                  NS_UI_FOCUSIN, EventNameType_HTMLXUL, NS_UI_EVENT },
-    { nsGkAtoms::onDOMFocusOut,                 NS_UI_FOCUSOUT, EventNameType_HTMLXUL, NS_UI_EVENT },
-    { nsGkAtoms::oninput,                       NS_FORM_INPUT, EventNameType_HTMLXUL, NS_UI_EVENT },
-                                                
-    { nsGkAtoms::onDOMMouseScroll,              NS_MOUSE_SCROLL, EventNameType_HTMLXUL, NS_MOUSE_SCROLL_EVENT },
-    { nsGkAtoms::onMozMousePixelScroll,         NS_MOUSE_PIXEL_SCROLL, EventNameType_HTMLXUL, NS_MOUSE_SCROLL_EVENT },
-                                                
-    { nsGkAtoms::onpageshow,                    NS_PAGE_SHOW, EventNameType_HTML, NS_EVENT },
-    { nsGkAtoms::onpagehide,                    NS_PAGE_HIDE, EventNameType_HTML, NS_EVENT },
-    { nsGkAtoms::onMozBeforeResize,             NS_BEFORERESIZE_EVENT, EventNameType_None, NS_EVENT },
-    { nsGkAtoms::onresize,                      NS_RESIZE_EVENT,
-                                                (EventNameType_HTMLXUL | EventNameType_SVGSVG), NS_EVENT },
-    { nsGkAtoms::onscroll,                      NS_SCROLL_EVENT,
-                                                (EventNameType_HTMLXUL | EventNameType_SVGSVG), NS_EVENT_NULL },
-    { nsGkAtoms::oncopy,                        NS_COPY, EventNameType_HTMLXUL, NS_EVENT },
-    { nsGkAtoms::oncut,                         NS_CUT, EventNameType_HTMLXUL, NS_EVENT },
-    { nsGkAtoms::onpaste,                       NS_PASTE, EventNameType_HTMLXUL, NS_EVENT },
-    { nsGkAtoms::onopen,                        NS_OPEN, EventNameType_None, NS_EVENT },
-    { nsGkAtoms::onmessage,                     NS_MESSAGE, EventNameType_None, NS_EVENT },
-    // XUL specific events
-    { nsGkAtoms::ontext,                        NS_TEXT_TEXT, EventNameType_XUL, NS_EVENT_NULL },
-
-    { nsGkAtoms::oncompositionstart,            NS_COMPOSITION_START, EventNameType_XUL, NS_COMPOSITION_EVENT },
-    { nsGkAtoms::oncompositionend,              NS_COMPOSITION_END, EventNameType_XUL, NS_COMPOSITION_EVENT },
-
-    { nsGkAtoms::oncommand,                     NS_XUL_COMMAND, EventNameType_XUL, NS_INPUT_EVENT },
-
-    { nsGkAtoms::onclose,                       NS_XUL_CLOSE, EventNameType_XUL, NS_EVENT_NULL},
-    { nsGkAtoms::onpopupshowing,                NS_XUL_POPUP_SHOWING, EventNameType_XUL, NS_EVENT_NULL},
-    { nsGkAtoms::onpopupshown,                  NS_XUL_POPUP_SHOWN, EventNameType_XUL, NS_EVENT_NULL},
-    { nsGkAtoms::onpopuphiding,                 NS_XUL_POPUP_HIDING, EventNameType_XUL, NS_EVENT_NULL},
-    { nsGkAtoms::onpopuphidden,                 NS_XUL_POPUP_HIDDEN, EventNameType_XUL, NS_EVENT_NULL},
-    { nsGkAtoms::onbroadcast,                   NS_XUL_BROADCAST, EventNameType_XUL, NS_EVENT_NULL},
-    { nsGkAtoms::oncommandupdate,               NS_XUL_COMMAND_UPDATE, EventNameType_XUL, NS_EVENT_NULL},
-
-    { nsGkAtoms::ondragenter,                   NS_DRAGDROP_ENTER, EventNameType_HTMLXUL, NS_DRAG_EVENT },
-    { nsGkAtoms::ondragover,                    NS_DRAGDROP_OVER_SYNTH, EventNameType_HTMLXUL, NS_DRAG_EVENT },
-    { nsGkAtoms::ondragexit,                    NS_DRAGDROP_EXIT_SYNTH, EventNameType_XUL, NS_DRAG_EVENT },
-    { nsGkAtoms::ondragdrop,                    NS_DRAGDROP_DRAGDROP, EventNameType_XUL, NS_DRAG_EVENT },
-    { nsGkAtoms::ondraggesture,                 NS_DRAGDROP_GESTURE, EventNameType_XUL, NS_DRAG_EVENT },
-    { nsGkAtoms::ondrag,                        NS_DRAGDROP_DRAG, EventNameType_HTMLXUL, NS_DRAG_EVENT },
-    { nsGkAtoms::ondragend,                     NS_DRAGDROP_END, EventNameType_HTMLXUL, NS_DRAG_EVENT },
-    { nsGkAtoms::ondragstart,                   NS_DRAGDROP_START, EventNameType_HTMLXUL, NS_DRAG_EVENT },
-    { nsGkAtoms::ondragleave,                   NS_DRAGDROP_LEAVE_SYNTH, EventNameType_HTMLXUL, NS_DRAG_EVENT },
-    { nsGkAtoms::ondrop,                        NS_DRAGDROP_DROP, EventNameType_HTMLXUL, NS_DRAG_EVENT },
-
-    { nsGkAtoms::onoverflow,                    NS_SCROLLPORT_OVERFLOW, EventNameType_XUL, NS_EVENT_NULL},
-    { nsGkAtoms::onunderflow,                   NS_SCROLLPORT_UNDERFLOW, EventNameType_XUL, NS_EVENT_NULL},
-    { nsGkAtoms::onSVGLoad,                     NS_SVG_LOAD, EventNameType_None, NS_SVG_EVENT },
-    { nsGkAtoms::onSVGUnload,                   NS_SVG_UNLOAD, EventNameType_None, NS_SVG_EVENT },
-    { nsGkAtoms::onSVGAbort,                    NS_SVG_ABORT, EventNameType_None, NS_SVG_EVENT },
-    { nsGkAtoms::onSVGError,                    NS_SVG_ERROR, EventNameType_None, NS_SVG_EVENT },
-    { nsGkAtoms::onSVGResize,                   NS_SVG_RESIZE, EventNameType_None, NS_SVG_EVENT },
-    { nsGkAtoms::onSVGScroll,                   NS_SVG_SCROLL, EventNameType_None, NS_SVG_EVENT },
-
-    { nsGkAtoms::onSVGZoom,                     NS_SVG_ZOOM, EventNameType_None, NS_SVGZOOM_EVENT },
-
-    // This is a bit hackish, but SVG's event names are weird.
-    { nsGkAtoms::onzoom,                        NS_SVG_ZOOM, EventNameType_SVGSVG, NS_EVENT_NULL },
-#ifdef MOZ_SMIL
-    { nsGkAtoms::onbegin,                       NS_SMIL_BEGIN, EventNameType_SMIL, NS_EVENT_NULL },
-    { nsGkAtoms::onbeginEvent,                  NS_SMIL_BEGIN, EventNameType_None, NS_SMIL_TIME_EVENT },
-    { nsGkAtoms::onend,                         NS_SMIL_END, EventNameType_SMIL, NS_EVENT_NULL },
-    { nsGkAtoms::onendEvent,                    NS_SMIL_END, EventNameType_None, NS_SMIL_TIME_EVENT },
-    { nsGkAtoms::onrepeat,                      NS_SMIL_REPEAT, EventNameType_SMIL, NS_EVENT_NULL },
-    { nsGkAtoms::onrepeatEvent,                 NS_SMIL_REPEAT, EventNameType_None, NS_SMIL_TIME_EVENT },
-#endif // MOZ_SMIL
-#ifdef MOZ_MEDIA
-    { nsGkAtoms::onloadstart,                   NS_LOADSTART, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::onprogress,                    NS_PROGRESS, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::onsuspend,                     NS_SUSPEND, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::onemptied,                     NS_EMPTIED, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::onstalled,                     NS_STALLED, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::onplay,                        NS_PLAY, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::onpause,                       NS_PAUSE, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::onloadedmetadata,              NS_LOADEDMETADATA, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::onloadeddata,                  NS_LOADEDDATA, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::onwaiting,                     NS_WAITING, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::onplaying,                     NS_PLAYING, EventNameType_HTML,  NS_EVENT_NULL },
-    { nsGkAtoms::oncanplay,                     NS_CANPLAY, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::oncanplaythrough,              NS_CANPLAYTHROUGH, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::onseeking,                     NS_SEEKING, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::onseeked,                      NS_SEEKED, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::ontimeupdate,                  NS_TIMEUPDATE, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::onended,                       NS_ENDED, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::onratechange,                  NS_RATECHANGE, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::ondurationchange,              NS_DURATIONCHANGE, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::onvolumechange,                NS_VOLUMECHANGE, EventNameType_HTML, NS_EVENT_NULL },
-    { nsGkAtoms::onMozAudioAvailable,           NS_MOZAUDIOAVAILABLE, EventNameType_None, NS_EVENT_NULL },
-#endif // MOZ_MEDIA
-    { nsGkAtoms::onMozAfterPaint,               NS_AFTERPAINT, EventNameType_None, NS_EVENT },
-    { nsGkAtoms::onMozBeforePaint,              NS_BEFOREPAINT, EventNameType_None, NS_EVENT_NULL },
-
-    { nsGkAtoms::onMozScrolledAreaChanged,      NS_SCROLLEDAREACHANGED, EventNameType_None, NS_SCROLLAREA_EVENT },
-
-    // Simple gesture events
-    { nsGkAtoms::onMozSwipeGesture,             NS_SIMPLE_GESTURE_SWIPE, EventNameType_None, NS_SIMPLE_GESTURE_EVENT },
-    { nsGkAtoms::onMozMagnifyGestureStart,      NS_SIMPLE_GESTURE_MAGNIFY_START, EventNameType_None, NS_SIMPLE_GESTURE_EVENT },
-    { nsGkAtoms::onMozMagnifyGestureUpdate,     NS_SIMPLE_GESTURE_MAGNIFY_UPDATE, EventNameType_None, NS_SIMPLE_GESTURE_EVENT },
-    { nsGkAtoms::onMozMagnifyGesture,           NS_SIMPLE_GESTURE_MAGNIFY, EventNameType_None, NS_SIMPLE_GESTURE_EVENT },
-    { nsGkAtoms::onMozRotateGestureStart,       NS_SIMPLE_GESTURE_ROTATE_START, EventNameType_None, NS_SIMPLE_GESTURE_EVENT },
-    { nsGkAtoms::onMozRotateGestureUpdate,      NS_SIMPLE_GESTURE_ROTATE_UPDATE, EventNameType_None, NS_SIMPLE_GESTURE_EVENT },
-    { nsGkAtoms::onMozRotateGesture,            NS_SIMPLE_GESTURE_ROTATE, EventNameType_None, NS_SIMPLE_GESTURE_EVENT },
-    { nsGkAtoms::onMozTapGesture,               NS_SIMPLE_GESTURE_TAP, EventNameType_None, NS_SIMPLE_GESTURE_EVENT },
-    { nsGkAtoms::onMozPressTapGesture,          NS_SIMPLE_GESTURE_PRESSTAP, EventNameType_None, NS_SIMPLE_GESTURE_EVENT },
-
-    { nsGkAtoms::onMozTouchDown,                NS_MOZTOUCH_DOWN, EventNameType_None, NS_MOZTOUCH_EVENT },
-    { nsGkAtoms::onMozTouchMove,                NS_MOZTOUCH_MOVE, EventNameType_None, NS_MOZTOUCH_EVENT },
-    { nsGkAtoms::onMozTouchUp,                  NS_MOZTOUCH_UP, EventNameType_None, NS_MOZTOUCH_EVENT },
-
-    { nsGkAtoms::ondevicemotion,                NS_DEVICE_MOTION, EventNameType_None, NS_EVENT },
-    { nsGkAtoms::ondeviceorientation,           NS_DEVICE_ORIENTATION, EventNameType_None, NS_EVENT },
-
-    { nsGkAtoms::ontransitionend,               NS_TRANSITION_END, EventNameType_None, NS_TRANSITION_EVENT },
-    { nsGkAtoms::onanimationstart,              NS_ANIMATION_START, EventNameType_None, NS_ANIMATION_EVENT },
-    { nsGkAtoms::onanimationend,                NS_ANIMATION_END, EventNameType_None, NS_ANIMATION_EVENT },
-    { nsGkAtoms::onanimationiteration,          NS_ANIMATION_ITERATION, EventNameType_None, NS_ANIMATION_EVENT },
-    { nsGkAtoms::onbeforeprint,                 NS_BEFOREPRINT, EventNameType_HTMLXUL, NS_EVENT },
-    { nsGkAtoms::onafterprint,                  NS_AFTERPRINT, EventNameType_HTMLXUL, NS_EVENT }
+#define EVENT(name_,  _id, _type, _struct)          \
+    { nsGkAtoms::on##name_, _id, _type, _struct },
+#define WINDOW_ONLY_EVENT EVENT
+#define NON_IDL_EVENT EVENT
+#include "nsEventNameList.h"
+#undef WINDOW_ONLY_EVENT
+#undef EVENT
+    nsnull
   };
 
   sAtomEventTable = new nsDataHashtable<nsISupportsHashKey, EventNameMapping>;
@@ -591,7 +517,8 @@ nsContentUtils::InitializeEventTable() {
     return PR_FALSE;
   }
 
-  for (PRUint32 i = 0; i < NS_ARRAY_LENGTH(eventArray); ++i) {
+  // Subtract one from the length because of the trailing null
+  for (PRUint32 i = 0; i < NS_ARRAY_LENGTH(eventArray) - 1; ++i) {
     if (!sAtomEventTable->Put(eventArray[i].mAtom, eventArray[i]) ||
         !sStringEventTable->Put(Substring(nsDependentAtomString(eventArray[i].mAtom), 2),
                                 eventArray[i])) {
@@ -613,14 +540,16 @@ nsContentUtils::InitializeTouchEventTable()
   if (!sEventTableInitialized && sAtomEventTable && sStringEventTable) {
     sEventTableInitialized = PR_TRUE;
     static const EventNameMapping touchEventArray[] = {
-      { nsGkAtoms::ontouchstart, NS_USER_DEFINED_EVENT, EventNameType_All, NS_INPUT_EVENT },
-      { nsGkAtoms::ontouchend, NS_USER_DEFINED_EVENT, EventNameType_All, NS_INPUT_EVENT },
-      { nsGkAtoms::ontouchmove, NS_USER_DEFINED_EVENT, EventNameType_All, NS_INPUT_EVENT },
-      { nsGkAtoms::ontouchenter, NS_USER_DEFINED_EVENT, EventNameType_All, NS_INPUT_EVENT },
-      { nsGkAtoms::ontouchleave, NS_USER_DEFINED_EVENT, EventNameType_All, NS_INPUT_EVENT },
-      { nsGkAtoms::ontouchcancel, NS_USER_DEFINED_EVENT, EventNameType_All, NS_INPUT_EVENT }
+#define EVENT(name_,  _id, _type, _struct)
+#define TOUCH_EVENT(name_,  _id, _type, _struct)      \
+      { nsGkAtoms::on##name_, _id, _type, _struct },
+#include "nsEventNameList.h"
+#undef TOUCH_EVENT
+#undef EVENT
+      nsnull
     };
-    for (PRUint32 i = 0; i < NS_ARRAY_LENGTH(touchEventArray); ++i) {
+    // Subtract one from the length because of the trailing null
+    for (PRUint32 i = 0; i < NS_ARRAY_LENGTH(touchEventArray) - 1; ++i) {
       if (!sAtomEventTable->Put(touchEventArray[i].mAtom, touchEventArray[i]) ||
           !sStringEventTable->Put(Substring(nsDependentAtomString(touchEventArray[i].mAtom), 2),
                                   touchEventArray[i])) {
@@ -634,6 +563,61 @@ nsContentUtils::InitializeTouchEventTable()
   }
 }
 
+static PRBool
+Is8bit(const nsAString& aString)
+{
+  static const PRUnichar EIGHT_BIT = PRUnichar(~0x00FF);
+
+  nsAString::const_iterator done_reading;
+  aString.EndReading(done_reading);
+
+  // for each chunk of |aString|...
+  PRUint32 fragmentLength = 0;
+  nsAString::const_iterator iter;
+  for (aString.BeginReading(iter); iter != done_reading;
+       iter.advance(PRInt32(fragmentLength))) {
+    fragmentLength = PRUint32(iter.size_forward());
+    const PRUnichar* c = iter.get();
+    const PRUnichar* fragmentEnd = c + fragmentLength;
+
+    // for each character in this chunk...
+    while (c < fragmentEnd) {
+      if (*c++ & EIGHT_BIT) {
+        return PR_FALSE;
+      }
+    }
+  }
+
+  return PR_TRUE;
+}
+
+nsresult
+nsContentUtils::Btoa(const nsAString& aBinaryData,
+                     nsAString& aAsciiBase64String)
+{
+  if (!Is8bit(aBinaryData)) {
+    aAsciiBase64String.Truncate();
+    return NS_ERROR_DOM_INVALID_CHARACTER_ERR;
+  }
+
+  return nsXPConnect::Base64Encode(aBinaryData, aAsciiBase64String);
+}
+
+nsresult
+nsContentUtils::Atob(const nsAString& aAsciiBase64String,
+                     nsAString& aBinaryData)
+{
+  if (!Is8bit(aAsciiBase64String)) {
+    aBinaryData.Truncate();
+    return NS_ERROR_DOM_INVALID_CHARACTER_ERR;
+  }
+
+  nsresult rv = nsXPConnect::Base64Decode(aAsciiBase64String, aBinaryData);
+  if (NS_FAILED(rv) && rv == NS_ERROR_INVALID_ARG) {
+    return NS_ERROR_DOM_INVALID_CHARACTER_ERR;
+  }
+  return rv;
+}
 
 /**
  * Access a cached parser service. Don't addref. We need only one
@@ -1032,9 +1016,6 @@ nsContentUtils::Shutdown()
 {
   sInitialized = PR_FALSE;
 
-  NS_HTMLParanoidFragmentSinkShutdown();
-  NS_XHTMLParanoidFragmentSinkShutdown();
-
   NS_IF_RELEASE(sContentPolicyService);
   sTriedToGetContentPolicy = PR_FALSE;
   PRUint32 i;
@@ -1089,10 +1070,21 @@ nsContentUtils::Shutdown()
   }
 
   NS_ASSERTION(!sBlockedScriptRunners ||
-               sBlockedScriptRunners->Count() == 0,
+               sBlockedScriptRunners->Length() == 0,
                "How'd this happen?");
   delete sBlockedScriptRunners;
   sBlockedScriptRunners = nsnull;
+
+  delete sShiftText;
+  sShiftText = nsnull;
+  delete sControlText;  
+  sControlText = nsnull;
+  delete sMetaText;  
+  sMetaText = nsnull;
+  delete sAltText;  
+  sAltText = nsnull;
+  delete sModifierSeparator;
+  sModifierSeparator = nsnull;
 
   NS_IF_RELEASE(sSameOriginChecker);
   
@@ -1565,7 +1557,7 @@ nsContentUtils::GetCommonAncestor(nsINode* aNode1,
   }
 
   // Build the chain of parents
-  nsAutoTPtrArray<nsINode, 30> parents1, parents2;
+  nsAutoTArray<nsINode*, 30> parents1, parents2;
   do {
     parents1.AppendElement(aNode1);
     aNode1 = aNode1->GetNodeParent();
@@ -2324,6 +2316,7 @@ nsContentUtils::LoadImage(nsIURI* aURI, nsIDocument* aLoadingDocument,
   return imgLoader->LoadImage(aURI,                 /* uri to load */
                               documentURI,          /* initialDocumentURI */
                               aReferrer,            /* referrer */
+                              aLoadingPrincipal,    /* loading principal */
                               loadGroup,            /* loadgroup */
                               aObserver,            /* imgIDecoderObserver */
                               aLoadingDocument,     /* uniquification key */
@@ -3461,13 +3454,11 @@ nsContentUtils::IsValidNodeName(nsIAtom *aLocalName, nsIAtom *aPrefix,
 nsresult
 nsContentUtils::CreateContextualFragment(nsINode* aContextNode,
                                          const nsAString& aFragment,
-                                         PRBool aWillOwnFragment,
+                                         PRBool aPreventScriptExecution,
                                          nsIDOMDocumentFragment** aReturn)
 {
   *aReturn = nsnull;
   NS_ENSURE_ARG(aContextNode);
-
-  nsresult rv;
 
   // If we don't have a document here, we can't get the right security context
   // for compiling event handlers... so just bail out.
@@ -3480,24 +3471,9 @@ nsContentUtils::CreateContextualFragment(nsINode* aContextNode,
   NS_ASSERTION(!isHTML || htmlDoc, "Should have HTMLDocument here!");
 #endif
 
-  if (isHTML && nsHtml5Module::sEnabled) {
-    // See if the document has a cached fragment parser. nsHTMLDocument is the
-    // only one that should really have one at the moment.
-    nsCOMPtr<nsIParser> parser = document->GetFragmentParser();
-    if (parser) {
-      // Get the parser ready to use.
-      parser->Reset();
-    }
-    else {
-      // Create a new parser for this operation.
-      parser = nsHtml5Module::NewHtml5Parser();
-      if (!parser) {
-        return NS_ERROR_OUT_OF_MEMORY;
-      }
-    }
+  if (isHTML) {
     nsCOMPtr<nsIDOMDocumentFragment> frag;
-    rv = NS_NewDocumentFragment(getter_AddRefs(frag), document->NodeInfoManager());
-    NS_ENSURE_SUCCESS(rv, rv);
+    NS_NewDocumentFragment(getter_AddRefs(frag), document->NodeInfoManager());
     
     nsCOMPtr<nsIContent> contextAsContent = do_QueryInterface(aContextNode);
     if (contextAsContent && !contextAsContent->IsElement()) {
@@ -3508,32 +3484,28 @@ nsContentUtils::CreateContextualFragment(nsINode* aContextNode,
       }
     }
     
-    nsAHtml5FragmentParser* asFragmentParser =
-        static_cast<nsAHtml5FragmentParser*> (parser.get());
+    nsresult rv;
     nsCOMPtr<nsIContent> fragment = do_QueryInterface(frag);
-    if (contextAsContent &&
-        !(nsGkAtoms::html == contextAsContent->Tag() &&
-          contextAsContent->IsHTML())) {
-      asFragmentParser->ParseHtml5Fragment(aFragment,
-                                           fragment,
-                                           contextAsContent->Tag(),
-                                           contextAsContent->GetNameSpaceID(),
-                                           (document->GetCompatibilityMode() ==
-                                               eCompatibility_NavQuirks),
-                                           PR_FALSE);
+    if (contextAsContent && !contextAsContent->IsHTML(nsGkAtoms::html)) {
+      rv = ParseFragmentHTML(aFragment,
+                             fragment,
+                             contextAsContent->Tag(),
+                             contextAsContent->GetNameSpaceID(),
+                             (document->GetCompatibilityMode() ==
+                               eCompatibility_NavQuirks),
+                             aPreventScriptExecution);
     } else {
-      asFragmentParser->ParseHtml5Fragment(aFragment,
-                                           fragment,
-                                           nsGkAtoms::body,
-                                           kNameSpaceID_XHTML,
-                                           (document->GetCompatibilityMode() ==
-                                               eCompatibility_NavQuirks),
-                                           PR_FALSE);
+      rv = ParseFragmentHTML(aFragment,
+                             fragment,
+                             nsGkAtoms::body,
+                             kNameSpaceID_XHTML,
+                             (document->GetCompatibilityMode() ==
+                               eCompatibility_NavQuirks),
+                             aPreventScriptExecution);
     }
-  
-    frag.swap(*aReturn);
-    document->SetFragmentParser(parser);
-    return NS_OK;
+
+    frag.forget(aReturn);
+    return rv;
   }
 
   nsAutoTArray<nsString, 32> tagStack;
@@ -3591,83 +3563,106 @@ nsContentUtils::CreateContextualFragment(nsINode* aContextNode,
     content = content->GetParent();
   }
 
-  nsCAutoString contentType;
-  nsAutoString buf;
-  document->GetContentType(buf);
-  LossyCopyUTF16toASCII(buf, contentType);
+  return ParseFragmentXML(aFragment,
+                          document,
+                          tagStack,
+                          aPreventScriptExecution,
+                          aReturn);
+}
 
-  // See if the document has a cached fragment parser. nsHTMLDocument is the
-  // only one that should really have one at the moment.
-  nsCOMPtr<nsIParser> parser = document->GetFragmentParser();
-  if (parser) {
-    // Get the parser ready to use.
-    parser->Reset();
+/* static */
+void
+nsContentUtils::DropFragmentParsers()
+{
+  NS_IF_RELEASE(sHTMLFragmentParser);
+  NS_IF_RELEASE(sXMLFragmentParser);
+  NS_IF_RELEASE(sXMLFragmentSink);
+}
+
+/* static */
+void
+nsContentUtils::XPCOMShutdown()
+{
+  nsContentUtils::DropFragmentParsers();
+}
+
+/* static */
+nsresult
+nsContentUtils::ParseFragmentHTML(const nsAString& aSourceBuffer,
+                                  nsIContent* aTargetNode,
+                                  nsIAtom* aContextLocalName,
+                                  PRInt32 aContextNamespace,
+                                  PRBool aQuirks,
+                                  PRBool aPreventScriptExecution)
+{
+  if (nsContentUtils::sFragmentParsingActive) {
+    NS_NOTREACHED("Re-entrant fragment parsing attempted.");
+    return NS_ERROR_DOM_INVALID_STATE_ERR;
   }
-  else {
-    // Create a new parser for this operation.
-    parser = do_CreateInstance(kCParserCID, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
+  mozilla::AutoRestore<PRBool> guard(nsContentUtils::sFragmentParsingActive);
+  nsContentUtils::sFragmentParsingActive = PR_TRUE;
+  if (!sHTMLFragmentParser) {
+    sHTMLFragmentParser =
+      static_cast<nsHtml5Parser*>(nsHtml5Module::NewHtml5Parser().get());
+    // Now sHTMLFragmentParser owns the object
+  }
+  sHTMLFragmentParser->ParseHtml5Fragment(aSourceBuffer,
+                                          aTargetNode,
+                                          aContextLocalName,
+                                          aContextNamespace,
+                                          aQuirks,
+                                          aPreventScriptExecution);
+  sHTMLFragmentParser->Reset();
+  return NS_OK;
+}
+
+/* static */
+nsresult
+nsContentUtils::ParseFragmentXML(const nsAString& aSourceBuffer,
+                                 nsIDocument* aDocument,
+                                 nsTArray<nsString>& aTagStack,
+                                 PRBool aPreventScriptExecution,
+                                 nsIDOMDocumentFragment** aReturn)
+{
+  if (nsContentUtils::sFragmentParsingActive) {
+    NS_NOTREACHED("Re-entrant fragment parsing attempted.");
+    return NS_ERROR_DOM_INVALID_STATE_ERR;
+  }
+  mozilla::AutoRestore<PRBool> guard(nsContentUtils::sFragmentParsingActive);
+  nsContentUtils::sFragmentParsingActive = PR_TRUE;
+  if (!sXMLFragmentParser) {
+    nsCOMPtr<nsIParser> parser = do_CreateInstance(kCParserCID);
+    parser.forget(&sXMLFragmentParser);
+    // sXMLFragmentParser now owns the parser
+  }
+  if (!sXMLFragmentSink) {
+    NS_NewXMLFragmentContentSink(&sXMLFragmentSink);
+    // sXMLFragmentSink now owns the sink
+  }
+  nsCOMPtr<nsIContentSink> contentsink = do_QueryInterface(sXMLFragmentSink);
+  NS_ABORT_IF_FALSE(contentsink, "Sink doesn't QI to nsIContentSink!");
+  sXMLFragmentParser->SetContentSink(contentsink);
+
+  sXMLFragmentSink->SetTargetDocument(aDocument);
+  sXMLFragmentSink->SetPreventScriptExecution(aPreventScriptExecution);
+
+  nsresult rv =
+    sXMLFragmentParser->ParseFragment(aSourceBuffer,
+                                      aTagStack);
+  if (NS_FAILED(rv)) {
+    // Drop the fragment parser and sink that might be in an inconsistent state
+    NS_IF_RELEASE(sXMLFragmentParser);
+    NS_IF_RELEASE(sXMLFragmentSink);
+    return rv;
   }
 
-  // See if the parser already has a content sink that we can reuse.
-  nsCOMPtr<nsIFragmentContentSink> sink;
-  nsCOMPtr<nsIContentSink> contentsink = parser->GetContentSink();
-  if (contentsink) {
-    // Make sure it's the correct type.
-    if (isHTML) {
-      nsCOMPtr<nsIHTMLContentSink> htmlsink = do_QueryInterface(contentsink);
-      sink = do_QueryInterface(htmlsink);
-    }
-    else {
-      nsCOMPtr<nsIXMLContentSink> xmlsink = do_QueryInterface(contentsink);
-      sink = do_QueryInterface(xmlsink);
-    }
-  }
+  rv = sXMLFragmentSink->FinishFragmentParsing(aReturn);
 
-  if (!sink) {
-    // Either there was no cached content sink or it was the wrong type. Make a
-    // new one.
-    if (isHTML) {
-      rv = NS_NewHTMLFragmentContentSink(getter_AddRefs(sink));
-    } else {
-      rv = NS_NewXMLFragmentContentSink(getter_AddRefs(sink));
-    }
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    contentsink = do_QueryInterface(sink);
-    NS_ASSERTION(contentsink, "Sink doesn't QI to nsIContentSink!");
-
-    parser->SetContentSink(contentsink);
-  }
-
-  sink->SetTargetDocument(document);
-
-  nsDTDMode mode = eDTDMode_autodetect;
-  switch (document->GetCompatibilityMode()) {
-    case eCompatibility_NavQuirks:
-      mode = eDTDMode_quirks;
-      break;
-    case eCompatibility_AlmostStandards:
-      mode = eDTDMode_almost_standards;
-      break;
-    case eCompatibility_FullStandards:
-      mode = eDTDMode_full_standards;
-      break;
-    default:
-      NS_NOTREACHED("unknown mode");
-      break;
-  }
-
-  rv = parser->ParseFragment(aFragment, nsnull, tagStack,
-                             !isHTML, contentType, mode);
-  if (NS_SUCCEEDED(rv)) {
-    rv = sink->GetFragment(aWillOwnFragment, aReturn);
-  }
-
-  document->SetFragmentParser(parser);
+  sXMLFragmentParser->Reset();
 
   return rv;
 }
+
 
 /* static */
 nsresult
@@ -3739,7 +3734,6 @@ nsContentUtils::SetNodeTextContent(nsIContent* aContent,
   if (aTryReuse && !aValue.IsEmpty()) {
     PRUint32 removeIndex = 0;
 
-    // i is unsigned, so i >= is always true
     for (PRUint32 i = 0; i < childCount; ++i) {
       nsIContent* child = aContent->GetChildAt(removeIndex);
       if (removeIndex == 0 && child && child->IsNodeOfType(nsINode::eTEXT)) {
@@ -3758,9 +3752,8 @@ nsContentUtils::SetNodeTextContent(nsIContent* aContent,
     }
   }
   else {
-    // i is unsigned, so i >= is always true
-    for (PRUint32 i = childCount; i-- != 0; ) {
-      aContent->RemoveChildAt(i, PR_TRUE);
+    for (PRUint32 i = 0; i < childCount; ++i) {
+      aContent->RemoveChildAt(0, PR_TRUE);
     }
   }
 
@@ -4358,7 +4351,7 @@ nsContentUtils::AddScriptBlocker()
   if (!sScriptBlockerCount) {
     NS_ASSERTION(sRunnersCountAtFirstBlocker == 0,
                  "Should not already have a count");
-    sRunnersCountAtFirstBlocker = sBlockedScriptRunners->Count();
+    sRunnersCountAtFirstBlocker = sBlockedScriptRunners->Length();
   }
   ++sScriptBlockerCount;
 }
@@ -4387,7 +4380,7 @@ nsContentUtils::RemoveScriptBlocker()
   }
 
   PRUint32 firstBlocker = sRunnersCountAtFirstBlocker;
-  PRUint32 lastBlocker = (PRUint32)sBlockedScriptRunners->Count();
+  PRUint32 lastBlocker = sBlockedScriptRunners->Length();
   PRUint32 originalFirstBlocker = firstBlocker;
   PRUint32 blockersCount = lastBlocker - firstBlocker;
   sRunnersCountAtFirstBlocker = 0;
@@ -4403,7 +4396,7 @@ nsContentUtils::RemoveScriptBlocker()
                  "Bad count");
     NS_ASSERTION(!sScriptBlockerCount, "This is really bad");
   }
-  sBlockedScriptRunners->RemoveObjectsAt(originalFirstBlocker, blockersCount);
+  sBlockedScriptRunners->RemoveElementsAt(originalFirstBlocker, blockersCount);
 }
 
 /* static */
@@ -4419,7 +4412,7 @@ nsContentUtils::AddScriptRunner(nsIRunnable* aRunnable)
       NS_ERROR("Adding a script runner when that is prevented!");
       return PR_FALSE;
     }
-    return sBlockedScriptRunners->AppendObject(aRunnable);
+    return sBlockedScriptRunners->AppendElement(aRunnable) != nsnull;
   }
   
   nsCOMPtr<nsIRunnable> run = aRunnable;

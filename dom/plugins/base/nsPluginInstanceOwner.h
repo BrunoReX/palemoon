@@ -52,14 +52,16 @@
 #include "nsCOMPtr.h"
 #include "nsIPluginInstanceOwner.h"
 #include "nsIPluginTagInfo.h"
-#include "nsIDOMMouseListener.h"
-#include "nsIDOMMouseMotionListener.h"
-#include "nsIDOMKeyListener.h"
-#include "nsIDOMFocusListener.h"
+#include "nsIDOMEventListener.h"
 #include "nsIScrollPositionListener.h"
 #include "nsPluginHost.h"
 #include "nsPluginNativeWindow.h"
 #include "gfxRect.h"
+
+// X.h defines KeyPress
+#ifdef KeyPress
+#undef KeyPress
+#endif
 
 #ifdef XP_MACOSX
 #include "nsCoreAnimationSupport.h"
@@ -84,12 +86,20 @@ class gfxXlibSurface;
 #include "gfxQtNativeRenderer.h"
 #endif
 
+#ifdef XP_OS2
+#define INCL_PM
+#define INCL_GPI
+#include <os2.h>
+#endif
+
+// X.h defines KeyPress
+#ifdef KeyPress
+#undef KeyPress
+#endif
+
 class nsPluginInstanceOwner : public nsIPluginInstanceOwner,
                               public nsIPluginTagInfo,
-                              public nsIDOMMouseListener,
-                              public nsIDOMMouseMotionListener,
-                              public nsIDOMKeyListener,
-                              public nsIDOMFocusListener,
+                              public nsIDOMEventListener,
                               public nsIScrollPositionListener
 {
 public:
@@ -113,28 +123,12 @@ public:
   //nsIPluginTagInfo interface
   NS_DECL_NSIPLUGINTAGINFO
   
-  // nsIDOMMouseListener interfaces 
-  NS_IMETHOD MouseDown(nsIDOMEvent* aMouseEvent);
-  NS_IMETHOD MouseUp(nsIDOMEvent* aMouseEvent);
-  NS_IMETHOD MouseClick(nsIDOMEvent* aMouseEvent);
-  NS_IMETHOD MouseDblClick(nsIDOMEvent* aMouseEvent);
-  NS_IMETHOD MouseOver(nsIDOMEvent* aMouseEvent);
-  NS_IMETHOD MouseOut(nsIDOMEvent* aMouseEvent);
-  NS_IMETHOD HandleEvent(nsIDOMEvent* aEvent);     
+  // nsIDOMEventListener interfaces 
+  NS_DECL_NSIDOMEVENTLISTENER
   
-  // nsIDOMMouseMotionListener interfaces
-  NS_IMETHOD MouseMove(nsIDOMEvent* aMouseEvent);
-  NS_IMETHOD DragMove(nsIDOMEvent* aMouseEvent) { return NS_OK; }
-  
-  // nsIDOMKeyListener interfaces
-  NS_IMETHOD KeyDown(nsIDOMEvent* aKeyEvent);
-  NS_IMETHOD KeyUp(nsIDOMEvent* aKeyEvent);
-  NS_IMETHOD KeyPress(nsIDOMEvent* aKeyEvent);
-  
-  // nsIDOMFocusListener interfaces
-  NS_IMETHOD Focus(nsIDOMEvent * aFocusEvent);
-  NS_IMETHOD Blur(nsIDOMEvent * aFocusEvent);
-  
+  nsresult MouseDown(nsIDOMEvent* aKeyEvent);
+  nsresult KeyPress(nsIDOMEvent* aKeyEvent);
+
   nsresult Destroy();  
   
   void PrepareToStop(PRBool aDelayedStop);
@@ -324,7 +318,7 @@ private:
   NP_Port                                   mQDPluginPortCopy;
 #endif
   PRInt32                                   mInCGPaintLevel;
-  nsIOSurface                              *mIOSurface;
+  nsRefPtr<nsIOSurface>                     mIOSurface;
   nsCARenderer                              mCARenderer;
   CGColorSpaceRef                           mColorProfile;
   static nsCOMPtr<nsITimer>                *sCATimer;

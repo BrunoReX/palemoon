@@ -121,6 +121,9 @@ public:
    */
   virtual void Destroy();
 
+  virtual ShadowLayerManager* AsShadowManager()
+  { return this; }
+
   virtual void BeginTransaction();
 
   virtual void BeginTransactionWithTarget(gfxContext* aTarget);
@@ -140,6 +143,14 @@ public:
   const CallbackInfo &GetCallbackInfo() { return mCurrentCallbackInfo; }
 
   void SetRoot(Layer* aLayer);
+
+  virtual bool CanUseCanvasLayerForSize(const gfxIntSize &aSize)
+  {
+    if (!mDeviceManager)
+      return false;
+    PRInt32 maxSize = mDeviceManager->GetMaxTextureSize();
+    return aSize <= gfxIntSize(maxSize, maxSize);
+  }
 
   virtual already_AddRefed<ThebesLayer> CreateThebesLayer();
 

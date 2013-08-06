@@ -5,7 +5,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=345822
 -->
 <head>
   <title>Test for Bug 345822</title>
-  <script type="application/javascript" src="/MochiKit/packed.js"></script>
   <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <style>
@@ -25,31 +24,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=345822
 <script type="application/javascript">
 
 /** Test for Bug 345822 **/
-
-function checkRequiredAttribute(element)
-{
-  ok('required' in element, "Element should have the required attribute");
-
-  ok(!element.required, "Element required attribute should be disabled");
-  is(element.getAttribute('required'), null,
-    "Element required attribute should be disabled");
-
-  element.required = true;
-  ok(element.required, "Element required attribute should be enabled");
-  isnot(element.getAttribute('required'), null,
-    "Element required attribute should be enabled");
-
-  element.removeAttribute('required');
-  element.setAttribute('required', '');
-  ok(element.required, "Element required attribute should be enabled");
-  isnot(element.getAttribute('required'), null,
-    "Element required attribute should be enabled");
-
-  element.removeAttribute('required');
-  ok(!element.required, "Element required attribute should be disabled");
-  is(element.getAttribute('required'), null,
-    "Element required attribute should be disabled");
-}
 
 function checkNotSufferingFromBeingMissing(element, doNotApply)
 {
@@ -324,11 +298,7 @@ function checkInputRequiredValidityForFile()
   document.forms[0].removeChild(element);
 }
 
-checkRequiredAttribute(document.createElement('textarea'));
 checkTextareaRequiredValidity();
-
-// Every input element should have the required attribute.
-checkRequiredAttribute(document.createElement('input'));
 
 // The require attribute behavior depend of the input type.
 // First of all, checks for types that make the element barred from

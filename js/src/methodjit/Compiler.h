@@ -358,6 +358,7 @@ class Compiler : public BaseCompiler
     js::Vector<DoublePatch, 16, CompilerAllocPolicy> doubleList;
     js::Vector<JumpTable, 16> jumpTables;
     js::Vector<uint32, 16> jumpTableOffsets;
+    js::Vector<JSObject *, 0, CompilerAllocPolicy> rootedObjects;
     StubCompiler stubcc;
     Label invokeLabel;
     Label arityLabel;
@@ -410,7 +411,7 @@ class Compiler : public BaseCompiler
     void restoreFrameRegs(Assembler &masm);
     bool emitStubCmpOp(BoolStub stub, jsbytecode *target, JSOp fused);
     bool iter(uintN flags);
-    void iterNext();
+    void iterNext(ptrdiff_t offset);
     bool iterMore();
     void iterEnd();
     MaybeJump loadDouble(FrameEntry *fe, FPRegisterID fpReg);
@@ -476,9 +477,6 @@ class Compiler : public BaseCompiler
     void emitEval(uint32 argc);
     void jsop_arguments();
     bool jsop_tableswitch(jsbytecode *pc);
-    void jsop_forprop(JSAtom *atom);
-    void jsop_forname(JSAtom *atom);
-    void jsop_forgname(JSAtom *atom);
 
     /* Fast arithmetic. */
     void jsop_binary(JSOp op, VoidStub stub);

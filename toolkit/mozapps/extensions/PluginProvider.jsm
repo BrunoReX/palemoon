@@ -37,6 +37,8 @@
 # ***** END LICENSE BLOCK *****
 */
 
+"use strict";
+
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 
@@ -334,6 +336,10 @@ PluginWrapper.prototype = {
   },
 
   get providesUpdatesSecurely() {
+    return true;
+  },
+
+  get foreignInstall() {
     return true;
   },
 

@@ -67,6 +67,9 @@ abstract public class GeckoApp
 {
     public static final String ACTION_ALERT_CLICK = "org.mozilla.gecko.ACTION_ALERT_CLICK";
     public static final String ACTION_ALERT_CLEAR = "org.mozilla.gecko.ACTION_ALERT_CLEAR";
+    public static final String ACTION_WEBAPP      = "org.mozilla.gecko.WEBAPP";
+    public static final String ACTION_DEBUG       = "org.mozilla.gecko.DEBUG";
+    public static final String ACTION_BOOKMARK    = "org.mozilla.gecko.BOOKMARK";
 
     public static FrameLayout mainLayout;
     public static GeckoSurfaceView surfaceView;
@@ -81,6 +84,7 @@ abstract public class GeckoApp
     enum LaunchState {PreLaunch, Launching, WaitButton,
                       Launched, GeckoRunning, GeckoExiting};
     private static LaunchState sLaunchState = LaunchState.PreLaunch;
+    private static boolean sTryCatchAttached = false;
 
 
     static boolean checkLaunchState(LaunchState checkState) {
@@ -133,7 +137,6 @@ abstract public class GeckoApp
         final Intent i = intent;
         new Thread() {
             public void run() {
-                long startup_time = System.currentTimeMillis();
                 try {
                     if (mLibLoadThread != null)
                         mLibLoadThread.join();
@@ -186,18 +189,23 @@ abstract public class GeckoApp
         mAppContext = this;
         mMainHandler = new Handler();
 
-        mMainHandler.post(new Runnable() {
-            public void run() {
-                try {
-                    Looper.loop();
-                } catch (Exception e) {
-                    Log.e("GeckoApp", "top level exception", e);
-                    StringWriter sw = new StringWriter();
-                    e.printStackTrace(new PrintWriter(sw));
-                    GeckoAppShell.reportJavaCrash(sw.toString());
+        if (!sTryCatchAttached) {
+            sTryCatchAttached = true;
+            mMainHandler.post(new Runnable() {
+                public void run() {
+                    try {
+                        Looper.loop();
+                    } catch (Exception e) {
+                        Log.e("GeckoApp", "top level exception", e);
+                        StringWriter sw = new StringWriter();
+                        e.printStackTrace(new PrintWriter(sw));
+                        GeckoAppShell.reportJavaCrash(sw.toString());
+                    }
+                    // resetting this is kinda pointless, but oh well
+                    sTryCatchAttached = false;
                 }
-            }
-        });
+            });
+        }
 
         SharedPreferences settings = getPreferences(Activity.MODE_PRIVATE);
         String localeCode = settings.getString(getPackageName() + ".locale", "");
@@ -258,12 +266,23 @@ abstract public class GeckoApp
         if (GeckoAppShell.getFreeSpace() > GeckoAppShell.kFreeSpaceThreshold &&
             (!libxulFile.exists() ||
              new File(getApplication().getPackageResourcePath()).lastModified()
-             >= libxulFile.lastModified()))
+             >= libxulFile.lastModified())) {
             surfaceView.mSplashStatusMsg =
                 getResources().getString(R.string.splash_screen_installing_libs);
-        else
+            File[] libs = cacheFile.listFiles(new FilenameFilter() {
+                public boolean accept(File dir, String name) {
+                    return name.endsWith(".so");
+                }
+            });
+            if (libs != null) {
+                for (int i = 0; i < libs.length; i++) {
+                    libs[i].delete();
+                }
+            }
+        } else {
             surfaceView.mSplashStatusMsg =
                 getResources().getString(R.string.splash_screen_loading);
+        }
         mLibLoadThread.start();
     }
 
@@ -276,7 +295,7 @@ abstract public class GeckoApp
             return;
         }
         final String action = intent.getAction();
-        if ("org.mozilla.gecko.DEBUG".equals(action) &&
+        if (ACTION_DEBUG.equals(action) &&
             checkAndSetLaunchState(LaunchState.Launching, LaunchState.WaitButton)) {
             final Button launchButton = new Button(this);
             launchButton.setText("Launch"); // don't need to localize
@@ -294,19 +313,24 @@ abstract public class GeckoApp
         if (checkLaunchState(LaunchState.WaitButton) || launch(intent))
             return;
 
-        if (Intent.ACTION_VIEW.equals(action)) {
+        if (Intent.ACTION_MAIN.equals(action)) {
+            Log.i("GeckoApp", "Intent : ACTION_MAIN");
+            GeckoAppShell.sendEventToGecko(new GeckoEvent(""));
+        }
+        else if (Intent.ACTION_VIEW.equals(action)) {
             String uri = intent.getDataString();
             GeckoAppShell.sendEventToGecko(new GeckoEvent(uri));
             Log.i("GeckoApp","onNewIntent: "+uri);
         }
-        else if (Intent.ACTION_MAIN.equals(action)) {
-            Log.i("GeckoApp", "Intent : ACTION_MAIN");
-            GeckoAppShell.sendEventToGecko(new GeckoEvent(""));
-        }
-        else if (action.equals("org.mozilla.fennec.WEBAPP")) {
+        else if (ACTION_WEBAPP.equals(action)) {
             String uri = intent.getStringExtra("args");
             GeckoAppShell.sendEventToGecko(new GeckoEvent(uri));
             Log.i("GeckoApp","Intent : WEBAPP - " + uri);
+        }
+        else if (ACTION_BOOKMARK.equals(action)) {
+            String args = intent.getStringExtra("args");
+            GeckoAppShell.sendEventToGecko(new GeckoEvent(args));
+            Log.i("GeckoApp","Intent : BOOKMARK - " + args);
         }
     }
 
@@ -361,14 +385,17 @@ abstract public class GeckoApp
         // etc., and generally mark the profile as 'clean', and then
         // dirty it again if we get an onResume.
 
+
         GeckoAppShell.sendEventToGecko(new GeckoEvent(GeckoEvent.ACTIVITY_STOPPING));
         super.onStop();
+        GeckoAppShell.putChildInBackground();
     }
 
     @Override
     public void onRestart()
     {
         Log.i("GeckoApp", "restart");
+        GeckoAppShell.putChildInForeground();
         super.onRestart();
     }
 
@@ -414,12 +441,15 @@ abstract public class GeckoApp
     protected void unpackComponents()
         throws IOException, FileNotFoundException
     {
-        ZipFile zip;
-        InputStream listStream;
-
+        File applicationPackage = new File(getApplication().getPackageResourcePath());
         File componentsDir = new File(sGREDir, "components");
+        if (componentsDir.lastModified() == applicationPackage.lastModified())
+            return;
+
         componentsDir.mkdir();
-        zip = new ZipFile(getApplication().getPackageResourcePath());
+        componentsDir.setLastModified(applicationPackage.lastModified());
+
+        ZipFile zip = new ZipFile(applicationPackage);
 
         byte[] buf = new byte[8192];
         try {
@@ -438,21 +468,21 @@ abstract public class GeckoApp
         // copy any .xpi file into an extensions/ directory
         Enumeration<? extends ZipEntry> zipEntries = zip.entries();
         while (zipEntries.hasMoreElements()) {
-          ZipEntry entry = zipEntries.nextElement();
-          if (entry.getName().startsWith("extensions/") && entry.getName().endsWith(".xpi")) {
-            Log.i("GeckoAppJava", "installing extension : " + entry.getName());
-            unpackFile(zip, buf, entry, entry.getName());
-          }
+            ZipEntry entry = zipEntries.nextElement();
+            if (entry.getName().startsWith("extensions/") && entry.getName().endsWith(".xpi")) {
+                Log.i("GeckoAppJava", "installing extension : " + entry.getName());
+                unpackFile(zip, buf, entry, entry.getName());
+            }
         }
 
         // copy any hyphenation dictionaries file into a hyphenation/ directory
         Enumeration<? extends ZipEntry> hyphenEntries = zip.entries();
         while (hyphenEntries.hasMoreElements()) {
-          ZipEntry entry = hyphenEntries.nextElement();
-          if (entry.getName().startsWith("hyphenation/")) {
-            Log.i("GeckoAppJava", "installing hyphenation : " + entry.getName());
-            unpackFile(zip, buf, entry, entry.getName());
-          }
+            ZipEntry entry = hyphenEntries.nextElement();
+            if (entry.getName().startsWith("hyphenation/")) {
+                Log.i("GeckoAppJava", "installing hyphenation : " + entry.getName());
+                unpackFile(zip, buf, entry, entry.getName());
+            }
         }
     }
 
@@ -636,7 +666,7 @@ abstract public class GeckoApp
         intent.setType(aMimeType);
         GeckoApp.this.
             startActivityForResult(
-                Intent.createChooser(intent,"choose a file"),
+                Intent.createChooser(intent, getString(R.string.choose_file)),
                 FILE_PICKER_REQUEST);
         String filePickerResult = "";
         try {

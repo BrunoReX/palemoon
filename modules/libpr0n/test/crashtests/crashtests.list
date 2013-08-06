@@ -18,3 +18,9 @@ load invalid-icc-profile.jpg
 # interpret as 0-width and 0-height.
 load 256-width.ico
 load 256-height.ico
+
+# A 3-frame animated GIF with an inordinate delay between the second and third
+# frame.
+HTTP load delayedframe.sjs
+
+load 694165-1.xhtml

@@ -226,7 +226,7 @@ Section "-InstallStartCleanup"
   ${EndIf}
 
   ; Remove the updates directory for Vista and above
-  ${CleanUpdatesDir} "Mozilla\Firefox"
+  ${CleanUpdatesDir} "Moonchild Productions\Pale Moon"
 
   ${RemoveDeprecatedFiles}
 

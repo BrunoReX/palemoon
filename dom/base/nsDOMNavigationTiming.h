@@ -46,9 +46,9 @@
 #include "nsCOMPtr.h"
 #include "nsCOMArray.h"
 #include "TimeStamp.h"
+#include "nsIURI.h"
 
 class nsDOMNavigationTimingClock;
-class nsIURI;
 class nsIDocument;
 
 class nsDOMNavigationTiming
@@ -92,6 +92,8 @@ public:
   void NotifyDOMContentLoadedStart(nsIURI* aURI);
   void NotifyDOMContentLoadedEnd(nsIURI* aURI);
   nsresult TimeStampToDOM(mozilla::TimeStamp aStamp, DOMTimeMilliSec* aResult);
+  nsresult TimeStampToDOMOrFetchStart(mozilla::TimeStamp aStamp, 
+                                      DOMTimeMilliSec* aResult);
 
 private:
   nsDOMNavigationTiming(const nsDOMNavigationTiming &){};

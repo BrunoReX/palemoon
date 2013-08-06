@@ -124,7 +124,7 @@ JSObject::unbrand(JSContext *cx)
 inline void
 JSObject::syncSpecialEquality()
 {
-    if (clasp->ext.equality)
+    if (getClass()->ext.equality)
         flags |= JSObject::HAS_EQUALITY;
 }
 
@@ -135,12 +135,12 @@ JSObject::finalize(JSContext *cx)
     if (isNewborn())
         return;
 
+    js::Probes::finalizeObject(this);
+
     /* Finalize obj first, in case it needs map and slots. */
     js::Class *clasp = getClass();
     if (clasp->finalize)
         clasp->finalize(cx, this);
-
-    js::Probes::finalizeObject(this);
 
     finish(cx);
 }
@@ -212,7 +212,7 @@ JSObject::methodReadBarrier(JSContext *cx, const js::Shape &shape, js::Value *vp
     JS_ASSERT(shape.methodObject() == vp->toObject());
     JS_ASSERT(shape.writable());
     JS_ASSERT(shape.slot != SHAPE_INVALID_SLOT);
-    JS_ASSERT(shape.hasDefaultSetter() || shape.setterOp() == js_watch_set);
+    JS_ASSERT(shape.hasDefaultSetter());
     JS_ASSERT(!isGlobal());  /* i.e. we are not changing the global shape */
 
     JSObject *funobj = &vp->toObject();
@@ -285,6 +285,13 @@ JSObject::getReservedSlot(uintN index) const
     return (index < numSlots()) ? getSlot(index) : js::UndefinedValue();
 }
 
+inline void
+JSObject::setReservedSlot(uintN index, const js::Value &v)
+{
+    JS_ASSERT(index < JSSLOT_FREE(getClass()));
+    setSlot(index, v);
+}
+
 inline bool
 JSObject::canHaveMethodBarrier() const
 {
@@ -343,14 +350,14 @@ inline uint32
 JSObject::getArrayLength() const
 {
     JS_ASSERT(isArray());
-    return (uint32)(size_t) getPrivate();
+    return (uint32)(uintptr_t) getPrivate();
 }
 
 inline void
 JSObject::setArrayLength(uint32 length)
 {
     JS_ASSERT(isArray());
-    setPrivate((void*) length);
+    setPrivate((void*)(uintptr_t) length);
 }
 
 inline uint32
@@ -360,7 +367,7 @@ JSObject::getDenseArrayCapacity()
     return numSlots();
 }
 
-inline js::Value*
+inline const js::Value *
 JSObject::getDenseArrayElements()
 {
     JS_ASSERT(isDenseArray());
@@ -374,18 +381,27 @@ JSObject::getDenseArrayElement(uintN idx)
     return getSlot(idx);
 }
 
-inline js::Value *
-JSObject::addressOfDenseArrayElement(uintN idx)
-{
-    JS_ASSERT(isDenseArray());
-    return &getSlotRef(idx);
-}
-
 inline void
 JSObject::setDenseArrayElement(uintN idx, const js::Value &val)
 {
     JS_ASSERT(isDenseArray());
     setSlot(idx, val);
+}
+
+inline void
+JSObject::copyDenseArrayElements(uintN dstStart, const js::Value *src, uintN count)
+{
+    JS_ASSERT(isDenseArray());
+    copySlots(dstStart, src, count);
+}
+
+inline void
+JSObject::moveDenseArrayElements(uintN dstStart, uintN srcStart, uintN count)
+{
+    JS_ASSERT(isDenseArray());
+    JS_ASSERT(dstStart + count <= capacity);
+    JS_ASSERT(srcStart + count <= capacity);
+    memmove(slots + dstStart, getSlots() + srcStart, count * sizeof(js::Value));
 }
 
 inline void
@@ -417,7 +433,7 @@ JSObject::setCallObjCallee(JSObject *callee)
 {
     JS_ASSERT(isCall());
     JS_ASSERT_IF(callee, callee->isFunction());
-    return getSlotRef(JSSLOT_CALL_CALLEE).setObjectOrNull(callee);
+    setSlot(JSSLOT_CALL_CALLEE, js::ObjectOrNullValue(callee));
 }
 
 inline JSObject *
@@ -458,12 +474,12 @@ JSObject::callObjArg(uintN i) const
     return getSlot(JSObject::CALL_RESERVED_SLOTS + i);
 }
 
-inline js::Value &
-JSObject::callObjArg(uintN i)
+inline void
+JSObject::setCallObjArg(uintN i, const js::Value &v)
 {
     JS_ASSERT(isCall());
     JS_ASSERT(i < getCallObjCalleeFunction()->nargs);
-    return getSlotRef(JSObject::CALL_RESERVED_SLOTS + i);
+    setSlot(JSObject::CALL_RESERVED_SLOTS + i, v);
 }
 
 inline const js::Value &
@@ -475,13 +491,13 @@ JSObject::callObjVar(uintN i) const
     return getSlot(JSObject::CALL_RESERVED_SLOTS + fun->nargs + i);
 }
 
-inline js::Value &
-JSObject::callObjVar(uintN i)
+inline void
+JSObject::setCallObjVar(uintN i, const js::Value &v)
 {
     JSFunction *fun = getCallObjCalleeFunction();
     JS_ASSERT(fun->nargs == fun->script()->bindings.countArgs());
     JS_ASSERT(i < fun->script()->bindings.countVars());
-    return getSlotRef(JSObject::CALL_RESERVED_SLOTS + fun->nargs + i);
+    setSlot(JSObject::CALL_RESERVED_SLOTS + fun->nargs + i, v);
 }
 
 inline const js::Value &
@@ -516,7 +532,7 @@ JSObject::getFlatClosureUpvar(uint32 i) const
     return getFlatClosureUpvars()[i];
 }
 
-inline js::Value &
+inline const js::Value &
 JSObject::getFlatClosureUpvar(uint32 i)
 {
     JS_ASSERT(i < getFunctionPrivate()->script()->bindings.countUpvars());
@@ -524,11 +540,18 @@ JSObject::getFlatClosureUpvar(uint32 i)
 }
 
 inline void
+JSObject::setFlatClosureUpvar(uint32 i, const js::Value &v)
+{
+    JS_ASSERT(i < getFunctionPrivate()->script()->bindings.countUpvars());
+    getFlatClosureUpvars()[i] = v;
+}
+
+inline void
 JSObject::setFlatClosureUpvars(js::Value *upvars)
 {
     JS_ASSERT(isFunction());
     JS_ASSERT(FUN_FLAT_CLOSURE(getFunctionPrivate()));
-    getSlotRef(JSSLOT_FLAT_CLOSURE_UPVARS).setPrivate(upvars);
+    setSlot(JSSLOT_FLAT_CLOSURE_UPVARS, PrivateValue(upvars));
 }
 
 inline bool
@@ -542,7 +565,7 @@ JSObject::hasMethodObj(const JSObject& obj) const
 inline void
 JSObject::setMethodObj(JSObject& obj)
 {
-    getSlotRef(JSSLOT_FUN_METHOD_OBJ).setObject(obj);
+    setSlot(JSSLOT_FUN_METHOD_OBJ, js::ObjectValue(obj));
 }
 
 inline js::NativeIterator *
@@ -622,12 +645,12 @@ JSObject::setNamespaceDeclared(jsval decl)
     setSlot(JSSLOT_NAMESPACE_DECLARED, js::Valueify(decl));
 }
 
-inline JSLinearString *
+inline JSAtom *
 JSObject::getQNameLocalName() const
 {
     JS_ASSERT(isQName());
     const js::Value &v = getSlot(JSSLOT_QNAME_LOCAL_NAME);
-    return !v.isUndefined() ? &v.toString()->asLinear() : NULL;
+    return !v.isUndefined() ? &v.toString()->asAtom() : NULL;
 }
 
 inline jsval
@@ -638,7 +661,7 @@ JSObject::getQNameLocalNameVal() const
 }
 
 inline void
-JSObject::setQNameLocalName(JSLinearString *name)
+JSObject::setQNameLocalName(JSAtom *name)
 {
     JS_ASSERT(isQName());
     setSlot(JSSLOT_QNAME_LOCAL_NAME, name ? js::StringValue(name) : js::UndefinedValue());
@@ -653,7 +676,7 @@ JSObject::getWithThis() const
 inline void
 JSObject::setWithThis(JSObject *thisp)
 {
-    getSlotRef(JSSLOT_WITH_THIS).setObject(*thisp);
+    setSlot(JSSLOT_WITH_THIS, js::ObjectValue(*thisp));
 }
 
 inline void
@@ -1102,8 +1125,7 @@ NewBuiltinClassInstance(JSContext *cx, Class *clasp, gc::FinalizeKind kind)
     JSObject *global;
     if (!cx->hasfp()) {
         global = cx->globalObject;
-        OBJ_TO_INNER_OBJECT(cx, global);
-        if (!global)
+        if (!NULLABLE_OBJ_TO_INNER_OBJECT(cx, global))
             return NULL;
     } else {
         global = cx->fp()->scopeChain().getGlobal();
@@ -1357,10 +1379,9 @@ CopyInitializerObject(JSContext *cx, JSObject *baseobj)
 }
 
 inline bool
-DefineConstructorAndPrototype(JSContext *cx, JSObject *global,
-                              JSProtoKey key, JSFunction *ctor, JSObject *proto)
+DefineConstructorAndPrototype(JSContext *cx, GlobalObject *global,
+                              JSProtoKey key, JSObject *ctor, JSObject *proto)
 {
-    JS_ASSERT(global->isGlobal());
     JS_ASSERT(!global->nativeEmpty()); /* reserved slots already allocated */
     JS_ASSERT(ctor);
     JS_ASSERT(proto);
@@ -1374,6 +1395,28 @@ DefineConstructorAndPrototype(JSContext *cx, JSObject *global,
     global->setSlot(key, ObjectValue(*ctor));
     global->setSlot(key + JSProto_LIMIT, ObjectValue(*proto));
     global->setSlot(key + JSProto_LIMIT * 2, ObjectValue(*ctor));
+    return true;
+}
+
+bool
+PropDesc::checkGetter(JSContext *cx)
+{
+    if (hasGet && !js_IsCallable(get) && !get.isUndefined()) {
+        JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_BAD_GET_SET_FIELD,
+                             js_getter_str);
+        return false;
+    }
+    return true;
+}
+
+bool
+PropDesc::checkSetter(JSContext *cx)
+{
+    if (hasSet && !js_IsCallable(set) && !set.isUndefined()) {
+        JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_BAD_GET_SET_FIELD,
+                             js_setter_str);
+        return false;
+    }
     return true;
 }
 

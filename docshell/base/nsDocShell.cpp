@@ -53,7 +53,6 @@
 #include "nsIDocument.h"
 #include "nsIDOMDocument.h"
 #include "nsIDOMElement.h"
-#include "nsIDOMStorageObsolete.h"
 #include "nsIDOMStorage.h"
 #include "nsPIDOMStorage.h"
 #include "nsIDocumentViewer.h"
@@ -67,11 +66,12 @@
 #include "nsNetUtil.h"
 #include "nsRect.h"
 #include "prprf.h"
+#include "prenv.h"
 #include "nsIMarkupDocumentViewer.h"
 #include "nsXPIDLString.h"
 #include "nsReadableUtils.h"
 #include "nsIDOMChromeWindow.h"
-#include "nsIDOMWindowInternal.h"
+#include "nsIDOMWindow.h"
 #include "nsIWebBrowserChrome.h"
 #include "nsPoint.h"
 #include "nsGfxCIID.h"
@@ -111,6 +111,7 @@
 #include "mozilla/Services.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/AutoRestore.h"
 
 // we want to explore making the document own the load group
 // so we can associate the document URI with the load group.
@@ -175,9 +176,6 @@
 #include "nsIMultiPartChannel.h"
 #include "nsIWyciwygChannel.h"
 
-// The following are for bug #13871: Prevent frameset spoofing
-#include "nsIHTMLDocument.h"
-
 // For reporting errors with the console service.
 // These can go away if error reporting is propagated up past nsDocShell.
 #include "nsIConsoleService.h"
@@ -217,6 +215,14 @@
 
 #include "nsPluginError.h"
 #include "nsContentUtils.h"
+#include "nsContentErrors.h"
+#include "nsIChannelPolicy.h"
+#include "nsIContentSecurityPolicy.h"
+
+#include "nsXULAppAPI.h"
+
+#include "nsDOMNavigationTiming.h"
+#include "nsITimedChannel.h"
 
 static NS_DEFINE_CID(kDOMScriptObjectFactoryCID,
                      NS_DOM_SCRIPT_OBJECT_FACTORY_CID);
@@ -226,15 +232,6 @@ static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
 //#define DEBUG_DOCSHELL_FOCUS
 #define DEBUG_PAGE_CACHE
 #endif
-
-#include "nsContentErrors.h"
-#include "nsIChannelPolicy.h"
-#include "nsIContentSecurityPolicy.h"
-
-#include "nsXULAppAPI.h"
-
-#include "nsDOMNavigationTiming.h"
-#include "nsITimedChannel.h"
 
 using namespace mozilla;
 
@@ -250,7 +247,7 @@ nsIURIFixup *nsDocShell::sURIFixup = 0;
 // True means we validate window targets to prevent frameset
 // spoofing. Initialize this to a non-bolean value so we know to check
 // the pref on the creation of the first docshell.
-static PRBool gValidateOrigin = (PRBool)0xffffffff;
+static PRUint32 gValidateOrigin = 0xffffffff;
 
 // Hint for native dispatch of events on how long to delay after 
 // all documents have loaded in milliseconds before favoring normal
@@ -785,9 +782,9 @@ nsDocShell::nsDocShell():
 #ifdef DEBUG
   // We're counting the number of |nsDocShells| to help find leaks
   ++gNumberOfDocShells;
-#endif
-#ifdef DEBUG
-  printf("++DOCSHELL %p == %ld\n", (void*) this, gNumberOfDocShells);
+  if (!PR_GetEnv("MOZ_QUIET")) {
+      printf("++DOCSHELL %p == %ld\n", (void*) this, gNumberOfDocShells);
+  }
 #endif
 }
 
@@ -813,9 +810,9 @@ nsDocShell::~nsDocShell()
 #ifdef DEBUG
     // We're counting the number of |nsDocShells| to help find leaks
     --gNumberOfDocShells;
-#endif
-#ifdef DEBUG
-    printf("--DOCSHELL %p == %ld\n", (void*) this, gNumberOfDocShells);
+    if (!PR_GetEnv("MOZ_QUIET")) {
+        printf("--DOCSHELL %p == %ld\n", (void*) this, gNumberOfDocShells);
+    }
 #endif
 }
 
@@ -925,9 +922,9 @@ NS_IMETHODIMP nsDocShell::GetInterface(const nsIID & aIID, void **aSink)
              NS_SUCCEEDED(EnsureScriptEnvironment())) {
         *aSink = mScriptGlobal;
     }
-    else if ((aIID.Equals(NS_GET_IID(nsIDOMWindowInternal)) ||
-              aIID.Equals(NS_GET_IID(nsPIDOMWindow)) ||
-              aIID.Equals(NS_GET_IID(nsIDOMWindow))) &&
+    else if ((aIID.Equals(NS_GET_IID(nsPIDOMWindow)) ||
+              aIID.Equals(NS_GET_IID(nsIDOMWindow)) ||
+              aIID.Equals(NS_GET_IID(nsIDOMWindowInternal))) &&
              NS_SUCCEEDED(EnsureScriptEnvironment())) {
         return mScriptGlobal->QueryInterface(aIID, aSink);
     }
@@ -1341,9 +1338,8 @@ nsDocShell::LoadURI(nsIURI * aURI,
                     PRUint32 selfBusy = BUSY_FLAGS_NONE;
                     parentDS->GetBusyFlags(&parentBusy);                    
                     GetBusyFlags(&selfBusy);
-                    if (((parentBusy & BUSY_FLAGS_BUSY) ||
-                         (selfBusy & BUSY_FLAGS_BUSY)) &&
-                        shEntry) {
+                    if (parentBusy & BUSY_FLAGS_BUSY ||
+                        selfBusy & BUSY_FLAGS_BUSY) {
                         loadType = LOAD_NORMAL_REPLACE;
                         shEntry = nsnull; 
                     }
@@ -2778,15 +2774,14 @@ nsDocShell::CanAccessItem(nsIDocShellTreeItem* aTargetItem,
         return PR_FALSE;
     }
 
-    nsCOMPtr<nsIDOMWindow> targetWindow(do_GetInterface(aTargetItem));
-    nsCOMPtr<nsIDOMWindowInternal> targetInternal(do_QueryInterface(targetWindow));
-    if (!targetInternal) {
+    nsCOMPtr<nsIDOMWindow> targetWindow = do_GetInterface(aTargetItem);
+    if (!targetWindow) {
         NS_ERROR("This should not happen, really");
         return PR_FALSE;
     }
 
-    nsCOMPtr<nsIDOMWindowInternal> targetOpener;
-    targetInternal->GetOpener(getter_AddRefs(targetOpener));
+    nsCOMPtr<nsIDOMWindow> targetOpener;
+    targetWindow->GetOpener(getter_AddRefs(targetOpener));
     nsCOMPtr<nsIWebNavigation> openerWebNav(do_GetInterface(targetOpener));
     nsCOMPtr<nsIDocShellTreeItem> openerItem(do_QueryInterface(openerWebNav));
 
@@ -2800,8 +2795,7 @@ nsDocShell::CanAccessItem(nsIDocShellTreeItem* aTargetItem,
 static PRBool
 ItemIsActive(nsIDocShellTreeItem *aItem)
 {
-    nsCOMPtr<nsIDOMWindow> tmp(do_GetInterface(aItem));
-    nsCOMPtr<nsIDOMWindowInternal> window(do_QueryInterface(tmp));
+    nsCOMPtr<nsIDOMWindow> window(do_GetInterface(aItem));
 
     if (window) {
         PRBool isClosed;
@@ -2991,7 +2985,7 @@ PrintDocTree(nsIDocShellTreeItem * aParentNode, int aLevel)
   parentAsDocShell->GetPresContext(getter_AddRefs(presContext));
   nsIDocument *doc = presShell->GetDocument();
 
-  nsCOMPtr<nsIDOMWindowInternal> domwin(doc->GetWindow());
+  nsCOMPtr<nsIDOMWindow> domwin(doc->GetWindow());
 
   nsCOMPtr<nsIWidget> widget;
   nsIViewManager* vm = presShell->GetViewManager();
@@ -4144,10 +4138,10 @@ nsDocShell::LoadErrorPage(nsIURI *aURI, const PRUnichar *aURL,
     mFailedLoadType = mLoadType;
 
     if (mLSHE) {
-        // If we don't give mLSHE a new doc identifier here, when we go back or
-        // forward to another SHEntry with the same doc identifier, the error
-        // page will persist.
-        mLSHE->SetUniqueDocIdentifier();
+        // Abandon mLSHE's BFCache entry and create a new one.  This way, if
+        // we go back or forward to another SHEntry with the same doc
+        // identifier, the error page won't persist.
+        mLSHE->AbandonBFCacheEntry();
     }
 
     nsCAutoString url;
@@ -4420,10 +4414,10 @@ nsDocShell::LoadPage(nsISupports *aPageDescriptor, PRUint32 aDisplayType)
     nsresult rv = shEntryIn->Clone(getter_AddRefs(shEntry));
     NS_ENSURE_SUCCESS(rv, rv);
 
-    // Give our cloned shEntry a new document identifier so this load is
-    // independent of all other loads.  (This is important, in particular,
-    // for bugs 582795 and 585298.)
-    rv = shEntry->SetUniqueDocIdentifier();
+    // Give our cloned shEntry a new bfcache entry so this load is independent
+    // of all other loads.  (This is important, in particular, for bugs 582795
+    // and 585298.)
+    rv = shEntry->AbandonBFCacheEntry();
     NS_ENSURE_SUCCESS(rv, rv);
 
     //
@@ -4512,7 +4506,7 @@ nsDocShell::Create()
     mAllowSubframes =
         Preferences::GetBool("browser.frames.enabled", mAllowSubframes);
 
-    if (gValidateOrigin == (PRBool)0xffffffff) {
+    if (gValidateOrigin == 0xffffffff) {
         // Check pref to see if we should prevent frameset spoofing
         gValidateOrigin =
             Preferences::GetBool("browser.frame.validate_origin", PR_TRUE);
@@ -8236,7 +8230,7 @@ nsDocShell::InternalLoad(nsIURI * aURI,
         
         PRBool isNewWindow = PR_FALSE;
         if (!targetDocShell) {
-            nsCOMPtr<nsIDOMWindowInternal> win =
+            nsCOMPtr<nsIDOMWindow> win =
                 do_GetInterface(GetAsSupports(this));
             NS_ENSURE_TRUE(win, NS_ERROR_NOT_AVAILABLE);
 
@@ -8292,7 +8286,7 @@ nsDocShell::InternalLoad(nsIURI * aURI,
                     // So, the best we can do, is to tear down the new window
                     // that was just created!
                     //
-                    nsCOMPtr<nsIDOMWindowInternal> domWin =
+                    nsCOMPtr<nsIDOMWindow> domWin =
                         do_GetInterface(targetDocShell);
                     if (domWin) {
                         domWin->Close();
@@ -8411,17 +8405,15 @@ nsDocShell::InternalLoad(nsIURI * aURI,
                                   NS_SUCCEEDED(splitRv2) &&
                                   curBeforeHash.Equals(newBeforeHash);
 
-        PRBool sameDocIdent = PR_FALSE;
+        // XXX rename
+        PRBool sameDocument = PR_FALSE;
         if (mOSHE && aSHEntry) {
             // We're doing a history load.
 
-            PRUint64 ourDocIdent, otherDocIdent;
-            mOSHE->GetDocIdentifier(&ourDocIdent);
-            aSHEntry->GetDocIdentifier(&otherDocIdent);
-            sameDocIdent = (ourDocIdent == otherDocIdent);
+            mOSHE->SharesDocumentWith(aSHEntry, &sameDocument);
 
 #ifdef DEBUG
-            if (sameDocIdent) {
+            if (sameDocument) {
                 nsCOMPtr<nsIInputStream> currentPostData;
                 mOSHE->GetPostData(getter_AddRefs(currentPostData));
                 NS_ASSERTION(currentPostData == aPostData,
@@ -8444,7 +8436,7 @@ nsDocShell::InternalLoad(nsIURI * aURI,
         // The restriction tha the SHEntries in (a) must be different ensures
         // that history.go(0) and the like trigger full refreshes, rather than
         // short-circuited loads.
-        PRBool doShortCircuitedLoad = (sameDocIdent && mOSHE != aSHEntry) ||
+        PRBool doShortCircuitedLoad = (sameDocument && mOSHE != aSHEntry) ||
                                       (!aSHEntry && aPostData == nsnull &&
                                        sameExceptHashes && !newHash.IsEmpty());
 
@@ -8495,7 +8487,6 @@ nsDocShell::InternalLoad(nsIURI * aURI,
             OnNewURI(aURI, nsnull, owner, mLoadType, PR_TRUE, PR_TRUE, PR_TRUE);
 
             nsCOMPtr<nsIInputStream> postData;
-            PRUint64 docIdent = PRUint64(-1);
             nsCOMPtr<nsISupports> cacheKey;
 
             if (mOSHE) {
@@ -8509,8 +8500,13 @@ nsDocShell::InternalLoad(nsIURI * aURI,
                 // wouldn't want here.
                 if (aLoadType & LOAD_CMD_NORMAL) {
                     mOSHE->GetPostData(getter_AddRefs(postData));
-                    mOSHE->GetDocIdentifier(&docIdent);
                     mOSHE->GetCacheKey(getter_AddRefs(cacheKey));
+
+                    // Link our new SHEntry to the old SHEntry's back/forward
+                    // cache data, since the two SHEntries correspond to the
+                    // same document.
+                    if (mLSHE)
+                        mLSHE->AdoptBFCacheEntry(mOSHE);
                 }
             }
 
@@ -8530,11 +8526,6 @@ nsDocShell::InternalLoad(nsIURI * aURI,
                 // cache first
                 if (cacheKey)
                     mOSHE->SetCacheKey(cacheKey);
-
-                // Propagate our document identifier to the new mOSHE so that
-                // we'll know it's related by an anchor navigation or pushState.
-                if (docIdent != PRUint64(-1))
-                    mOSHE->SetDocIdentifier(docIdent);
             }
 
             /* restore previous position of scroller(s), if we're moving
@@ -8578,7 +8569,7 @@ nsDocShell::InternalLoad(nsIURI * aURI,
                 }
             }
 
-            if (sameDocIdent) {
+            if (sameDocument) {
                 // Set the doc's URI according to the new history entry's URI
                 nsCOMPtr<nsIURI> newURI;
                 mOSHE->GetURI(getter_AddRefs(newURI));
@@ -8595,10 +8586,10 @@ nsDocShell::InternalLoad(nsIURI * aURI,
             // Dispatch the popstate and hashchange events, as appropriate.
             nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(mScriptGlobal);
             if (window) {
-                // Need the doHashchange check here since sameDocIdent is
+                // Need the doHashchange check here since sameDocument is
                 // false if we're navigating to a new shentry (i.e. a aSHEntry
                 // is null), such as when clicking a <a href="#foo">.
-                if (sameDocIdent || doHashchange) {
+                if (sameDocument || doHashchange) {
                   window->DispatchSyncPopState();
                 }
 
@@ -9194,7 +9185,17 @@ nsresult nsDocShell::DoChannelLoad(nsIChannel * aChannel,
     // Load attributes depend on load type...
     switch (mLoadType) {
     case LOAD_HISTORY:
-        loadFlags |= nsIRequest::VALIDATE_NEVER;
+        {
+            // Only send VALIDATE_NEVER if mLSHE's URI was never changed via
+            // push/replaceState (bug 669671).
+            PRBool uriModified = PR_FALSE;
+            if (mLSHE) {
+                mLSHE->GetURIWasModified(&uriModified);
+            }
+
+            if (!uriModified)
+                loadFlags |= nsIRequest::VALIDATE_NEVER;
+        }
         break;
 
     case LOAD_RELOAD_CHARSET_CHANGE:
@@ -9212,7 +9213,8 @@ nsresult nsDocShell::DoChannelLoad(nsIChannel * aChannel,
     case LOAD_RELOAD_BYPASS_CACHE:
     case LOAD_RELOAD_BYPASS_PROXY:
     case LOAD_RELOAD_BYPASS_PROXY_AND_CACHE:
-        loadFlags |= nsIRequest::LOAD_BYPASS_CACHE;
+        loadFlags |= nsIRequest::LOAD_BYPASS_CACHE |
+                     nsIRequest::LOAD_FRESH_CONNECTION;
         break;
 
     case LOAD_NORMAL:
@@ -9348,12 +9350,14 @@ nsDocShell::ScrollToAnchor(nsACString & aCurHash, nsACString & aNewHash,
         // position will be restored by the caller, based on positions
         // stored in session history.
         if (aLoadType == LOAD_HISTORY || aLoadType == LOAD_RELOAD_NORMAL)
-            return rv;
-        //An empty anchor. Scroll to the top of the page.
-        rv = SetCurScrollPosEx(0, 0);
+            return NS_OK;
+        // An empty anchor. Scroll to the top of the page.  Ignore the
+        // return value; failure to scroll here (e.g. if there is no
+        // root scrollframe) is not grounds for canceling the load!
+        SetCurScrollPosEx(0, 0);
     }
 
-    return rv;
+    return NS_OK;
 }
 
 void
@@ -9415,11 +9419,11 @@ nsDocShell::OnNewURI(nsIURI * aURI, nsIChannel * aChannel, nsISupports* aOwner,
             }
 
             // If the response status indicates an error, unlink this session
-            // history entry from any entries sharing its doc ident.
+            // history entry from any entries sharing its document.
             PRUint32 responseStatus;
             nsresult rv = httpChannel->GetResponseStatus(&responseStatus);
             if (mLSHE && NS_SUCCEEDED(rv) && responseStatus >= 400) {
-                mLSHE->SetUniqueDocIdentifier();
+                mLSHE->AbandonBFCacheEntry();
             }
         }
     }
@@ -9566,9 +9570,9 @@ nsDocShell::OnNewURI(nsIURI * aURI, nsIChannel * aChannel, nsISupports* aOwner,
         }
     }
 
-    // If this was a history load, update the index in 
-    // SH. 
-    if (rootSH && (mLoadType & LOAD_CMD_HISTORY)) {
+    // If this was a history load or a refresh,
+    // update the index in SH. 
+    if (rootSH && (mLoadType & (LOAD_CMD_HISTORY | LOAD_CMD_RELOAD))) {
         nsCOMPtr<nsISHistoryInternal> shInternal(do_QueryInterface(rootSH));
         if (shInternal) {
             rootSH->GetIndex(&mPreviousTransIndex);
@@ -9648,9 +9652,9 @@ nsDocShell::AddState(nsIVariant *aData, const nsAString& aTitle,
     // It's important that this function not run arbitrary scripts after step 1
     // and before completing step 5.  For example, if a script called
     // history.back() before we completed step 5, bfcache might destroy an
-    // active content viewer.  Since EvictContentViewers at the end of step 5
-    // might run script, we can't just put a script blocker around the critical
-    // section.
+    // active content viewer.  Since EvictOutOfRangeContentViewers at the end of
+    // step 5 might run script, we can't just put a script blocker around the
+    // critical section.
     //
     // Note that we completely ignore the aTitle parameter.
 
@@ -9830,11 +9834,9 @@ nsDocShell::AddState(nsIVariant *aData, const nsAString& aTitle,
 
         NS_ENSURE_TRUE(newSHEntry, NS_ERROR_FAILURE);
 
-        // Set the new SHEntry's document identifier, if we can.
-        PRUint64 ourDocIdent;
-        NS_ENSURE_SUCCESS(oldOSHE->GetDocIdentifier(&ourDocIdent),
-                          NS_ERROR_FAILURE);
-        NS_ENSURE_SUCCESS(newSHEntry->SetDocIdentifier(ourDocIdent),
+        // Link the new SHEntry to the old SHEntry's BFCache entry, since the
+        // two entries correspond to the same document.
+        NS_ENSURE_SUCCESS(newSHEntry->AdoptBFCacheEntry(oldOSHE),
                           NS_ERROR_FAILURE);
 
         // Set the new SHEntry's title (bug 655273).
@@ -9856,6 +9858,15 @@ nsDocShell::AddState(nsIVariant *aData, const nsAString& aTitle,
     newSHEntry->SetStateData(scContainer);
     newSHEntry->SetPostData(nsnull);
 
+    // If this push/replaceState changed the document's current URI and the new
+    // URI differs from the old URI in more than the hash, or if the old
+    // SHEntry's URI was modified in this way by a push/replaceState call
+    // set URIWasModified to true for the current SHEntry (bug 669671).
+    PRBool sameExceptHashes = PR_TRUE, oldURIWasModified = PR_FALSE;
+    newURI->EqualsExceptRef(mCurrentURI, &sameExceptHashes);
+    oldOSHE->GetURIWasModified(&oldURIWasModified);
+    newSHEntry->SetURIWasModified(!sameExceptHashes || oldURIWasModified);
+
     // Step 5: If aReplace is false, indicating that we're doing a pushState
     // rather than a replaceState, notify bfcache that we've added a page to
     // the history so it can evict content viewers if appropriate.
@@ -9871,7 +9882,7 @@ nsDocShell::AddState(nsIVariant *aData, const nsAString& aTitle,
         PRInt32 curIndex = -1;
         rv = rootSH->GetIndex(&curIndex);
         if (NS_SUCCEEDED(rv) && curIndex > -1) {
-            internalSH->EvictContentViewers(curIndex - 1, curIndex);
+            internalSH->EvictOutOfRangeContentViewers(curIndex);
         }
     }
 
@@ -10867,25 +10878,6 @@ nsDocShell::GetRootScrollFrame()
     return shell->GetRootScrollFrameAsScrollableExternal();
 }
 
-#ifdef DEBUG
-class nsDebugAutoBoolTrueSetter
-{
-public:
-    nsDebugAutoBoolTrueSetter(PRPackedBool *aBool)
-        : mBool(aBool)
-    {
-        *mBool = PR_TRUE;
-    }
-
-    ~nsDebugAutoBoolTrueSetter()
-    {
-        *mBool = PR_FALSE;
-    }
-protected:
-    PRPackedBool *mBool;
-};
-#endif
-
 NS_IMETHODIMP
 nsDocShell::EnsureScriptEnvironment()
 {
@@ -10905,7 +10897,8 @@ nsDocShell::EnsureScriptEnvironment()
 
     // Yeah, this isn't re-entrant safe, but that's ok since if we
     // re-enter this method, we'll infinitely loop...
-    nsDebugAutoBoolTrueSetter boolSetter(&mInEnsureScriptEnv);
+    AutoRestore<PRPackedBool> boolSetter(mInEnsureScriptEnv);
+    mInEnsureScriptEnv = PR_TRUE;
 #endif
 
     nsCOMPtr<nsIDOMScriptObjectFactory> factory =
@@ -11663,8 +11656,17 @@ nsDocShell::OnLinkClickSync(nsIContent *aContent,
     NS_ParseContentType(utf8Hint, type, dummy);
     CopyUTF8toUTF16(type, typeHint);
   }
+
+  // Clone the URI now, in case a content policy or something messes
+  // with it under InternalLoad; we do _not_ want to change the URI
+  // our caller passed in.
+  nsCOMPtr<nsIURI> clonedURI;
+  aURI->Clone(getter_AddRefs(clonedURI));
+  if (!clonedURI) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
   
-  nsresult rv = InternalLoad(aURI,                      // New URI
+  nsresult rv = InternalLoad(clonedURI,                 // New URI
                              referer,                   // Referer URI
                              aContent->NodePrincipal(), // Owner is our node's
                                                         // principal

@@ -86,7 +86,7 @@
 // XXX: This should be 8192;  the subtracted elements are a hack that's
 // required to ensure the allocation requests are power-of-two-sized and thus
 // avoid lots of wasted memory caused by the heap allocator rounding up request
-// sizes.  Bug 676547 will fix it properly.
+// sizes.  Bug 676457 will fix it properly.
 static const size_t ARENA_PAGE_SIZE = 8192 - sizeof(PLArena) - PL_ARENA_CONST_ALIGN_MASK;
 
 // Freed memory is filled with a poison value, which we arrange to

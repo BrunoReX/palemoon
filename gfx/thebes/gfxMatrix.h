@@ -103,6 +103,12 @@ public:
      */
     const gfxMatrix& Reset();
 
+    PRBool IsIdentity() const {
+       return xx == 1.0 && yx == 0.0 &&
+              xy == 0.0 && yy == 1.0 &&
+              x0 == 0.0 && y0 == 0.0;
+    }
+
     /**
      * Inverts this matrix, if possible. Otherwise, the matrix is left
      * unchanged.
@@ -188,8 +194,8 @@ public:
      */
     PRBool HasNonIntegerTranslation() const {
         return HasNonTranslation() ||
-            !FuzzyEqual(x0, NS_floor(x0 + 0.5)) ||
-            !FuzzyEqual(y0, NS_floor(y0 + 0.5));
+            !FuzzyEqual(x0, floor(x0 + 0.5)) ||
+            !FuzzyEqual(y0, floor(y0 + 0.5));
     }
 
     /**
@@ -285,8 +291,8 @@ public:
      * Returns true if the matrix has non-integer scale
      */
     PRBool HasNonIntegerScale() const {
-        return !FuzzyEqual(xx, NS_floor(xx + 0.5)) ||
-               !FuzzyEqual(yy, NS_floor(yy + 0.5));
+        return !FuzzyEqual(xx, floor(xx + 0.5)) ||
+               !FuzzyEqual(yy, floor(yy + 0.5));
     }
 
 private:

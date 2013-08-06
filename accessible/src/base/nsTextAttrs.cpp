@@ -45,6 +45,7 @@
 #include "gfxFont.h"
 #include "gfxUserFontSet.h"
 #include "nsFontMetrics.h"
+#include "nsLayoutUtils.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // Constants and structures
@@ -147,7 +148,7 @@ nsTextAttrsMgr::GetAttributes(nsIPersistentProperties *aAttributes,
     frame = offsetElm->GetPrimaryFrame();
   }
 
-  nsTPtrArray<nsITextAttr> textAttrArray(10);
+  nsTArray<nsITextAttr*> textAttrArray(10);
 
   // "language" text attribute
   nsLangTextAttr langTextAttr(mHyperTextAcc, hyperTextElm, offsetNode);
@@ -212,7 +213,7 @@ nsTextAttrsMgr::GetAttributes(nsIPersistentProperties *aAttributes,
 }
 
 nsresult
-nsTextAttrsMgr::GetRange(const nsTPtrArray<nsITextAttr>& aTextAttrArray,
+nsTextAttrsMgr::GetRange(const nsTArray<nsITextAttr*>& aTextAttrArray,
                          PRInt32 *aStartHTOffset, PRInt32 *aEndHTOffset)
 {
   PRUint32 attrLen = aTextAttrArray.Length();
@@ -479,10 +480,7 @@ nsFontSizeTextAttr::Format(const nscoord& aValue, nsAString& aFormattedValue)
 nscoord
 nsFontSizeTextAttr::GetFontSize(nsIFrame *aFrame)
 {
-  nsStyleFont* styleFont =
-    (nsStyleFont*)(aFrame->GetStyleDataExternal(eStyleStruct_Font));
-
-  return styleFont->mSize;
+  return aFrame->GetStyleFont()->mSize;
 }
 
 
@@ -527,15 +525,8 @@ nsFontWeightTextAttr::GetFontWeight(nsIFrame *aFrame)
 {
   // nsFont::width isn't suitable here because it's necessary to expose real
   // value of font weight (used font might not have some font weight values).
-  nsStyleFont* styleFont =
-    (nsStyleFont*)(aFrame->GetStyleDataExternal(eStyleStruct_Font));
-
-  gfxUserFontSet *fs = aFrame->PresContext()->GetUserFontSet();
-
   nsRefPtr<nsFontMetrics> fm;
-  aFrame->PresContext()->DeviceContext()->
-    GetMetricsFor(styleFont->mFont, aFrame->GetStyleVisibility()->mLanguage,
-                  fs, *getter_AddRefs(fm));
+  nsLayoutUtils::GetFontMetricsForFrame(aFrame, getter_AddRefs(fm));
 
   gfxFontGroup *fontGroup = fm->GetThebesFontGroup();
   gfxFont *font = fontGroup->GetFontAt(0);

@@ -85,6 +85,12 @@ EXPORTS = \
   nsWrapperCache.h \
   nsContentPermissionHelper.h \
   nsStructuredCloneContainer.h \
+  nsDOMMemoryReporter.h \
+  $(NULL)
+
+EXPORTS_NAMESPACES = mozilla/dom
+EXPORTS_mozilla/dom = \
+  StructuredCloneTags.h \
   $(NULL)
 
 CPPSRCS =			\

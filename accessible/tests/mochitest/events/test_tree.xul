@@ -11,8 +11,6 @@
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
         title="DOM TreeViewChanged/TreeRowCountChanged and a11y name change events.">
 
-  <script type="application/javascript" 
-          src="chrome://mochikit/content/MochiKit/packed.js" />
   <script type="application/javascript"
           src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js" />
 
@@ -103,13 +101,15 @@
     {
       this.type = EVENT_NAME_CHANGE;
 
-      this.target getter = function()
+      function targetGetter()
       {
         var acc = getAccessible(gTree);
 
         var tableAcc = getAccessible(acc, [nsIAccessibleTable]);
         return tableAcc.getCellAt(aRow, aCol);
       }
+      Object.defineProperty(this, "target", { get: targetGetter });
+
       this.getID = function getID()
       {
         return aMsg + "name changed";

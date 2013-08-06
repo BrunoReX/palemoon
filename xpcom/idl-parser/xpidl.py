@@ -282,6 +282,7 @@ class Include(object):
             self.IDL.resolve(parent.incdirs, parent.parser)
             for type in self.IDL.getNames():
                 parent.setName(type)
+            parent.deps.extend(self.IDL.deps)
             return
 
         raise IDLError("File '%s' not found" % self.filename, self.location)
@@ -289,6 +290,7 @@ class Include(object):
 class IDL(object):
     def __init__(self, productions):
         self.productions = productions
+        self.deps = []
 
     def setName(self, object):
         self.namemap.set(object)
@@ -320,6 +322,12 @@ class IDL(object):
             if p.kind == 'include':
                 yield p
 
+    def needsJSTypes(self):
+        for p in self.productions:
+            if p.kind == 'interface' and p.needsJSTypes():
+                return True
+        return False
+
 class CDATA(object):
     kind = 'cdata'
     _re = re.compile(r'\n+')
@@ -333,6 +341,9 @@ class CDATA(object):
 
     def __str__(self):
         return "cdata: %s\n\t%r\n" % (self.location.get(), self.data)
+
+    def count(self):
+        return 0
 
 class Typedef(object):
     kind = 'typedef'
@@ -448,6 +459,12 @@ class Native(object):
 
         return self.modifier == 'ref'
 
+    def isPtr(self, calltype):
+        return self.modifier == 'ptr' or (self.modifier == 'ref' and self.specialtype == 'jsval' and calltype == 'out')
+
+    def isRef(self, calltype):
+        return self.modifier == 'ref' and not (self.specialtype == 'jsval' and calltype == 'out')
+
     def nativeType(self, calltype, const=False, shared=False):
         if shared:
             if calltype != 'out':
@@ -457,10 +474,10 @@ class Native(object):
         if self.specialtype is not None and calltype == 'in':
             const = True
 
-        if self.modifier == 'ptr':
-            m = '*' + (calltype != 'in' and '*' or '')
-        elif self.modifier == 'ref':
+        if self.isRef(calltype):
             m = '& '
+        elif self.isPtr(calltype):
+            m = '*' + ((self.modifier == 'ptr' and calltype != 'in') and '*' or '')
         else:
             m = calltype != 'in' and '*' or ''
         return "%s%s %s" % (const and 'const ' or '', self.nativename, m)
@@ -516,6 +533,14 @@ class Interface(object):
         for member in self.members:
             member.resolve(self)
 
+        # The number 250 is NOT arbitrary; this number is the maximum number of
+        # stub entries defined in xpcom/reflect/xptcall/public/genstubs.pl
+        # Do not increase this value without increasing the number in that
+        # location, or you WILL cause otherwise unknown problems!
+        if self.countEntries() > 250 and not self.attributes.builtinclass:
+            raise IDLError("interface '%s' has too many entries" % self.name,
+                self.location)
+
     def isScriptable(self):
         # NOTE: this is not whether *this* interface is scriptable... it's
         # whether, when used as a type, it's scriptable, which is true of all
@@ -545,6 +570,22 @@ class Interface(object):
             raise IDLError("symbol '%s' is not a constant", c.location)
 
         return c.getValue()
+
+    def needsJSTypes(self):
+        for m in self.members:
+            if m.kind == "attribute" and m.type == "jsval":
+                return True
+            if m.kind == "method" and m.needsJSTypes():
+                return True
+        return False
+
+    def countEntries(self):
+        ''' Returns the number of entries in the vtable for this interface. '''
+        total = sum(member.count() for member in self.members)
+        if self.base is not None:
+            realbase = self.idl.getName(self.base, self.location)
+            total += realbase.countEntries()
+        return total
 
 class InterfaceAttributes(object):
     uuid = None
@@ -642,6 +683,9 @@ class ConstMember(object):
     def __str__(self):
         return "\tconst %s %s = %s\n" % (self.type, self.name, self.getValue())
 
+    def count(self):
+        return 0
+
 class Attribute(object):
     kind = 'attribute'
     noscript = False
@@ -652,6 +696,7 @@ class Attribute(object):
     binaryname = None
     null = None
     undefined = None
+    deprecated = False
 
     def __init__(self, type, name, attlist, readonly, location, doccomments):
         self.type = type
@@ -700,6 +745,8 @@ class Attribute(object):
                     self.notxpcom = True
                 elif name == 'implicit_jscontext':
                     self.implicit_jscontext = True
+                elif name == 'deprecated':
+                    self.deprecated = True
                 elif name == 'nostdcall':
                     self.nostdcall = True
                 else:
@@ -730,6 +777,9 @@ class Attribute(object):
         return "\t%sattribute %s %s\n" % (self.readonly and 'readonly ' or '',
                                           self.type, self.name)
 
+    def count(self):
+        return self.readonly and 1 or 2
+
 class Method(object):
     kind = 'method'
     noscript = False
@@ -738,6 +788,7 @@ class Method(object):
     implicit_jscontext = False
     nostdcall = False
     optional_argc = False
+    deprecated = False
 
     def __init__(self, type, name, attlist, paramlist, location, doccomments, raises):
         self.type = type
@@ -768,6 +819,8 @@ class Method(object):
                 self.implicit_jscontext = True
             elif name == 'optional_argc':
                 self.optional_argc = True
+            elif name == 'deprecated':
+                self.deprecated = True
             elif name == 'nostdcall':
                 self.nostdcall = True
             else:
@@ -802,6 +855,20 @@ class Method(object):
                                     ", ".join([p.toIDL()
                                                for p in self.params]),
                                     raises)
+
+    def needsJSTypes(self):
+        if self.implicit_jscontext:
+            return True
+        if self.type == "jsval":
+            return True
+        for p in self.params:
+            t = p.realtype
+            if isinstance(t, Native) and t.specialtype == "jsval":
+                return True
+        return False
+
+    def count(self):
+        return 1
 
 class Param(object):
     size_is = None
@@ -982,10 +1049,9 @@ class IDLParser(object):
 
     def t_directive(self, t):
         r'\#(?P<directive>[a-zA-Z]+)[^\n]+'
-        print >>sys.stderr, IDLError("Unrecognized directive %s" % t.lexer.lexmatch.group('directive'),
-                                     Location(lexer=self.lexer,
-                                              lineno=self.lexer.lineno,
-                                              lexpos=self.lexer.lexpos))
+        raise IDLError("Unrecognized directive %s" % t.lexer.lexmatch.group('directive'),
+                       Location(lexer=self.lexer, lineno=self.lexer.lineno,
+                                lexpos=self.lexer.lexpos))
 
     def t_newline(self, t):
         r'\n+'
@@ -1300,17 +1366,17 @@ class IDLParser(object):
         location = Location(self.lexer, t.lineno, t.lexpos)
         raise IDLError("invalid syntax", location)
 
-    def __init__(self, outputdir=''):
+    def __init__(self, outputdir='', regen=False):
         self._doccomments = []
         self.lexer = lex.lex(object=self,
                              outputdir=outputdir,
                              lextab='xpidllex',
-                             optimize=1)
+                             optimize=0 if regen else 1)
         self.parser = yacc.yacc(module=self,
                                 outputdir=outputdir,
                                 debugfile='xpidl_debug',
                                 tabmodule='xpidlyacc',
-                                optimize=1)
+                                optimize=0 if regen else 1)
 
     def clearComments(self):
         self._doccomments = []
@@ -1327,7 +1393,10 @@ class IDLParser(object):
             self.lexer.filename = filename
         self.lexer.lineno = 1
         self.lexer.input(data)
-        return self.parser.parse(lexer=self)
+        idl = self.parser.parse(lexer=self)
+        if filename is not None:
+            idl.deps.append(filename)
+        return idl
 
     def getLocation(self, p, i):
         return Location(self.lexer, p.lineno(i), p.lexpos(i))

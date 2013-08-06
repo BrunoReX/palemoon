@@ -128,8 +128,8 @@ static void Scale(gfx3DMatrix& aTransform, double aXScale, double aYScale)
 
 static void ReverseTranslate(gfx3DMatrix& aTransform, ViewTransform& aViewTransform)
 {
-  aTransform._41 -= aViewTransform.mTranslation.x / aViewTransform.mXScale;
-  aTransform._42 -= aViewTransform.mTranslation.y / aViewTransform.mYScale;
+  aTransform._41 -= aViewTransform.mTranslation.x * aViewTransform.mXScale;
+  aTransform._42 -= aViewTransform.mTranslation.y * aViewTransform.mYScale;
 }
 
 
@@ -321,6 +321,8 @@ TransformShadowTree(nsDisplayListBuilder* aBuilder, nsFrameLoader* aFrameLoader,
       nsIntPoint rootFrameOffset = GetRootFrameOffset(aFrame, aBuilder);
       shadowTransform = shadowTransform *
           gfx3DMatrix::Translation(float(rootFrameOffset.x), float(rootFrameOffset.y), 0.0);
+      layerTransform.mXScale *= GetXScale(currentTransform);
+      layerTransform.mYScale *= GetYScale(currentTransform);
     }
   } else {
     shadowTransform = aLayer->GetTransform();
@@ -338,9 +340,6 @@ TransformShadowTree(nsDisplayListBuilder* aBuilder, nsFrameLoader* aFrameLoader,
   }
 
   shadow->SetShadowTransform(shadowTransform);
-  layerTransform.mXScale *= GetXScale(shadowTransform);
-  layerTransform.mYScale *= GetYScale(shadowTransform);
-
   for (Layer* child = aLayer->GetFirstChild();
        child; child = child->GetNextSibling()) {
     TransformShadowTree(aBuilder, aFrameLoader, aFrame, child, layerTransform);
@@ -396,7 +395,7 @@ BuildViewMap(ViewMap& oldContentViews, ViewMap& newContentViews,
       ViewConfig config = view->GetViewConfig();
       aXScale *= config.mXScale;
       aYScale *= config.mYScale;
-      view->mOwnerContent = aFrameLoader->GetOwnerContent();
+      view->mFrameLoader = aFrameLoader;
     } else {
       // View doesn't exist, so generate one. We start the view scroll offset at
       // the same position as the framemetric's scroll offset from the layer.
@@ -405,7 +404,7 @@ BuildViewMap(ViewMap& oldContentViews, ViewMap& newContentViews,
       config.mScrollOffset = nsPoint(
         NSIntPixelsToAppUnits(metrics.mViewportScrollOffset.x, auPerDevPixel) * aXScale,
         NSIntPixelsToAppUnits(metrics.mViewportScrollOffset.y, auPerDevPixel) * aYScale);
-      view = new nsContentView(aFrameLoader->GetOwnerContent(), scrollId, config);
+      view = new nsContentView(aFrameLoader, scrollId, config);
     }
 
     view->mViewportSize = nsSize(
@@ -558,17 +557,17 @@ BuildBackgroundPatternFor(ContainerLayer* aContainer,
   bgRgn.Sub(bgRgn, localIntContentVis);
   bgRgn.MoveBy(-translation);
   layer->SetVisibleRegion(bgRgn);
-      
+
   aContainer->InsertAfter(layer, nsnull);
 }
 
 RenderFrameParent::RenderFrameParent(nsFrameLoader* aFrameLoader)
   : mFrameLoader(aFrameLoader)
 {
-  NS_ABORT_IF_FALSE(aFrameLoader, "Need a frameloader here");
-  mContentViews[FrameMetrics::ROOT_SCROLL_ID] =
-    new nsContentView(aFrameLoader->GetOwnerContent(),
-                      FrameMetrics::ROOT_SCROLL_ID);
+  if (aFrameLoader) {
+    mContentViews[FrameMetrics::ROOT_SCROLL_ID] =
+      new nsContentView(aFrameLoader, FrameMetrics::ROOT_SCROLL_ID);
+  }
 }
 
 RenderFrameParent::~RenderFrameParent()
@@ -592,6 +591,14 @@ nsContentView*
 RenderFrameParent::GetContentView(ViewID aId)
 {
   return FindViewForId(mContentViews, aId);
+}
+
+void
+RenderFrameParent::ContentViewScaleChanged(nsContentView* aView)
+{
+  // Since the scale has changed for a view, it and its descendents need their
+  // shadow-space attributes updated. It's easiest to rebuild the view map.
+  BuildViewMap();
 }
 
 void
@@ -701,7 +708,7 @@ RenderFrameParent::OwnerContentChanged(nsIContent* aContent)
 void
 RenderFrameParent::ActorDestroy(ActorDestroyReason why)
 {
-  if (mFrameLoader->GetCurrentRemoteFrame() == this) {
+  if (mFrameLoader && mFrameLoader->GetCurrentRemoteFrame() == this) {
     // XXX this might cause some weird issues ... we'll just not
     // redraw the part of the window covered by this until the "next"
     // remote frame has a layer-tree transaction.  For
@@ -714,29 +721,20 @@ RenderFrameParent::ActorDestroy(ActorDestroyReason why)
 }
 
 PLayersParent*
-RenderFrameParent::AllocPLayers()
+RenderFrameParent::AllocPLayers(LayerManager::LayersBackend* aBackendType)
 {
-  LayerManager* lm = GetLayerManager();
-  switch (lm->GetBackendType()) {
-  case LayerManager::LAYERS_BASIC: {
-    BasicShadowLayerManager* bslm = static_cast<BasicShadowLayerManager*>(lm);
-    return new ShadowLayersParent(bslm);
-  }
-  case LayerManager::LAYERS_OPENGL: {
-    LayerManagerOGL* lmo = static_cast<LayerManagerOGL*>(lm);
-    return new ShadowLayersParent(lmo);
-  }
-#ifdef MOZ_ENABLE_D3D9_LAYER
-  case LayerManager::LAYERS_D3D9: {
-    LayerManagerD3D9* lmd3d9 = static_cast<LayerManagerD3D9*>(lm);
-    return new ShadowLayersParent(lmd3d9);
-  }
-#endif //MOZ_ENABLE_D3D9_LAYER
-  default: {
-    NS_WARNING("shadow layers no sprechen D3D backend yet");
+  if (!mFrameLoader) {
+    *aBackendType = LayerManager::LAYERS_NONE;
     return nsnull;
   }
+  LayerManager* lm = GetLayerManager();
+  ShadowLayerManager* slm = lm->AsShadowManager();
+  if (!slm) {
+    *aBackendType = LayerManager::LAYERS_NONE;
+     return nsnull;
   }
+  *aBackendType = lm->GetBackendType();
+  return new ShadowLayersParent(slm);
 }
 
 bool
@@ -756,13 +754,13 @@ RenderFrameParent::BuildViewMap()
     // tag them as inactive and to remove any chance of them using a dangling
     // pointer, we set mContentView to NULL.
     //
-    // BuildViewMap will restore mOwnerContent if the content view is still
+    // BuildViewMap will restore mFrameLoader if the content view is still
     // in our hash table.
 
     for (ViewMap::const_iterator iter = mContentViews.begin();
          iter != mContentViews.end();
          ++iter) {
-      iter->second->mOwnerContent = NULL;
+      iter->second->mFrameLoader = NULL;
     }
 
     mozilla::layout::BuildViewMap(mContentViews, newContentViews, mFrameLoader, GetRootLayer());
@@ -776,7 +774,7 @@ RenderFrameParent::BuildViewMap()
     newContentViews[FrameMetrics::ROOT_SCROLL_ID] =
       FindViewForId(mContentViews, FrameMetrics::ROOT_SCROLL_ID);
   }
-  
+
   mContentViews = newContentViews;
 }
 

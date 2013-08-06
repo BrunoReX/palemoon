@@ -52,7 +52,6 @@
 #include "nsIDocument.h"
 #include "nsIDOMNodeList.h"
 #include "nsIDOMDocument.h"
-#include "nsIDOMText.h"
 #include "nsIContentIterator.h"
 #include "nsEventListenerManager.h"
 #include "nsFocusManager.h"
@@ -142,10 +141,10 @@
 #include "mozAutoDocUpdate.h"
 
 #include "nsCSSParser.h"
-#include "nsTPtrArray.h"
 #include "prprf.h"
 
 #include "nsSVGFeatures.h"
+#include "nsDOMMemoryReporter.h"
 
 using namespace mozilla::dom;
 namespace css = mozilla::css;
@@ -755,7 +754,7 @@ nsINode::CompareDocPosition(nsINode* aOtherNode)
     return 0;
   }
 
-  nsAutoTPtrArray<nsINode, 32> parents1, parents2;
+  nsAutoTArray<nsINode*, 32> parents1, parents2;
 
   nsINode *node1 = aOtherNode, *node2 = this;
 
@@ -1126,26 +1125,6 @@ nsINode::DispatchDOMEvent(nsEvent* aEvent,
                                              aPresContext, aEventStatus);
 }
 
-nsresult
-nsINode::AddEventListenerByIID(nsIDOMEventListener *aListener,
-                               const nsIID& aIID)
-{
-  nsEventListenerManager* elm = GetListenerManager(PR_TRUE);
-  NS_ENSURE_STATE(elm);
-  return elm->AddEventListenerByIID(aListener, aIID, NS_EVENT_FLAG_BUBBLE);
-}
-
-nsresult
-nsINode::RemoveEventListenerByIID(nsIDOMEventListener *aListener,
-                                  const nsIID& aIID)
-{
-  nsEventListenerManager* elm = GetListenerManager(PR_FALSE);
-  if (elm) {
-    elm->RemoveEventListenerByIID(aListener, aIID, NS_EVENT_FLAG_BUBBLE);
-  }
-  return NS_OK;
-}
-
 nsEventListenerManager*
 nsINode::GetListenerManager(PRBool aCreateIfNotFound)
 {
@@ -1326,7 +1305,7 @@ nsIContent*
 nsIContent::GetEditingHost()
 {
   // If this isn't editable, return NULL.
-  NS_ENSURE_TRUE(HasFlag(NODE_IS_EDITABLE), nsnull);
+  NS_ENSURE_TRUE(IsEditableInternal(), nsnull);
 
   nsIDocument* doc = GetCurrentDoc();
   NS_ENSURE_TRUE(doc, nsnull);
@@ -2051,6 +2030,13 @@ NS_IMETHODIMP
 nsNSElementTearoff::GetBoundingClientRect(nsIDOMClientRect** aResult)
 {
   return mContent->GetBoundingClientRect(aResult);
+}
+
+nsresult
+nsGenericElement::GetElementsByClassName(const nsAString& aClasses,
+                                         nsIDOMNodeList** aReturn)
+{
+  return nsContentUtils::GetElementsByClassName(this, aClasses, aReturn);
 }
 
 nsresult
@@ -3553,6 +3539,19 @@ nsINode::doRemoveChildAt(PRUint32 aIndex, PRBool aNotify,
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsGenericElement::GetTextContent(nsAString &aTextContent)
+{
+  nsContentUtils::GetNodeTextContent(this, PR_TRUE, aTextContent);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsGenericElement::SetTextContent(const nsAString& aTextContent)
+{
+  return nsContentUtils::SetNodeTextContent(this, aTextContent, PR_FALSE);
+}
+
 /* static */
 nsresult
 nsGenericElement::DispatchEvent(nsPresContext* aPresContext,
@@ -3587,6 +3586,7 @@ nsGenericElement::DispatchClickEvent(nsPresContext* aPresContext,
                                      nsInputEvent* aSourceEvent,
                                      nsIContent* aTarget,
                                      PRBool aFullDispatch,
+                                     PRUint32 aFlags,
                                      nsEventStatus* aStatus)
 {
   NS_PRECONDITION(aTarget, "Must have target");
@@ -3613,6 +3613,7 @@ nsGenericElement::DispatchClickEvent(nsPresContext* aPresContext,
   event.isControl = aSourceEvent->isControl;
   event.isAlt = aSourceEvent->isAlt;
   event.isMeta = aSourceEvent->isMeta;
+  event.flags |= aFlags; // Be careful not to overwrite existing flags!
 
   return DispatchEvent(aPresContext, &event, aTarget, aFullDispatch, aStatus);
 }
@@ -3992,7 +3993,7 @@ nsINode::ReplaceOrInsertBefore(PRBool aReplace, nsINode* aNewChild,
 
     PRBool appending =
       !IsNodeOfType(eDOCUMENT) && PRUint32(insPos) == GetChildCount();
-    PRBool firstInsPos = insPos;
+    PRInt32 firstInsPos = insPos;
     nsIContent* firstInsertedContent = fragChildren[0];
 
     // Iterate through the fragment's children, and insert them in the new
@@ -4298,20 +4299,15 @@ nsGenericElement::AddScriptEventListener(nsIAtom* aEventName,
   }
 
   NS_PRECONDITION(aEventName, "Must have event name!");
-  nsCOMPtr<nsISupports> target;
   PRBool defer = PR_TRUE;
-  nsRefPtr<nsEventListenerManager> manager;
-
-  GetEventListenerManagerForAttr(getter_AddRefs(manager),
-                                 getter_AddRefs(target),
-                                 &defer);
+  nsEventListenerManager* manager = GetEventListenerManagerForAttr(&defer);
   if (!manager) {
     return NS_OK;
   }
 
   defer = defer && aDefer; // only defer if everyone agrees...
   PRUint32 lang = GetScriptTypeID();
-  manager->AddScriptEventListener(target, aEventName, aValue, lang, defer,
+  manager->AddScriptEventListener(aEventName, aValue, lang, defer,
                                   !nsContentUtils::IsChromeDoc(ownerDoc));
   return NS_OK;
 }
@@ -4580,17 +4576,11 @@ nsGenericElement::SetMappedAttribute(nsIDocument* aDocument,
   return PR_FALSE;
 }
 
-nsresult
-nsGenericElement::GetEventListenerManagerForAttr(nsEventListenerManager** aManager,
-                                                 nsISupports** aTarget,
-                                                 PRBool* aDefer)
+nsEventListenerManager*
+nsGenericElement::GetEventListenerManagerForAttr(PRBool* aDefer)
 {
-  *aManager = GetListenerManager(PR_TRUE);
   *aDefer = PR_TRUE;
-  NS_ENSURE_STATE(*aManager);
-  NS_ADDREF(*aManager);
-  NS_ADDREF(*aTarget = static_cast<nsIContent*>(this));
-  return NS_OK;
+  return GetListenerManager(PR_TRUE);
 }
 
 nsGenericElement::nsAttrInfo
@@ -5033,7 +5023,7 @@ nsGenericElement::CheckHandleEventForLinksPrecondition(nsEventChainVisitor& aVis
        (aVisitor.mEvent->message != NS_KEY_PRESS) &&
        (aVisitor.mEvent->message != NS_UI_ACTIVATE)) ||
       !aVisitor.mPresContext ||
-      (aVisitor.mEvent->flags & NS_EVENT_FLAG_PREVENT_ANCHOR_ACTIONS)) {
+      (aVisitor.mEvent->flags & NS_EVENT_FLAG_PREVENT_MULTIPLE_ACTIONS)) {
     return PR_FALSE;
   }
 
@@ -5079,7 +5069,7 @@ nsGenericElement::PreHandleEventForLinks(nsEventChainPreVisitor& aVisitor)
       nsContentUtils::TriggerLink(this, aVisitor.mPresContext, absURI, target,
                                   PR_FALSE, PR_TRUE, PR_TRUE);
       // Make sure any ancestor links don't also TriggerLink
-      aVisitor.mEvent->flags |= NS_EVENT_FLAG_PREVENT_ANCHOR_ACTIONS;
+      aVisitor.mEvent->flags |= NS_EVENT_FLAG_PREVENT_MULTIPLE_ACTIONS;
     }
     break;
 
@@ -5089,7 +5079,7 @@ nsGenericElement::PreHandleEventForLinks(nsEventChainPreVisitor& aVisitor)
   case NS_BLUR_CONTENT:
     rv = LeaveLink(aVisitor.mPresContext);
     if (NS_SUCCEEDED(rv)) {
-      aVisitor.mEvent->flags |= NS_EVENT_FLAG_PREVENT_ANCHOR_ACTIONS;
+      aVisitor.mEvent->flags |= NS_EVENT_FLAG_PREVENT_MULTIPLE_ACTIONS;
     }
     break;
 
@@ -5137,7 +5127,7 @@ nsGenericElement::PostHandleEventForLinks(nsEventChainPostVisitor& aVisitor)
         if (handler && document) {
           nsIFocusManager* fm = nsFocusManager::GetFocusManager();
           if (fm) {
-            aVisitor.mEvent->flags |= NS_EVENT_FLAG_PREVENT_ANCHOR_ACTIONS;
+            aVisitor.mEvent->flags |= NS_EVENT_FLAG_PREVENT_MULTIPLE_ACTIONS;
             nsCOMPtr<nsIDOMElement> elem = do_QueryInterface(this);
             fm->SetFocus(elem, nsIFocusManager::FLAG_BYMOUSE |
                                nsIFocusManager::FLAG_NOSCROLL);
@@ -5193,7 +5183,7 @@ nsGenericElement::PostHandleEventForLinks(nsEventChainPostVisitor& aVisitor)
         if (keyEvent->keyCode == NS_VK_RETURN) {
           nsEventStatus status = nsEventStatus_eIgnore;
           rv = DispatchClickEvent(aVisitor.mPresContext, keyEvent, this,
-                                  PR_FALSE, &status);
+                                  PR_FALSE, 0, &status);
           if (NS_SUCCEEDED(rv)) {
             aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
           }
@@ -5368,3 +5358,15 @@ nsNSElementTearoff::MozMatchesSelector(const nsAString& aSelector, PRBool* aRetu
 
   return rv;
 }
+
+PRInt64
+nsGenericElement::SizeOf() const
+{
+  PRInt64 size = MemoryReporter::GetBasicSize<nsGenericElement, Element>(this);
+
+  size -= sizeof(mAttrsAndChildren);
+  size += mAttrsAndChildren.SizeOf();
+
+  return size;
+}
+

@@ -105,7 +105,13 @@ nsHtml5TreeBuilder::createElement(PRInt32 aNamespace, nsIAtom* aName, nsHtml5Htm
         if (nsHtml5Atoms::img == aName) {
           nsString* url = aAttributes->getValue(nsHtml5AttributeName::ATTR_SRC);
           if (url) {
-            mSpeculativeLoadQueue.AppendElement()->InitImage(*url);
+            nsString* crossOrigin =
+              aAttributes->getValue(nsHtml5AttributeName::ATTR_CROSSORIGIN);
+            if (crossOrigin) {
+              mSpeculativeLoadQueue.AppendElement()->InitImage(*url, *crossOrigin);
+            } else {
+              mSpeculativeLoadQueue.AppendElement()->InitImage(*url, EmptyString());
+            }
           }
         } else if (nsHtml5Atoms::script == aName) {
           nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement();
@@ -138,7 +144,7 @@ nsHtml5TreeBuilder::createElement(PRInt32 aNamespace, nsIAtom* aName, nsHtml5Htm
         } else if (nsHtml5Atoms::video == aName) {
           nsString* url = aAttributes->getValue(nsHtml5AttributeName::ATTR_POSTER);
           if (url) {
-            mSpeculativeLoadQueue.AppendElement()->InitImage(*url);
+            mSpeculativeLoadQueue.AppendElement()->InitImage(*url, EmptyString());
           }
         } else if (nsHtml5Atoms::style == aName) {
           nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement();
@@ -163,7 +169,7 @@ nsHtml5TreeBuilder::createElement(PRInt32 aNamespace, nsIAtom* aName, nsHtml5Htm
         if (nsHtml5Atoms::image == aName) {
           nsString* url = aAttributes->getValue(nsHtml5AttributeName::ATTR_XLINK_HREF);
           if (url) {
-            mSpeculativeLoadQueue.AppendElement()->InitImage(*url);
+            mSpeculativeLoadQueue.AppendElement()->InitImage(*url, EmptyString());
           }
         } else if (nsHtml5Atoms::script == aName) {
           nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement();
@@ -538,7 +544,8 @@ nsHtml5TreeBuilder::elementPopped(PRInt32 aNamespace, nsIAtom* aName, nsIContent
     return;
   }
   if (aName == nsHtml5Atoms::input ||
-      aName == nsHtml5Atoms::button) {
+      aName == nsHtml5Atoms::button ||
+      aName == nsHtml5Atoms::menuitem) {
     if (!formPointer) {
       // If form inputs don't belong to a form, their state preservation
       // won't work right without an append notification flush at this 
@@ -637,9 +644,8 @@ void
 nsHtml5TreeBuilder::SetDocumentCharset(nsACString& aCharset, 
                                        PRInt32 aCharsetSource)
 {
-  nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement();
-  NS_ASSERTION(treeOp, "Tree op allocation failed.");
-  treeOp->Init(eTreeOpSetDocumentCharset, aCharset, aCharsetSource);  
+  mSpeculativeLoadQueue.AppendElement()->InitSetDocumentCharset(aCharset,
+                                                                aCharsetSource);
 }
 
 void

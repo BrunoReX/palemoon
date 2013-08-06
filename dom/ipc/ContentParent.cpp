@@ -62,6 +62,7 @@
 #include "nsExternalHelperAppService.h"
 #include "nsCExternalHandlerService.h"
 #include "nsFrameMessageManager.h"
+#include "nsIPresShell.h"
 #include "nsIAlertsService.h"
 #include "nsToolkitCompsCID.h"
 #include "nsIDOMGeoGeolocation.h"
@@ -179,6 +180,9 @@ ContentParent::Init()
         obs->AddObserver(this, NS_IPC_IOSERVICE_SET_OFFLINE_TOPIC, PR_FALSE);
         obs->AddObserver(this, "child-memory-reporter-request", PR_FALSE);
         obs->AddObserver(this, "memory-pressure", PR_FALSE);
+#ifdef ACCESSIBILITY
+        obs->AddObserver(this, "a11y-init-or-shutdown", PR_FALSE);
+#endif
     }
     nsCOMPtr<nsIPrefBranch2> prefs(do_GetService(NS_PREFSERVICE_CONTRACTID));
     if (prefs) {
@@ -193,6 +197,14 @@ ContentParent::Init()
     if (obs) {
         obs->NotifyObservers(nsnull, "ipc:content-created", nsnull);
     }
+
+#ifdef ACCESSIBILITY
+    // If accessibility is running in chrome process then start it in content
+    // process.
+    if (nsIPresShell::IsAccessibilityActive()) {
+        SendActivateA11y();
+    }
+#endif
 }
 
 void
@@ -257,6 +269,9 @@ ContentParent::ActorDestroy(ActorDestroyReason why)
         obs->RemoveObserver(static_cast<nsIObserver*>(this), "memory-pressure");
         obs->RemoveObserver(static_cast<nsIObserver*>(this), "child-memory-reporter-request");
         obs->RemoveObserver(static_cast<nsIObserver*>(this), NS_IPC_IOSERVICE_SET_OFFLINE_TOPIC);
+#ifdef ACCESSIBILITY
+        obs->RemoveObserver(static_cast<nsIObserver*>(this), "a11y-init-or-shutdown");
+#endif
     }
 
     // clear the child memory reporters
@@ -512,12 +527,14 @@ ContentParent::RecvGetClipboardText(const PRInt32& whichClipboard, nsString* tex
     clipboard->GetData(trans, whichClipboard);
     nsCOMPtr<nsISupports> tmp;
     PRUint32 len;
-    rv  = trans->GetTransferData(kUnicodeMime, getter_AddRefs(tmp), &len);
-    NS_ENSURE_SUCCESS(rv, rv);
+    rv = trans->GetTransferData(kUnicodeMime, getter_AddRefs(tmp), &len);
+    if (NS_FAILED(rv))
+        return false;
 
     nsCOMPtr<nsISupportsString> supportsString = do_QueryInterface(tmp);
     // No support for non-text data
-    NS_ENSURE_TRUE(supportsString, NS_ERROR_NOT_IMPLEMENTED);
+    if (!supportsString)
+        return false;
     supportsString->GetData(*text);
     return true;
 }
@@ -550,8 +567,11 @@ bool
 ContentParent::RecvGetSystemColors(const PRUint32& colorsCount, InfallibleTArray<PRUint32>* colors)
 {
 #ifdef ANDROID
-    if (!AndroidBridge::Bridge())
-        return false;
+    NS_ASSERTION(AndroidBridge::Bridge() != nsnull, "AndroidBridge is not available");
+    if (AndroidBridge::Bridge() == nsnull) {
+        // Do not fail - the colors won't be right, but it's not critical
+        return true;
+    }
 
     colors->AppendElements(colorsCount);
 
@@ -566,8 +586,11 @@ bool
 ContentParent::RecvGetIconForExtension(const nsCString& aFileExt, const PRUint32& aIconSize, InfallibleTArray<PRUint8>* bits)
 {
 #ifdef ANDROID
-    if (!AndroidBridge::Bridge())
-        return false;
+    NS_ASSERTION(AndroidBridge::Bridge() != nsnull, "AndroidBridge is not available");
+    if (AndroidBridge::Bridge() == nsnull) {
+        // Do not fail - just no icon will be shown
+        return true;
+    }
 
     bits->AppendElements(aIconSize * aIconSize * 4);
 
@@ -576,10 +599,24 @@ ContentParent::RecvGetIconForExtension(const nsCString& aFileExt, const PRUint32
     return true;
 }
 
-NS_IMPL_THREADSAFE_ISUPPORTS3(ContentParent,
+bool
+ContentParent::RecvGetShowPasswordSetting(PRBool* showPassword)
+{
+    // default behavior is to show the last password character
+    *showPassword = PR_TRUE;
+#ifdef ANDROID
+    NS_ASSERTION(AndroidBridge::Bridge() != nsnull, "AndroidBridge is not available");
+    if (AndroidBridge::Bridge() != nsnull)
+        *showPassword = AndroidBridge::Bridge()->GetShowPasswordSetting();
+#endif
+    return true;
+}
+
+NS_IMPL_THREADSAFE_ISUPPORTS4(ContentParent,
                               nsIObserver,
                               nsIThreadObserver,
-                              nsIDOMGeoPositionCallback)
+                              nsIDOMGeoPositionCallback,
+                              nsIDeviceMotionListener)
 
 NS_IMETHODIMP
 ContentParent::Observe(nsISupports* aSubject,
@@ -656,6 +693,14 @@ ContentParent::Observe(nsISupports* aSubject,
     else if (!strcmp(aTopic, "child-memory-reporter-request")) {
         SendPMemoryReportRequestConstructor();
     }
+#ifdef ACCESSIBILITY
+    // Make sure accessibility is running in content process when accessibility
+    // gets initiated in chrome process.
+    else if (aData && (*aData == '1') &&
+             !strcmp(aTopic, "a11y-init-or-shutdown")) {
+        SendActivateA11y();
+    }
+#endif
 
     return NS_OK;
 }

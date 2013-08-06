@@ -353,12 +353,12 @@ private:
 #if defined(MOZ_WIDGET_COCOA)
 private:
     Shmem                  mShSurface; 
-    size_t                 mShWidth;
-    size_t                 mShHeight;
+    uint16_t               mShWidth;
+    uint16_t               mShHeight;
     CGColorSpaceRef        mShColorSpace;
     int16_t                mDrawingModel;
-    nsAutoPtr<nsIOSurface> mIOSurface;
-    nsAutoPtr<nsIOSurface> mFrontIOSurface;
+    nsRefPtr<nsIOSurface> mIOSurface;
+    nsRefPtr<nsIOSurface> mFrontIOSurface;
 #endif // definied(MOZ_WIDGET_COCOA)
 
     // ObjectFrame layer wrapper

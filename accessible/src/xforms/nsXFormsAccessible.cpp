@@ -51,6 +51,9 @@
 #include "nsIMutableArray.h"
 #include "nsIXFormsUtilityService.h"
 #include "nsIPlaintextEditor.h"
+#include "nsINodeList.h"
+
+using namespace mozilla::a11y;
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsXFormsAccessibleBase
@@ -543,13 +546,10 @@ nsXFormsSelectableItemAccessible::GetValue(nsAString& aValue)
   return sXFormsService->GetValue(DOMNode, aValue);
 }
 
-NS_IMETHODIMP
-nsXFormsSelectableItemAccessible::GetNumActions(PRUint8 *aCount)
+PRUint8
+nsXFormsSelectableItemAccessible::ActionCount()
 {
-  NS_ENSURE_ARG_POINTER(aCount);
-
-  *aCount = 1;
-  return NS_OK;
+  return 1;
 }
 
 NS_IMETHODIMP

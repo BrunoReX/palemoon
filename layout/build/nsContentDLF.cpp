@@ -58,7 +58,7 @@
 #ifdef MOZ_MEDIA
 #include "nsHTMLMediaElement.h"
 #endif
-
+#include "nsContentUtils.h"
 #include "imgILoader.h"
 #include "nsIParser.h"
 #include "nsMimeTypes.h"
@@ -97,6 +97,7 @@ static const char* const gHTMLTypes[] = {
   APPLICATION_JAVASCRIPT,
   APPLICATION_ECMASCRIPT,
   APPLICATION_XJAVASCRIPT,
+  APPLICATION_JSON,
   VIEWSOURCE_CONTENT_TYPE,
   APPLICATION_XHTML_XML,
   0

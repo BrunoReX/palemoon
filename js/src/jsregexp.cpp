@@ -57,6 +57,8 @@
 #include "jsstr.h"
 #include "jsvector.h"
 
+#include "vm/GlobalObject.h"
+
 #include "jsobjinlines.h"
 #include "jsregexpinlines.h"
 
@@ -369,6 +371,9 @@ DEFINE_STATIC_SETTER(static_multiline_setter,
 const uint8 REGEXP_STATIC_PROP_ATTRS    = JSPROP_PERMANENT | JSPROP_SHARED | JSPROP_ENUMERATE;
 const uint8 RO_REGEXP_STATIC_PROP_ATTRS = REGEXP_STATIC_PROP_ATTRS | JSPROP_READONLY;
 
+const uint8 HIDDEN_PROP_ATTRS = JSPROP_PERMANENT | JSPROP_SHARED;
+const uint8 RO_HIDDEN_PROP_ATTRS = HIDDEN_PROP_ATTRS | JSPROP_READONLY;
+
 static JSPropertySpec regexp_static_props[] = {
     {"input",        0, REGEXP_STATIC_PROP_ATTRS,    static_input_getter, static_input_setter},
     {"multiline",    0, REGEXP_STATIC_PROP_ATTRS,    static_multiline_getter,
@@ -386,6 +391,13 @@ static JSPropertySpec regexp_static_props[] = {
     {"$7",           0, RO_REGEXP_STATIC_PROP_ATTRS, static_paren7_getter,       NULL},
     {"$8",           0, RO_REGEXP_STATIC_PROP_ATTRS, static_paren8_getter,       NULL},
     {"$9",           0, RO_REGEXP_STATIC_PROP_ATTRS, static_paren9_getter,       NULL},
+
+    {"$_",           0, HIDDEN_PROP_ATTRS,    static_input_getter, static_input_setter},
+    {"$*",           0, HIDDEN_PROP_ATTRS,    static_multiline_getter, static_multiline_setter},
+    {"$&",           0, RO_HIDDEN_PROP_ATTRS, static_lastMatch_getter, NULL},
+    {"$+",           0, RO_HIDDEN_PROP_ATTRS, static_lastParen_getter, NULL},
+    {"$`",           0, RO_HIDDEN_PROP_ATTRS, static_leftContext_getter, NULL},
+    {"$'",           0, RO_HIDDEN_PROP_ATTRS, static_rightContext_getter, NULL},
     {0,0,0,0,0}
 };
 
@@ -596,12 +608,7 @@ ExecuteRegExp(JSContext *cx, ExecType execType, uintN argc, Value *vp)
     if (!obj)
         return false;
     if (!obj->isRegExp()) {
-        JSFunction *fun = vp[0].toObject().getFunctionPrivate();
-        JSAutoByteString funNameBytes;
-        if (const char *funName = GetFunctionNameBytes(cx, fun, &funNameBytes)) {
-            JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_INCOMPATIBLE_PROTO,
-                                 "RegExp", funName, obj->getClass()->name);
-        }
+        ReportIncompatibleMethod(cx, vp, &js_RegExpClass);
         return false;
     }
 
@@ -617,29 +624,10 @@ ExecuteRegExp(JSContext *cx, ExecType execType, uintN argc, Value *vp)
     RegExpStatics *res = cx->regExpStatics();
 
     /* Step 2. */
-    JSString *input;
-    if (argc > 0) {
-        input = js_ValueToString(cx, vp[2]);
-        if (!input)
-            return false;
-        vp[2] = StringValue(input);
-    } else {
-        /* NON-STANDARD: Grab input from statics. */
-        input = res->getPendingInput();
-        if (!input) {
-            JSAutoByteString sourceBytes(cx, re->getSource());
-            if (!!sourceBytes) {
-                JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_NO_INPUT,
-                                     sourceBytes.ptr(),
-                                     re->global() ? "g" : "",
-                                     re->ignoreCase() ? "i" : "",
-                                     re->multiline() ? "m" : "",
-                                     re->sticky() ? "y" : "");
-            }
-            return false;
-        }
-    }
-
+    JSString *input = js_ValueToString(cx, argc > 0 ?  vp[2] : UndefinedValue());    
+    if (!input)
+        return false;
+    
     /* Step 3. */
     size_t length = input->length();
 
@@ -814,89 +802,48 @@ static JSFunctionSpec regexp_methods[] = {
 };
 
 JSObject *
-js_InitRegExpClass(JSContext *cx, JSObject *global)
+js_InitRegExpClass(JSContext *cx, JSObject *obj)
 {
-    JS_ASSERT(global->isGlobal());
-    JS_ASSERT(global->isNative());
+    JS_ASSERT(obj->isNative());
 
-    /* Create and initialize RegExp.prototype. */
-    JSObject *objectProto;
-    if (!js_GetClassPrototype(cx, global, JSProto_Object, &objectProto))
-        return NULL;
-    JS_ASSERT(objectProto);
+    GlobalObject *global = obj->asGlobal();
 
-    JSObject *proto = NewObject<WithProto::Class>(cx, &js_RegExpClass, objectProto, global);
+    JSObject *proto = global->createBlankPrototype(cx, &js_RegExpClass);
     if (!proto)
         return NULL;
 
     AlreadyIncRefed<RegExp> re = RegExp::create(cx, cx->runtime->emptyString, 0, NULL);
     if (!re)
         return NULL;
-#ifdef DEBUG
-    assertSameCompartment(cx, proto, re->compartment);
-#endif
 
     /*
      * Associate the empty regular expression with RegExp.prototype, and define
      * the initial non-method properties of any regular expression instance.
      * These must be added before methods to preserve slot layout.
      */
+#ifdef DEBUG
+    assertSameCompartment(cx, proto, re->compartment);
+#endif
     if (!proto->initRegExp(cx, re.get()))
         return NULL;
 
-    /*
-     * Now add the standard methods to RegExp.prototype, and pre-brand for
-     * better shape-guarding code.
-     */
-    if (!JS_DefineFunctions(cx, proto, regexp_methods))
+    if (!DefinePropertiesAndBrand(cx, proto, NULL, regexp_methods))
         return NULL;
-    proto->brand(cx);
 
-    /* Create the RegExp constructor. */
-    JSAtom *regExpAtom = CLASS_ATOM(cx, RegExp);
-    JSFunction *ctor =
-        js_NewFunction(cx, NULL, regexp_construct, 2, JSFUN_CONSTRUCTOR, global, regExpAtom);
+    JSFunction *ctor = global->createConstructor(cx, regexp_construct, &js_RegExpClass,
+                                                 CLASS_ATOM(cx, RegExp), 2);
     if (!ctor)
         return NULL;
 
-    /* RegExp creates regular expressions. */
-    FUN_CLASP(ctor) = &js_RegExpClass;
-
-    /* Define RegExp.prototype and RegExp.prototype.constructor. */
-    if (!ctor->defineProperty(cx, ATOM_TO_JSID(cx->runtime->atomState.classPrototypeAtom),
-                              ObjectValue(*proto), PropertyStub, StrictPropertyStub,
-                              JSPROP_PERMANENT | JSPROP_READONLY) ||
-        !proto->defineProperty(cx, ATOM_TO_JSID(cx->runtime->atomState.constructorAtom),
-                               ObjectValue(*ctor), PropertyStub, StrictPropertyStub, 0)) {
+    if (!LinkConstructorAndPrototype(cx, ctor, proto))
         return NULL;
-    }
 
     /* Add static properties to the RegExp constructor. */
-    if (!JS_DefineProperties(cx, ctor, regexp_static_props) ||
-        !JS_AliasProperty(cx, ctor, "input",        "$_") ||
-        !JS_AliasProperty(cx, ctor, "multiline",    "$*") ||
-        !JS_AliasProperty(cx, ctor, "lastMatch",    "$&") ||
-        !JS_AliasProperty(cx, ctor, "lastParen",    "$+") ||
-        !JS_AliasProperty(cx, ctor, "leftContext",  "$`") ||
-        !JS_AliasProperty(cx, ctor, "rightContext", "$'")) {
-        return NULL;
-    }
-
-    /*
-     * Make sure proto's emptyShape is available to be shared by objects of
-     * this class.  JSObject::emptyShape is a one-slot cache. If we omit this,
-     * some other class could snap it up. (The risk is particularly great for
-     * Object.prototype.)
-     *
-     * All callers of JSObject::initSharingEmptyShape depend on this.
-     */
-    if (!proto->getEmptyShape(cx, &js_RegExpClass, FINALIZE_OBJECT0))
+    if (!JS_DefineProperties(cx, ctor, regexp_static_props))
         return NULL;
 
-    /* Install the fully-constructed RegExp and RegExp.prototype in global. */
     if (!DefineConstructorAndPrototype(cx, global, JSProto_RegExp, ctor, proto))
         return NULL;
 
     return proto;
 }
-

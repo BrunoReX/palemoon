@@ -130,7 +130,6 @@ pref("browser.display.remotetabs.timeout", 10);
 /* session history */
 pref("browser.sessionhistory.max_total_viewers", 1);
 pref("browser.sessionhistory.max_entries", 50);
-pref("browser.sessionhistory.optimize_eviction", true);
 
 /* session store */
 pref("browser.sessionstore.resume_session_once", false);
@@ -387,11 +386,17 @@ pref("javascript.options.methodjit.chrome",  false);
 
 pref("javascript.options.mem.high_water_mark", 32);
 
+// Disable the JS engine's gc on memory pressure, since we do one in the mobile
+// browser (bug 669346).
+pref("javascript.options.gc_on_memory_pressure", false);
+
 pref("dom.max_chrome_script_run_time", 0); // disable slow script dialog for chrome
 pref("dom.max_script_run_time", 20);
 
 // JS error console
 pref("devtools.errorconsole.enabled", false);
+
+pref("browser.ui.layout.tablet", 0); // on: 1, off: 0, auto: -1
 
 // kinetic tweakables
 pref("browser.ui.kinetic.updateInterval", 16);
@@ -648,5 +653,12 @@ pref("browser.safebrowsing.malware.reportURL", "http://safebrowsing.clients.goog
 pref("browser.firstrun.show.uidiscovery", true);
 pref("browser.firstrun.show.localepicker", true);
 
-// initiated by a user
-pref("content.ime.strict_policy", true);
+// True if you always want dump() to work
+//
+// On Android, you also need to do the following for the output
+// to show up in logcat:
+//
+// $ adb shell stop
+// $ adb shell setprop log.redirect-stdio true
+// $ adb shell start
+pref("browser.dom.window.dump.enabled", false);

@@ -23,7 +23,7 @@ treechildren::-moz-tree-image(title) {
   margin: 0px 2px;
   width: 16px;
   height: 16px;
-  list-style-image: url("moz-icon://stock/gtk-file?size=menu");
+  list-style-image: url("chrome://mozapps/skin/places/defaultFavicon.png");
 }
 
 treechildren::-moz-tree-image(title, livemarkItem) {
@@ -68,6 +68,11 @@ treechildren::-moz-tree-image(container, OrganizerQuery_UnfiledBookmarks) {
 /* query-nodes should be styled even if they're not expandable */
 treechildren::-moz-tree-image(title, query) {
   list-style-image: url("chrome://browser/skin/places/query.png");
+}
+
+treechildren::-moz-tree-image(query, OrganizerQuery_Downloads) {
+  list-style-image: url("chrome://browser/skin/places/downloads.png");
+  -moz-image-region: auto;
 }
 
 treechildren::-moz-tree-image(title, query, tagContainer),

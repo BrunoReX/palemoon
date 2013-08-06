@@ -76,7 +76,6 @@ public:
 
   // nsIAccessible
   NS_IMETHOD GetValue(nsAString& aValue);
-  NS_IMETHOD GetFocusedChild(nsIAccessible **aFocusedChild);
 
   // nsAccessNode
   virtual bool IsDefunct() const;
@@ -87,6 +86,7 @@ public:
   virtual PRUint64 NativeState();
   virtual nsAccessible* ChildAtPoint(PRInt32 aX, PRInt32 aY,
                                      EWhichChildAtPoint aWhichChild);
+  virtual nsAccessible* FocusedChild();
 
   virtual nsAccessible* GetChildAt(PRUint32 aIndex);
   virtual PRInt32 GetChildCount();
@@ -182,22 +182,16 @@ public:
                                            nsAccessibleWrap)
 
   // nsIAccessible
-  NS_IMETHOD GetFocusedChild(nsIAccessible **aFocusedChild);
-
   NS_IMETHOD GetBounds(PRInt32 *aX, PRInt32 *aY,
                        PRInt32 *aWidth, PRInt32 *aHeight);
 
   NS_IMETHOD SetSelected(PRBool aSelect); 
   NS_IMETHOD TakeFocus();
 
-  NS_IMETHOD GetRelationByType(PRUint32 aRelationType,
-                               nsIAccessibleRelation **aRelation);
-
   NS_IMETHOD GroupPosition(PRInt32 *aGroupLevel,
                            PRInt32 *aSimilarItemsInGroup,
                            PRInt32 *aPositionInGroup);
 
-  NS_IMETHOD GetNumActions(PRUint8 *aCount);
   NS_IMETHOD GetActionName(PRUint8 aIndex, nsAString& aName);
   NS_IMETHOD DoAction(PRUint8 aIndex);
 
@@ -209,6 +203,11 @@ public:
   // nsAccessible
   virtual PRUint64 NativeState();
   virtual PRInt32 IndexInParent() const;
+  virtual Relation RelationByType(PRUint32 aType);
+  virtual nsAccessible* FocusedChild();
+
+  // ActionAccessible
+  virtual PRUint8 ActionCount();
 
   // nsXULTreeItemAccessibleBase
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_XULTREEITEMBASEACCESSIBLE_IMPL_CID)

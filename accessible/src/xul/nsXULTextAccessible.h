@@ -48,18 +48,14 @@
  */
 class nsXULTextAccessible : public nsHyperTextAccessibleWrap
 {
-
 public:
   nsXULTextAccessible(nsIContent *aContent, nsIWeakReference *aShell);
-
-  // nsIAccessible
-  NS_IMETHOD GetRelationByType(PRUint32 aRelationType,
-                               nsIAccessibleRelation **aRelation);
 
   // nsAccessible
   virtual nsresult GetNameInternal(nsAString& aName);
   virtual PRUint32 NativeRole();
   virtual PRUint64 NativeState();
+  virtual Relation RelationByType(PRUint32 aRelationType);
 };
 
 /**
@@ -87,7 +83,6 @@ public:
   // nsIAccessible
   NS_IMETHOD GetValue(nsAString& aValue);
 
-  NS_IMETHOD GetNumActions(PRUint8 *aNumActions);
   NS_IMETHOD GetActionName(PRUint8 aIndex, nsAString& aName);
   NS_IMETHOD DoAction(PRUint8 aIndex);
 
@@ -95,6 +90,9 @@ public:
   virtual nsresult GetNameInternal(nsAString& aName);
   virtual PRUint32 NativeRole();
   virtual PRUint64 NativeState();
+
+  // ActionAccessible
+  virtual PRUint8 ActionCount();
 
   // HyperLinkAccessible
   virtual bool IsLink();

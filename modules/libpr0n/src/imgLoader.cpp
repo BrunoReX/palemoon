@@ -37,6 +37,7 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "ImageLogging.h"
 #include "imgLoader.h"
 #include "imgRequestProxy.h"
 
@@ -51,6 +52,8 @@
 
 #include "nsCOMPtr.h"
 
+#include "nsContentUtils.h"
+#include "nsCrossSiteListenerProxy.h"
 #include "nsNetUtil.h"
 #include "nsStreamUtils.h"
 #include "nsIHttpChannel.h"
@@ -71,7 +74,6 @@
 #include "netCore.h"
 
 #include "nsURILoader.h"
-#include "ImageLogging.h"
 
 #include "nsIComponentRegistrar.h"
 
@@ -141,54 +143,77 @@ public:
     CHROME_BIT = PR_BIT(0),
     USED_BIT   = PR_BIT(1),
     RAW_BIT    = PR_BIT(2),
+    HEAP_BIT   = PR_BIT(3),
 
-    ChromeUsedRaw             = CHROME_BIT | USED_BIT | RAW_BIT,
-    ChromeUsedUncompressed    = CHROME_BIT | USED_BIT,
-    ChromeUnusedRaw           = CHROME_BIT | RAW_BIT,
-    ChromeUnusedUncompressed  = CHROME_BIT,
-    ContentUsedRaw            = USED_BIT | RAW_BIT,
-    ContentUsedUncompressed   = USED_BIT,
-    ContentUnusedRaw          = RAW_BIT,
-    ContentUnusedUncompressed = 0
+    ChromeUsedRaw                     = CHROME_BIT | USED_BIT | RAW_BIT | HEAP_BIT,
+    ChromeUsedUncompressedHeap        = CHROME_BIT | USED_BIT | HEAP_BIT,
+    ChromeUsedUncompressedNonheap     = CHROME_BIT | USED_BIT,
+    ChromeUnusedRaw                   = CHROME_BIT | RAW_BIT | HEAP_BIT,
+    ChromeUnusedUncompressedHeap      = CHROME_BIT | HEAP_BIT,
+    ChromeUnusedUncompressedNonheap   = CHROME_BIT,
+    ContentUsedRaw                    = USED_BIT | RAW_BIT | HEAP_BIT,
+    ContentUsedUncompressedHeap       = USED_BIT | HEAP_BIT,
+    ContentUsedUncompressedNonheap    = USED_BIT,
+    ContentUnusedRaw                  = RAW_BIT | HEAP_BIT,
+    ContentUnusedUncompressedHeap     = HEAP_BIT,
+    ContentUnusedUncompressedNonheap  = 0
   };
 
   imgMemoryReporter(ReporterType aType)
     : mType(aType)
-  { }
+  {
+    // If the RAW bit is set, HEAP should also be set, because we don't
+    // currently understand storing compressed image data off the heap.
+    NS_ASSERTION(!(aType & RAW_BIT) || (aType & HEAP_BIT),
+                 "RAW bit should imply HEAP bit.");
+  }
 
   NS_DECL_ISUPPORTS
 
-  NS_IMETHOD GetProcess(char **process)
+  NS_IMETHOD GetProcess(nsACString &process)
   {
-    *process = strdup("");
+    process.Truncate();
     return NS_OK;
   }
 
-  NS_IMETHOD GetPath(char **memoryPath)
+  NS_IMETHOD GetPath(nsACString &path)
   {
     if (mType == ChromeUsedRaw) {
-      *memoryPath = strdup("explicit/images/chrome/used/raw");
-    } else if (mType == ChromeUsedUncompressed) {
-      *memoryPath = strdup("explicit/images/chrome/used/uncompressed");
+      path.AssignLiteral("explicit/images/chrome/used/raw");
+    } else if (mType == ChromeUsedUncompressedHeap) {
+      path.AssignLiteral("explicit/images/chrome/used/uncompressed-heap");
+    } else if (mType == ChromeUsedUncompressedNonheap) {
+      path.AssignLiteral("explicit/images/chrome/used/uncompressed-nonheap");
     } else if (mType == ChromeUnusedRaw) {
-      *memoryPath = strdup("explicit/images/chrome/unused/raw");
-    } else if (mType == ChromeUnusedUncompressed) {
-      *memoryPath = strdup("explicit/images/chrome/unused/uncompressed");
+      path.AssignLiteral("explicit/images/chrome/unused/raw");
+    } else if (mType == ChromeUnusedUncompressedHeap) {
+      path.AssignLiteral("explicit/images/chrome/unused/uncompressed-heap");
+    } else if (mType == ChromeUnusedUncompressedNonheap) {
+      path.AssignLiteral("explicit/images/chrome/unused/uncompressed-nonheap");
     } else if (mType == ContentUsedRaw) {
-      *memoryPath = strdup("explicit/images/content/used/raw");
-    } else if (mType == ContentUsedUncompressed) {
-      *memoryPath = strdup("explicit/images/content/used/uncompressed");
+      path.AssignLiteral("explicit/images/content/used/raw");
+    } else if (mType == ContentUsedUncompressedHeap) {
+      path.AssignLiteral("explicit/images/content/used/uncompressed-heap");
+    } else if (mType == ContentUsedUncompressedNonheap) {
+      path.AssignLiteral("explicit/images/content/used/uncompressed-nonheap");
     } else if (mType == ContentUnusedRaw) {
-      *memoryPath = strdup("explicit/images/content/unused/raw");
-    } else if (mType == ContentUnusedUncompressed) {
-      *memoryPath = strdup("explicit/images/content/unused/uncompressed");
+      path.AssignLiteral("explicit/images/content/unused/raw");
+    } else if (mType == ContentUnusedUncompressedHeap) {
+      path.AssignLiteral("explicit/images/content/unused/uncompressed-heap");
+    } else if (mType == ContentUnusedUncompressedNonheap) {
+      path.AssignLiteral("explicit/images/content/unused/uncompressed-nonheap");
     }
     return NS_OK;
   }
 
   NS_IMETHOD GetKind(PRInt32 *kind)
   {
-    *kind = KIND_HEAP;
+    if (mType & HEAP_BIT) {
+      *kind = KIND_HEAP;
+    }
+    else {
+      *kind = KIND_MAPPED;
+    }
     return NS_OK;
   }
 
@@ -228,9 +253,11 @@ public:
       return PL_DHASH_NEXT;
 
     if (rtype & RAW_BIT) {
-      arg->value += image->GetSourceDataSize();
+      arg->value += image->GetSourceHeapSize();
+    } else if (rtype & HEAP_BIT) {
+      arg->value += image->GetDecodedHeapSize();
     } else {
-      arg->value += image->GetDecodedDataSize();
+      arg->value += image->GetDecodedNonheapSize();
     }
 
     return PL_DHASH_NEXT;
@@ -249,24 +276,32 @@ public:
     return NS_OK;
   }
 
-  NS_IMETHOD GetDescription(char **desc)
+  NS_IMETHOD GetDescription(nsACString &desc)
   {
     if (mType == ChromeUsedRaw) {
-      *desc = strdup("Memory used by in-use chrome images (compressed data).");
-    } else if (mType == ChromeUsedUncompressed) {
-      *desc = strdup("Memory used by in-use chrome images (uncompressed data).");
+      desc.AssignLiteral("Memory used by in-use chrome images (compressed data).");
+    } else if (mType == ChromeUsedUncompressedHeap) {
+      desc.AssignLiteral("Memory used by in-use chrome images (uncompressed data).");
+    } else if (mType == ChromeUsedUncompressedNonheap) {
+      desc.AssignLiteral("Memory used by in-use chrome images (uncompressed data).");
     } else if (mType == ChromeUnusedRaw) {
-      *desc = strdup("Memory used by not in-use chrome images (compressed data).");
-    } else if (mType == ChromeUnusedUncompressed) {
-      *desc = strdup("Memory used by not in-use chrome images (uncompressed data).");
+      desc.AssignLiteral("Memory used by not in-use chrome images (compressed data).");
+    } else if (mType == ChromeUnusedUncompressedHeap) {
+      desc.AssignLiteral("Memory used by not in-use chrome images (uncompressed data).");
+    } else if (mType == ChromeUnusedUncompressedNonheap) {
+      desc.AssignLiteral("Memory used by not in-use chrome images (uncompressed data).");
     } else if (mType == ContentUsedRaw) {
-      *desc = strdup("Memory used by in-use content images (compressed data).");
-    } else if (mType == ContentUsedUncompressed) {
-      *desc = strdup("Memory used by in-use content images (uncompressed data).");
+      desc.AssignLiteral("Memory used by in-use content images (compressed data).");
+    } else if (mType == ContentUsedUncompressedHeap) {
+      desc.AssignLiteral("Memory used by in-use content images (uncompressed data).");
+    } else if (mType == ContentUsedUncompressedNonheap) {
+      desc.AssignLiteral("Memory used by in-use content images (uncompressed data).");
     } else if (mType == ContentUnusedRaw) {
-      *desc = strdup("Memory used by not in-use content images (compressed data).");
-    } else if (mType == ContentUnusedUncompressed) {
-      *desc = strdup("Memory used by not in-use content images (uncompressed data).");
+      desc.AssignLiteral("Memory used by not in-use content images (compressed data).");
+    } else if (mType == ContentUnusedUncompressedHeap) {
+      desc.AssignLiteral("Memory used by not in-use content images (uncompressed data).");
+    } else if (mType == ContentUnusedUncompressedNonheap) {
+      desc.AssignLiteral("Memory used by not in-use content images (uncompressed data).");
     }
     return NS_OK;
   }
@@ -419,6 +454,35 @@ static PRBool ShouldRevalidateEntry(imgCacheEntry *aEntry,
   }
 
   return bValidateEntry;
+}
+
+// Returns true if this request is compatible with the given CORS mode on the
+// given loading principal, and false if the request may not be reused due
+// to CORS.
+static bool
+ValidateCORS(imgRequest* request, PRInt32 corsmode, nsIPrincipal* loadingPrincipal)
+{
+  // If the entry's CORS mode doesn't match, or the CORS mode matches but the
+  // document principal isn't the same, we can't use this request.
+  if (request->GetCORSMode() != corsmode) {
+    return false;
+  } else if (request->GetCORSMode() != imgIRequest::CORS_NONE) {
+    nsCOMPtr<nsIPrincipal> otherprincipal = request->GetLoadingPrincipal();
+
+    // If we previously had a principal, but we don't now, we can't use this
+    // request.
+    if (otherprincipal && !loadingPrincipal) {
+      return false;
+    }
+
+    if (otherprincipal && loadingPrincipal) {
+      PRBool equals = PR_FALSE;
+      otherprincipal->Equals(loadingPrincipal, &equals);
+      return equals;
+    }
+  }
+
+  return true;
 }
 
 static nsresult NewImageChannel(nsIChannel **aResult,
@@ -850,13 +914,17 @@ nsresult imgLoader::InitCache()
     sCacheMaxSize = 5 * 1024 * 1024;
 
   NS_RegisterMemoryReporter(new imgMemoryReporter(imgMemoryReporter::ChromeUsedRaw));
-  NS_RegisterMemoryReporter(new imgMemoryReporter(imgMemoryReporter::ChromeUsedUncompressed));
+  NS_RegisterMemoryReporter(new imgMemoryReporter(imgMemoryReporter::ChromeUsedUncompressedHeap));
+  NS_RegisterMemoryReporter(new imgMemoryReporter(imgMemoryReporter::ChromeUsedUncompressedNonheap));
   NS_RegisterMemoryReporter(new imgMemoryReporter(imgMemoryReporter::ChromeUnusedRaw));
-  NS_RegisterMemoryReporter(new imgMemoryReporter(imgMemoryReporter::ChromeUnusedUncompressed));
+  NS_RegisterMemoryReporter(new imgMemoryReporter(imgMemoryReporter::ChromeUnusedUncompressedHeap));
+  NS_RegisterMemoryReporter(new imgMemoryReporter(imgMemoryReporter::ChromeUnusedUncompressedNonheap));
   NS_RegisterMemoryReporter(new imgMemoryReporter(imgMemoryReporter::ContentUsedRaw));
-  NS_RegisterMemoryReporter(new imgMemoryReporter(imgMemoryReporter::ContentUsedUncompressed));
+  NS_RegisterMemoryReporter(new imgMemoryReporter(imgMemoryReporter::ContentUsedUncompressedHeap));
+  NS_RegisterMemoryReporter(new imgMemoryReporter(imgMemoryReporter::ContentUsedUncompressedNonheap));
   NS_RegisterMemoryReporter(new imgMemoryReporter(imgMemoryReporter::ContentUnusedRaw));
-  NS_RegisterMemoryReporter(new imgMemoryReporter(imgMemoryReporter::ContentUnusedUncompressed));
+  NS_RegisterMemoryReporter(new imgMemoryReporter(imgMemoryReporter::ContentUnusedUncompressedHeap));
+  NS_RegisterMemoryReporter(new imgMemoryReporter(imgMemoryReporter::ContentUnusedUncompressedNonheap));
   
   return NS_OK;
 }
@@ -1140,7 +1208,9 @@ PRBool imgLoader::ValidateRequestWithNewChannel(imgRequest *request,
                                                 nsLoadFlags aLoadFlags,
                                                 imgIRequest *aExistingRequest,
                                                 imgIRequest **aProxyRequest,
-                                                nsIChannelPolicy *aPolicy)
+                                                nsIChannelPolicy *aPolicy,
+                                                nsIPrincipal* aLoadingPrincipal,
+                                                PRInt32 aCORSMode)
 {
   // now we need to insert a new channel request object inbetween the real
   // request and the proxy that basically delays loading the image until it
@@ -1204,8 +1274,18 @@ PRBool imgLoader::ValidateRequestWithNewChannel(imgRequest *request,
       return PR_FALSE;
 
     nsRefPtr<imgCacheValidator> hvc = new imgCacheValidator(progressproxy, request, aCX);
-    if (!hvc) {
-      return PR_FALSE;
+
+    nsCOMPtr<nsIStreamListener> listener = hvc.get();
+
+    if (aCORSMode != imgIRequest::CORS_NONE) {
+      PRBool withCredentials = aCORSMode == imgIRequest::CORS_USE_CREDENTIALS;
+      nsCOMPtr<nsIStreamListener> corsproxy =
+        new nsCORSListenerProxy(hvc, aLoadingPrincipal, newChannel, withCredentials, &rv);
+      if (NS_FAILED(rv)) {
+        return PR_FALSE;
+      }
+
+      listener = corsproxy;
     }
 
     newChannel->SetNotificationCallbacks(hvc);
@@ -1224,7 +1304,7 @@ PRBool imgLoader::ValidateRequestWithNewChannel(imgRequest *request,
     // Add the proxy without notifying
     hvc->AddProxy(proxy);
 
-    rv = newChannel->AsyncOpen(static_cast<nsIStreamListener *>(hvc), nsnull);
+    rv = newChannel->AsyncOpen(listener, nsnull);
     if (NS_SUCCEEDED(rv))
       NS_ADDREF(*aProxyRequest = req.get());
 
@@ -1243,7 +1323,9 @@ PRBool imgLoader::ValidateEntry(imgCacheEntry *aEntry,
                                 PRBool aCanMakeNewChannel,
                                 imgIRequest *aExistingRequest,
                                 imgIRequest **aProxyRequest,
-                                nsIChannelPolicy *aPolicy = nsnull)
+                                nsIChannelPolicy *aPolicy,
+                                nsIPrincipal* aLoadingPrincipal,
+                                PRInt32 aCORSMode)
 {
   LOG_SCOPE(gImgLog, "imgLoader::ValidateEntry");
 
@@ -1278,6 +1360,9 @@ PRBool imgLoader::ValidateEntry(imgCacheEntry *aEntry,
   nsRefPtr<imgRequest> request(aEntry->GetRequest());
 
   if (!request)
+    return PR_FALSE;
+
+  if (!ValidateCORS(request, aCORSMode, aLoadingPrincipal))
     return PR_FALSE;
 
   PRBool validateRequest = PR_FALSE;
@@ -1357,8 +1442,9 @@ PRBool imgLoader::ValidateEntry(imgCacheEntry *aEntry,
     return ValidateRequestWithNewChannel(request, aURI, aInitialDocumentURI,
                                          aReferrerURI, aLoadGroup, aObserver,
                                          aCX, aLoadFlags, aExistingRequest,
-                                         aProxyRequest, aPolicy);
-  } 
+                                         aProxyRequest, aPolicy,
+                                         aLoadingPrincipal, aCORSMode);
+  }
 
   return !validateRequest;
 }
@@ -1487,11 +1573,12 @@ nsresult imgLoader::EvictEntries(imgCacheQueue &aQueueToClear)
                                   nsIRequest::VALIDATE_ONCE_PER_SESSION)
 
 
-/* imgIRequest loadImage (in nsIURI aURI, in nsIURI initialDocumentURI, in nsILoadGroup aLoadGroup, in imgIDecoderObserver aObserver, in nsISupports aCX, in nsLoadFlags aLoadFlags, in nsISupports cacheKey, in imgIRequest aRequest); */
+/* imgIRequest loadImage (in nsIURI aURI, in nsIURI initialDocumentURI, in nsIPrincipal loadingPrincipal, in nsILoadGroup aLoadGroup, in imgIDecoderObserver aObserver, in nsISupports aCX, in nsLoadFlags aLoadFlags, in nsISupports cacheKey, in imgIRequest aRequest); */
 
 NS_IMETHODIMP imgLoader::LoadImage(nsIURI *aURI, 
                                    nsIURI *aInitialDocumentURI,
                                    nsIURI *aReferrerURI,
+                                   nsIPrincipal* aLoadingPrincipal,
                                    nsILoadGroup *aLoadGroup,
                                    imgIDecoderObserver *aObserver,
                                    nsISupports *aCX,
@@ -1545,6 +1632,13 @@ NS_IMETHODIMP imgLoader::LoadImage(nsIURI *aURI,
     requestFlags |= nsIRequest::LOAD_BACKGROUND;
   }
 
+  PRInt32 corsmode = imgIRequest::CORS_NONE;
+  if (aLoadFlags & imgILoader::LOAD_CORS_ANONYMOUS) {
+    corsmode = imgIRequest::CORS_ANONYMOUS;
+  } else if (aLoadFlags & imgILoader::LOAD_CORS_USE_CREDENTIALS) {
+    corsmode = imgIRequest::CORS_USE_CREDENTIALS;
+  }
+
   nsRefPtr<imgCacheEntry> entry;
 
   // Look in the cache for our URI, and then validate it.
@@ -1556,7 +1650,7 @@ NS_IMETHODIMP imgLoader::LoadImage(nsIURI *aURI,
   if (cache.Get(spec, getter_AddRefs(entry)) && entry) {
     if (ValidateEntry(entry, aURI, aInitialDocumentURI, aReferrerURI,
                       aLoadGroup, aObserver, aCX, requestFlags, PR_TRUE,
-                      aRequest, _retval, aPolicy)) {
+                      aRequest, _retval, aPolicy, aLoadingPrincipal, corsmode)) {
       request = getter_AddRefs(entry->GetRequest());
 
       // If this entry has no proxies, its request has no reference to the entry.
@@ -1613,7 +1707,8 @@ NS_IMETHODIMP imgLoader::LoadImage(nsIURI *aURI,
     newChannel->SetLoadGroup(loadGroup);
 
     void *cacheId = NS_GetCurrentThread();
-    request->Init(aURI, aURI, loadGroup, newChannel, entry, cacheId, aCX);
+    request->Init(aURI, aURI, loadGroup, newChannel, entry, cacheId, aCX,
+                  aLoadingPrincipal, corsmode);
 
     // Pass the windowID of the loading document, if possible.
     nsCOMPtr<nsIDocument> doc = do_QueryInterface(aCX);
@@ -1622,20 +1717,28 @@ NS_IMETHODIMP imgLoader::LoadImage(nsIURI *aURI,
     }
 
     // create the proxy listener
-    ProxyListener *pl = new ProxyListener(static_cast<nsIStreamListener *>(request.get()));
-    if (!pl) {
-      request->CancelAndAbort(NS_ERROR_OUT_OF_MEMORY);
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
+    nsCOMPtr<nsIStreamListener> pl = new ProxyListener(request.get());
 
-    NS_ADDREF(pl);
+    // See if we need to insert a CORS proxy between the proxy listener and the
+    // request.
+    nsCOMPtr<nsIStreamListener> listener = pl;
+    if (corsmode != imgIRequest::CORS_NONE) {
+      PRBool withCredentials = corsmode == imgIRequest::CORS_USE_CREDENTIALS;
+
+      nsCOMPtr<nsIStreamListener> corsproxy =
+        new nsCORSListenerProxy(pl, aLoadingPrincipal, newChannel,
+                                withCredentials, &rv);
+      if (NS_FAILED(rv)) {
+        return NS_ERROR_FAILURE;
+      }
+
+      listener = corsproxy;
+    }
 
     PR_LOG(gImgLog, PR_LOG_DEBUG,
            ("[this=%p] imgLoader::LoadImage -- Calling channel->AsyncOpen()\n", this));
 
-    nsresult openRes = newChannel->AsyncOpen(static_cast<nsIStreamListener *>(pl), nsnull);
-
-    NS_RELEASE(pl);
+    nsresult openRes = newChannel->AsyncOpen(listener, nsnull);
 
     if (NS_FAILED(openRes)) {
       PR_LOG(gImgLog, PR_LOG_DEBUG,
@@ -1742,7 +1845,8 @@ NS_IMETHODIMP imgLoader::LoadImageWithChannel(nsIChannel *channel, imgIDecoderOb
       // XXX -- should this be changed? it's pretty much verbatim from the old
       // code, but seems nonsensical.
       if (ValidateEntry(entry, uri, nsnull, nsnull, nsnull, aObserver, aCX,
-                        requestFlags, PR_FALSE, nsnull, nsnull)) {
+                        requestFlags, PR_FALSE, nsnull, nsnull, nsnull,
+                        nsnull, imgIRequest::CORS_NONE)) {
         request = getter_AddRefs(entry->GetRequest());
       } else {
         nsCOMPtr<nsICachingChannel> cacheChan(do_QueryInterface(channel));
@@ -1798,7 +1902,10 @@ NS_IMETHODIMP imgLoader::LoadImageWithChannel(nsIChannel *channel, imgIDecoderOb
     // We use originalURI here to fulfil the imgIRequest contract on GetURI.
     nsCOMPtr<nsIURI> originalURI;
     channel->GetOriginalURI(getter_AddRefs(originalURI));
-    request->Init(originalURI, uri, channel, channel, entry, NS_GetCurrentThread(), aCX);
+
+    // No principal specified here, because we're not passed one.
+    request->Init(originalURI, uri, channel, channel, entry,
+                  NS_GetCurrentThread(), aCX, nsnull, imgIRequest::CORS_NONE);
 
     ProxyListener *pl = new ProxyListener(static_cast<nsIStreamListener *>(request.get()));
     NS_ADDREF(pl);
@@ -2092,6 +2199,9 @@ NS_IMETHODIMP imgCacheValidator::OnStartRequest(nsIRequest *aRequest, nsISupport
   LOG_MSG_WITH_PARAM(gImgLog, "imgCacheValidator::OnStartRequest creating new request", "uri", spec.get());
 #endif
 
+  PRInt32 corsmode = mRequest->GetCORSMode();
+  nsCOMPtr<nsIPrincipal> loadingPrincipal = mRequest->GetLoadingPrincipal();
+
   // Doom the old request's cache entry
   mRequest->RemoveFromCache();
 
@@ -2101,11 +2211,11 @@ NS_IMETHODIMP imgCacheValidator::OnStartRequest(nsIRequest *aRequest, nsISupport
   // We use originalURI here to fulfil the imgIRequest contract on GetURI.
   nsCOMPtr<nsIURI> originalURI;
   channel->GetOriginalURI(getter_AddRefs(originalURI));
-  mNewRequest->Init(originalURI, uri, channel, channel, mNewEntry, NS_GetCurrentThread(), mContext);
+  mNewRequest->Init(originalURI, uri, channel, channel, mNewEntry,
+                    NS_GetCurrentThread(), mContext, loadingPrincipal,
+                    corsmode);
 
-  ProxyListener *pl = new ProxyListener(static_cast<nsIStreamListener *>(mNewRequest));
-
-  mDestListener = static_cast<nsIStreamListener*>(pl);
+  mDestListener = new ProxyListener(mNewRequest);
 
   // Try to add the new request into the cache. Note that the entry must be in
   // the cache before the proxies' ownership changes, because adding a proxy

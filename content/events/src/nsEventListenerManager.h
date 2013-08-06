@@ -67,7 +67,6 @@ typedef struct {
   nsCOMPtr<nsIAtom>             mTypeAtom;
   PRUint16                      mFlags;
   PRBool                        mHandlerIsString;
-  const EventTypeData*          mTypeData;
 } nsListenerStruct;
 
 /*
@@ -97,30 +96,23 @@ public:
   * Sets events listeners of all types. 
   * @param an event listener
   */
-  nsresult AddEventListenerByIID(nsIDOMEventListener *aListener,
-                                 const nsIID& aIID, PRInt32 aFlags);
-  void RemoveEventListenerByIID(nsIDOMEventListener *aListener,
-                                const nsIID& aIID, PRInt32 aFlags);
   nsresult AddEventListenerByType(nsIDOMEventListener *aListener,
                                   const nsAString& type,
                                   PRInt32 aFlags);
   void RemoveEventListenerByType(nsIDOMEventListener *aListener,
                                  const nsAString& type,
                                  PRInt32 aFlags);
-  nsresult AddScriptEventListener(nsISupports *aObject,
-                                  nsIAtom *aName,
+  nsresult AddScriptEventListener(nsIAtom *aName,
                                   const nsAString& aFunc,
                                   PRUint32 aLanguage,
                                   PRBool aDeferCompilation,
                                   PRBool aPermitUntrustedEvents);
   nsresult RegisterScriptEventListener(nsIScriptContext *aContext,
                                        void *aScopeObject,
-                                       nsISupports *aObject,
                                        nsIAtom* aName);
   void RemoveScriptEventListener(nsIAtom *aName);
   nsresult CompileScriptEventListener(nsIScriptContext *aContext,
                                       void *aScopeObject,
-                                      nsISupports *aObject,
                                       nsIAtom* aName, PRBool *aDidCompile);
 
   void HandleEvent(nsPresContext* aPresContext,
@@ -216,23 +208,19 @@ protected:
   nsListenerStruct* FindJSEventListener(PRUint32 aEventType, nsIAtom* aTypeAtom);
   nsresult SetJSEventListener(nsIScriptContext *aContext,
                               void *aScopeGlobal,
-                              nsISupports *aObject,
                               nsIAtom* aName, PRBool aIsString,
                               PRBool aPermitUntrustedEvents);
   nsresult AddEventListener(nsIDOMEventListener *aListener, 
                             PRUint32 aType,
                             nsIAtom* aTypeAtom,
-                            const EventTypeData* aTypeData,
                             PRInt32 aFlags);
   void RemoveEventListener(nsIDOMEventListener *aListener,
                            PRUint32 aType,
                            nsIAtom* aUserType,
-                           const EventTypeData* aTypeData,
                            PRInt32 aFlags);
   void RemoveAllListeners();
   const EventTypeData* GetTypeDataForIID(const nsIID& aIID);
   const EventTypeData* GetTypeDataForEventName(nsIAtom* aName);
-  PRBool ListenerCanHandle(nsListenerStruct* aLs, nsEvent* aEvent);
   nsPIDOMWindow* GetInnerWindowForTarget();
 
   PRUint32 mMayHavePaintEventListener : 1;

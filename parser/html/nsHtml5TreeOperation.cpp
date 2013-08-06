@@ -127,7 +127,6 @@ nsHtml5TreeOperation::~nsHtml5TreeOperation()
     case eTreeOpAppendCommentToDocument:
       delete[] mTwo.unicharPtr;
       break;
-    case eTreeOpSetDocumentCharset:
     case eTreeOpNeedsCharsetSwitchTo:
       delete[] mOne.charPtr;
       break;
@@ -210,8 +209,10 @@ nsHtml5TreeOperation::Append(nsIContent* aNode,
 
   if (NS_LIKELY(executorDoc == parentDoc)) {
     // the usual case. the parent is in the parser's doc
-    aBuilder->PostPendingAppendNotification(aParent, aNode);
     rv = aParent->AppendChildTo(aNode, PR_FALSE);
+    if (NS_SUCCEEDED(rv)) {
+      aBuilder->PostPendingAppendNotification(aParent, aNode);
+    }
     return rv;
   }
 
@@ -220,8 +221,9 @@ nsHtml5TreeOperation::Append(nsIContent* aNode,
 
   PRUint32 childCount = aParent->GetChildCount();
   rv = aParent->AppendChildTo(aNode, PR_FALSE);
-  nsNodeUtils::ContentAppended(aParent, aNode, childCount);
-
+  if (NS_SUCCEEDED(rv)) {
+    nsNodeUtils::ContentAppended(aParent, aNode, childCount);
+  }
   parentDoc->EndUpdate(UPDATE_CONTENT_MODEL);
   return rv;
 }
@@ -625,13 +627,6 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
     }
     case eTreeOpFlushPendingAppendNotifications: {
       aBuilder->FlushPendingAppendNotifications();
-      return rv;
-    }
-    case eTreeOpSetDocumentCharset: {
-      char* str = mOne.charPtr;
-      PRInt32 charsetSource = mInt;
-      nsDependentCString dependentString(str);
-      aBuilder->SetDocumentCharsetAndSource(dependentString, charsetSource);
       return rv;
     }
     case eTreeOpNeedsCharsetSwitchTo: {

@@ -58,6 +58,7 @@
 #include "jsanalyze.h"
 #include "methodjit/BaseCompiler.h"
 #include "methodjit/ICRepatcher.h"
+#include "vm/Debugger.h"
 
 #include "jsinterpinlines.h"
 #include "jspropertycacheinlines.h"
@@ -178,6 +179,13 @@ InlineReturn(VMFrame &f)
     JS_ASSERT(f.fp() != f.entryfp);
     JS_ASSERT(!js_IsActiveWithOrBlock(f.cx, &f.fp()->scopeChain(), 0));
     f.cx->stack.popInlineFrame(f.regs);
+
+    JS_ASSERT(*f.regs.pc == JSOP_CALL ||
+              *f.regs.pc == JSOP_NEW ||
+              *f.regs.pc == JSOP_EVAL ||
+              *f.regs.pc == JSOP_FUNCALL ||
+              *f.regs.pc == JSOP_FUNAPPLY);
+    f.regs.pc += JSOP_CALL_LENGTH;
 }
 
 void JS_FASTCALL
@@ -202,9 +210,8 @@ void JS_FASTCALL
 stubs::HitStackQuota(VMFrame &f)
 {
     /* Include space to push another frame. */
-    uintN nvals = f.fp()->script()->nslots + VALUES_PER_STACK_FRAME;
-    JS_ASSERT(f.regs.sp == f.fp()->base());
-    if (f.cx->stack.space().tryBumpLimit(NULL, f.regs.sp, nvals, &f.stackLimit))
+    f.stackLimit = f.cx->stack.space().getStackLimit(f.cx, DONT_REPORT_ERROR);
+    if (f.stackLimit)
         return;
 
     f.cx->stack.popFrameAfterOverflow();
@@ -240,14 +247,15 @@ stubs::FixupArity(VMFrame &f, uint32 nactual)
 
     /* Reserve enough space for a callee frame. */
     CallArgs args = CallArgsFromSp(nactual, f.regs.sp);
-    StackFrame *fp = cx->stack.getFixupFrame(cx, f.regs, args, fun, script, ncode,
-                                             construct, LimitCheck(&f.stackLimit));
+    StackFrame *fp = cx->stack.getFixupFrame(cx, DONT_REPORT_ERROR, args, fun,
+                                             script, ncode, construct, &f.stackLimit);
     if (!fp) {
         /*
          * The PC is not coherent with the current frame, so fix it up for
          * exception handling.
          */
         f.regs.pc = f.jit()->nativeToPC(ncode);
+        js_ReportOverRecursed(cx);
         THROWV(NULL);
     }
 
@@ -316,8 +324,7 @@ UncachedInlineCall(VMFrame &f, MaybeConstruct construct, void **pret, bool *unji
     JSScript *newscript = newfun->script();
 
     /* Get pointer to new frame/slots, prepare arguments. */
-    LimitCheck check(&f.stackLimit);
-    if (!cx->stack.pushInlineFrame(cx, f.regs, args, callee, newfun, newscript, construct, check))
+    if (!cx->stack.pushInlineFrame(cx, f.regs, args, callee, newfun, newscript, construct, &f.stackLimit))
         return false;
 
     /* Scope with a call object parented by callee's parent. */
@@ -464,32 +471,39 @@ js_InternalThrow(VMFrame &f)
     // Make sure sp is up to date.
     JS_ASSERT(&cx->regs() == &f.regs);
 
-    // Call the throw hook if necessary
-    JSThrowHook handler = f.cx->debugHooks->throwHook;
-    if (handler) {
-        Value rval;
-        switch (handler(cx, cx->fp()->script(), cx->regs().pc, Jsvalify(&rval),
-                        cx->debugHooks->throwHookData)) {
-          case JSTRAP_ERROR:
-            cx->clearPendingException();
-            return NULL;
-
-          case JSTRAP_RETURN:
-            cx->clearPendingException();
-            cx->fp()->setReturnValue(rval);
-            return cx->jaegerCompartment()->forceReturnFromExternC();
-
-          case JSTRAP_THROW:
-            cx->setPendingException(rval);
-            break;
-
-          default:
-            break;
-        }
-    }
-
     jsbytecode *pc = NULL;
     for (;;) {
+        if (cx->isExceptionPending()) {
+            // Call the throw hook if necessary
+            JSThrowHook handler = cx->debugHooks->throwHook;
+            if (handler || !cx->compartment->getDebuggees().empty()) {
+                Value rval;
+                JSTrapStatus st = Debugger::onExceptionUnwind(cx, &rval);
+                if (st == JSTRAP_CONTINUE && handler) {
+                    st = handler(cx, cx->fp()->script(), cx->regs().pc, Jsvalify(&rval),
+                                 cx->debugHooks->throwHookData);
+                }
+
+                switch (st) {
+                case JSTRAP_ERROR:
+                    cx->clearPendingException();
+                    return NULL;
+
+                case JSTRAP_RETURN:
+                    cx->clearPendingException();
+                    cx->fp()->setReturnValue(rval);
+                    return cx->jaegerCompartment()->forceReturnFromExternC();
+
+                case JSTRAP_THROW:
+                    cx->setPendingException(rval);
+                    break;
+
+                default:
+                    break;
+                }
+            }
+        }
+
         pc = FindExceptionHandler(cx);
         if (pc)
             break;
@@ -702,20 +716,6 @@ FrameIsFinished(JSContext *cx)
         : cx->fp()->finishedInInterpreter();
 }
 
-
-/* Simulate an inline_return by advancing the pc. */
-static inline void
-AdvanceReturnPC(JSContext *cx)
-{
-    JS_ASSERT(*cx->regs().pc == JSOP_CALL ||
-              *cx->regs().pc == JSOP_NEW ||
-              *cx->regs().pc == JSOP_EVAL ||
-              *cx->regs().pc == JSOP_FUNCALL ||
-              *cx->regs().pc == JSOP_FUNAPPLY);
-    cx->regs().pc += JSOP_CALL_LENGTH;
-}
-
-
 /*
  * Given a frame that is about to return, make sure its return value and
  * activation objects are fixed up. Then, pop the frame and advance the
@@ -767,7 +767,6 @@ HandleFinishedFrame(VMFrame &f, StackFrame *entryFrame)
 
     if (cx->fp() != entryFrame) {
         InlineReturn(f);
-        AdvanceReturnPC(cx);
     }
 
     return returnOK;
@@ -807,7 +806,6 @@ EvaluateExcessFrame(VMFrame &f, StackFrame *entryFrame)
         if (!JaegerShotAtSafePoint(cx, ncode))
             return false;
         InlineReturn(f);
-        AdvanceReturnPC(cx);
         return true;
     }
 
@@ -870,7 +868,8 @@ ResetTraceHintAt(JSScript *script, js::mjit::JITScript *jit,
     
     JS_ASSERT(ic.jumpTargetPC == pc);
 
-    JaegerSpew(JSpew_PICs, "Enabling trace IC %u in script %p\n", index, script);
+    JaegerSpew(JSpew_PICs, "Enabling trace IC %u in script %p\n", index,
+               static_cast<void*>(script));
 
     Repatcher repatcher(jit);
 

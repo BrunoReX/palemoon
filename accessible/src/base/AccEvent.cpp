@@ -231,14 +231,17 @@ AccStateChangeEvent::
 
 AccStateChangeEvent::
   AccStateChangeEvent(nsINode* aNode, PRUint64 aState, PRBool aIsEnabled):
-  AccEvent(::nsIAccessibleEvent::EVENT_STATE_CHANGE, aNode),
+  AccEvent(::nsIAccessibleEvent::EVENT_STATE_CHANGE, aNode,
+           eAutoDetect, eAllowDupes),
   mState(aState), mIsEnabled(aIsEnabled)
 {
 }
 
 AccStateChangeEvent::
   AccStateChangeEvent(nsINode* aNode, PRUint64 aState) :
-  AccEvent(::nsIAccessibleEvent::EVENT_STATE_CHANGE, aNode), mState(aState)
+  AccEvent(::nsIAccessibleEvent::EVENT_STATE_CHANGE, aNode,
+           eAutoDetect, eAllowDupes),
+  mState(aState)
 {
   // Use GetAccessibleForNode() because we do not want to store an accessible
   // since it leads to problems with delayed events in the case when
@@ -312,7 +315,7 @@ AccHideEvent::
   AccHideEvent(nsAccessible* aTarget, nsINode* aTargetNode) :
   AccMutationEvent(::nsIAccessibleEvent::EVENT_HIDE, aTarget, aTargetNode)
 {
-  mParent = mAccessible->GetParent();
+  mParent = mAccessible->Parent();
   mNextSibling = mAccessible->NextSibling();
   mPrevSibling = mAccessible->PrevSibling();
 }

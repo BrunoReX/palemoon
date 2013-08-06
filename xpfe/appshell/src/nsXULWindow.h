@@ -55,7 +55,7 @@
 #include "nsIBaseWindow.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
-#include "nsIDOMWindowInternal.h"
+#include "nsIDOMWindow.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIXULWindow.h"
@@ -123,7 +123,7 @@ protected:
    void       SyncAttributesToWidget();
    NS_IMETHOD SavePersistentAttributes();
 
-   NS_IMETHOD GetWindowDOMWindow(nsIDOMWindowInternal** aDOMWindow);
+   NS_IMETHOD GetWindowDOMWindow(nsIDOMWindow** aDOMWindow);
    NS_IMETHOD GetWindowDOMElement(nsIDOMElement** aDOMElement);
 
    // See nsIDocShellTreeOwner for docs on next two methods
@@ -147,14 +147,14 @@ protected:
    void       SetContentScrollbarVisibility(PRBool aVisible);
    PRBool     GetContentScrollbarVisibility();
    void       PersistentAttributesDirty(PRUint32 aDirtyFlags);
-   PRInt32    AppUnitsPerDevPixel();
+   PRUint32   AppUnitsPerDevPixel();
 
    nsChromeTreeOwner*      mChromeTreeOwner;
    nsContentTreeOwner*     mContentTreeOwner;
    nsContentTreeOwner*     mPrimaryContentTreeOwner;
    nsCOMPtr<nsIWidget>     mWindow;
    nsCOMPtr<nsIDocShell>   mDocShell;
-   nsCOMPtr<nsIDOMWindowInternal>  mDOMWindow;
+   nsCOMPtr<nsIDOMWindow>  mDOMWindow;
    nsCOMPtr<nsIWeakReference> mParentWindow;
    nsCOMPtr<nsIPrompt>     mPrompter;
    nsCOMPtr<nsIAuthPrompt> mAuthPrompter;

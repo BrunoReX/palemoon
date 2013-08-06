@@ -40,11 +40,7 @@
 
 MAKEFILES_db="
   db/Makefile
-  db/mdb/Makefile
-  db/mdb/public/Makefile
-  db/mork/Makefile
-  db/mork/build/Makefile
-  db/mork/src/Makefile
+  db/sqlite3/src/Makefile
 "
 
 MAKEFILES_dom="
@@ -53,7 +49,6 @@ MAKEFILES_dom="
   ipc/glue/Makefile
   ipc/ipdl/Makefile
   dom/Makefile
-  dom/public/coreEvents/Makefile
   dom/interfaces/base/Makefile
   dom/interfaces/canvas/Makefile
   dom/interfaces/core/Makefile
@@ -69,7 +64,6 @@ MAKEFILES_dom="
   dom/interfaces/storage/Makefile
   dom/interfaces/stylesheets/Makefile
   dom/interfaces/svg/Makefile
-  dom/interfaces/threads/Makefile
   dom/interfaces/traversal/Makefile
   dom/interfaces/xbl/Makefile
   dom/interfaces/xpath/Makefile
@@ -82,7 +76,6 @@ MAKEFILES_dom="
   dom/src/json/Makefile
   dom/src/offline/Makefile
   dom/src/storage/Makefile
-  dom/src/threads/Makefile
   dom/locales/Makefile
   dom/plugins/base/Makefile
   dom/plugins/ipc/Makefile
@@ -402,6 +395,14 @@ MAKEFILES_netwerk="
   netwerk/system/win32/Makefile
 "
 
+MAKEFILES_storage="
+  storage/Makefile
+  storage/public/Makefile
+  storage/src/Makefile
+  storage/build/Makefile
+  storage/test/Makefile
+"
+
 MAKEFILES_uriloader="
   uriloader/Makefile
   uriloader/base/Makefile
@@ -635,7 +636,6 @@ MAKEFILES_xulapp="
   toolkit/components/printing/Makefile
   toolkit/components/satchel/Makefile
   toolkit/components/search/Makefile
-  toolkit/spatial-navigation/Makefile
   toolkit/components/startup/Makefile
   toolkit/components/startup/public/Makefile
   toolkit/components/statusfilter/Makefile
@@ -761,6 +761,7 @@ add_makefiles "
   $MAKEFILES_mathml
   $MAKEFILES_plugin
   $MAKEFILES_netwerk
+  $MAKEFILES_storage
   $MAKEFILES_uriloader
   $MAKEFILES_profile
   $MAKEFILES_rdf
@@ -810,7 +811,6 @@ if [ "$ENABLE_TESTS" ]; then
     docshell/test/navigation/Makefile
     dom/src/json/test/Makefile
     dom/src/jsurl/test/Makefile
-    dom/src/threads/test/Makefile
     dom/tests/Makefile
     dom/tests/mochitest/Makefile
     dom/tests/mochitest/ajax/Makefile
@@ -862,7 +862,6 @@ if [ "$ENABLE_TESTS" ]; then
     embedding/test/Makefile
     extensions/cookie/test/Makefile
     extensions/pref/Makefile
-    intl/locale/tests_multilocale/Makefile
     js/src/xpconnect/tests/mochitest/Makefile
     layout/forms/test/Makefile
     layout/generic/test/Makefile
@@ -928,7 +927,6 @@ if [ "$ENABLE_TESTS" ]; then
     toolkit/mozapps/extensions/test/Makefile
     toolkit/mozapps/plugins/tests/Makefile
     toolkit/mozapps/update/test/Makefile
-    toolkit/spatial-navigation/tests/Makefile
     toolkit/xre/test/Makefile
     uriloader/exthandler/tests/mochitest/Makefile
     widget/tests/Makefile
@@ -943,24 +941,6 @@ if [ "$MOZ_ZIPWRITER" ]; then
     modules/libjar/zipwriter/public/Makefile
     modules/libjar/zipwriter/src/Makefile
     modules/libjar/zipwriter/test/Makefile
-  "
-fi
-
-if [ "$MOZ_MORKREADER" ]; then
-  add_makefiles "
-    db/morkreader/Makefile
-    db/morkreader/external/Makefile
-  "
-fi
-
-if [ "$MOZ_STORAGE" ]; then
-  add_makefiles "
-    db/sqlite3/src/Makefile
-    storage/Makefile
-    storage/public/Makefile
-    storage/src/Makefile
-    storage/build/Makefile
-    storage/test/Makefile
   "
 fi
 

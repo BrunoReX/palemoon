@@ -9,10 +9,6 @@ let provider = {
     switch (prop) {
       case "ExtPrefDL":
         return [Services.dirsvc.get("CurProcD", Ci.nsIFile)];
-      case "UHist":
-        let histFile = Services.dirsvc.get("ProfD", Ci.nsIFile);
-        histFile.append("history.dat");
-        return histFile;
       default:
         throw Cr.NS_ERROR_FAILURE;
     }
@@ -206,15 +202,6 @@ function generateNewKeys(collections) {
   let wbo = CollectionKeys.generateNewKeysWBO(collections);
   let modified = new_timestamp();
   CollectionKeys.setContents(wbo.cleartext, modified);
-}
-
-function basic_auth_header(user, password) {
-  return "Basic " + btoa(user + ":" + Utils.encodeUTF8(password));
-}
-
-function basic_auth_matches(req, user, password) {
-  return req.hasHeader("Authorization") &&
-         (req.getHeader("Authorization") == basic_auth_header(user, password));
 }
 
 function do_check_throws(aFunc, aResult, aStack)

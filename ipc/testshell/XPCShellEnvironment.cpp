@@ -414,14 +414,6 @@ GC(JSContext *cx,
     preBytes = JS_GetGCParameter(rt, JSGC_BYTES);
     JS_GC(cx);
     postBytes = JS_GetGCParameter(rt, JSGC_BYTES);
-    fprintf(stdout, "before %lu, after %lu, break %08lx\n",
-           (unsigned long)preBytes, (unsigned long)postBytes,
-#ifdef XP_UNIX
-           (unsigned long)sbrk(0)
-#else
-           0
-#endif
-           );
 #ifdef JS_GCMETER
     js_DumpGCStats(rt, stdout);
 #endif
@@ -566,11 +558,6 @@ JSFunctionSpec gGlobalFunctions[] =
     {"clear",           Clear,          1,0},
 #ifdef DEBUG
     {"dumpHeap",        DumpHeap,       5,0},
-#endif
-#ifdef MOZ_CALLGRIND
-    {"startCallgrind",  js_StartCallgrind,  0,0},
-    {"stopCallgrind",   js_StopCallgrind,   0,0},
-    {"dumpCallgrind",   js_DumpCallgrind,   1,0},
 #endif
     {nsnull,nsnull,0,0}
 };

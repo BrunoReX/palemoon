@@ -2,11 +2,10 @@
 <head>
   <title>Test for IME state controling</title>
   <script type="text/javascript"
-          src="chrome://mochikit/content/MochiKit/packed.js"></script>
-  <script type="text/javascript"
           src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <script type="text/javascript"
           src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script type="text/javascript" src="chrome://mochikit/content/tests/SimpleTest/ChromeUtils.js"></script>
   <link rel="stylesheet" type="text/css"
           href="chrome://mochikit/content/tests/SimpleTest/test.css" />
 </head>
@@ -1244,8 +1243,6 @@ function runTests()
 {
   if (!kIMEEnabledSupported && !kIMEOpenSupported)
     return;
-
-  netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
 
   // test for normal contents.
   runBasicTest(false, false, "Testing of normal contents");

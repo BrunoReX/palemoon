@@ -474,7 +474,8 @@ nsInlineFrame::ReflowFrames(nsPresContext* aPresContext,
   availableWidth -= leftEdge;
   availableWidth -= ltr ? aReflowState.mComputedBorderPadding.right
                         : aReflowState.mComputedBorderPadding.left;
-  lineLayout->BeginSpan(this, &aReflowState, leftEdge, leftEdge + availableWidth);
+  lineLayout->BeginSpan(this, &aReflowState, leftEdge,
+                        leftEdge + availableWidth, &mBaseline);
 
   // First reflow our current children
   nsIFrame* frame = mFrames.FirstChild();
@@ -643,8 +644,9 @@ nsInlineFrame::ReflowFrames(nsPresContext* aPresContext,
                           : aReflowState.mComputedBorderPadding.left;
   }
 
-  nsLayoutUtils::SetFontFromStyle(aReflowState.rendContext, mStyleContext);
-  nsFontMetrics* fm = aReflowState.rendContext->FontMetrics();
+  nsRefPtr<nsFontMetrics> fm;
+  nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm));
+  aReflowState.rendContext->SetFont(fm);
 
   if (fm) {
     // Compute final height of the frame.
@@ -913,13 +915,7 @@ nsInlineFrame::GetSkipSides() const
 nscoord
 nsInlineFrame::GetBaseline() const
 {
-  nscoord ascent = 0;
-  nsRefPtr<nsFontMetrics> fm;
-  nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm));
-  if (fm) {
-    ascent = fm->MaxAscent();
-  }
-  return NS_MIN(mRect.height, ascent + GetUsedBorderAndPadding().top);
+  return mBaseline;
 }
 
 #ifdef ACCESSIBILITY

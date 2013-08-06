@@ -758,15 +758,6 @@ const nsHTMLElement gHTMLElements[] = {
     /*special parents,kids*/            0,0,
   },
   {
-    /*tag*/                             eHTMLTag_isindex,
-    /*requiredAncestor*/                eHTMLTag_unknown,eHTMLTag_unknown,
-    /*rootnodes,endrootnodes*/          &gRootTags,&gRootTags,
-    /*autoclose starttags and endtags*/ 0,0,0,0,
-    /*parent,incl,exclgroups*/          kBlock, kFlowEntity, kNone,
-    /*special props, prop-range*/       kNonContainer|kRequiresBody,kDefaultPropRange,
-    /*special parents,kids*/            &gInBody,0,
-  },
-  {
     /*tag*/                             eHTMLTag_kbd,
     /*req-parent excl-parent*/          eHTMLTag_unknown,eHTMLTag_unknown,
     /*rootnodes,endrootnodes*/          &gRootTags,&gRootTags,
@@ -864,6 +855,15 @@ const nsHTMLElement gHTMLElements[] = {
     /*parent,incl,exclgroups*/          kList, (kSelf|kFlowEntity), kNone,
     /*special props, prop-range*/       0,kDefaultPropRange,
     /*special parents,kids*/            0,&gULKids,
+  },
+  {
+    /*tag*/                             eHTMLTag_menuitem,
+    /*req-parent excl-parent*/          eHTMLTag_unknown,eHTMLTag_unknown,
+    /*rootnodes,endrootnodes*/          &gRootTags,&gRootTags,
+    /*autoclose starttags and endtags*/ 0,0,0,0,
+    /*parent,incl,exclgroups*/          kFlowEntity, kNone, kNone,
+    /*special props, prop-range*/       kNonContainer,kDefaultPropRange,
+    /*special parents,kids*/            0,0,
   },
   {
     /*tag*/                             eHTMLTag_meta,

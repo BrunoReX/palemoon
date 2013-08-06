@@ -184,6 +184,7 @@ static void EnsureBlockDisplay(PRUint8& display)
 static nscoord CalcLengthWith(const nsCSSValue& aValue,
                               nscoord aFontSize,
                               const nsStyleFont* aStyleFont,
+                              const nsStyleVisibility* aStyleVisibility,
                               nsStyleContext* aStyleContext,
                               nsPresContext* aPresContext,
                               PRBool aUseProvidedRootEmSize,
@@ -196,6 +197,7 @@ struct CalcLengthCalcOps : public css::BasicCoordCalcOps,
   // All of the parameters to CalcLengthWith except aValue.
   const nscoord mFontSize;
   const nsStyleFont* const mStyleFont;
+  const nsStyleVisibility* const mStyleVisibility;
   nsStyleContext* const mStyleContext;
   nsPresContext* const mPresContext;
   const PRBool mUseProvidedRootEmSize;
@@ -203,11 +205,13 @@ struct CalcLengthCalcOps : public css::BasicCoordCalcOps,
   PRBool& mCanStoreInRuleTree;
 
   CalcLengthCalcOps(nscoord aFontSize, const nsStyleFont* aStyleFont,
+                    const nsStyleVisibility* aStyleVisibility,
                     nsStyleContext* aStyleContext, nsPresContext* aPresContext,
                     PRBool aUseProvidedRootEmSize, PRBool aUseUserFontSet,
                     PRBool& aCanStoreInRuleTree)
     : mFontSize(aFontSize),
       mStyleFont(aStyleFont),
+      mStyleVisibility(aStyleVisibility),
       mStyleContext(aStyleContext),
       mPresContext(aPresContext),
       mUseProvidedRootEmSize(aUseProvidedRootEmSize),
@@ -218,8 +222,8 @@ struct CalcLengthCalcOps : public css::BasicCoordCalcOps,
 
   result_type ComputeLeafValue(const nsCSSValue& aValue)
   {
-    return CalcLengthWith(aValue, mFontSize, mStyleFont, mStyleContext,
-                          mPresContext, mUseProvidedRootEmSize,
+    return CalcLengthWith(aValue, mFontSize, mStyleFont, mStyleVisibility,
+                          mStyleContext, mPresContext, mUseProvidedRootEmSize,
                           mUseUserFontSet, mCanStoreInRuleTree);
   }
 };
@@ -229,9 +233,34 @@ static inline nscoord ScaleCoord(const nsCSSValue &aValue, float factor)
   return NSToCoordRoundWithClamp(aValue.GetFloatValue() * factor);
 }
 
+already_AddRefed<nsFontMetrics>
+GetMetricsFor(nsPresContext* aPresContext,
+              nsStyleContext* aStyleContext,
+              const nsStyleFont* aStyleFont,
+              const nsStyleVisibility* aStyleVisibility,
+              nscoord aFontSize, // overrides value from aStyleFont
+              PRBool aUseUserFontSet)
+{
+  nsFont font = aStyleFont->mFont;
+  font.size = aFontSize;
+  gfxUserFontSet *fs = nsnull;
+  if (aUseUserFontSet) {
+    fs = aPresContext->GetUserFontSet();
+  }
+  nsRefPtr<nsFontMetrics> fm;
+  if (!aStyleVisibility) {
+    aStyleVisibility = aStyleContext->GetStyleVisibility();
+  }
+  aPresContext->DeviceContext()->GetMetricsFor(font,
+                                               aStyleVisibility->mLanguage,
+                                               fs, *getter_AddRefs(fm));
+  return fm.forget();
+}
+
 static nscoord CalcLengthWith(const nsCSSValue& aValue,
                               nscoord aFontSize,
                               const nsStyleFont* aStyleFont,
+                              const nsStyleVisibility* aStyleVisibility,
                               nsStyleContext* aStyleContext,
                               nsPresContext* aPresContext,
                               PRBool aUseProvidedRootEmSize,
@@ -243,8 +272,10 @@ static nscoord CalcLengthWith(const nsCSSValue& aValue,
 {
   NS_ASSERTION(aValue.IsLengthUnit() || aValue.IsCalcUnit(),
                "not a length or calc unit");
-  NS_ASSERTION(aStyleFont || aStyleContext, "Must have style data");
-  NS_ASSERTION(!aStyleFont || !aStyleContext, "Duplicate sources of data");
+  NS_ASSERTION((aStyleFont && aStyleVisibility) || aStyleContext,
+               "Must have style data");
+  NS_ASSERTION((!aStyleFont && !aStyleVisibility) || !aStyleContext,
+               "Duplicate sources of data");
   NS_ASSERTION(aPresContext, "Must have prescontext");
 
   if (aValue.IsFixedLengthUnit()) {
@@ -305,22 +336,20 @@ static nscoord CalcLengthWith(const nsCSSValue& aValue,
       // XXX scale against font metrics height instead?
     }
     case eCSSUnit_XHeight: {
-      nsFont font = styleFont->mFont;
-      font.size = aFontSize;
       nsRefPtr<nsFontMetrics> fm =
-        aPresContext->GetMetricsFor(font, aUseUserFontSet);
+        GetMetricsFor(aPresContext, aStyleContext, styleFont,
+                      aStyleVisibility, aFontSize, aUseUserFontSet);
       return ScaleCoord(aValue, float(fm->XHeight()));
     }
     case eCSSUnit_Char: {
-      nsFont font = styleFont->mFont;
-      font.size = aFontSize;
       nsRefPtr<nsFontMetrics> fm =
-        aPresContext->GetMetricsFor(font, aUseUserFontSet);
+        GetMetricsFor(aPresContext, aStyleContext, styleFont,
+                      aStyleVisibility, aFontSize, aUseUserFontSet);
       gfxFloat zeroWidth = (fm->GetThebesFontGroup()->GetFontAt(0)
                             ->GetMetrics().zeroOrAveCharWidth);
 
-      return ScaleCoord(aValue, NS_ceil(aPresContext->AppUnitsPerDevPixel() *
-                                        zeroWidth));
+      return ScaleCoord(aValue, ceil(aPresContext->AppUnitsPerDevPixel() *
+                                     zeroWidth));
     }
     // For properties for which lengths are the *only* units accepted in
     // calc(), we can handle calc() here and just compute a final
@@ -333,7 +362,8 @@ static nscoord CalcLengthWith(const nsCSSValue& aValue,
     case eCSSUnit_Calc_Times_L:
     case eCSSUnit_Calc_Times_R:
     case eCSSUnit_Calc_Divided: {
-      CalcLengthCalcOps ops(aFontSize, aStyleFont, aStyleContext, aPresContext,
+      CalcLengthCalcOps ops(aFontSize, aStyleFont, aStyleVisibility,
+                            aStyleContext, aPresContext,
                             aUseProvidedRootEmSize, aUseUserFontSet,
                             aCanStoreInRuleTree);
       return css::ComputeCalc(aValue, ops);
@@ -353,7 +383,8 @@ nsRuleNode::CalcLength(const nsCSSValue& aValue,
 {
   NS_ASSERTION(aStyleContext, "Must have style data");
 
-  return CalcLengthWith(aValue, -1, nsnull, aStyleContext, aPresContext,
+  return CalcLengthWith(aValue, -1, nsnull, nsnull,
+                        aStyleContext, aPresContext,
                         PR_FALSE, PR_TRUE, aCanStoreInRuleTree);
 }
 
@@ -372,8 +403,10 @@ nsRuleNode::CalcLengthWithInitialFont(nsPresContext* aPresContext,
                                       const nsCSSValue& aValue)
 {
   nsStyleFont defaultFont(aPresContext);
+  nsStyleVisibility defaultVisibility(aPresContext); // FIXME: best language?
   PRBool canStoreInRuleTree;
-  return CalcLengthWith(aValue, -1, &defaultFont, nsnull, aPresContext,
+  return CalcLengthWith(aValue, -1, &defaultFont, &defaultVisibility,
+                        nsnull, aPresContext,
                         PR_TRUE, PR_FALSE, canStoreInRuleTree);
 }
 
@@ -2442,15 +2475,18 @@ struct SetFontSizeCalcOps : public css::BasicCoordCalcOps,
   // The parameters beyond aValue that we need for CalcLengthWith.
   const nscoord mParentSize;
   const nsStyleFont* const mParentFont;
+  const nsStyleVisibility* const mLanguageVisibility;
   nsPresContext* const mPresContext;
   const PRBool mAtRoot;
   PRBool& mCanStoreInRuleTree;
 
   SetFontSizeCalcOps(nscoord aParentSize, const nsStyleFont* aParentFont,
+                     const nsStyleVisibility* aLanguageVisibility,
                      nsPresContext* aPresContext, PRBool aAtRoot,
                      PRBool& aCanStoreInRuleTree)
     : mParentSize(aParentSize),
       mParentFont(aParentFont),
+      mLanguageVisibility(aLanguageVisibility),
       mPresContext(aPresContext),
       mAtRoot(aAtRoot),
       mCanStoreInRuleTree(aCanStoreInRuleTree)
@@ -2464,7 +2500,8 @@ struct SetFontSizeCalcOps : public css::BasicCoordCalcOps,
       // Note that font-based length units use the parent's size
       // unadjusted for scriptlevel changes. A scriptlevel change
       // between us and the parent is simply ignored.
-      size = CalcLengthWith(aValue, mParentSize, mParentFont,
+      size = CalcLengthWith(aValue, mParentSize,
+                            mParentFont, mLanguageVisibility,
                             nsnull, mPresContext, mAtRoot,
                             PR_TRUE, mCanStoreInRuleTree);
       if (!aValue.IsRelativeLengthUnit()) {
@@ -2492,6 +2529,7 @@ nsRuleNode::SetFontSize(nsPresContext* aPresContext,
                         const nsRuleData* aRuleData,
                         const nsStyleFont* aFont,
                         const nsStyleFont* aParentFont,
+                        const nsStyleVisibility* aLanguageVisibility,
                         nscoord* aSize,
                         const nsFont& aSystemFont,
                         nscoord aParentSize,
@@ -2506,19 +2544,16 @@ nsRuleNode::SetFontSize(nsPresContext* aPresContext,
   const nsCSSValue* sizeValue = aRuleData->ValueForFontSize();
   if (eCSSUnit_Enumerated == sizeValue->GetUnit()) {
     PRInt32 value = sizeValue->GetIntValue();
-    PRInt32 scaler = aPresContext->FontScaler();
-    float scaleFactor = nsStyleUtil::GetScalingFactor(scaler);
 
     zoom = PR_TRUE;
     if ((NS_STYLE_FONT_SIZE_XXSMALL <= value) &&
         (value <= NS_STYLE_FONT_SIZE_XXLARGE)) {
       *aSize = nsStyleUtil::CalcFontPointSize(value, baseSize,
-                       scaleFactor, aPresContext, eFontSize_CSS);
+                       aPresContext, eFontSize_CSS);
     }
     else if (NS_STYLE_FONT_SIZE_XXXLARGE == value) {
       // <font size="7"> is not specified in CSS, so we don't use eFontSize_CSS.
-      *aSize = nsStyleUtil::CalcFontPointSize(value, baseSize,
-                       scaleFactor, aPresContext);
+      *aSize = nsStyleUtil::CalcFontPointSize(value, baseSize, aPresContext);
     }
     else if (NS_STYLE_FONT_SIZE_LARGER  == value ||
              NS_STYLE_FONT_SIZE_SMALLER == value) {
@@ -2534,14 +2569,14 @@ nsRuleNode::SetFontSize(nsPresContext* aPresContext,
 
       if (NS_STYLE_FONT_SIZE_LARGER == value) {
         *aSize = nsStyleUtil::FindNextLargerFontSize(parentSize,
-                         baseSize, scaleFactor, aPresContext, eFontSize_CSS);
+                         baseSize, aPresContext, eFontSize_CSS);
 
         NS_ASSERTION(*aSize >= parentSize,
                      "FindNextLargerFontSize failed");
       }
       else {
         *aSize = nsStyleUtil::FindNextSmallerFontSize(parentSize,
-                         baseSize, scaleFactor, aPresContext, eFontSize_CSS);
+                         baseSize, aPresContext, eFontSize_CSS);
         NS_ASSERTION(*aSize < parentSize ||
                      parentSize <= nsPresContext::CSSPixelsToAppUnits(1),
                      "FindNextSmallerFontSize failed");
@@ -2553,8 +2588,8 @@ nsRuleNode::SetFontSize(nsPresContext* aPresContext,
   else if (sizeValue->IsLengthUnit() ||
            sizeValue->GetUnit() == eCSSUnit_Percent ||
            sizeValue->IsCalcUnit()) {
-    SetFontSizeCalcOps ops(aParentSize, aParentFont, aPresContext, aAtRoot,
-                           aCanStoreInRuleTree);
+    SetFontSizeCalcOps ops(aParentSize, aParentFont, aLanguageVisibility,
+                           aPresContext, aAtRoot, aCanStoreInRuleTree);
     *aSize = css::ComputeCalc(*sizeValue, ops);
     if (*aSize < 0) {
       NS_ABORT_IF_FALSE(sizeValue->IsCalcUnit(),
@@ -2625,6 +2660,12 @@ nsRuleNode::SetFont(nsPresContext* aPresContext, nsStyleContext* aContext,
   const nsFont* defaultVariableFont =
     aPresContext->GetDefaultFont(kPresContext_DefaultVariableFont_ID);
   PRBool atRoot = !aContext->GetParent();
+  // We get '%', 'em', 'ex', and 'ch' units from aParentFont.  For 'ex'
+  // and 'ch' units we use font metrics, which depend on language.  It
+  // makes sense to use the language from the same style context as
+  // aParentFont.
+  const nsStyleVisibility *languageVisibility =
+    (atRoot ? aContext : aContext->GetParent())->GetStyleVisibility();
 
   // -moz-system-font: enum (never inherit!)
   nsFont systemFont;
@@ -2813,7 +2854,8 @@ nsRuleNode::SetFont(nsPresContext* aPresContext, nsStyleContext* aContext,
     // to the parent font, or the size definitions are circular and we
     //
     aFont->mScriptMinSize =
-      CalcLengthWith(*scriptMinSizeValue, aParentFont->mSize, aParentFont,
+      CalcLengthWith(*scriptMinSizeValue, aParentFont->mSize,
+                     aParentFont, languageVisibility,
                      nsnull, aPresContext, atRoot, PR_TRUE,
                      aCanStoreInRuleTree);
   }
@@ -2881,7 +2923,8 @@ nsRuleNode::SetFont(nsPresContext* aPresContext, nsStyleContext* aContext,
                            &scriptLevelAdjustedUnconstrainedParentSize);
   NS_ASSERTION(!aUsedStartStruct || aFont->mScriptUnconstrainedSize == aFont->mSize,
                "If we have a start struct, we should have reset everything coming in here");
-  SetFontSize(aPresContext, aRuleData, aFont, aParentFont, &aFont->mSize,
+  SetFontSize(aPresContext, aRuleData, aFont, aParentFont,
+              languageVisibility, &aFont->mSize,
               systemFont, aParentFont->mSize, scriptLevelAdjustedParentSize,
               aUsedStartStruct, atRoot, aCanStoreInRuleTree);
   if (aParentFont->mSize == aParentFont->mScriptUnconstrainedSize &&
@@ -2894,8 +2937,8 @@ nsRuleNode::SetFont(nsPresContext* aPresContext, nsStyleContext* aContext,
     aFont->mScriptUnconstrainedSize = aFont->mSize;
   } else {
     SetFontSize(aPresContext, aRuleData, aFont, aParentFont,
-                &aFont->mScriptUnconstrainedSize, systemFont,
-                aParentFont->mScriptUnconstrainedSize,
+                languageVisibility, &aFont->mScriptUnconstrainedSize,
+                systemFont, aParentFont->mScriptUnconstrainedSize,
                 scriptLevelAdjustedUnconstrainedParentSize,
                 aUsedStartStruct, atRoot, aCanStoreInRuleTree);
   }
@@ -4449,8 +4492,6 @@ nsRuleNode::ComputeDisplayData(void* aStartStruct,
 
   case eCSSUnit_Inherit:
     display->mSpecifiedTransform = parentDisplay->mSpecifiedTransform;
-    if (parentDisplay->mSpecifiedTransform)
-      display->mTransform = parentDisplay->mTransform;
     canStoreInRuleTree = PR_FALSE;
     break;
 
@@ -4463,8 +4504,6 @@ nsRuleNode::ComputeDisplayData(void* aStartStruct,
       display->mSpecifiedTransform = nsnull;
     } else {
       display->mSpecifiedTransform = head; // weak pointer, owned by rule
-      display->mTransform = nsStyleTransformMatrix::ReadTransforms(head,
-                              aContext, mPresContext, canStoreInRuleTree);
     }
     break;
   }
@@ -4477,19 +4516,71 @@ nsRuleNode::ComputeDisplayData(void* aStartStruct,
   const nsCSSValue* transformOriginValue =
     aRuleData->ValueForTransformOrigin();
   if (transformOriginValue->GetUnit() != eCSSUnit_Null) {
-#ifdef DEBUG
-    PRBool result =
-#endif
-      SetPairCoords(*transformOriginValue,
-                    display->mTransformOrigin[0],
-                    display->mTransformOrigin[1],
-                    parentDisplay->mTransformOrigin[0],
-                    parentDisplay->mTransformOrigin[1],
+    const nsCSSValue& valX =
+      transformOriginValue->GetUnit() == eCSSUnit_Triplet ?
+        transformOriginValue->GetTripletValue().mXValue : *transformOriginValue;
+    const nsCSSValue& valY =
+      transformOriginValue->GetUnit() == eCSSUnit_Triplet ?
+        transformOriginValue->GetTripletValue().mYValue : *transformOriginValue;
+    const nsCSSValue& valZ =
+      transformOriginValue->GetUnit() == eCSSUnit_Triplet ?
+        transformOriginValue->GetTripletValue().mZValue : *transformOriginValue;
+
+    mozilla::DebugOnly<PRBool> cX =
+       SetCoord(valX, display->mTransformOrigin[0],
+                parentDisplay->mTransformOrigin[0],
+                SETCOORD_LPH | SETCOORD_INITIAL_HALF |
+                  SETCOORD_BOX_POSITION | SETCOORD_STORE_CALC,
+                aContext, mPresContext, canStoreInRuleTree);
+
+     mozilla::DebugOnly<PRBool> cY =
+       SetCoord(valY, display->mTransformOrigin[1],
+                parentDisplay->mTransformOrigin[1],
+                SETCOORD_LPH | SETCOORD_INITIAL_HALF |
+                  SETCOORD_BOX_POSITION | SETCOORD_STORE_CALC,
+                aContext, mPresContext, canStoreInRuleTree);
+
+     if (valZ.GetUnit() == eCSSUnit_Null) {
+       // Null for the z component means a 0 translation, not
+       // unspecified, as we have already checked the triplet
+       // value for Null.
+       display->mTransformOrigin[2].SetCoordValue(0);
+     } else {
+       mozilla::DebugOnly<PRBool> cZ =
+         SetCoord(valZ, display->mTransformOrigin[2],
+                  parentDisplay->mTransformOrigin[2],
+                  SETCOORD_LH | SETCOORD_INITIAL_ZERO | SETCOORD_STORE_CALC,
+                  aContext, mPresContext, canStoreInRuleTree);
+       NS_ABORT_IF_FALSE(cY == cZ, "changed one but not the other");
+     }
+     NS_ABORT_IF_FALSE(cX == cY, "changed one but not the other");
+     NS_ASSERTION(cX, "Malformed -moz-transform-origin parse!");
+  }
+
+  const nsCSSValue* perspectiveOriginValue =
+    aRuleData->ValueForPerspectiveOrigin();
+  if (perspectiveOriginValue->GetUnit() != eCSSUnit_Null) {
+    mozilla::DebugOnly<PRBool> result =
+      SetPairCoords(*perspectiveOriginValue,
+                    display->mPerspectiveOrigin[0],
+                    display->mPerspectiveOrigin[1],
+                    parentDisplay->mPerspectiveOrigin[0],
+                    parentDisplay->mPerspectiveOrigin[1],
                     SETCOORD_LPH | SETCOORD_INITIAL_HALF |
                     SETCOORD_BOX_POSITION | SETCOORD_STORE_CALC,
                     aContext, mPresContext, canStoreInRuleTree);
-    NS_ASSERTION(result, "Malformed -moz-transform-origin parse!");
+    NS_ASSERTION(result, "Malformed -moz-perspective-origin parse!");
   }
+
+  SetCoord(*aRuleData->ValueForPerspective(), 
+           display->mChildPerspective, parentDisplay->mChildPerspective,
+           SETCOORD_LAH | SETCOORD_INITIAL_ZERO | SETCOORD_NONE,
+           aContext, mPresContext, canStoreInRuleTree);
+
+  SetDiscrete(*aRuleData->ValueForBackfaceVisibility(),
+              display->mBackfaceVisibility, canStoreInRuleTree,
+              SETDSC_ENUMERATED, parentDisplay->mBackfaceVisibility,
+              NS_STYLE_BACKFACE_VISIBILITY_VISIBLE, 0, 0, 0, 0);
 
   // orient: enum, inherit, initial
   SetDiscrete(*aRuleData->ValueForOrient(),
@@ -4510,6 +4601,10 @@ nsRuleNode::ComputeVisibilityData(void* aStartStruct,
 {
   COMPUTE_START_INHERITED(Visibility, (mPresContext),
                           visibility, parentVisibility)
+
+  // IMPORTANT: No properties in this struct have lengths in them.  We
+  // depend on this since CalcLengthWith can call GetStyleVisibility()
+  // to get the language for resolving fonts!
 
   // direction: enum, inherit, initial
   SetDiscrete(*aRuleData->ValueForDirection(), visibility->mDirection,

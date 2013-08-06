@@ -141,10 +141,6 @@ ThebesLayerBufferOGL::RenderTo(const nsIntPoint& aOffset,
     mTexImageOnWhite->EndUpdate();
   }
 
-  // Bind textures.
-  TextureImage::ScopedBindTexture texBind(mTexImage, LOCAL_GL_TEXTURE0);
-  TextureImage::ScopedBindTexture texOnWhiteBind(mTexImageOnWhite, LOCAL_GL_TEXTURE1);
-
   PRInt32 passes = mTexImageOnWhite ? 2 : 1;
   for (PRInt32 pass = 1; pass <= passes; ++pass) {
     LayerProgram *program;
@@ -194,17 +190,42 @@ ThebesLayerBufferOGL::RenderTo(const nsIntPoint& aOffset,
     } else {
       renderRegion = &visibleRegion;
     }
-    nsIntRegionRectIterator iter(*renderRegion);
-    while (const nsIntRect *iterRect = iter.Next()) {
-      nsIntRect quadRect = *iterRect;
-      program->SetLayerQuadRect(quadRect);
 
-      quadRect.MoveBy(-GetOriginOffset());
-
-      aManager->BindAndDrawQuadWithTextureRect(program, quadRect,
-                                               mTexImage->GetSize(),
-                                               mTexImage->GetWrapMode());
+    mTexImage->BeginTileIteration();
+    if (mTexImageOnWhite) {
+      mTexImageOnWhite->BeginTileIteration();
+      NS_ASSERTION(mTexImageOnWhite->GetTileRect() == mTexImage->GetTileRect(), "component alpha textures should be the same size.");
     }
+    nsIntRegion region(*renderRegion);
+    nsIntPoint origin = GetOriginOffset();
+    region.MoveBy(-origin);           // translate into TexImage space, buffer origin might not be at texture (0,0)
+
+    do {
+      nsIntRect textureRect = mTexImage->GetTileRect();
+      textureRect.MoveBy(region.GetBounds().x, region.GetBounds().y);
+      nsIntRegion subregion(region);
+      subregion.And(region, textureRect); // region this texture is visible in
+      if (subregion.IsEmpty()) {
+        continue;
+      }
+      // Bind textures.
+      TextureImage::ScopedBindTexture texBind(mTexImage, LOCAL_GL_TEXTURE0);
+      TextureImage::ScopedBindTexture texOnWhiteBind(mTexImageOnWhite, LOCAL_GL_TEXTURE1);
+
+      nsIntRegionRectIterator iter(subregion);
+      while (const nsIntRect *iterRect = iter.Next()) {
+        nsIntRect regionRect = *iterRect;  // one rectangle of this texture's region
+        // translate into the correct place for this texture sub-region
+        nsIntRect screenRect = regionRect;
+        screenRect.MoveBy(origin);
+        program->SetLayerQuadRect(screenRect);
+
+        regionRect.MoveBy(-mTexImage->GetTileRect().TopLeft()); // get region of tile
+        aManager->BindAndDrawQuadWithTextureRect(program, regionRect,
+                                                 textureRect.Size(),
+                                                 mTexImage->GetWrapMode());
+      }
+    } while (mTexImage->NextTile());
   }
 
   if (mTexImageOnWhite) {
@@ -589,7 +610,16 @@ BasicBufferOGL::BeginPaint(ContentType aContentType,
   // Move rgnToPaint back into position so that the thebes callback
   // gets the right coordintes.
   result.mRegionToDraw.MoveBy(-offset);
-  
+
+  // If we do partial updates, we have to clip drawing to the regionToDraw.
+  // If we don't clip, background images will be fillrect'd to the region correctly,
+  // while text or lines will paint outside of the regionToDraw. This becomes apparent
+  // with concave regions. Right now the scrollbars invalidate a narrow strip of the awesomebar
+  // although they never cover it. This leads to two draw rects, the narow strip and the actually
+  // newly exposed area. It would be wise to fix this glitch in any way to have simpler
+  // clip and draw regions.
+  gfxUtils::ClipToRegion(result.mContext, result.mRegionToDraw);
+
   return result;
 }
 

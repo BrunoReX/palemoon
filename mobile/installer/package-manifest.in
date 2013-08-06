@@ -103,16 +103,12 @@
 #else
 @BINPATH@/mozsqlt3@DLL_SUFFIX@
 #endif
-@BINPATH@/README.txt
 @BINPATH@/blocklist.xml
 #ifdef XP_UNIX
 @BINPATH@/run-mozilla.sh
 #ifndef XP_MACOSX
 @BINPATH@/mozilla-xremote-client
 #endif
-#endif
-#ifdef MOZ_SPLASHSCREEN
-@BINPATH@/splash.bmp
 #endif
 
 ; [Components]
@@ -238,6 +234,7 @@
 @BINPATH@/components/shistory.xpt
 @BINPATH@/components/spellchecker.xpt
 @BINPATH@/components/storage.xpt
+@BINPATH@/components/telemetry.xpt
 @BINPATH@/components/toolkitprofile.xpt
 #ifdef MOZ_ENABLE_XREMOTE
 @BINPATH@/components/toolkitremote.xpt
@@ -272,9 +269,11 @@
 @BINPATH@/components/xpcom_xpti.xpt
 @BINPATH@/components/xpconnect.xpt
 @BINPATH@/components/xulapp.xpt
+@BINPATH@/components/xul.xpt
 @BINPATH@/components/xuldoc.xpt
 @BINPATH@/components/xultmpl.xpt
 @BINPATH@/components/zipwriter.xpt
+@BINPATH@/components/webapps.xpt
 
 ; JavaScript components
 @BINPATH@/components/ConsoleAPI.manifest
@@ -330,6 +329,7 @@
 @BINPATH@/components/amContentHandler.js
 @BINPATH@/components/amWebInstallListener.js
 @BINPATH@/components/nsBlocklistService.js
+
 #ifdef MOZ_UPDATER
 @BINPATH@/components/nsUpdateService.manifest
 @BINPATH@/components/nsUpdateService.js
@@ -399,6 +399,8 @@
 @BINPATH@/components/WeaveCrypto.manifest
 @BINPATH@/components/WeaveCrypto.js
 #endif
+@BINPATH@/components/TelemetryPing.js
+@BINPATH@/components/TelemetryPing.manifest
 
 ; Modules
 @BINPATH@/modules/*
@@ -610,6 +612,7 @@ bin/components/@DLL_PREFIX@nkgnomevfs@DLL_SUFFIX@
 #ifdef MOZ_UPDATER
 @BINPATH@/components/UpdatePrompt.js
 #endif
+@BINPATH@/components/WebappsSupport.js
 @BINPATH@/components/XPIDialogService.js
 @BINPATH@/components/browsercomps.xpt
 @BINPATH@/extensions/feedback@mobile.mozilla.org.xpi

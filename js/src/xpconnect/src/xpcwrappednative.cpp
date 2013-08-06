@@ -2769,6 +2769,9 @@ CallMethodHelper::InitializeDispatchParams()
         if(wantsOptArgc)
             // Need to bump mOptArgcIndex up one here.
             mJSContextIndex = mOptArgcIndex++;
+        else if(mMethodInfo->IsSetter() || mMethodInfo->IsGetter())
+            // For attributes, we always put the JSContext* first.
+            mJSContextIndex = 0;
         else
             mJSContextIndex = paramCount - hasRetval;
     }
@@ -2794,7 +2797,7 @@ CallMethodHelper::InitializeDispatchParams()
     {
         nsXPTCVariant* dp = &mDispatchParams[mOptArgcIndex];
         dp->type = nsXPTType::T_U8;
-        dp->val.u8 = mArgc - requiredArgs;
+        dp->val.u8 = NS_MIN<PRUint32>(mArgc, paramCount) - requiredArgs;
     }
 
     return JS_TRUE;

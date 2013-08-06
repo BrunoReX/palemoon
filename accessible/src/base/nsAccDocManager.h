@@ -121,24 +121,6 @@ private:
                              PRUint32 aLoadEventType);
 
   /**
-   * Return true if accessibility events accompanying document accessible
-   * loading should be fired.
-   *
-   * The rules are: do not fire events for root chrome document accessibles and
-   * for sub document accessibles (like HTML frame of iframe) of the loading
-   * document accessible.
-   *
-   * XXX: in general AT expect events for document accessible loading into
-   * tabbrowser, events from other document accessibles may break AT. We need to
-   * figure out what AT wants to know about loading page (for example, some of
-   * them have separate processing of iframe documents on the page and therefore
-   * they need a way to distinguish sub documents from page document). Ideally
-   * we should make events firing for any loaded document and provide additional
-   * info AT are needing.
-   */
-  PRBool IsEventTargetDocument(nsIDocument *aDocument) const;
-
-  /**
    * Add 'pagehide' and 'DOMContentLoaded' event listeners.
    */
   void AddListeners(nsIDocument *aDocument, PRBool aAddPageShowListener);
@@ -204,6 +186,19 @@ private:
     printf("%s document", (isContent ? "content" : "chrome"));                 \
   } else {                                                                     \
     printf("document type: [failed]");                                         \
+  }
+
+#define NS_LOG_ACCDOC_DOCSHELLTREE(aDocument)                                  \
+  if (aDocument->IsActive()) {                                                 \
+    nsCOMPtr<nsISupports> container = aDocument->GetContainer();               \
+    nsCOMPtr<nsIDocShellTreeItem> treeItem(do_QueryInterface(container));      \
+    nsCOMPtr<nsIDocShellTreeItem> parentTreeItem;                              \
+    treeItem->GetParent(getter_AddRefs(parentTreeItem));                       \
+    nsCOMPtr<nsIDocShellTreeItem> rootTreeItem;                                \
+    treeItem->GetRootTreeItem(getter_AddRefs(rootTreeItem));                   \
+    printf("docshell hierarchy, parent: %p, root: %p, is tab document: %s;",   \
+           parentTreeItem, rootTreeItem,                                       \
+           (nsCoreUtils::IsTabDocument(aDocument) ? "yes" : "no"));            \
   }
 
 #define NS_LOG_ACCDOC_SHELLSTATE(aDocument)                                    \
@@ -351,6 +346,8 @@ private:
       NS_LOG_ACCDOC_SHELLSTATE(aDocument)                                      \
       printf("; ");                                                            \
       NS_LOG_ACCDOC_TYPE(aDocument)                                            \
+      printf("\n    ");                                                        \
+      NS_LOG_ACCDOC_DOCSHELLTREE(aDocument)                                    \
       printf("\n    ");                                                        \
       NS_LOG_ACCDOC_DOCSTATES(aDocument)                                       \
       printf("\n    ");                                                        \

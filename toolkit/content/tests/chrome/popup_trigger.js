@@ -3,6 +3,22 @@ var gTrigger = null;
 var gIsMenu = false;
 var gScreenX = -1, gScreenY = -1;
 var gCachedEvent = null;
+var gCachedEvent2 = null;
+
+function cacheEvent(modifiers)
+{
+  var cachedEvent = null;
+
+  var mouseFn = function(event) {
+    cachedEvent = event;
+  }
+
+  window.addEventListener("mousedown", mouseFn, false);
+  synthesizeMouse(document.documentElement, 0, 0, modifiers);
+  window.removeEventListener("mousedown", mouseFn, false);
+
+  return cachedEvent;
+}
 
 function runTests()
 {
@@ -15,17 +31,13 @@ function runTests()
 
   gIsMenu = gTrigger.boxObject instanceof Components.interfaces.nsIMenuBoxObject;
 
-  var mouseFn = function(event) {
-    gScreenX = event.screenX;
-    gScreenY = event.screenY;
-    // cache the event so that we can use it in calls to openPopup
-    gCachedEvent = event;
-  }
+  // a hacky way to get the screen position of the document. Cache the event
+  // so that we can use it in calls to openPopup.
+  gCachedEvent = cacheEvent({ shiftKey: true });
+  gScreenX = gCachedEvent.screenX;
+  gScreenY = gCachedEvent.screenY;
+  gCachedEvent2 = cacheEvent({ altKey: true, ctrlKey: true, shiftKey: true, metaKey: true });
 
-  // a hacky way to get the screen position of the document
-  window.addEventListener("mousedown", mouseFn, false);
-  synthesizeMouse(document.documentElement, 0, 0, { });
-  window.removeEventListener("mousedown", mouseFn, false);
   startPopupTests(popupTests);
 }
 
@@ -51,6 +63,11 @@ var popupTests = [
     // check to ensure the popup node for a different document isn't used
     if (window.opener)
       is(window.opener.document.popupNode, null, testname + " opener.document.popupNode");
+
+    // this will be used in some tests to ensure the size doesn't change
+    var popuprect = gMenuPopup.getBoundingClientRect();
+    gPopupWidth = Math.round(popuprect.width);
+    gPopupHeight = Math.round(popuprect.height);
 
     checkActive(gMenuPopup, "", testname);
     checkOpen("trigger", testname);
@@ -234,6 +251,67 @@ var popupTests = [
     gMenuPopup.removeAttribute("style");
   }
 },
+ {
+  testname: "open popup with large positive margin",
+  events: [ "popupshowing thepopup", "popupshown thepopup" ],
+  autohide: "thepopup",
+  steps: ["before_start", "before_end", "after_start", "after_end",
+          "start_before", "start_after", "end_before", "end_after", "after_pointer", "overlap"],
+  test: function(testname, step) {
+    gMenuPopup.setAttribute("style", "margin: 1000px;");
+    gMenuPopup.openPopup(gTrigger, step, 0, 0, false, false);
+  },
+  result: function(testname, step) {
+    var popuprect = gMenuPopup.getBoundingClientRect();
+    // as there is more room on the 'end' or 'after' side, popups will always
+    // appear on the right or bottom corners, depending on which side they are
+    // allowed to be flipped by.
+    var expectedleft = step == "before_end" || step == "after_end" ?
+                       0 : Math.round(window.innerWidth - gPopupWidth);
+    var expectedtop = step == "start_after" || step == "end_after" ?
+                      0 : Math.round(window.innerHeight - gPopupHeight);
+    is(Math.round(popuprect.left), expectedleft, testname + " x position " + step);
+    is(Math.round(popuprect.top), expectedtop, testname + " y position " + step);
+    gMenuPopup.removeAttribute("style");
+  }
+},
+{
+  testname: "open popup with large negative margin",
+  events: [ "popupshowing thepopup", "popupshown thepopup" ],
+  autohide: "thepopup",
+  steps: ["before_start", "before_end", "after_start", "after_end",
+          "start_before", "start_after", "end_before", "end_after", "after_pointer", "overlap"],
+  test: function(testname, step) {
+    gMenuPopup.setAttribute("style", "margin: -1000px;");
+    gMenuPopup.openPopup(gTrigger, step, 0, 0, false, false);
+  },
+  result: function(testname, step) {
+    var popuprect = gMenuPopup.getBoundingClientRect();
+    // using negative margins causes the reverse of positive margins, and
+    // popups will appear on the left or top corners.
+    var expectedleft = step == "before_end" || step == "after_end" ?
+                       Math.round(window.innerWidth - gPopupWidth) : 0;
+    var expectedtop = step == "start_after" || step == "end_after" ?
+                      Math.round(window.innerHeight - gPopupHeight) : 0;
+    is(Math.round(popuprect.left), expectedleft, testname + " x position " + step);
+    is(Math.round(popuprect.top), expectedtop, testname + " y position " + step);
+    gMenuPopup.removeAttribute("style");
+  }
+},
+{
+  testname: "popup with unknown step",
+  events: [ "popupshowing thepopup", "popupshown thepopup" ],
+  autohide: "thepopup",
+  test: function() {
+    gMenuPopup.openPopup(gTrigger, "other", 0, 0, false, false);
+  },
+  result: function (testname) {
+    var triggerrect = gMenuPopup.getBoundingClientRect();
+    var popuprect = gMenuPopup.getBoundingClientRect();
+    is(Math.round(popuprect.left), triggerrect.left, testname + " x position ");
+    is(Math.round(popuprect.top), triggerrect.top, testname + " y position ");
+  }
+},
 {
   // these tests check to ensure that the position attribute can be used
   // to set the position of a popup instead of passing it as an argument
@@ -254,7 +332,7 @@ var popupTests = [
   // can be used to override the popup's position. This test also passes an
   // event to openPopup to check the trigger node.
   testname: "open popup anchored with override",
-  events: [ "popupshowing thepopup", "popupshown thepopup" ],
+  events: [ "popupshowing thepopup 0010", "popupshown thepopup" ],
   test: function(testname, step) {
     // attribute overrides the position passed in
     gMenuPopup.setAttribute("position", "end_after");
@@ -403,7 +481,7 @@ var popupTests = [
 },
 {
   testname: "open context popup at screen",
-  events: [ "popupshowing thepopup", "popupshown thepopup" ],
+  events: [ "popupshowing thepopup 0010", "popupshown thepopup" ],
   test: function(testname, step) {
     gExpectedTriggerNode = gCachedEvent.target;
     gMenuPopup.openPopupAtScreen(gScreenX + 8, gScreenY + 16, true, gCachedEvent);
@@ -556,6 +634,14 @@ var popupTests = [
   result: function(testname) {
     checkClosed("trigger", testname);
     checkActive(gMenuPopup, "", testname);
+  }
+},
+{
+  testname: "open context popup at screen with all modifiers set",
+  events: [ "popupshowing thepopup 1111", "popupshown thepopup" ],
+  autohide: "thepopup",
+  test: function(testname, step) {
+    gMenuPopup.openPopupAtScreen(gScreenX + 8, gScreenY + 16, true, gCachedEvent2);
   }
 },
 {

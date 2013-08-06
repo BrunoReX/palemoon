@@ -69,6 +69,7 @@ XPCOMUtils.defineLazyGetter(this, "CommonUI", function() {
 
 [
   ["FullScreenVideo"],
+  ["WebappsUI"],
   ["BadgeHandlers"],
   ["ContextHelper"],
   ["SelectionHelper"],
@@ -107,6 +108,8 @@ XPCOMUtils.defineLazyGetter(this, "CommonUI", function() {
   ["SelectHelperUI", "chrome://browser/content/SelectHelperUI.js"],
   ["ContentPopupHelper", "chrome://browser/content/ContentPopupHelper.js"],
   ["SharingUI", "chrome://browser/content/SharingUI.js"],
+  ["TabsPopup", "chrome://browser/content/TabsPopup.js"],
+  ["MasterPasswordUI", "chrome://browser/content/MasterPasswordUI.js"],
 #ifdef MOZ_SERVICES_SYNC
   ["WeaveGlue", "chrome://browser/content/sync.js"],
 #endif

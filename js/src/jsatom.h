@@ -88,7 +88,28 @@ JSID_TO_ATOM(jsid id)
     return (JSAtom *)JSID_TO_STRING(id);
 }
 
+extern jsid
+js_CheckForStringIndex(jsid id);
+
+JS_STATIC_ASSERT(sizeof(JSHashNumber) == 4);
+JS_STATIC_ASSERT(sizeof(jsid) == JS_BYTES_PER_WORD);
+
 namespace js {
+
+static JS_ALWAYS_INLINE JSHashNumber
+HashId(jsid id)
+{
+    JS_ASSERT(js_CheckForStringIndex(id) == id);
+    JSHashNumber n =
+#if JS_BYTES_PER_WORD == 4
+        JSHashNumber(JSID_BITS(id));
+#elif JS_BYTES_PER_WORD == 8
+        JSHashNumber(JSID_BITS(id)) ^ JSHashNumber(JSID_BITS(id) >> 32);
+#else
+# error "Unsupported configuration"
+#endif
+    return n * JS_GOLDEN_RATIO;
+}
 
 static JS_ALWAYS_INLINE Value
 IdToValue(jsid id)
@@ -115,7 +136,7 @@ struct DefaultHasher<jsid>
     typedef jsid Lookup;
     static HashNumber hash(const Lookup &l) {
         JS_ASSERT(l == js_CheckForStringIndex(l));
-        return JSID_BITS(l);
+        return HashNumber(JSID_BITS(l));
     }
     static bool match(const jsid &id, const Lookup &l) {
         JS_ASSERT(l == js_CheckForStringIndex(l));
@@ -148,47 +169,7 @@ struct JSAtomMap {
 
 namespace js {
 
-enum InternBehavior
-{
-    DoNotInternAtom = 0,
-    InternAtom = 1
-};
-
-/*
- * Atom pointer with low bit stolen to indicate whether the atom is interned.
- * Interned atoms are ignored by the GC, and thus live for the lifetime of the
- * runtime.
- */
-struct AtomStateEntry {
-    uintptr_t bits;
-
-    static const uintptr_t INTERNED_FLAG = 0x1;
-
-    AtomStateEntry() : bits(0) {}
-    AtomStateEntry(const AtomStateEntry &other) : bits(other.bits) {}
-
-    AtomStateEntry(JSFixedString *futureAtom, bool intern)
-      : bits(uintptr_t(futureAtom) | uintptr_t(intern))
-    {}
-
-    bool isInterned() const {
-        return bits & INTERNED_FLAG;
-    }
-
-    /* In static form to avoid accidentally mutating a copy of a hash set value. */
-    static void makeInterned(AtomStateEntry *self, InternBehavior ib) {
-        JS_STATIC_ASSERT(DoNotInternAtom == 0 && InternAtom == 1);
-        JS_ASSERT(ib <= InternAtom);
-        self->bits |= uintptr_t(ib);
-    }
-
-    JS_ALWAYS_INLINE
-    JSAtom *toAtom() const {
-        JS_ASSERT(bits != 0); /* No NULL values should exist in the atom state. */
-        JS_ASSERT(((JSString *) (bits & ~INTERNED_FLAG))->isAtom());
-        return (JSAtom *) (bits & ~INTERNED_FLAG);
-    }
-};
+typedef TaggedPointerEntry<JSAtom> AtomStateEntry;
 
 struct AtomHasher
 {
@@ -206,8 +187,8 @@ struct AtomHasher
         return HashChars(l.chars, l.length);
     }
 
-    static bool match(AtomStateEntry entry, const Lookup &lookup) {
-        JSAtom *key = entry.toAtom();
+    static bool match(const AtomStateEntry &entry, const Lookup &lookup) {
+        JSAtom *key = entry.asPtr();
 
         if (lookup.atom)
             return lookup.atom == key;
@@ -258,6 +239,7 @@ struct JSAtomState
     JSAtom              *applyAtom;
     JSAtom              *argumentsAtom;
     JSAtom              *arityAtom;
+    JSAtom              *BYTES_PER_ELEMENTAtom;
     JSAtom              *callAtom;
     JSAtom              *calleeAtom;
     JSAtom              *callerAtom;
@@ -344,6 +326,9 @@ struct JSAtomState
 
     JSAtom              *byteLengthAtom;
 
+    JSAtom              *returnAtom;
+    JSAtom              *throwAtom;
+
     /* Less frequently used atoms, pinned lazily by JS_ResolveStandardClass. */
     struct {
         JSAtom          *XMLListAtom;
@@ -425,6 +410,7 @@ extern const char   js_anonymous_str[];
 extern const char   js_apply_str[];
 extern const char   js_arguments_str[];
 extern const char   js_arity_str[];
+extern const char   js_BYTES_PER_ELEMENT_str[];
 extern const char   js_call_str[];
 extern const char   js_callee_str[];
 extern const char   js_caller_str[];
@@ -513,13 +499,6 @@ js_InitCommonAtoms(JSContext *cx);
 
 extern void
 js_FinishCommonAtoms(JSContext *cx);
-
-/*
- * Find or create the atom for a string. Return null on failure to allocate
- * memory.
- */
-extern JSAtom *
-js_AtomizeString(JSContext *cx, JSString *str, js::InternBehavior ib = js::DoNotInternAtom);
 
 extern JSAtom *
 js_Atomize(JSContext *cx, const char *bytes, size_t length,

@@ -248,6 +248,13 @@ struct PropertyTable {
     /* By definition, hashShift = JS_DHASH_BITS - log2(capacity). */
     uint32 capacity() const { return JS_BIT(JS_DHASH_BITS - hashShift); }
 
+    /* Computes the size of the entries array for a given capacity. */
+    static size_t sizeOfEntries(size_t cap) { return cap * sizeof(Shape *); }
+
+    size_t sizeOf() const {
+        return sizeOfEntries(capacity()) + sizeof(PropertyTable);
+    }
+
     /* Whether we need to grow.  We want to do this if the load factor is >= 0.75 */
     bool needsToGrow() const {
         uint32 size = capacity();
@@ -366,16 +373,6 @@ struct Shape : public js::gc::Cell
 
     bool hashify(JSRuntime *rt);
 
-    bool hasTable() const {
-        /* A valid pointer should be much bigger than MAX_LINEAR_SEARCHES. */
-        return numLinearSearches > PropertyTable::MAX_LINEAR_SEARCHES;
-    }
-
-    js::PropertyTable *getTable() const {
-        JS_ASSERT(hasTable());
-        return table;
-    }
-
     void setTable(js::PropertyTable *t) const {
         JS_ASSERT_IF(t && t->freelist != SHAPE_INVALID_SLOT, t->freelist < slotSpan);
         table = t;
@@ -433,6 +430,16 @@ struct Shape : public js::gc::Cell
   public:
     static JS_FRIEND_DATA(Shape) sharedNonNative;
 
+    bool hasTable() const {
+        /* A valid pointer should be much bigger than MAX_LINEAR_SEARCHES. */
+        return numLinearSearches > PropertyTable::MAX_LINEAR_SEARCHES;
+    }
+
+    js::PropertyTable *getTable() const {
+        JS_ASSERT(hasTable());
+        return table;
+    }
+
     bool isNative() const { return this != &sharedNonNative; }
 
     const js::Shape *previous() const {
@@ -482,7 +489,9 @@ struct Shape : public js::gc::Cell
         IN_DICTIONARY   = 0x02,
 
         /* Prevent unwanted mutation of shared Bindings::lastBinding nodes. */
-        FROZEN          = 0x04
+        FROZEN          = 0x04,
+
+        UNUSED_BITS     = 0x38
     };
 
     Shape(jsid id, js::PropertyOp getter, js::StrictPropertyOp setter, uint32 slot, uintN attrs,
@@ -503,14 +512,12 @@ struct Shape : public js::gc::Cell
   public:
     /* Public bits stored in shape->flags. */
     enum {
-        ALIAS           = 0x20,
         HAS_SHORTID     = 0x40,
         METHOD          = 0x80,
-        PUBLIC_FLAGS    = ALIAS | HAS_SHORTID | METHOD
+        PUBLIC_FLAGS    = HAS_SHORTID | METHOD
     };
 
     uintN getFlags() const  { return flags & PUBLIC_FLAGS; }
-    bool isAlias() const    { return (flags & ALIAS) != 0; }
     bool hasShortID() const { return (flags & HAS_SHORTID) != 0; }
     bool isMethod() const   { return (flags & METHOD) != 0; }
 

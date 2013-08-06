@@ -97,14 +97,17 @@ pref("dom.indexedDB.enabled", true);
 // Space to allow indexedDB databases before prompting (in MB).
 pref("dom.indexedDB.warningQuota", 50);
 
+// Whether or not Web Workers are enabled.
+pref("dom.workers.enabled", true);
+// The number of workers per domain allowed to run concurrently.
+pref("dom.workers.maxPerDomain", 20);
+
 // Whether window.performance is enabled
 pref("dom.enable_performance", true);
 
 // Fastback caching - if this pref is negative, then we calculate the number
 // of content viewers to cache based on the amount of available memory.
 pref("browser.sessionhistory.max_total_viewers", -1);
-
-pref("browser.sessionhistory.optimize_eviction", true);
 
 pref("ui.use_native_colors", true);
 pref("ui.click_hold_context_menus", false);
@@ -191,6 +194,7 @@ pref("media.autoplay.enabled", true);
 pref("gfx.color_management.mode", 2);
 pref("gfx.color_management.display_profile", "");
 pref("gfx.color_management.rendering_intent", 0);
+pref("gfx.color_management.enablev4", false);
 
 pref("gfx.downloadable_fonts.enabled", true);
 pref("gfx.downloadable_fonts.fallback_delay", 3000);
@@ -628,6 +632,7 @@ pref("javascript.options.mem.high_water_mark", 128);
 pref("javascript.options.mem.max", -1);
 pref("javascript.options.mem.gc_per_compartment", true);
 pref("javascript.options.mem.log", false);
+pref("javascript.options.gc_on_memory_pressure", true);
 
 // advanced prefs
 pref("advanced.mailftp",                    false);
@@ -709,7 +714,12 @@ pref("network.http.keep-alive.timeout", 115);
 // Note: the socket transport service will clamp the number below 256 if the OS
 // cannot allocate that many FDs, and it also always tries to reserve up to 250
 // file descriptors for things other than sockets.   
+// -- windows using lower limit until bug 692260 resolved
+#ifdef XP_WIN
+pref("network.http.max-connections", 48);
+#else
 pref("network.http.max-connections", 256);
+#endif
 
 // limit the absolute number of http connections that can be established per
 // host.  if a http proxy server is enabled, then the "server" is the proxy
@@ -812,13 +822,19 @@ pref("network.websocket.timeout.ping.request", 0);
 pref("network.websocket.timeout.ping.response", 10);
 
 // Defines whether or not to try and negotiate the stream-deflate compression
-// extension with the websocket server
-pref("network.websocket.extensions.stream-deflate", true);
+// extension with the websocket server. Stream-Deflate has been removed from
+// the standards track document, but can still be used by servers who opt
+// into it.
+pref("network.websocket.extensions.stream-deflate", false);
 
 // the maximum number of concurrent websocket sessions. By specification there
 // is never more than one handshake oustanding to an individual host at
 // one time.
 pref("network.websocket.max-connections", 200);
+
+// by default scripts loaded from a https:// origin can only open secure
+// (i.e. wss://) websockets.
+pref("network.websocket.allowInsecureFromHTTPS", false);
 
 // </ws>
 
@@ -1106,6 +1122,55 @@ pref("intl.uidirection.fa", "rtl");
 pref("intl.hyphenation-alias.en", "en-us");
 // and for other subtags of en-*, if no specific patterns are available
 pref("intl.hyphenation-alias.en-*", "en-us");
+
+pref("intl.hyphenation-alias.af-*", "af");
+pref("intl.hyphenation-alias.bg-*", "bg");
+pref("intl.hyphenation-alias.ca-*", "ca");
+pref("intl.hyphenation-alias.cy-*", "cy");
+pref("intl.hyphenation-alias.da-*", "da");
+pref("intl.hyphenation-alias.eo-*", "eo");
+pref("intl.hyphenation-alias.es-*", "es");
+pref("intl.hyphenation-alias.et-*", "et");
+pref("intl.hyphenation-alias.fi-*", "fi");
+pref("intl.hyphenation-alias.fr-*", "fr");
+pref("intl.hyphenation-alias.gl-*", "gl");
+pref("intl.hyphenation-alias.hr-*", "hr");
+pref("intl.hyphenation-alias.hsb-*", "hsb");
+pref("intl.hyphenation-alias.ia-*", "ia");
+pref("intl.hyphenation-alias.is-*", "is");
+pref("intl.hyphenation-alias.kmr-*", "kmr");
+pref("intl.hyphenation-alias.la-*", "la");
+pref("intl.hyphenation-alias.lt-*", "lt");
+pref("intl.hyphenation-alias.mn-*", "mn");
+pref("intl.hyphenation-alias.nl-*", "nl");
+pref("intl.hyphenation-alias.pt-*", "pt");
+pref("intl.hyphenation-alias.ru-*", "ru");
+pref("intl.hyphenation-alias.sl-*", "sl");
+pref("intl.hyphenation-alias.sv-*", "sv");
+pref("intl.hyphenation-alias.uk-*", "uk");
+
+// use reformed (1996) German patterns by default unless specifically tagged as de-1901
+// (these prefs may soon be obsoleted by better BCP47-based tag matching, but for now...)
+pref("intl.hyphenation-alias.de", "de-1996");
+pref("intl.hyphenation-alias.de-*", "de-1996");
+pref("intl.hyphenation-alias.de-DE-1901", "de-1901");
+pref("intl.hyphenation-alias.de-CH-*", "de-CH");
+
+// patterns from TeX are tagged as "sh" (Serbo-Croatian) macrolanguage;
+// alias "sr" (Serbian) and "bs" (Bosnian) to those patterns
+// (Croatian has its own separate patterns).
+pref("intl.hyphenation-alias.sr", "sh");
+pref("intl.hyphenation-alias.bs", "sh");
+pref("intl.hyphenation-alias.sh-*", "sh");
+pref("intl.hyphenation-alias.sr-*", "sh");
+pref("intl.hyphenation-alias.bs-*", "sh");
+
+// Norwegian has two forms, Bokmål and Nynorsk, with "no" as a macrolanguage encompassing both.
+// For "no", we'll alias to "nb" (Bokmål) as that is the more widely used written form.
+pref("intl.hyphenation-alias.no", "nb");
+pref("intl.hyphenation-alias.no-*", "nb");
+pref("intl.hyphenation-alias.nb-*", "nb");
+pref("intl.hyphenation-alias.nn-*", "nn");
 
 pref("font.mathfont-family", "STIXNonUnicode, STIXSizeOneSym, STIXSize1, STIXGeneral, Asana Math, Standard Symbols L, DejaVu Sans, Cambria Math");
 
@@ -3190,10 +3255,10 @@ pref("image.mem.decodeondraw", false);
 pref("image.mem.min_discard_timeout_ms", 10000);
 
 // Chunk size for calls to the image decoders
-pref("image.mem.decode_bytes_at_a_time", 200000);
+pref("image.mem.decode_bytes_at_a_time", 4096);
 
 // The longest time we can spend in an iteration of an async decode
-pref("image.mem.max_ms_before_yield", 400);
+pref("image.mem.max_ms_before_yield", 5);
 
 // The maximum source data size for which we auto sync decode
 pref("image.mem.max_bytes_for_sync_decode", 150000);
@@ -3213,14 +3278,22 @@ pref("network.tcp.sendbuffer", 131072);
 #endif
 
 // Whether to disable acceleration for all widgets.
+#ifdef MOZ_E10S_COMPAT
+pref("layers.acceleration.disabled", true);
+#else
 pref("layers.acceleration.disabled", false);
+#endif
 
 // Whether to force acceleration on, ignoring blacklists.
 pref("layers.acceleration.force-enabled", false);
 
 #ifdef XP_WIN
 // Whether to disable the automatic detection and use of direct2d.
+#ifdef MOZ_E10S_COMPAT
+pref("gfx.direct2d.disabled", true);
+#else
 pref("gfx.direct2d.disabled", false);
+#endif
 // Whether to attempt to enable Direct2D regardless of automatic detection or
 // blacklisting
 pref("gfx.direct2d.force-enabled", false);
@@ -3262,3 +3335,6 @@ pref("network.buffer.cache.size",  32768);
 
 // Desktop Notification
 pref("notification.feature.enabled", false);
+
+//3D Transforms
+pref("layout.3d-transforms.enabled, false);

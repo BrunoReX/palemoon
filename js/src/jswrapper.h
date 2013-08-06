@@ -153,6 +153,8 @@ class JS_FRIEND_API(JSCrossCompartmentWrapper) : public JSWrapper {
     virtual JSString *fun_toString(JSContext *cx, JSObject *wrapper, uintN indent);
     virtual bool defaultValue(JSContext *cx, JSObject *wrapper, JSType hint, js::Value *vp);
 
+    virtual void trace(JSTracer *trc, JSObject *wrapper);
+
     static JSCrossCompartmentWrapper singleton;
 };
 
@@ -196,6 +198,22 @@ class AutoCompartment
     // Prohibit copying.
     AutoCompartment(const AutoCompartment &);
     AutoCompartment & operator=(const AutoCompartment &);
+};
+
+/*
+ * Use this to change the behavior of an AutoCompartment slightly on error. If
+ * the exception happens to be an Error object, copy it to the origin compartment
+ * instead of wrapping it.
+ */
+class ErrorCopier {
+    AutoCompartment &ac;
+    JSObject *scope;
+
+  public:
+    ErrorCopier(AutoCompartment &ac, JSObject *scope) : ac(ac), scope(scope) {
+        JS_ASSERT(scope->compartment() == ac.origin);
+    }
+    ~ErrorCopier();
 };
 
 extern JSObject *

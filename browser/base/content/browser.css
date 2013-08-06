@@ -29,17 +29,17 @@ tabbrowser {
   max-width: 250px;
   min-width: 100px;
   width: 0;
-  -moz-transition: min-width 50ms ease-out,
-                   max-width 75ms ease-out,
-                   opacity 30ms ease-out 20ms /* hide the tab for the first 20ms of the max-width transition */;
+  -moz-transition: min-width 100ms ease-out,
+                   max-width 125ms ease-out,
+                   opacity 50ms ease-out 20ms /* hide the tab for the first 20ms of the max-width transition */;
 }
 
 .tabbrowser-tab:not([pinned]):not([fadein]) {
   max-width: 0.1px;
   min-width: 0.1px;
   opacity: 0 !important;
-  -moz-transition: min-width 50ms ease-out,
-                   max-width 75ms ease-out,
+  -moz-transition: min-width 100ms ease-out,
+                   max-width 125ms ease-out,
                    opacity 30ms ease-out 50ms /* hide the tab for the last 100ms of the max-width transition */;
 }
 
@@ -54,7 +54,7 @@ tabbrowser {
 .tab-label,
 .tab-icon-image,
 .tab-close-button {
-  -moz-transition: opacity 75ms;
+  -moz-transition: opacity 125ms;
 }
 
 .tabbrowser-tabs[positionpinnedtabs] > .tabbrowser-tab[pinned] {
@@ -481,7 +481,7 @@ statuspanel[type=status] {
 }
 
 statuspanel[type=overLink] {
-  -moz-transition: opacity 50ms ease-out;
+  -moz-transition: opacity 100ms ease-out;
   direction: ltr;
 }
 
@@ -500,3 +500,6 @@ statuspanel[label=""] {
 .panel-inner-arrowcontentfooter[footertype="promobox"] {
   -moz-binding: url("chrome://browser/content/urlbarBindings.xml#promobox");
 }
+
+/* highlighter */
+%include highlighter.css

@@ -43,7 +43,7 @@
   It is designed to be used as inline input to nsAccessibilityAtoms.cpp *only*
   through the magic of C preprocessing.
 
-  All entires must be enclosed in the macro ACCESSIBILITY_ATOM which will have cruel
+  All entries must be enclosed in the macro ACCESSIBILITY_ATOM which will have cruel
   and unusual things done to it
 
   It is recommended (but not strictly necessary) to keep all entries
@@ -65,6 +65,7 @@ ACCESSIBILITY_ATOM(image, "image")
 ACCESSIBILITY_ATOM(menu, "menu")
 ACCESSIBILITY_ATOM(menuButton, "menu-button")
 ACCESSIBILITY_ATOM(multiple, "multiple")
+ACCESSIBILITY_ATOM(mixed, "mixed")
 ACCESSIBILITY_ATOM(open, "open")
 ACCESSIBILITY_ATOM(password, "password")
 ACCESSIBILITY_ATOM(radio, "radio")

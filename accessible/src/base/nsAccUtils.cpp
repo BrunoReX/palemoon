@@ -57,6 +57,9 @@
 #include "nsWhitespaceTokenizer.h"
 #include "nsComponentManagerUtils.h"
 
+namespace dom = mozilla::dom;
+using namespace mozilla::a11y;
+
 void
 nsAccUtils::GetAccAttr(nsIPersistentProperties *aAttributes,
                        nsIAtom *aAttrName, nsAString& aAttrValue)
@@ -108,7 +111,7 @@ nsAccUtils::GetDefaultLevel(nsAccessible *aAccessible)
     return 1;
 
   if (role == nsIAccessibleRole::ROLE_ROW) {
-    nsAccessible *parent = aAccessible->GetParent();
+    nsAccessible* parent = aAccessible->Parent();
     if (parent && parent->Role() == nsIAccessibleRole::ROLE_TREE_TABLE) {
       // It is a row inside flatten treegrid. Group level is always 1 until it
       // is overriden by aria-level attribute.
@@ -333,12 +336,30 @@ nsAccUtils::HasDefinedARIAToken(nsIContent *aContent, nsIAtom *aAtom)
   return PR_TRUE;
 }
 
+nsIAtom*
+nsAccUtils::GetARIAToken(dom::Element* aElement, nsIAtom* aAttr)
+{
+  if (!nsAccUtils::HasDefinedARIAToken(aElement, aAttr))
+    return nsAccessibilityAtoms::_empty;
+
+  static nsIContent::AttrValuesArray tokens[] =
+    { &nsAccessibilityAtoms::_false, &nsAccessibilityAtoms::_true,
+      &nsAccessibilityAtoms::mixed, nsnull};
+
+  PRInt32 idx = aElement->FindAttrValueIn(kNameSpaceID_None,
+                                          aAttr, tokens, eCaseMatters);
+  if (idx >= 0)
+    return *(tokens[idx]);
+
+  return nsnull;
+}
+
 nsAccessible *
 nsAccUtils::GetAncestorWithRole(nsAccessible *aDescendant, PRUint32 aRole)
 {
   nsAccessible *document = aDescendant->GetDocAccessible();
   nsAccessible *parent = aDescendant;
-  while ((parent = parent->GetParent())) {
+  while ((parent = parent->Parent())) {
     PRUint32 testRole = parent->Role();
     if (testRole == aRole)
       return parent;
@@ -359,7 +380,7 @@ nsAccUtils::GetSelectableContainer(nsAccessible* aAccessible, PRUint64 aState)
     return nsnull;
 
   nsAccessible* parent = aAccessible;
-  while ((parent = parent->GetParent()) && !parent->IsSelect()) {
+  while ((parent = parent->Parent()) && !parent->IsSelect()) {
     if (Role(parent) == nsIAccessibleRole::ROLE_PANE)
       return nsnull;
   }
@@ -420,7 +441,7 @@ nsAccUtils::GetTextAccessibleFromSelection(nsISelection* aSelection)
     if (textAcc)
       return textAcc;
 
-  } while (accessible = accessible->GetParent());
+  } while (accessible = accessible->Parent());
 
   NS_NOTREACHED("We must reach document accessible implementing nsIAccessibleText!");
   return nsnull;

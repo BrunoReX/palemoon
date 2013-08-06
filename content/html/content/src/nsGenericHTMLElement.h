@@ -46,6 +46,7 @@
 #include "nsFrameLoader.h"
 #include "nsGkAtoms.h"
 #include "nsContentCreatorFunctions.h"
+#include "nsDOMMemoryReporter.h"
 
 class nsIDOMAttr;
 class nsIDOMEventListener;
@@ -65,6 +66,7 @@ struct nsRect;
 struct nsSize;
 class nsHTMLFormElement;
 class nsIDOMDOMStringMap;
+class nsIDOMHTMLMenuElement;
 
 typedef nsMappedAttributeElement nsGenericHTMLElementBase;
 
@@ -80,6 +82,9 @@ public:
     NS_ASSERTION(mNodeInfo->NamespaceID() == kNameSpaceID_XHTML,
                  "Unexpected namespace");
   }
+
+  NS_DECL_AND_IMPL_DOM_MEMORY_REPORTER_SIZEOF(nsGenericHTMLElement,
+                                              nsGenericHTMLElementBase)
 
   /** Typesafe, non-refcounting cast from nsIContent.  Cheaper than QI. **/
   static nsGenericHTMLElement* FromContent(nsIContent *aContent)
@@ -131,6 +136,8 @@ public:
   nsresult GetOffsetParent(nsIDOMElement** aOffsetParent);
   virtual nsresult GetInnerHTML(nsAString& aInnerHTML);
   virtual nsresult SetInnerHTML(const nsAString& aInnerHTML);
+  virtual nsresult InsertAdjacentHTML(const nsAString& aPosition,
+                                      const nsAString& aText);
   nsresult ScrollIntoView(PRBool aTop, PRUint8 optional_argc);
   // Declare Focus(), Blur(), GetTabIndex(), SetTabIndex(), GetHidden(),
   // SetHidden(), GetSpellcheck(), SetSpellcheck(), and GetDraggable() such that
@@ -148,12 +155,14 @@ public:
   NS_IMETHOD SetDraggable(PRBool aDraggable);
   NS_IMETHOD GetAccessKey(nsAString &aAccessKey);
   NS_IMETHOD SetAccessKey(const nsAString& aAccessKey);
+  NS_IMETHOD GetAccessKeyLabel(nsAString& aLabel);
   nsresult GetContentEditable(nsAString& aContentEditable);
   nsresult GetIsContentEditable(PRBool* aContentEditable);
   nsresult SetContentEditable(const nsAString &aContentEditable);
   nsresult GetDataset(nsIDOMDOMStringMap** aDataset);
   // Callback for destructor of of dataset to ensure to null out weak pointer.
   nsresult ClearDataset();
+  nsresult GetContextMenu(nsIDOMHTMLMenuElement** aContextMenu);
 
   // Implementation for nsIContent
   virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
@@ -526,6 +535,11 @@ public:
     return HasAttr(kNameSpaceID_None, nsGkAtoms::disabled);
   }
 
+  PRBool IsHidden() const
+  {
+    return HasAttr(kNameSpaceID_None, nsGkAtoms::hidden);
+  }
+
 protected:
   /**
    * Add/remove this element to the documents name cache
@@ -566,6 +580,18 @@ protected:
   }
 
 private:
+  /**
+   * Fire mutation events for changes caused by parsing directly into a
+   * context node.
+   *
+   * @param aDoc the document of the node
+   * @param aDest the destination node that got stuff appended to it
+   * @param aOldChildCount the number of children the node had before parsing
+   */
+  void FireMutationEventsForDirectParsing(nsIDocument* aDoc,
+                                          nsIContent* aDest,
+                                          PRInt32 aOldChildCount);
+
   void RegUnRegAccessKey(PRBool aDoReg);
 
 protected:
@@ -579,10 +605,8 @@ protected:
   virtual nsresult AfterSetAttr(PRInt32 aNamespaceID, nsIAtom* aName,
                                 const nsAString* aValue, PRBool aNotify);
 
-  virtual nsresult
-    GetEventListenerManagerForAttr(nsEventListenerManager** aManager,
-                                   nsISupports** aTarget,
-                                   PRBool* aDefer);
+  virtual nsEventListenerManager*
+    GetEventListenerManagerForAttr(PRBool* aDefer);
 
   virtual const nsAttrName* InternalGetExistingAttrNameFromQName(const nsAString& aStr) const;
 
@@ -608,19 +632,6 @@ protected:
    * @param aResult  result value [out]
    */
   NS_HIDDEN_(nsresult) SetAttrHelper(nsIAtom* aAttr, const nsAString& aValue);
-
-  /**
-   * Helper method for NS_IMPL_STRING_ATTR_DEFAULT_VALUE macro.
-   * Gets the value of an attribute, returns specified default value if the
-   * attribute isn't set. Only works for attributes in null namespace.
-   *
-   * @param aAttr    name of attribute.
-   * @param aDefault default-value to return if attribute isn't set.
-   * @param aResult  result value [out]
-   */
-  NS_HIDDEN_(nsresult) GetStringAttrWithDefault(nsIAtom* aAttr,
-                                                const char* aDefault,
-                                                nsAString& aResult);
 
   /**
    * Helper method for NS_IMPL_BOOL_ATTR macro.
@@ -833,6 +844,9 @@ public:
   nsGenericHTMLFormElement(already_AddRefed<nsINodeInfo> aNodeInfo);
   virtual ~nsGenericHTMLFormElement();
 
+  NS_DECL_AND_IMPL_DOM_MEMORY_REPORTER_SIZEOF(nsGenericHTMLFormElement,
+                                              nsGenericHTMLElement)
+
   NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr);
 
   virtual PRBool IsNodeOfType(PRUint32 aFlags) const;
@@ -959,6 +973,9 @@ protected:
   static PRBool FormIdUpdated(Element* aOldElement, Element* aNewElement,
                               void* aData);
 
+  // Returns true if the event should not be handled from PreHandleEvent
+  virtual PRBool IsElementDisabledForEvents(PRUint32 aMessage, nsIFrame* aFrame);
+
   // The focusability state of this form control.  eUnfocusable means that it
   // shouldn't be focused at all, eInactiveWindow means it's in an inactive
   // window, eActiveWindow means it's in an active window.
@@ -1015,6 +1032,8 @@ public:
     mNetworkCreated = aFromParser == mozilla::dom::FROM_PARSER_NETWORK;
   }
   virtual ~nsGenericHTMLFrameElement();
+
+  NS_DECL_DOM_MEMORY_REPORTER_SIZEOF
 
   // nsISupports
   NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr);
@@ -1085,20 +1104,22 @@ protected:
   }
 
 /**
- * A macro to implement the getter and setter for a given string
- * valued content property with a default value.
- * The method uses the generic GetAttr and SetAttr methods.
+ * This macro is similar to NS_IMPL_STRING_ATTR except that the getter method
+ * falls back to an alternative method if the content attribute isn't set.
  */
-#define NS_IMPL_STRING_ATTR_DEFAULT_VALUE(_class, _method, _atom, _default) \
-  NS_IMETHODIMP                                                      \
-  _class::Get##_method(nsAString& aValue)                            \
-  {                                                                  \
-    return GetStringAttrWithDefault(nsGkAtoms::_atom, _default, aValue);\
-  }                                                                  \
-  NS_IMETHODIMP                                                      \
-  _class::Set##_method(const nsAString& aValue)                      \
-  {                                                                  \
-    return SetAttrHelper(nsGkAtoms::_atom, aValue);                \
+#define NS_IMPL_STRING_ATTR_WITH_FALLBACK(_class, _method, _atom, _fallback) \
+  NS_IMETHODIMP                                                              \
+  _class::Get##_method(nsAString& aValue)                                    \
+  {                                                                          \
+    if (!GetAttr(kNameSpaceID_None, nsGkAtoms::_atom, aValue)) {             \
+      _fallback(aValue);                                                     \
+    }                                                                        \
+    return NS_OK;                                                            \
+  }                                                                          \
+  NS_IMETHODIMP                                                              \
+  _class::Set##_method(const nsAString& aValue)                              \
+  {                                                                          \
+    return SetAttrHelper(nsGkAtoms::_atom, aValue);                          \
   }
 
 /**
@@ -1491,6 +1512,7 @@ protected:
   NS_SCRIPTABLE NS_IMETHOD SetClassName(const nsAString & aClassName) { return _to SetClassName(aClassName); } \
   NS_SCRIPTABLE NS_IMETHOD GetAccessKey(nsAString & aAccessKey) { return _to GetAccessKey(aAccessKey); } \
   NS_SCRIPTABLE NS_IMETHOD SetAccessKey(const nsAString & aAccessKey) { return _to SetAccessKey(aAccessKey); } \
+  NS_SCRIPTABLE NS_IMETHOD GetAccessKeyLabel(nsAString & aLabel) { return _to GetAccessKeyLabel(aLabel); } \
   NS_SCRIPTABLE NS_IMETHOD Blur(void) { return _to Blur(); }
 
 /**
@@ -1562,12 +1584,13 @@ NS_DECLARE_NS_NEW_HTML_ELEMENT_AS_SHARED(Html)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(IFrame)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Image)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Input)
-NS_DECLARE_NS_NEW_HTML_ELEMENT(IsIndex)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(LI)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Label)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Legend)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Link)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Map)
+NS_DECLARE_NS_NEW_HTML_ELEMENT(Menu)
+NS_DECLARE_NS_NEW_HTML_ELEMENT(MenuItem)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Meta)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Object)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(OptGroup)

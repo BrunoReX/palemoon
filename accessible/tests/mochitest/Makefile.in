@@ -47,6 +47,7 @@ DIRS	= \
   attributes \
   editabletext \
   events \
+  focus \
   hyperlink \
   hypertext \
   name \
@@ -97,14 +98,12 @@ _TEST_FILES =\
 		test_elm_listbox.xul \
 		test_elm_nsApplicationAcc.html \
 		test_elm_plugin.html \
-		test_keys.html \
  		test_nsIAccessible_selects.html \
 		test_nsIAccessibleDocument.html \
 		test_nsIAccessibleImage.html \
 		test_nsIAccessNode_utils.html \
 		test_nsOuterDocAccessible.html \
 		test_role_nsHyperTextAcc.html \
-		test_takeFocus.html \
 		test_text_caret.html \
 		test_textboxes.html \
 		test_textboxes.xul \

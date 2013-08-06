@@ -79,13 +79,16 @@ static fp_except_t oldmask = fpsetmask(~allmask);
 #include "mozilla/AutoRestore.h"
 #include "nsINode.h"
 #include "nsHashtable.h"
+#include "nsIDOMNode.h"
+#include "nsHtml5Parser.h"
+#include "nsIFragmentContentSink.h"
+#include "nsMathUtils.h"
 
 struct nsNativeKeyEvent; // Don't include nsINativeKeyBindings.h here: it will force strange compilation error!
 
 class nsIDOMScriptObjectFactory;
 class nsIXPConnect;
 class nsIContent;
-class nsIDOMNode;
 class nsIDOMKeyEvent;
 class nsIDocument;
 class nsIDocumentObserver;
@@ -122,7 +125,6 @@ struct JSRuntime;
 class nsIUGenCategory;
 class nsIWidget;
 class nsIDragSession;
-class nsPIDOMWindow;
 class nsIPresShell;
 class nsIXPConnectJSObjectHolder;
 #ifdef MOZ_XTF
@@ -186,6 +188,7 @@ struct nsShortcutCandidate {
 class nsContentUtils
 {
   friend class nsAutoScriptBlockerSuppressNodeRemoved;
+  friend class mozilla::AutoRestore<PRBool>;
   typedef mozilla::dom::Element Element;
 
 public:
@@ -1038,14 +1041,51 @@ public:
    *
    * @param aContextNode the node which is used to resolve namespaces
    * @param aFragment the string which is parsed to a DocumentFragment
-   * @param aWillOwnFragment is PR_TRUE if ownership of the fragment should be
-   *                         transferred to the caller.
-   * @param aReturn [out] the created DocumentFragment
+   * @param aReturn the resulting fragment
+   * @param aPreventScriptExecution whether to mark scripts as already started
    */
   static nsresult CreateContextualFragment(nsINode* aContextNode,
                                            const nsAString& aFragment,
-                                           PRBool aWillOwnFragment,
+                                           PRBool aPreventScriptExecution,
                                            nsIDOMDocumentFragment** aReturn);
+
+  /**
+   * Invoke the fragment parsing algorithm (innerHTML) using the HTML parser.
+   *
+   * @param aSourceBuffer the string being set as innerHTML
+   * @param aTargetNode the target container
+   * @param aContextLocalName local name of context node
+   * @param aContextNamespace namespace of context node
+   * @param aQuirks true to make <table> not close <p>
+   * @param aPreventScriptExecution true to prevent scripts from executing;
+   *        don't set to false when parsing into a target node that has been
+   *        bound to tree.
+   * @return NS_ERROR_DOM_INVALID_STATE_ERR if a re-entrant attempt to parse
+   *         fragments is made and NS_OK otherwise.
+   */
+  static nsresult ParseFragmentHTML(const nsAString& aSourceBuffer,
+                                    nsIContent* aTargetNode,
+                                    nsIAtom* aContextLocalName,
+                                    PRInt32 aContextNamespace,
+                                    PRBool aQuirks,
+                                    PRBool aPreventScriptExecution);
+
+  /**
+   * Invoke the fragment parsing algorithm (innerHTML) using the XML parser.
+   *
+   * @param aSourceBuffer the string being set as innerHTML
+   * @param aTargetNode the target container
+   * @param aTagStack the namespace mapping context
+   * @param aPreventExecution whether to mark scripts as already started
+   * @param aReturn the result fragment
+   * @return NS_ERROR_DOM_INVALID_STATE_ERR if a re-entrant attempt to parse
+   *         fragments is made, a return code from the XML parser.
+   */
+  static nsresult ParseFragmentXML(const nsAString& aSourceBuffer,
+                                   nsIDocument* aDocument,
+                                   nsTArray<nsString>& aTagStack,
+                                   PRBool aPreventScriptExecution,
+                                   nsIDOMDocumentFragment** aReturn);
 
   /**
    * Creates a new XML document, which is marked to be loaded as data.
@@ -1665,6 +1705,12 @@ public:
    */
   static PRBool IsFocusedContent(const nsIContent *aContent);
 
+  static void GetShiftText(nsAString& text);
+  static void GetControlText(nsAString& text);
+  static void GetMetaText(nsAString& text);
+  static void GetAltText(nsAString& text);
+  static void GetModifierSeparatorText(nsAString& text);
+
   /**
    * Returns if aContent has a tabbable subdocument.
    * A sub document isn't tabbable when it's a zombie document.
@@ -1688,6 +1734,11 @@ public:
    * and XBL and false otherwise.
    */
   static bool AllowXULXBLForPrincipal(nsIPrincipal* aPrincipal);
+
+  /**
+   * Perform cleanup that's appropriate for XPCOM shutdown.
+   */
+  static void XPCOMShutdown();
 
   enum ContentViewerType
   {
@@ -1725,6 +1776,13 @@ public:
    * ontouch* event handler DOM attributes.
    */
   static void InitializeTouchEventTable();
+
+  static nsresult Btoa(const nsAString& aBinaryData,
+                       nsAString& aAsciiBase64String);
+
+  static nsresult Atob(const nsAString& aAsciiString,
+                       nsAString& aBinaryData);
+  
 private:
   static PRBool InitializeEventTable();
 
@@ -1743,6 +1801,10 @@ private:
                              const nsIID* aIID, jsval *vp,
                              nsIXPConnectJSObjectHolder** aHolder,
                              PRBool aAllowWrapping);
+
+  static void InitializeModifierStrings();
+
+  static void DropFragmentParsers();
 
   static nsIDOMScriptObjectFactory *sDOMScriptObjectFactory;
 
@@ -1798,7 +1860,8 @@ private:
 #ifdef DEBUG
   static PRUint32 sDOMNodeRemovedSuppressCount;
 #endif
-  static nsCOMArray<nsIRunnable>* sBlockedScriptRunners;
+  // Not an nsCOMArray because removing elements from those is slower
+  static nsTArray< nsCOMPtr<nsIRunnable> >* sBlockedScriptRunners;
   static PRUint32 sRunnersCountAtFirstBlocker;
   static PRUint32 sScriptBlockerCountWhereRunnersPrevented;
 
@@ -1806,6 +1869,21 @@ private:
 
   static PRBool sIsHandlingKeyBoardEvent;
   static PRBool sAllowXULXBL_for_file;
+
+  static nsHtml5Parser* sHTMLFragmentParser;
+  static nsIParser* sXMLFragmentParser;
+  static nsIFragmentContentSink* sXMLFragmentSink;
+
+  /**
+   * True if there's a fragment parser activation on the stack.
+   */
+  static PRBool sFragmentParsingActive;
+
+  static nsString* sShiftText;
+  static nsString* sControlText;
+  static nsString* sMetaText;
+  static nsString* sAltText;
+  static nsString* sModifierSeparator;
 };
 
 #define NS_HOLD_JS_OBJECTS(obj, clazz)                                         \
@@ -1969,49 +2047,37 @@ public:
 #endif
 
 /*
- * Check whether a floating point number is finite (not +/-infinity and not a
- * NaN value).
- */
-inline NS_HIDDEN_(PRBool) NS_FloatIsFinite(jsdouble f) {
-#ifdef WIN32
-  return _finite(f);
-#else
-  return finite(f);
-#endif
-}
-
-/*
  * In the following helper macros we exploit the fact that the result of a
  * series of additions will not be finite if any one of the operands in the
  * series is not finite.
  */
 #define NS_ENSURE_FINITE(f, rv)                                               \
-  if (!NS_FloatIsFinite(f)) {                                                 \
+  if (!NS_finite(f)) {                                                        \
     return (rv);                                                              \
   }
 
 #define NS_ENSURE_FINITE2(f1, f2, rv)                                         \
-  if (!NS_FloatIsFinite((f1)+(f2))) {                                         \
+  if (!NS_finite((f1)+(f2))) {                                                \
     return (rv);                                                              \
   }
 
 #define NS_ENSURE_FINITE3(f1, f2, f3, rv)                                     \
-  if (!NS_FloatIsFinite((f1)+(f2)+(f3))) {                                    \
+  if (!NS_finite((f1)+(f2)+(f3))) {                                           \
     return (rv);                                                              \
   }
 
 #define NS_ENSURE_FINITE4(f1, f2, f3, f4, rv)                                 \
-  if (!NS_FloatIsFinite((f1)+(f2)+(f3)+(f4))) {                               \
+  if (!NS_finite((f1)+(f2)+(f3)+(f4))) {                                      \
     return (rv);                                                              \
   }
 
 #define NS_ENSURE_FINITE5(f1, f2, f3, f4, f5, rv)                             \
-  if (!NS_FloatIsFinite((f1)+(f2)+(f3)+(f4)+(f5))) {                          \
+  if (!NS_finite((f1)+(f2)+(f3)+(f4)+(f5))) {                                 \
     return (rv);                                                              \
   }
 
 #define NS_ENSURE_FINITE6(f1, f2, f3, f4, f5, f6, rv)                         \
-  if (!NS_FloatIsFinite((f1)+(f2)+(f3)+(f4)+(f5)+(f6))) {                     \
+  if (!NS_finite((f1)+(f2)+(f3)+(f4)+(f5)+(f6))) {                            \
     return (rv);                                                              \
   }
 

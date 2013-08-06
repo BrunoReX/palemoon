@@ -399,7 +399,7 @@ NS_INTERFACE_MAP_END_INHERITING(nsGenericHTMLElement)
 NS_IMPL_URI_ATTR(nsHTMLMediaElement, Src, src)
 NS_IMPL_BOOL_ATTR(nsHTMLMediaElement, Controls, controls)
 NS_IMPL_BOOL_ATTR(nsHTMLMediaElement, Autoplay, autoplay)
-NS_IMPL_STRING_ATTR(nsHTMLMediaElement, Preload, preload)
+NS_IMPL_ENUM_ATTR_DEFAULT_VALUE(nsHTMLMediaElement, Preload, preload, NULL)
 
 /* readonly attribute nsIDOMHTMLMediaElement mozAutoplayEnabled; */
 NS_IMETHODIMP nsHTMLMediaElement::GetMozAutoplayEnabled(PRBool *aAutoplayEnabled)
@@ -1134,6 +1134,19 @@ NS_IMETHODIMP nsHTMLMediaElement::GetDuration(double *aDuration)
   return NS_OK;
 }
 
+/* readonly attribute nsIDOMHTMLTimeRanges seekable; */
+NS_IMETHODIMP nsHTMLMediaElement::GetSeekable(nsIDOMTimeRanges** aSeekable)
+{
+  nsTimeRanges* ranges = new nsTimeRanges();
+  NS_ADDREF(*aSeekable = ranges);
+
+  if (mDecoder && mReadyState > nsIDOMHTMLMediaElement::HAVE_NOTHING) {
+    mDecoder->GetSeekable(ranges);
+  }
+  return NS_OK;
+}
+
+
 /* readonly attribute boolean paused; */
 NS_IMETHODIMP nsHTMLMediaElement::GetPaused(PRBool *aPaused)
 {
@@ -1825,7 +1838,7 @@ nsresult nsHTMLMediaElement::InitializeDecoderAsClone(nsMediaDecoder* aOriginal)
   double duration = aOriginal->GetDuration();
   if (duration >= 0) {
     decoder->SetDuration(duration);
-    decoder->SetSeekable(aOriginal->GetSeekable());
+    decoder->SetSeekable(aOriginal->IsSeekable());
   }
 
   nsMediaStream* stream = originalStream->CloneData(decoder);
@@ -1987,11 +2000,11 @@ void nsHTMLMediaElement::NetworkError()
 
 void nsHTMLMediaElement::DecodeError()
 {
+  if (mDecoder) {
+    mDecoder->Shutdown();
+    mDecoder = nsnull;
+  }
   if (mIsLoadingFromSourceChildren) {
-    if (mDecoder) {
-      mDecoder->Shutdown();
-      mDecoder = nsnull;
-    }
     mError = nsnull;
     if (mSourceLoadCandidate) {
       DispatchAsyncSourceError(mSourceLoadCandidate);
@@ -2034,6 +2047,11 @@ void nsHTMLMediaElement::PlaybackEnded()
   // We changed the state of IsPlaybackEnded which can affect AddRemoveSelfReference
   AddRemoveSelfReference();
 
+  if (mDecoder && mDecoder->IsInfinite()) {
+    LOG(PR_LOG_DEBUG, ("%p, got duration by reaching the end of the stream", this));
+    DispatchAsyncEvent(NS_LITERAL_STRING("durationchange"));
+  }
+
   FireTimeUpdate(PR_FALSE);
   DispatchAsyncEvent(NS_LITERAL_STRING("ended"));
 }
@@ -2055,6 +2073,7 @@ void nsHTMLMediaElement::SeekCompleted()
 
 void nsHTMLMediaElement::DownloadSuspended()
 {
+  DispatchAsyncEvent(NS_LITERAL_STRING("progress"));
   if (mBegun) {
     mNetworkState = nsIDOMHTMLMediaElement::NETWORK_IDLE;
     AddRemoveSelfReference();

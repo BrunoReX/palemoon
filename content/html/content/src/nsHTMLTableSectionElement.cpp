@@ -45,6 +45,7 @@
 #include "nsRuleData.h"
 #include "nsDOMError.h"
 #include "nsIDocument.h"
+#include "nsContentUtils.h"
 
 // you will see the phrases "rowgroup" and "section" used interchangably
 
@@ -120,9 +121,9 @@ NS_HTML_CONTENT_INTERFACE_TABLE_TAIL_CLASSINFO(HTMLTableSectionElement)
 NS_IMPL_ELEMENT_CLONE(nsHTMLTableSectionElement)
 
 
-NS_IMPL_STRING_ATTR_DEFAULT_VALUE(nsHTMLTableSectionElement, Align, align, "left")
-NS_IMPL_STRING_ATTR_DEFAULT_VALUE(nsHTMLTableSectionElement, VAlign, valign, "middle")
-NS_IMPL_STRING_ATTR_DEFAULT_VALUE(nsHTMLTableSectionElement, Ch, _char, ".")
+NS_IMPL_STRING_ATTR(nsHTMLTableSectionElement, Align, align)
+NS_IMPL_STRING_ATTR(nsHTMLTableSectionElement, VAlign, valign)
+NS_IMPL_STRING_ATTR(nsHTMLTableSectionElement, Ch, _char)
 NS_IMPL_STRING_ATTR(nsHTMLTableSectionElement, ChOff, charoff)
 
 

@@ -56,7 +56,7 @@
 #include "nsIDocument.h"
 #include "nsBoxLayoutState.h"
 #include "nsINodeInfo.h"
-#include "nsIScrollbarFrame.h"
+#include "nsScrollbarFrame.h"
 #include "nsIScrollbarMediator.h"
 #include "nsITextControlFrame.h"
 #include "nsIDOMHTMLTextAreaElement.h"
@@ -1463,7 +1463,7 @@ nsGfxScrollFrameInner::nsGfxScrollFrameInner(nsContainerFrame* aOuter,
   , mShouldBuildLayer(PR_FALSE)
 {
   // lookup if we're allowed to overlap the content from the look&feel object
-  PRBool canOverlap;
+  PRInt32 canOverlap;
   nsPresContext* presContext = mOuter->PresContext();
   presContext->LookAndFeel()->
     GetMetric(nsILookAndFeel::eMetric_ScrollbarsCanOverlapContent, canOverlap);
@@ -2203,9 +2203,8 @@ nsGfxScrollFrameInner::ScrollBy(nsIntPoint aDelta,
 nsSize
 nsGfxScrollFrameInner::GetLineScrollAmount() const
 {
-  const nsStyleFont* font = mOuter->GetStyleFont();
-  const nsFont& f = font->mFont;
-  nsRefPtr<nsFontMetrics> fm = mOuter->PresContext()->GetMetricsFor(f);
+  nsRefPtr<nsFontMetrics> fm;
+  nsLayoutUtils::GetFontMetricsForFrame(mOuter, getter_AddRefs(fm));
   NS_ASSERTION(fm, "FontMetrics is null, assuming fontHeight == 1 appunit");
   nscoord fontHeight = 1;
   if (fm) {
@@ -2585,12 +2584,11 @@ void nsGfxScrollFrameInner::CurPosAttributeChanged(nsIContent* aContent)
 
   nsRect scrolledRect = GetScrolledRect();
 
+  nsPoint current = GetScrollPosition() - scrolledRect.TopLeft();
   nsPoint dest;
-  dest.x = GetCoordAttribute(mHScrollbarBox, nsGkAtoms::curpos,
-                             -scrolledRect.x) +
+  dest.x = GetCoordAttribute(mHScrollbarBox, nsGkAtoms::curpos, current.x) +
            scrolledRect.x;
-  dest.y = GetCoordAttribute(mVScrollbarBox, nsGkAtoms::curpos,
-                             -scrolledRect.y) +
+  dest.y = GetCoordAttribute(mVScrollbarBox, nsGkAtoms::curpos, current.y) +
            scrolledRect.y;
 
   // If we have an async scroll pending don't stomp on that by calling ScrollTo.
@@ -3559,10 +3557,7 @@ nsGfxScrollFrameInner::GetActualScrollbarSizes() const
 void
 nsGfxScrollFrameInner::SetScrollbarVisibility(nsIBox* aScrollbar, PRBool aVisible)
 {
-  if (!aScrollbar)
-    return;
-
-  nsIScrollbarFrame* scrollbar = do_QueryFrame(aScrollbar);
+  nsScrollbarFrame* scrollbar = do_QueryFrame(aScrollbar);
   if (scrollbar) {
     // See if we have a mediator.
     nsIScrollbarMediator* mediator = scrollbar->GetScrollbarMediator();

@@ -94,7 +94,8 @@ class ShadowableLayer;
  */
 class BasicImplData {
 public:
-  BasicImplData() : mHidden(PR_FALSE), mOperator(gfxContext::OPERATOR_OVER)
+  BasicImplData() : mHidden(PR_FALSE),
+    mClipToVisibleRegion(PR_FALSE), mOperator(gfxContext::OPERATOR_OVER)
   {
     MOZ_COUNT_CTOR(BasicImplData);
   }
@@ -114,6 +115,8 @@ public:
   /**
    * Like Paint() but called for ThebesLayers with the additional parameters
    * they need.
+   * If mClipToVisibleRegion is set, then the layer must clip to its
+   * effective visible region (snapped or unsnapped, it doesn't matter).
    */
   virtual void PaintThebes(gfxContext* aContext,
                            LayerManager::DrawThebesLayerCallback aCallback,
@@ -157,8 +160,12 @@ public:
   }
   gfxContext::GraphicsOperator GetOperator() const { return mOperator; }
 
+  PRBool GetClipToVisibleRegion() { return mClipToVisibleRegion; }
+  void SetClipToVisibleRegion(PRBool aClip) { mClipToVisibleRegion = aClip; }
+
 protected:
   PRPackedBool mHidden;
+  PRPackedBool mClipToVisibleRegion;
   gfxContext::GraphicsOperator mOperator;
 };
 
@@ -664,7 +671,7 @@ BasicThebesLayer::PaintThebes(gfxContext* aContext,
 
       aContext->Save();
 
-      PRBool needsClipToVisibleRegion = PR_FALSE;
+      PRBool needsClipToVisibleRegion = GetClipToVisibleRegion();
       PRBool needsGroup =
           opacity != 1.0 || GetOperator() != gfxContext::OPERATOR_OVER;
       nsRefPtr<gfxContext> groupContext;
@@ -766,7 +773,10 @@ BasicThebesLayerBuffer::DrawTo(ThebesLayer* aLayer,
   // If the entire buffer is valid, we can just draw the whole thing,
   // no need to clip. But we'll still clip if clipping is cheap ---
   // that might let us copy a smaller region of the buffer.
+  // Also clip to the visible region if we're told to.
   if (!aLayer->GetValidRegion().Contains(BufferRect()) ||
+      (ToData(aLayer)->GetClipToVisibleRegion() &&
+       !aLayer->GetVisibleRegion().Contains(BufferRect())) ||
       IsClippingCheap(aTarget, aLayer->GetEffectiveVisibleRegion())) {
     // We don't want to draw invalid stuff, so we need to clip. Might as
     // well clip to the smallest area possible --- the visible region.
@@ -1082,6 +1092,22 @@ BasicCanvasLayer::UpdateSurface(gfxASurface* aDestSurface)
       return;
     }
 
+    // We need to read from the GLContext
+    mGLContext->MakeCurrent();
+
+#if defined (MOZ_X11) && defined (MOZ_EGL_XRENDER_COMPOSITE)
+    mGLContext->fFinish();
+    gfxASurface* offscreenSurface = mGLContext->GetOffscreenPixmapSurface();
+
+    // XRender can only blend premuliplied alpha, so only allow xrender
+    // path if we have premultiplied alpha or opaque content.
+    if (offscreenSurface && (mGLBufferIsPremultiplied || (GetContentFlags() & CONTENT_OPAQUE))) {  
+        mSurface = offscreenSurface;
+        mNeedsYFlip = false;
+    }
+    else
+#endif
+    {
     nsRefPtr<gfxImageSurface> isurf = aDestSurface ?
         static_cast<gfxImageSurface*>(aDestSurface) :
         new gfxImageSurface(gfxIntSize(mBounds.width, mBounds.height),
@@ -1094,9 +1120,6 @@ BasicCanvasLayer::UpdateSurface(gfxASurface* aDestSurface)
     }
 
     NS_ASSERTION(isurf->Stride() == mBounds.width * 4, "gfxImageSurface stride isn't what we expect!");
-
-    // We need to read from the GLContext
-    mGLContext->MakeCurrent();
 
     // We have to flush to ensure that any buffered GL operations are
     // in the framebuffer before we read.
@@ -1132,6 +1155,7 @@ BasicCanvasLayer::UpdateSurface(gfxASurface* aDestSurface)
     }
   }
 }
+}
 
 void
 BasicCanvasLayer::Paint(gfxContext* aContext)
@@ -1162,12 +1186,34 @@ BasicCanvasLayer::PaintWithOpacity(gfxContext* aContext,
     aContext->Scale(1.0, -1.0);
   }
 
+  // If content opaque, then save off current operator and set to source.
+  // This ensures that alpha is not applied even if the source surface
+  // has an alpha channel
+  gfxContext::GraphicsOperator savedOp;
+  if (GetContentFlags() & CONTENT_OPAQUE) {
+    savedOp = aContext->CurrentOperator();
+    aContext->SetOperator(gfxContext::OPERATOR_SOURCE);
+  }
+
   AutoSetOperator setOperator(aContext, GetOperator());
   aContext->NewPath();
   // No need to snap here; our transform is already set up to snap our rect
   aContext->Rectangle(gfxRect(0, 0, mBounds.width, mBounds.height));
   aContext->SetPattern(pat);
   aContext->FillWithOpacity(aOpacity);
+
+#if defined (MOZ_X11) && defined (MOZ_EGL_XRENDER_COMPOSITE)
+  if (mGLContext) {
+    // Wait for X to complete all operations before continuing
+    // Otherwise gl context could get cleared before X is done.
+    mGLContext->WaitNative();
+  }
+#endif
+
+  // Restore surface operator
+  if (GetContentFlags() & CONTENT_OPAQUE) {
+    aContext->SetOperator(savedOp);
+  }  
 
   if (mNeedsYFlip) {
     aContext->SetMatrix(m);
@@ -1339,6 +1385,7 @@ TransformIntRect(nsIntRect& aRect, const gfxMatrix& aMatrix,
  * It can't be used as is by accelerated layers because of intermediate surfaces.
  * This must set the hidden flag to true or false on *all* layers in the subtree.
  * It also sets the operator for all layers to "OVER".
+ * It clears mClipToVisibleRegion on all layers.
  * @param aClipRect the cliprect, in the root coordinate system. We assume
  * that any layer drawing is clipped to this rect. It is therefore not
  * allowed to add to the opaque region outside that rect.
@@ -1387,6 +1434,7 @@ MarkLayersHidden(Layer* aLayer, const nsIntRect& aClipRect,
 
   BasicImplData* data = ToData(aLayer);
   data->SetOperator(gfxContext::OPERATOR_OVER);
+  data->SetClipToVisibleRegion(PR_FALSE);
 
   if (!aLayer->AsContainerLayer()) {
     gfxMatrix transform;
@@ -1477,8 +1525,11 @@ ApplyDoubleBuffering(Layer* aLayer, const nsIntRect& aVisibleRect)
       data->SetOperator(gfxContext::OPERATOR_SOURCE);
       container->ForceIntermediateSurface();
     } else {
+      // Tell the children to clip to their visible regions so our assumption
+      // that they don't paint outside their visible regions is valid!
       for (Layer* child = aLayer->GetFirstChild(); child;
            child = child->GetNextSibling()) {
+        ToData(child)->SetClipToVisibleRegion(PR_TRUE);
         ApplyDoubleBuffering(child, newVisibleRect);
       }
     }
@@ -1601,14 +1652,16 @@ BasicLayerManager::PaintLayer(gfxContext* aTarget,
   BasicContainerLayer* container = static_cast<BasicContainerLayer*>(aLayer);
   PRBool needsGroup = aLayer->GetFirstChild() &&
     container->UseIntermediateSurface();
+  BasicImplData* data = ToData(aLayer);
+  PRBool needsClipToVisibleRegion =
+    data->GetClipToVisibleRegion() && !aLayer->AsThebesLayer();
   NS_ASSERTION(needsGroup || !aLayer->GetFirstChild() ||
                container->GetOperator() == gfxContext::OPERATOR_OVER,
                "non-OVER operator should have forced UseIntermediateSurface");
 
   // If needsSaveRestore is false, we should still save and restore
   // the CTM
-  PRBool needsSaveRestore = needsGroup || clipRect;
-
+  PRBool needsSaveRestore = needsGroup || clipRect || needsClipToVisibleRegion;
   gfxMatrix savedMatrix;
   if (needsSaveRestore) {
     aTarget->Save();
@@ -1630,8 +1683,15 @@ BasicLayerManager::PaintLayer(gfxContext* aTarget,
   effectiveTransform.Is2D(&transform);
   aTarget->SetMatrix(transform);
 
-  PRBool pushedTargetOpaqueRect = PR_FALSE;
   const nsIntRegion& visibleRegion = aLayer->GetEffectiveVisibleRegion();
+  // If needsGroup is true, we'll clip to the visible region after we've popped the group
+  if (needsClipToVisibleRegion && !needsGroup) {
+    gfxUtils::ClipToRegion(aTarget, visibleRegion);
+    // Don't need to clip to visible region again
+    needsClipToVisibleRegion = PR_FALSE;
+  }
+
+  PRBool pushedTargetOpaqueRect = PR_FALSE;
   nsRefPtr<gfxASurface> currentSurface = aTarget->CurrentSurface();
   const gfxRect& targetOpaqueRect = currentSurface->GetOpaqueRect();
 
@@ -1646,7 +1706,6 @@ BasicLayerManager::PaintLayer(gfxContext* aTarget,
     pushedTargetOpaqueRect = PR_TRUE;
   }
 
-  PRBool needsClipToVisibleRegion = PR_FALSE;
   nsRefPtr<gfxContext> groupTarget;
   if (needsGroup) {
     groupTarget = PushGroupForLayer(aTarget, aLayer, aLayer->GetEffectiveVisibleRegion(),
@@ -1658,7 +1717,6 @@ BasicLayerManager::PaintLayer(gfxContext* aTarget,
   /* Only paint ourself, or our children - This optimization relies on this! */
   Layer* child = aLayer->GetFirstChild();
   if (!child) {
-    BasicImplData* data = ToData(aLayer);
 #ifdef MOZ_LAYERS_HAVE_LOG
     MOZ_LAYERS_LOG(("%s (0x%p) is covered: %i\n", __FUNCTION__,
                    (void*)aLayer, data->IsHidden()));
@@ -1870,11 +1928,6 @@ public:
 
   virtual void InsertAfter(Layer* aChild, Layer* aAfter);
   virtual void RemoveChild(Layer* aChild);
-
-  virtual void FillSpecificAttributes(SpecificLayerAttributes& aAttrs)
-  {
-    aAttrs = ContainerLayerAttributes(GetFrameMetrics());
-  }
 
   virtual Layer* AsLayer() { return this; }
   virtual ShadowableLayer* AsShadowableLayer() { return this; }

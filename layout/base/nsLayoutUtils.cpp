@@ -77,6 +77,7 @@
 #include "nsIDocShellTreeItem.h"
 #include "nsIWidget.h"
 #include "gfxMatrix.h"
+#include "gfxPoint3D.h"
 #include "gfxTypes.h"
 #include "gfxUserFontSet.h"
 #include "nsTArray.h"
@@ -106,6 +107,8 @@
 #include "nsSVGIntegrationUtils.h"
 #include "nsSVGForeignObjectFrame.h"
 #include "nsSVGOuterSVGFrame.h"
+
+#include "mozilla/Preferences.h"
 
 #ifdef MOZ_XUL
 #include "nsXULPopupManager.h"
@@ -137,6 +140,22 @@ static ContentMap& GetContentMap() {
     NS_ABORT_IF_FALSE(NS_SUCCEEDED(rv), "Could not initialize map.");
   }
   return *sContentMap;
+}
+
+
+PRBool
+nsLayoutUtils::Are3DTransformsEnabled()
+{
+  static PRBool s3DTransformsEnabled;
+  static PRBool s3DTransformPrefCached = PR_FALSE;
+
+  if (!s3DTransformPrefCached) {
+    s3DTransformPrefCached = PR_TRUE;
+    mozilla::Preferences::AddBoolVarCache(&s3DTransformsEnabled, 
+                                          "layout.3d-transforms.enabled");
+  }
+
+  return s3DTransformsEnabled;
 }
 
 static void DestroyViewID(void* aObject, nsIAtom* aPropertyName,
@@ -982,23 +1001,18 @@ nsLayoutUtils::GetPopupFrameForEventCoordinates(nsPresContext* aPresContext,
   return nsnull;
 }
 
-gfxMatrix
-nsLayoutUtils::ChangeMatrixBasis(const gfxPoint &aOrigin,
-                                 const gfxMatrix &aMatrix)
+gfx3DMatrix
+nsLayoutUtils::ChangeMatrixBasis(const gfxPoint3D &aOrigin,
+                                 const gfx3DMatrix &aMatrix)
 {
   /* These are translation matrices from world-to-origin of relative frame and
-   * vice-versa.  Although I could use the gfxMatrix::Translate function to
-   * accomplish this, I'm hoping to reduce the overall number of matrix
-   * operations by hardcoding as many of the matrices as possible.
+   * vice-versa.
    */
-  gfxMatrix worldToOrigin(1.0, 0.0, 0.0, 1.0, -aOrigin.x, -aOrigin.y);
-  gfxMatrix originToWorld(1.0, 0.0, 0.0, 1.0,  aOrigin.x,  aOrigin.y);
+  gfx3DMatrix worldToOrigin = gfx3DMatrix::Translation(-aOrigin);
+  gfx3DMatrix originToWorld = gfx3DMatrix::Translation(aOrigin);
 
   /* Multiply all three to get the transform! */
-  gfxMatrix result(worldToOrigin);
-  result.Multiply(aMatrix);
-  result.Multiply(originToWorld);
-  return result;
+  return worldToOrigin * aMatrix * originToWorld;
 }
 
 /**
@@ -1063,7 +1077,7 @@ nsLayoutUtils::RoundedRectIntersectRect(const nsRect& aRoundedRect,
 
 nsRect
 nsLayoutUtils::MatrixTransformRectOut(const nsRect &aBounds,
-                                      const gfxMatrix &aMatrix, float aFactor)
+                                      const gfx3DMatrix &aMatrix, float aFactor)
 {
   nsRect outside = aBounds;
   outside.ScaleRoundOut(1/aFactor);
@@ -1076,7 +1090,7 @@ nsLayoutUtils::MatrixTransformRectOut(const nsRect &aBounds,
 
 nsRect
 nsLayoutUtils::MatrixTransformRect(const nsRect &aBounds,
-                                   const gfxMatrix &aMatrix, float aFactor)
+                                   const gfx3DMatrix &aMatrix, float aFactor)
 {
   gfxRect image = aMatrix.TransformBounds(gfxRect(NSAppUnitsToDoublePixels(aBounds.x, aFactor),
                                                   NSAppUnitsToDoublePixels(aBounds.y, aFactor),
@@ -1088,7 +1102,7 @@ nsLayoutUtils::MatrixTransformRect(const nsRect &aBounds,
 
 nsPoint
 nsLayoutUtils::MatrixTransformPoint(const nsPoint &aPoint,
-                                    const gfxMatrix &aMatrix, float aFactor)
+                                    const gfx3DMatrix &aMatrix, float aFactor)
 {
   gfxPoint image = aMatrix.Transform(gfxPoint(NSAppUnitsToFloatPixels(aPoint.x, aFactor),
                                               NSAppUnitsToFloatPixels(aPoint.y, aFactor)));
@@ -1096,41 +1110,81 @@ nsLayoutUtils::MatrixTransformPoint(const nsPoint &aPoint,
                  NSFloatPixelsToAppUnits(float(image.y), aFactor));
 }
 
-gfxMatrix nsLayoutUtils::GetTransformToAncestor(nsIFrame *aFrame,
-                                                nsIFrame* aStopAtAncestor)
-{
-  gfxMatrix ctm;
-
-  /* Starting at the specified frame, we'll use the GetTransformMatrix
-   * function of the frame, which gives us a matrix from this frame up
-   * to some other ancestor frame. If aStopAtAncestor frame is not reached, 
-   * we stop at root. We get the CTM by simply accumulating all of these
-   * matrices together.
-   */
-  while (aFrame && aFrame != aStopAtAncestor) {
-    ctm *= aFrame->GetTransformMatrix(&aFrame);
-  }
-  NS_ASSERTION(aFrame == aStopAtAncestor, "How did we manage to miss the ancestor?");
-  return ctm;
-}
-
-nsPoint
-nsLayoutUtils::InvertTransformsToRoot(nsIFrame *aFrame,
-                                      const nsPoint &aPoint)
+static gfxPoint 
+InvertTransformsToAncestor(nsIFrame *aFrame,
+                           const gfxPoint &aPoint,
+                           nsIFrame *aStopAtAncestor = nsnull)
 {
   NS_PRECONDITION(aFrame, "Why are you inverting transforms when there is no frame?");
 
   /* To invert everything to the root, we'll get the CTM, invert it, and use it to transform
    * the point.
    */
-  gfxMatrix ctm = GetTransformToAncestor(aFrame);
+  nsIFrame *parent = nsnull;
+  gfx3DMatrix ctm = aFrame->GetTransformMatrix(&parent);
+  gfxPoint result = aPoint;
+  
+  if (parent && parent != aStopAtAncestor) {
+      result = InvertTransformsToAncestor(parent, aPoint, aStopAtAncestor);
+  }
 
-  /* If the ctm is singular, hand back (0, 0) as a sentinel. */
-  if (ctm.IsSingular())
-    return nsPoint(0, 0);
+  result = ctm.Inverse().ProjectPoint(result);
+  return result;
+}
 
-  /* Otherwise, invert the CTM and use it to transform the point. */
-  return MatrixTransformPoint(aPoint, ctm.Invert(), aFrame->PresContext()->AppUnitsPerDevPixel());
+static gfxRect
+InvertGfxRectToAncestor(nsIFrame *aFrame,
+                     const gfxRect &aRect,
+                     nsIFrame *aStopAtAncestor = nsnull)
+{
+  NS_PRECONDITION(aFrame, "Why are you inverting transforms when there is no frame?");
+
+  /* To invert everything to the root, we'll get the CTM, invert it, and use it to transform
+   * the point.
+   */
+  nsIFrame *parent = nsnull;
+  gfx3DMatrix ctm = aFrame->GetTransformMatrix(&parent);
+  gfxRect result = aRect;
+  
+  if (parent && parent != aStopAtAncestor) {
+      result = InvertGfxRectToAncestor(parent, aRect, aStopAtAncestor);
+  }
+
+  result = ctm.Inverse().ProjectRectBounds(result);
+  return result;
+}
+
+nsPoint
+nsLayoutUtils::InvertTransformsToRoot(nsIFrame *aFrame,
+                                      const nsPoint &aPoint)
+{
+    float factor = aFrame->PresContext()->AppUnitsPerDevPixel();
+    gfxPoint result(NSAppUnitsToFloatPixels(aPoint.x, factor),
+                    NSAppUnitsToFloatPixels(aPoint.y, factor));
+    
+    result = InvertTransformsToAncestor(aFrame, result);
+   
+    return nsPoint(NSFloatPixelsToAppUnits(float(result.x), factor),
+                   NSFloatPixelsToAppUnits(float(result.y), factor));
+}
+
+nsRect 
+nsLayoutUtils::TransformRectToBoundsInAncestor(nsIFrame* aFrame,
+                                               const nsRect &aRect,
+                                               nsIFrame* aStopAtAncestor)
+{
+    float factor = aFrame->PresContext()->AppUnitsPerDevPixel();
+    gfxRect result(NSAppUnitsToFloatPixels(aRect.x, factor),
+                   NSAppUnitsToFloatPixels(aRect.y, factor),
+                   NSAppUnitsToFloatPixels(aRect.width, factor),
+                   NSAppUnitsToFloatPixels(aRect.height, factor));
+
+    result = InvertGfxRectToAncestor(aFrame, result, aStopAtAncestor);
+
+    return nsRect(NSFloatPixelsToAppUnits(float(result.x), factor),
+                  NSFloatPixelsToAppUnits(float(result.y), factor),
+                  NSFloatPixelsToAppUnits(float(result.width), factor),
+                  NSFloatPixelsToAppUnits(float(result.height), factor));
 }
 
 static nsIntPoint GetWidgetOffset(nsIWidget* aWidget, nsIWidget*& aRootWidget) {
@@ -2642,89 +2696,9 @@ nsLayoutUtils::ComputeSizeWithIntrinsicDimensions(
         tentHeight = nsPresContext::CSSPixelsToAppUnits(150);
       }
 
-      // Now apply min/max-width/height - CSS 2.1 sections 10.4 and 10.7:
-
-      if (minWidth > maxWidth)
-        maxWidth = minWidth;
-      if (minHeight > maxHeight)
-        maxHeight = minHeight;
-
-      nscoord heightAtMaxWidth, heightAtMinWidth,
-              widthAtMaxHeight, widthAtMinHeight;
-
-      if (tentWidth > 0) {
-        heightAtMaxWidth = MULDIV(maxWidth, tentHeight, tentWidth);
-        if (heightAtMaxWidth < minHeight)
-          heightAtMaxWidth = minHeight;
-        heightAtMinWidth = MULDIV(minWidth, tentHeight, tentWidth);
-        if (heightAtMinWidth > maxHeight)
-          heightAtMinWidth = maxHeight;
-      } else {
-        heightAtMaxWidth = tentHeight;
-        heightAtMinWidth = tentHeight;
-      }
-
-      if (tentHeight > 0) {
-        widthAtMaxHeight = MULDIV(maxHeight, tentWidth, tentHeight);
-        if (widthAtMaxHeight < minWidth)
-          widthAtMaxHeight = minWidth;
-        widthAtMinHeight = MULDIV(minHeight, tentWidth, tentHeight);
-        if (widthAtMinHeight > maxWidth)
-          widthAtMinHeight = maxWidth;
-      } else {
-        widthAtMaxHeight = tentWidth;
-        widthAtMinHeight = tentWidth;
-      }
-
-      // The table at http://www.w3.org/TR/CSS21/visudet.html#min-max-widths :
-
-      if (tentWidth > maxWidth) {
-        if (tentHeight > maxHeight) {
-          if (PRInt64(maxWidth) * PRInt64(tentHeight) <=
-              PRInt64(maxHeight) * PRInt64(tentWidth)) {
-            width = maxWidth;
-            height = heightAtMaxWidth;
-          } else {
-            width = widthAtMaxHeight;
-            height = maxHeight;
-          }
-        } else {
-          // This also covers "(w > max-width) and (h < min-height)" since in
-          // that case (max-width/w < 1), and with (h < min-height):
-          //   max(max-width * h/w, min-height) == min-height
-          width = maxWidth;
-          height = heightAtMaxWidth;
-        }
-      } else if (tentWidth < minWidth) {
-        if (tentHeight < minHeight) {
-          if (PRInt64(minWidth) * PRInt64(tentHeight) <=
-              PRInt64(minHeight) * PRInt64(tentWidth)) {
-            width = widthAtMinHeight;
-            height = minHeight;
-          } else {
-            width = minWidth;
-            height = heightAtMinWidth;
-          }
-        } else {
-          // This also covers "(w < min-width) and (h > max-height)" since in
-          // that case (min-width/w > 1), and with (h > max-height):
-          //   min(min-width * h/w, max-height) == max-height
-          width = minWidth;
-          height = heightAtMinWidth;
-        }
-      } else {
-        if (tentHeight > maxHeight) {
-          width = widthAtMaxHeight;
-          height = maxHeight;
-        } else if (tentHeight < minHeight) {
-          width = widthAtMinHeight;
-          height = minHeight;
-        } else {
-          width = tentWidth;
-          height = tentHeight;
-        }
-      }
-
+      return ComputeAutoSizeWithIntrinsicDimensions(minWidth, minHeight,
+                                                    maxWidth, maxHeight,
+                                                    tentWidth, tentHeight);
     } else {
 
       // 'auto' width, non-'auto' height
@@ -2759,6 +2733,97 @@ nsLayoutUtils::ComputeSizeWithIntrinsicDimensions(
       width = NS_CSS_MINMAX(width, minWidth, maxWidth);
       height = NS_CSS_MINMAX(height, minHeight, maxHeight);
 
+    }
+  }
+
+  return nsSize(width, height);
+}
+
+nsSize
+nsLayoutUtils::ComputeAutoSizeWithIntrinsicDimensions(nscoord minWidth, nscoord minHeight,
+                                                      nscoord maxWidth, nscoord maxHeight,
+                                                      nscoord tentWidth, nscoord tentHeight)
+{
+  // Now apply min/max-width/height - CSS 2.1 sections 10.4 and 10.7:
+
+  if (minWidth > maxWidth)
+    maxWidth = minWidth;
+  if (minHeight > maxHeight)
+    maxHeight = minHeight;
+
+  nscoord heightAtMaxWidth, heightAtMinWidth,
+          widthAtMaxHeight, widthAtMinHeight;
+
+  if (tentWidth > 0) {
+    heightAtMaxWidth = MULDIV(maxWidth, tentHeight, tentWidth);
+    if (heightAtMaxWidth < minHeight)
+      heightAtMaxWidth = minHeight;
+    heightAtMinWidth = MULDIV(minWidth, tentHeight, tentWidth);
+    if (heightAtMinWidth > maxHeight)
+      heightAtMinWidth = maxHeight;
+  } else {
+    heightAtMaxWidth = heightAtMinWidth = NS_CSS_MINMAX(tentHeight, minHeight, maxHeight);
+  }
+
+  if (tentHeight > 0) {
+    widthAtMaxHeight = MULDIV(maxHeight, tentWidth, tentHeight);
+    if (widthAtMaxHeight < minWidth)
+      widthAtMaxHeight = minWidth;
+    widthAtMinHeight = MULDIV(minHeight, tentWidth, tentHeight);
+    if (widthAtMinHeight > maxWidth)
+      widthAtMinHeight = maxWidth;
+  } else {
+    widthAtMaxHeight = widthAtMinHeight = NS_CSS_MINMAX(tentWidth, minWidth, maxWidth);
+  }
+
+  // The table at http://www.w3.org/TR/CSS21/visudet.html#min-max-widths :
+
+  nscoord width, height;
+
+  if (tentWidth > maxWidth) {
+    if (tentHeight > maxHeight) {
+      if (PRInt64(maxWidth) * PRInt64(tentHeight) <=
+          PRInt64(maxHeight) * PRInt64(tentWidth)) {
+        width = maxWidth;
+        height = heightAtMaxWidth;
+      } else {
+        width = widthAtMaxHeight;
+        height = maxHeight;
+      }
+    } else {
+      // This also covers "(w > max-width) and (h < min-height)" since in
+      // that case (max-width/w < 1), and with (h < min-height):
+      //   max(max-width * h/w, min-height) == min-height
+      width = maxWidth;
+      height = heightAtMaxWidth;
+    }
+  } else if (tentWidth < minWidth) {
+    if (tentHeight < minHeight) {
+      if (PRInt64(minWidth) * PRInt64(tentHeight) <=
+          PRInt64(minHeight) * PRInt64(tentWidth)) {
+        width = widthAtMinHeight;
+        height = minHeight;
+      } else {
+        width = minWidth;
+        height = heightAtMinWidth;
+      }
+    } else {
+      // This also covers "(w < min-width) and (h > max-height)" since in
+      // that case (min-width/w > 1), and with (h > max-height):
+      //   min(min-width * h/w, max-height) == max-height
+      width = minWidth;
+      height = heightAtMinWidth;
+    }
+  } else {
+    if (tentHeight > maxHeight) {
+      width = widthAtMaxHeight;
+      height = maxHeight;
+    } else if (tentHeight < minHeight) {
+      width = widthAtMinHeight;
+      height = minHeight;
+    } else {
+      width = tentWidth;
+      height = tentHeight;
     }
   }
 
@@ -2810,20 +2875,20 @@ DarkenColor(nscolor aColor)
   return aColor;
 }
 
-// Check whether we should darken text colors. We need to do this if
+// Check whether we should darken text/decoration colors. We need to do this if
 // background images and colors are being suppressed, because that means
 // light text will not be visible against the (presumed light-colored) background.
 static PRBool
 ShouldDarkenColors(nsPresContext* aPresContext)
 {
   return !aPresContext->GetBackgroundColorDraw() &&
-    !aPresContext->GetBackgroundImageDraw();
+         !aPresContext->GetBackgroundImageDraw();
 }
 
 nscolor
-nsLayoutUtils::GetTextColor(nsIFrame* aFrame)
+nsLayoutUtils::GetColor(nsIFrame* aFrame, nsCSSProperty aProperty)
 {
-  nscolor color = aFrame->GetVisitedDependentColor(eCSSProperty_color);
+  nscolor color = aFrame->GetVisitedDependentColor(aProperty);
   if (ShouldDarkenColors(aFrame->PresContext())) {
     color = DarkenColor(color);
   }
@@ -2854,19 +2919,15 @@ nsLayoutUtils::DrawString(const nsIFrame*      aFrame,
   nsresult rv = NS_ERROR_FAILURE;
   nsPresContext* presContext = aFrame->PresContext();
   if (presContext->BidiEnabled()) {
-    nsBidiPresUtils* bidiUtils = presContext->GetBidiUtils();
-
-    if (bidiUtils) {
-      if (aDirection == NS_STYLE_DIRECTION_INHERIT) {
-        aDirection = aFrame->GetStyleVisibility()->mDirection;
-      }
-      nsBidiDirection direction =
-        (NS_STYLE_DIRECTION_RTL == aDirection) ?
-        NSBIDI_RTL : NSBIDI_LTR;
-      rv = bidiUtils->RenderText(aString, aLength, direction,
-                                 presContext, *aContext, *aContext,
-                                 aPoint.x, aPoint.y);
+    if (aDirection == NS_STYLE_DIRECTION_INHERIT) {
+      aDirection = aFrame->GetStyleVisibility()->mDirection;
     }
+    nsBidiDirection direction =
+      (NS_STYLE_DIRECTION_RTL == aDirection) ?
+      NSBIDI_RTL : NSBIDI_LTR;
+    rv = nsBidiPresUtils::RenderText(aString, aLength, direction,
+                                     presContext, *aContext, *aContext,
+                                     aPoint.x, aPoint.y);
   }
   if (NS_FAILED(rv))
 #endif // IBMBIDI
@@ -2885,16 +2946,12 @@ nsLayoutUtils::GetStringWidth(const nsIFrame*      aFrame,
 #ifdef IBMBIDI
   nsPresContext* presContext = aFrame->PresContext();
   if (presContext->BidiEnabled()) {
-    nsBidiPresUtils* bidiUtils = presContext->GetBidiUtils();
-
-    if (bidiUtils) {
-      const nsStyleVisibility* vis = aFrame->GetStyleVisibility();
-      nsBidiDirection direction =
-        (NS_STYLE_DIRECTION_RTL == vis->mDirection) ?
-        NSBIDI_RTL : NSBIDI_LTR;
-      return bidiUtils->MeasureTextWidth(aString, aLength,
-                                         direction, presContext, *aContext);
-    }
+    const nsStyleVisibility* vis = aFrame->GetStyleVisibility();
+    nsBidiDirection direction =
+      (NS_STYLE_DIRECTION_RTL == vis->mDirection) ?
+      NSBIDI_RTL : NSBIDI_LTR;
+    return nsBidiPresUtils::MeasureTextWidth(aString, aLength,
+                                             direction, presContext, *aContext);
   }
 #endif // IBMBIDI
   aContext->SetTextRunRTL(PR_FALSE);
@@ -3510,45 +3567,46 @@ nsLayoutUtils::DrawSingleImage(nsRenderingContext* aRenderingContext,
 /* static */ void
 nsLayoutUtils::ComputeSizeForDrawing(imgIContainer *aImage,
                                      nsIntSize&     aImageSize, /*outparam*/
-                                     PRBool&        aGotWidth,  /*outparam*/
-                                     PRBool&        aGotHeight  /*outparam*/)
+                                     nsSize&        aIntrinsicRatio, /*outparam*/
+                                     bool&          aGotWidth,  /*outparam*/
+                                     bool&          aGotHeight  /*outparam*/)
 {
   aGotWidth  = NS_SUCCEEDED(aImage->GetWidth(&aImageSize.width));
   aGotHeight = NS_SUCCEEDED(aImage->GetHeight(&aImageSize.height));
 
-  if ((aGotWidth && aGotHeight) ||    // Trivial success!
-      (!aGotWidth && !aGotHeight)) {  // Trivial failure!
+  if (aGotWidth && aGotHeight) {
+    aIntrinsicRatio = nsSize(aImageSize.width, aImageSize.height);
     return;
   }
 
-  // If we get here, we succeeded at querying *either* the width *or* the
-  // height, but not both.
-  NS_ASSERTION(aImage->GetType() == imgIContainer::TYPE_VECTOR,
-               "GetWidth and GetHeight should only fail for vector images");
-
-  nsIFrame* rootFrame = aImage->GetRootLayoutFrame();
-  NS_ASSERTION(rootFrame,
-               "We should have a VectorImage, which should have a rootFrame");
-
-  // This falls back on failure, if we somehow end up without a rootFrame.
-  nsSize ratio = rootFrame ? rootFrame->GetIntrinsicRatio() : nsSize(0,0);
-  if (!aGotWidth) { // Have height, missing width
-    if (ratio.height != 0) { // don't divide by zero
-      aImageSize.width = NSToCoordRound(aImageSize.height *
-                                        float(ratio.width) /
-                                        float(ratio.height));
-      aGotWidth = PR_TRUE;
-    }
-  } else { // Have width, missing height
-    if (ratio.width != 0) { // don't divide by zero
-      aImageSize.height = NSToCoordRound(aImageSize.width *
-                                         float(ratio.height) /
-                                         float(ratio.width));
-      aGotHeight = PR_TRUE;
-    }
+  // If we failed to get width or height, we either have a vector image and
+  // should return its intrinsic ratio, or we hit an error (say, because the
+  // image failed to load or couldn't be decoded) and should return zero size.
+  if (nsIFrame* rootFrame = aImage->GetRootLayoutFrame()) {
+    aIntrinsicRatio = rootFrame->GetIntrinsicRatio();
+  } else {
+    aGotWidth = aGotHeight = true;
+    aImageSize = nsIntSize(0, 0);
+    aIntrinsicRatio = nsSize(0, 0);
   }
 }
 
+
+/* static */ nsresult
+nsLayoutUtils::DrawBackgroundImage(nsRenderingContext* aRenderingContext,
+                                   imgIContainer*      aImage,
+                                   const nsIntSize&    aImageSize,
+                                   GraphicsFilter      aGraphicsFilter,
+                                   const nsRect&       aDest,
+                                   const nsRect&       aFill,
+                                   const nsPoint&      aAnchor,
+                                   const nsRect&       aDirty,
+                                   PRUint32            aImageFlags)
+{
+  return DrawImageInternal(aRenderingContext, aImage, aGraphicsFilter,
+                           aDest, aFill, aAnchor, aDirty,
+                           aImageSize, aImageFlags);
+}
 
 /* static */ nsresult
 nsLayoutUtils::DrawImage(nsRenderingContext* aRenderingContext,
@@ -3561,10 +3619,32 @@ nsLayoutUtils::DrawImage(nsRenderingContext* aRenderingContext,
                          PRUint32             aImageFlags)
 {
   nsIntSize imageSize;
-  PRBool gotHeight, gotWidth;
-  ComputeSizeForDrawing(aImage, imageSize, gotWidth, gotHeight);
+  nsSize imageRatio;
+  bool gotHeight, gotWidth;
+  ComputeSizeForDrawing(aImage, imageSize, imageRatio, gotWidth, gotHeight);
 
-  // fallback size based on aFill.
+  // XXX Dimensionless images shouldn't fall back to filled-area size -- the
+  //     caller should provide the image size, a la DrawBackgroundImage.
+  if (gotWidth != gotHeight) {
+    if (!gotWidth) {
+      if (imageRatio.height != 0) {
+        imageSize.width =
+          NSCoordSaturatingNonnegativeMultiply(imageSize.height,
+                                               float(imageRatio.width) /
+                                               float(imageRatio.height));
+        gotWidth = true;
+      }
+    } else {
+      if (imageRatio.width != 0) {
+        imageSize.height =
+          NSCoordSaturatingNonnegativeMultiply(imageSize.width,
+                                               float(imageRatio.height) /
+                                               float(imageRatio.width));
+        gotHeight = true;
+      }
+    }
+  }
+
   if (!gotWidth) {
     imageSize.width = nsPresContext::AppUnitsToIntCSSPixels(aFill.width);
   }
@@ -3591,16 +3671,6 @@ nsLayoutUtils::GetWholeImageDestination(const nsIntSize& aWholeImageSize,
   nscoord wholeSizeY = NSToCoordRound(aWholeImageSize.height*appUnitsPerCSSPixel*scaleY);
   return nsRect(aDestArea.TopLeft() - nsPoint(destOffsetX, destOffsetY),
                 nsSize(wholeSizeX, wholeSizeY));
-}
-
-void
-nsLayoutUtils::SetFontFromStyle(nsRenderingContext* aRC, nsStyleContext* aSC)
-{
-  const nsStyleFont* font = aSC->GetStyleFont();
-  const nsStyleVisibility* visibility = aSC->GetStyleVisibility();
-
-  aRC->SetFont(font->mFont, visibility->mLanguage,
-               aSC->PresContext()->GetUserFontSet());
 }
 
 static PRBool NonZeroStyleCoord(const nsStyleCoord& aCoord)

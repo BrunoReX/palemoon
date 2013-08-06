@@ -5,7 +5,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=660663
 -->
 <head>
   <title>Test for Bug 660663</title>
-  <script type="application/javascript" src="/MochiKit/packed.js"></script>
   <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
   <script src="reflect.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
@@ -19,12 +18,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=660663
 <pre id="test">
 <script type="application/javascript">
 /** Test for Bug 660663 **/
-reflectLimitedEnumerated(document.createElement("div"),
-                         "dir",
-                         ["ltr", "rtl"],
-                         ["cheesecake", ""],
-                         undefined, // There is no default value.
-                         ["auto"]);
+reflectLimitedEnumerated({
+  element: document.createElement("div"),
+  attribute: "dir",
+  validValues: ["ltr", "rtl"],
+  invalidValues: ["cheesecake", ""],
+  unsupportedValues: ["auto"]
+});
 </script>
 </pre>
 </body>

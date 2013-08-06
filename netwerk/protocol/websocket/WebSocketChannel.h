@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set sw=2 ts=8 et tw=80 : */
 /* ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
@@ -99,7 +99,7 @@ public:
                        const nsACString &aOrigin,
                        nsIWebSocketListener *aListener,
                        nsISupports *aContext);
-  NS_IMETHOD Close();
+  NS_IMETHOD Close(PRUint16 aCode, const nsACString & aReason);
   NS_IMETHOD SendMsg(const nsACString &aMsg);
   NS_IMETHOD SendBinaryMsg(const nsACString &aMsg);
   NS_IMETHOD GetSecurityInfo(nsISupports **aSecurityInfo);
@@ -122,15 +122,6 @@ public:
   const static PRUint32 kControlFrameMask   = 0x8;
   const static PRUint8 kMaskBit             = 0x80;
   const static PRUint8 kFinalFragBit        = 0x80;
-
-  // section 7.4.1 defines these
-  const static PRUint16 kCloseNormal        = 1000;
-  const static PRUint16 kCloseGoingAway     = 1001;
-  const static PRUint16 kCloseProtocolError = 1002;
-  const static PRUint16 kCloseUnsupported   = 1003;
-  const static PRUint16 kCloseTooLarge      = 1004;
-  const static PRUint16 kCloseNoStatus      = 1005;
-  const static PRUint16 kCloseAbnormal      = 1006;
 
 protected:
   virtual ~WebSocketChannel();
@@ -161,7 +152,8 @@ private:
 
   PRBool   IsPersistentFramePtr();
   nsresult ProcessInput(PRUint8 *buffer, PRUint32 count);
-  PRUint32 UpdateReadBuffer(PRUint8 *buffer, PRUint32 count);
+  PRUint32 UpdateReadBuffer(PRUint8 *buffer, PRUint32 count,
+                            PRUint32 accumulatedFragments);
 
   class OutboundMessage
   {
@@ -248,10 +240,16 @@ private:
   PRUint32                        mAutoFollowRedirects       : 1;
   PRUint32                        mReleaseOnTransmit         : 1;
   PRUint32                        mTCPClosed                 : 1;
+  PRUint32                        mOpenBlocked               : 1;
+  PRUint32                        mOpenRunning               : 1;
+  PRUint32                        mChannelWasOpened          : 1;
 
   PRInt32                         mMaxMessageSize;
   nsresult                        mStopOnClose;
-  PRUint16                        mCloseCode;
+  PRUint16                        mServerCloseCode;
+  nsCString                       mServerCloseReason;
+  PRUint16                        mScriptCloseCode;
+  nsCString                       mScriptCloseReason;
 
   // These are for the read buffers
   PRUint8                        *mFramePtr;

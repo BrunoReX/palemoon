@@ -7,6 +7,7 @@ pref("app.update.auto", false);
 pref("app.update.enabled", true);
 // URL for update checks, re-enabled on palemoon.org (369)
 pref("app.update.url", "http://www.palemoon.org/update/%VERSION%/update.xml");
+pref("app.update.promptWaitTime", 86400); 
 // The time interval between the downloading of mar file chunks in the
 // background (in seconds)
 pref("app.update.download.backgroundInterval", 600);
@@ -117,3 +118,17 @@ pref("extensions.update.autoUpdateDefault", false);
 
 //Pale Moon 7 specific
 pref("browser.urlbar.trimURLs", false); //stop being a derp, Mozilla!
+
+//Pale Moon 8 specific
+
+//cache handling 1GB -> 100MB by default, disable automatic
+//max element size 5MB -> 2MB/1MB, caching anything larger is not recommended
+pref("browser.cache.disk.smart_size.enabled",false);
+pref("browser.cache.disk.capacity",102400);
+pref("browser.cache.disk.max_entry_size",2048);
+pref("browser.cache.memory.capacity",32768);
+pref("browser.cache.memory.max_entry_size",1024);
+
+//image RAM cache size for *decoded* images; 256MB should be enough here;
+pref("image.cache.size",256000);
+

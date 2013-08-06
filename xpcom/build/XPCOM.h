@@ -25,7 +25,6 @@
 #include "nsISupports.h"
 
 #include "nsTArray.h"
-#include "nsTPtrArray.h"
 #include "nsTWeakRef.h"
 
 #include "nsCOMPtr.h"
@@ -106,7 +105,6 @@
 #include "nsISupportsPrimitives.h"
 #include "nsISupportsPriority.h"
 #include "nsIThreadManager.h"
-#include "nsITimelineService.h"
 #include "nsITimer.h"
 #include "nsITraceRefcnt.h"
 #include "nsIUUIDGenerator.h"

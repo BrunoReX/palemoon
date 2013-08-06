@@ -484,6 +484,8 @@ nsStandardURL::AppendSegmentToBuf(char *buf, PRUint32 i, const char *str, URLSeg
             memcpy(buf + i, str + seg.mPos, seg.mLen);
         seg.mPos = i;
         i += seg.mLen;
+    } else {
+        seg.mPos = i;
     }
     return i;
 }
@@ -832,6 +834,8 @@ nsStandardURL::ParseURL(const char *spec, PRInt32 specLen)
 nsresult
 nsStandardURL::ParsePath(const char *spec, PRUint32 pathPos, PRInt32 pathLen)
 {
+    LOG(("ParsePath: %s pathpos %d len %d\n",spec,pathPos,pathLen));
+
     nsresult rv = mParser->ParsePath(spec + pathPos, pathLen,
                                      &mFilepath.mPos, &mFilepath.mLen,
                                      &mParam.mPos, &mParam.mLen,
@@ -992,6 +996,21 @@ NS_IMETHODIMP
 nsStandardURL::GetSpec(nsACString &result)
 {
     result = mSpec;
+    return NS_OK;
+}
+
+// result may contain unescaped UTF-8 characters
+NS_IMETHODIMP
+nsStandardURL::GetSpecIgnoringRef(nsACString &result)
+{
+    // URI without ref is 0 to one char before ref
+    if (mRef.mLen >= 0) {
+        URLSegment noRef(0, mRef.mPos - 1);
+
+        result = Segment(noRef);
+    } else {
+        result = mSpec;
+    }
     return NS_OK;
 }
 
@@ -2137,6 +2156,13 @@ NS_IMETHODIMP
 nsStandardURL::GetRef(nsACString &result)
 {
     result = Ref();
+    return NS_OK;
+}
+
+NS_IMETHODIMP
+nsStandardURL::GetHasRef(PRBool *result)
+{
+    *result = (mRef.mLen >= 0);
     return NS_OK;
 }
 

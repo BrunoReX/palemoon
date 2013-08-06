@@ -164,8 +164,11 @@ public:
   //
 
 //NS_IMETHOD              CaptureMouse(PRBool aCapture);
-  virtual LayerManager*     GetLayerManager(LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT,
-                                            bool* aAllowRetaining = nsnull);
+  virtual LayerManager*
+  GetLayerManager(PLayersChild* aShadowManager = nsnull,
+                  LayersBackend aBackendHint = LayerManager::LAYERS_NONE,
+                  LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT,
+                  bool* aAllowRetaining = nsnull);
 //  virtual nsDeviceContext* GetDeviceContext();
   virtual gfxASurface*      GetThebesSurface();
 
@@ -179,6 +182,8 @@ public:
   NS_IMETHOD OnIMETextChange(PRUint32 aOffset, PRUint32 aEnd,
                              PRUint32 aNewEnd);
   NS_IMETHOD OnIMESelectionChange(void);
+
+  NS_IMETHOD SetCursor(nsCursor aCursor);
 
   // Gets the DPI of the screen corresponding to this widget.
   // Contacts the parent process which gets the DPI from the

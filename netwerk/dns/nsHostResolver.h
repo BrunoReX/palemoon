@@ -46,6 +46,8 @@
 #include "mozilla/CondVar.h"
 #include "mozilla/Mutex.h"
 #include "nsISupportsImpl.h"
+#include "nsString.h"
+#include "nsTArray.h"
 
 class nsHostResolver;
 class nsHostRecord;
@@ -69,8 +71,20 @@ class nsResolveHostCallback;
         return n;                                                            \
     }
 
+#ifdef ANDROID
+// See bug 687367 - pre gingerbread android has race conditions involving stdio.
+// stdio is used as part of the getaddrinfo() implementation. In order to reduce
+// that race window limit ourselves to 1 lookup at a time on android.
+
+#define MAX_RESOLVER_THREADS_FOR_ANY_PRIORITY  0
+#define MAX_RESOLVER_THREADS_FOR_HIGH_PRIORITY 1
+#define MAX_NON_PRIORITY_REQUESTS 0
+#else
 #define MAX_RESOLVER_THREADS_FOR_ANY_PRIORITY  3
 #define MAX_RESOLVER_THREADS_FOR_HIGH_PRIORITY 5
+#define MAX_NON_PRIORITY_REQUESTS 150
+#endif
+
 #define MAX_RESOLVER_THREADS (MAX_RESOLVER_THREADS_FOR_ANY_PRIORITY + \
                               MAX_RESOLVER_THREADS_FOR_HIGH_PRIORITY)
 
@@ -111,7 +125,7 @@ public:
      * the other threads just read it.  therefore the resolver worker
      * thread doesn't need to lock when reading |addr_info|.
      */
-    Mutex       *addr_info_lock;
+    Mutex        addr_info_lock;
     int          addr_info_gencnt; /* generation count of |addr_info| */
     PRAddrInfo  *addr_info;
     PRNetAddr   *addr;
@@ -124,6 +138,11 @@ public:
 
     PRBool HasResult() const { return addr_info || addr || negative; }
 
+    // hold addr_info_lock when calling the blacklist functions
+    PRBool Blacklisted(PRNetAddr *query);
+    void   ResetBlacklist();
+    void   ReportUnusable(PRNetAddr *addr);
+
 private:
     friend class nsHostResolver;
 
@@ -135,8 +154,13 @@ private:
     
     PRBool  onQueue;  /* true if pending and on the queue (not yet given to getaddrinfo())*/
     PRBool  usingAnyThread; /* true if off queue and contributing to mActiveAnyThreadCount */
-    
 
+    // a list of addresses associated with this record that have been reported
+    // as unusable. the list is kept as a set of strings to make it independent
+    // of gencnt.
+    nsTArray<nsCString> mBlacklistedItems;
+
+    nsHostRecord(const nsHostKey *key);           /* use Create() instead */
    ~nsHostRecord();
 };
 

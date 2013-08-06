@@ -351,6 +351,11 @@ nsCSSProps::LookupProperty(const nsACString& aProperty)
       }
     }
   }
+  
+  if (res == eCSSProperty_perspective || res == eCSSProperty_perspective_origin || res == eCSSProperty_backface_visibility) {
+    return eCSSProperty_UNKNOWN;
+  }
+
   return res;
 }
 
@@ -372,6 +377,11 @@ nsCSSProps::LookupProperty(const nsAString& aProperty)
       }
     }
   }
+  
+  if (res == eCSSProperty_perspective || res == eCSSProperty_perspective_origin || res == eCSSProperty_backface_visibility) {
+    return eCSSProperty_UNKNOWN;
+  }
+
   return res;
 }
 
@@ -579,6 +589,11 @@ const PRInt32 nsCSSProps::kAppearanceKTable[] = {
   eCSSKeyword__moz_window_button_box_maximized, NS_THEME_WINDOW_BUTTON_BOX_MAXIMIZED,
   eCSSKeyword__moz_win_exclude_glass,         NS_THEME_WIN_EXCLUDE_GLASS,
   eCSSKeyword_UNKNOWN,-1
+};
+
+const PRInt32 nsCSSProps::kBackfaceVisibilityKTable[] = {
+  eCSSKeyword_visible, NS_STYLE_BACKFACE_VISIBILITY_VISIBLE,
+  eCSSKeyword_hidden, NS_STYLE_BACKFACE_VISIBILITY_HIDDEN
 };
 
 const PRInt32 nsCSSProps::kBackgroundAttachmentKTable[] = {

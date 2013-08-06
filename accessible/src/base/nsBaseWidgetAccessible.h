@@ -87,18 +87,20 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIAccessible
-  NS_IMETHOD GetNumActions(PRUint8 *_retval);
   NS_IMETHOD GetActionName(PRUint8 aIndex, nsAString& aName);
   NS_IMETHOD DoAction(PRUint8 index);
   NS_IMETHOD GetValue(nsAString& _retval);
   NS_IMETHOD TakeFocus();
-  NS_IMETHOD GetKeyboardShortcut(nsAString& _retval);
 
   // nsAccessNode
   virtual void Shutdown();
 
   // nsAccessible
   virtual PRUint64 NativeState();
+
+  // ActionAccessible
+  virtual PRUint8 ActionCount();
+  virtual KeyBinding AccessKey() const;
 
   // HyperLinkAccessible
   virtual already_AddRefed<nsIURI> AnchorURIAt(PRUint32 aAnchorIndex);

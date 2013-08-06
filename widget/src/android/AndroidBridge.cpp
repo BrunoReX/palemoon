@@ -145,6 +145,8 @@ AndroidBridge::Init(JNIEnv *jEnv,
     jScanMedia = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "scanMedia", "(Ljava/lang/String;Ljava/lang/String;)V");
     jGetSystemColors = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getSystemColors", "()[I");
     jGetIconForExtension = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getIconForExtension", "(Ljava/lang/String;I)[B");
+    jCreateShortcut = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "createShortcut", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+    jGetShowPasswordSetting = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getShowPasswordSetting", "()Z");
 
     jEGLContextClass = (jclass) jEnv->NewGlobalRef(jEnv->FindClass("javax/microedition/khronos/egl/EGLContext"));
     jEGL10Class = (jclass) jEnv->NewGlobalRef(jEnv->FindClass("javax/microedition/khronos/egl/EGL10"));
@@ -745,6 +747,13 @@ AndroidBridge::GetIconForExtension(const nsACString& aFileExt, PRUint32 aIconSiz
     mJNIEnv->ReleaseByteArrayElements(arr, elements, 0);
 }
 
+bool
+AndroidBridge::GetShowPasswordSetting()
+{
+    ALOG_BRIDGE("AndroidBridge::GetShowPasswordSetting");
+    return mJNIEnv->CallStaticBooleanMethod(mGeckoAppShellClass, jGetShowPasswordSetting);
+}
+
 void
 AndroidBridge::SetSurfaceView(jobject obj)
 {
@@ -893,6 +902,21 @@ AndroidBridge::ScanMedia(const nsAString& aFile, const nsACString& aMimeType)
     mJNIEnv->CallStaticVoidMethod(mGeckoAppShellClass, jScanMedia, jstrFile, jstrMimeTypes);
 }
 
+void
+AndroidBridge::CreateShortcut(const nsAString& aTitle, const nsAString& aURI, const nsAString& aIconData, const nsAString& aIntent)
+{
+  AutoLocalJNIFrame jniFrame;
+  jstring jstrTitle = mJNIEnv->NewString(nsPromiseFlatString(aTitle).get(), aTitle.Length());
+  jstring jstrURI = mJNIEnv->NewString(nsPromiseFlatString(aURI).get(), aURI.Length());
+  jstring jstrIconData = mJNIEnv->NewString(nsPromiseFlatString(aIconData).get(), aIconData.Length());
+  jstring jstrIntent = mJNIEnv->NewString(nsPromiseFlatString(aIntent).get(), aIntent.Length());
+  
+  if (!jstrURI || !jstrTitle || !jstrIconData)
+    return;
+    
+  mJNIEnv->CallStaticVoidMethod(mGeckoAppShellClass, jCreateShortcut, jstrTitle, jstrURI, jstrIconData, jstrIntent);
+}
+
 bool
 AndroidBridge::HasNativeBitmapAccess()
 {
@@ -973,4 +997,3 @@ AndroidBridge::UnlockBitmap(jobject bitmap)
     if ((err = AndroidBitmap_unlockPixels(JNI(), bitmap)) != 0)
         ALOG_BRIDGE("AndroidBitmap_unlockPixels failed! (error %d)", err);
 }
-

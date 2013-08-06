@@ -107,18 +107,18 @@
 #include "nsLayoutUtils.h"
 #include "nsAutoPtr.h"
 #include "nsBoxFrame.h"
-#include "nsIBoxLayout.h"
+#include "nsBoxLayout.h"
 #include "nsImageFrame.h"
 #include "nsIObjectLoadingContent.h"
 #include "nsContentErrors.h"
 #include "nsIPrincipal.h"
-#include "nsIDOMWindowInternal.h"
 #include "nsStyleUtil.h"
 #include "nsBox.h"
 #include "nsTArray.h"
 #include "nsGenericDOMDataNode.h"
 #include "mozilla/dom/Element.h"
 #include "FrameLayerBuilder.h"
+#include "nsAutoLayoutPhase.h"
 
 #ifdef MOZ_XUL
 #include "nsIRootBox.h"
@@ -211,10 +211,6 @@ nsIFrame*
 NS_NewSVGLeafFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
 
 #include "nsIDocument.h"
-#include "nsIDOMElement.h"
-#include "nsIDOMNodeList.h"
-#include "nsIDOMDocument.h"
-#include "nsIDOMDocumentXBL.h"
 #include "nsIScrollable.h"
 #include "nsINodeInfo.h"
 #include "prenv.h"
@@ -318,7 +314,7 @@ NS_NewTreeBodyFrame (nsIPresShell* aPresShell, nsStyleContext* aContext);
 
 // grid
 nsresult
-NS_NewGridLayout2 ( nsIPresShell* aPresShell, nsIBoxLayout** aNewLayout );
+NS_NewGridLayout2 ( nsIPresShell* aPresShell, nsBoxLayout** aNewLayout );
 nsIFrame*
 NS_NewGridRowLeafFrame (nsIPresShell* aPresShell, nsStyleContext* aContext);
 nsIFrame*
@@ -733,7 +729,8 @@ public:
 
   // If false (which is the default) then call SetPrimaryFrame() as needed
   // during frame construction.  If true, don't make any SetPrimaryFrame()
-  // calls.  The mCreatingExtraFrames == PR_TRUE mode is meant to be used for
+  // calls, except for generated content which doesn't have a primary frame
+  // yet.  The mCreatingExtraFrames == PR_TRUE mode is meant to be used for
   // construction of random "extra" frames for elements via normal frame
   // construction APIs (e.g. replication of things across pages in paginated
   // mode).
@@ -3517,7 +3514,6 @@ nsCSSFrameConstructor::FindHTMLData(Element* aElement,
     SIMPLE_TAG_CREATE(video, NS_NewHTMLVideoFrame),
     SIMPLE_TAG_CREATE(audio, NS_NewHTMLVideoFrame),
 #endif
-    SIMPLE_TAG_CREATE(isindex, NS_NewIsIndexFrame),
     SIMPLE_TAG_CREATE(progress, NS_NewProgressFrame)
   };
 
@@ -3816,7 +3812,14 @@ nsCSSFrameConstructor::ConstructFrameFromItemInternal(FrameConstructionItem& aIt
                ((bits & FCDATA_IS_LINE_PARTICIPANT) != 0),
                "Incorrectly set FCDATA_IS_LINE_PARTICIPANT bits");
 
-  if (!aState.mCreatingExtraFrames && !(bits & FCDATA_SKIP_FRAMESET)) {
+  // Even if mCreatingExtraFrames is set, we may need to SetPrimaryFrame for
+  // generated content that doesn't have one yet.  Note that we have to examine
+  // the frame bit, because by this point mIsGeneratedContent has been cleared
+  // on aItem.
+  if ((!aState.mCreatingExtraFrames ||
+       ((primaryFrame->GetStateBits() & NS_FRAME_GENERATED_CONTENT) &&
+        !aItem.mContent->GetPrimaryFrame())) &&
+       !(bits & FCDATA_SKIP_FRAMESET)) {
     aItem.mContent->SetPrimaryFrame(primaryFrame);
   }
 
@@ -3947,7 +3950,7 @@ static
 nsIFrame* NS_NewGridBoxFrame(nsIPresShell* aPresShell,
                              nsStyleContext* aStyleContext)
 {
-  nsCOMPtr<nsIBoxLayout> layout;
+  nsCOMPtr<nsBoxLayout> layout;
   NS_NewGridLayout2(aPresShell, getter_AddRefs(layout));
   if (!layout) {
     return nsnull;
@@ -4643,8 +4646,8 @@ nsCSSFrameConstructor::FindMathMLData(Element* aElement,
     SIMPLE_MATHML_CREATE(msup_, NS_NewMathMLmsupFrame),
     SIMPLE_MATHML_CREATE(msub_, NS_NewMathMLmsubFrame),
     SIMPLE_MATHML_CREATE(msubsup_, NS_NewMathMLmsubsupFrame),
-    SIMPLE_MATHML_CREATE(munder_, NS_NewMathMLmunderFrame),
-    SIMPLE_MATHML_CREATE(mover_, NS_NewMathMLmoverFrame),
+    SIMPLE_MATHML_CREATE(munder_, NS_NewMathMLmunderoverFrame),
+    SIMPLE_MATHML_CREATE(mover_, NS_NewMathMLmunderoverFrame),
     SIMPLE_MATHML_CREATE(munderover_, NS_NewMathMLmunderoverFrame),
     SIMPLE_MATHML_CREATE(mphantom_, NS_NewMathMLmphantomFrame),
     SIMPLE_MATHML_CREATE(mpadded_, NS_NewMathMLmpaddedFrame),

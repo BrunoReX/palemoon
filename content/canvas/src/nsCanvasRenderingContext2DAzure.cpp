@@ -100,6 +100,7 @@
 
 #include "nsFrameManager.h"
 #include "nsFrameLoader.h"
+#include "nsBidi.h"
 #include "nsBidiPresUtils.h"
 #include "Layers.h"
 #include "CanvasUtils.h"
@@ -2332,7 +2333,7 @@ nsCanvasRenderingContext2DAzure::QuadraticCurveTo(float cpx, float cpy, float x,
     mPathBuilder->QuadraticBezierTo(Point(cpx, cpy), Point(x, y));
   } else {
     Matrix transform = mTarget->GetTransform();
-    mDSPathBuilder->QuadraticBezierTo(transform * Point(cpx, cpy), transform * Point(cpx, cpy));
+    mDSPathBuilder->QuadraticBezierTo(transform * Point(cpx, cpy), transform * Point(x, y));
   }
 
   return NS_OK;
@@ -3069,6 +3070,8 @@ struct NS_STACK_CLASS nsCanvasBidiProcessorAzure : public nsBidiPresUtils::BidiP
     Point baselineOrigin =
       Point(point.x * devUnitsPerAppUnit, point.y * devUnitsPerAppUnit);
 
+    float advanceSum = 0;
+
     for (PRUint32 c = 0; c < numRuns; c++) {
       gfxFont *font = runs[c].mFont;
       PRUint32 endRun = 0;
@@ -3086,8 +3089,6 @@ struct NS_STACK_CLASS nsCanvasBidiProcessorAzure : public nsBidiPresUtils::BidiP
       GlyphBuffer buffer;
 
       std::vector<Glyph> glyphBuf;
-
-      float advanceSum = 0;
 
       for (PRUint32 i = runs[c].mCharacterOffset; i < endRun; i++) {
         Glyph newGlyph;
@@ -3223,11 +3224,6 @@ nsCanvasRenderingContext2DAzure::DrawOrMeasureText(const nsAString& aRawText,
 
   nsIDocument* document = presShell->GetDocument();
 
-  nsBidiPresUtils* bidiUtils = presShell->GetPresContext()->GetBidiUtils();
-  if (!bidiUtils) {
-    return NS_ERROR_FAILURE;
-  }
-
   // replace all the whitespace characters with U+0020 SPACE
   nsAutoString textToDraw(aRawText);
   TextReplaceWhitespaceCharacters(textToDraw);
@@ -3278,15 +3274,17 @@ nsCanvasRenderingContext2DAzure::DrawOrMeasureText(const nsAString& aRawText,
 
   // calls bidi algo twice since it needs the full text width and the
   // bounding boxes before rendering anything
-  rv = bidiUtils->ProcessText(textToDraw.get(),
-                              textToDraw.Length(),
-                              isRTL ? NSBIDI_RTL : NSBIDI_LTR,
-                              presShell->GetPresContext(),
-                              processor,
-                              nsBidiPresUtils::MODE_MEASURE,
-                              nsnull,
-                              0,
-                              &totalWidthCoord);
+  nsBidi bidiEngine;
+  rv = nsBidiPresUtils::ProcessText(textToDraw.get(),
+                                textToDraw.Length(),
+                                isRTL ? NSBIDI_RTL : NSBIDI_LTR,
+                                presShell->GetPresContext(),
+                                processor,
+                                nsBidiPresUtils::MODE_MEASURE,
+                                nsnull,
+                                0,
+                                &totalWidthCoord,
+                                &bidiEngine);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -3377,15 +3375,16 @@ nsCanvasRenderingContext2DAzure::DrawOrMeasureText(const nsAString& aRawText,
   // don't ever need to measure the bounding box twice
   processor.mDoMeasureBoundingBox = PR_FALSE;
 
-  rv = bidiUtils->ProcessText(textToDraw.get(),
-                              textToDraw.Length(),
-                              isRTL ? NSBIDI_RTL : NSBIDI_LTR,
-                              presShell->GetPresContext(),
-                              processor,
-                              nsBidiPresUtils::MODE_DRAW,
-                              nsnull,
-                              0,
-                              nsnull);
+  rv = nsBidiPresUtils::ProcessText(textToDraw.get(),
+                                    textToDraw.Length(),
+                                    isRTL ? NSBIDI_RTL : NSBIDI_LTR,
+                                    presShell->GetPresContext(),
+                                    processor,
+                                    nsBidiPresUtils::MODE_DRAW,
+                                    nsnull,
+                                    0,
+                                    nsnull,
+                                    &bidiEngine);
 
 
   mTarget->SetTransform(oldTransform);
@@ -3679,6 +3678,26 @@ nsCanvasRenderingContext2DAzure::DrawImage(nsIDOMElement *imgElt, float a1,
     // Self-copy.
     srcSurf = mTarget->Snapshot();
     imgSize = gfxIntSize(mWidth, mHeight);
+  }
+
+  // Special case for Canvas, which could be an Azure canvas!
+  if (canvas) {
+    if (canvas->CountContexts() == 1) {
+      nsICanvasRenderingContextInternal *srcCanvas = canvas->GetContextAtIndex(0);
+
+      // This might not be an Azure canvas!
+      if (srcCanvas) {
+        srcSurf = srcCanvas->GetSurfaceSnapshot();
+
+        if (srcSurf && mCanvasElement) {
+          // Do security check here.
+          CanvasUtils::DoDrawImageSecurityCheck(HTMLCanvasElement(),
+                                                content->NodePrincipal(), canvas->IsWriteOnly());
+
+          imgSize = gfxIntSize(srcSurf->GetSize().width, srcSurf->GetSize().height);
+        }
+      }
+    }
   }
 
   if (!srcSurf) {

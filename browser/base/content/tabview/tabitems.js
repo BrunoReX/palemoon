@@ -265,8 +265,11 @@ TabItem.prototype = Utils.extend(new Item(), new Subscribable(), {
     let tabData = null;
     let self = this;
     let imageDataCb = function(imageData) {
+      // we could have been unlinked while waiting for the thumbnail to load
+      if (!self.tab)
+        return;
+
       Utils.assertThrow(tabData, "tabData");
-      
       tabData.imageData = imageData;
 
       let currentUrl = self.tab.linkedBrowser.currentURI.spec;
@@ -342,10 +345,7 @@ TabItem.prototype = Utils.extend(new Item(), new Subscribable(), {
   // Possible options:
   //   force - true to always update the DOM even if the bounds haven't changed; default false
   setBounds: function TabItem_setBounds(inRect, immediately, options) {
-    if (!Utils.isRect(inRect)) {
-      Utils.trace('TabItem.setBounds: rect is not a real rectangle!', inRect);
-      return;
-    }
+    Utils.assert(Utils.isRect(inRect), 'TabItem.setBounds: rect is not a real rectangle!');
 
     if (!options)
       options = {};
@@ -450,8 +450,7 @@ TabItem.prototype = Utils.extend(new Item(), new Subscribable(), {
 
     rect = this.getBounds(); // ensure that it's a <Rect>
 
-    if (!Utils.isRect(this.bounds))
-      Utils.trace('TabItem.setBounds: this.bounds is not a real rectangle!', this.bounds);
+    Utils.assert(Utils.isRect(this.bounds), 'TabItem.setBounds: this.bounds is not a real rectangle!');
 
     if (!this.parent && this.tab.parentNode != null)
       this.setTrenches(rect);
@@ -479,6 +478,7 @@ TabItem.prototype = Utils.extend(new Item(), new Subscribable(), {
     // closing tab doesn't belong to a group and no empty group, create a new 
     // one for the new tab.
     if (!groupClose && gBrowser.tabs.length == 1) {
+      let group;
       if (this.tab._tabViewTabItem.parent) {
         group = this.tab._tabViewTabItem.parent;
       } else {

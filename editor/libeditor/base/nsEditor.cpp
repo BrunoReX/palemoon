@@ -112,6 +112,7 @@
 
 #include "mozilla/FunctionTimer.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/dom/Element.h"
 
 #define NS_ERROR_EDITOR_NO_SELECTION NS_ERROR_GENERATE_FAILURE(NS_ERROR_MODULE_EDITOR,1)
 #define NS_ERROR_EDITOR_NO_TEXTNODE  NS_ERROR_GENERATE_FAILURE(NS_ERROR_MODULE_EDITOR,2)
@@ -288,14 +289,7 @@ nsEditor::PostCreate()
     mDidPostCreate = PR_TRUE;
 
     // Set up listeners
-    rv = CreateEventListeners();
-    if (NS_FAILED(rv))
-    {
-      RemoveEventListeners();
-
-      return rv;
-    }
-
+    CreateEventListeners();
     rv = InstallEventListeners();
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -327,14 +321,14 @@ nsEditor::PostCreate()
   return NS_OK;
 }
 
-nsresult
+/* virtual */
+void
 nsEditor::CreateEventListeners()
 {
   // Don't create the handler twice
   if (!mEventListener) {
     mEventListener = new nsEditorEventListener();
   }
-  return NS_OK;
 }
 
 nsresult
@@ -3399,54 +3393,52 @@ nsEditor::GetNextNodeImpl(nsIDOMNode  *aCurrentNode,
 }
 
 
-nsCOMPtr<nsIDOMNode>
+already_AddRefed<nsIDOMNode>
 nsEditor::GetRightmostChild(nsIDOMNode *aCurrentNode, 
                             PRBool bNoBlockCrossing)
 {
   NS_ENSURE_TRUE(aCurrentNode, nsnull);
-  nsCOMPtr<nsIDOMNode> resultNode, temp=aCurrentNode;
+  nsCOMPtr<nsIDOMNode> resultNode, temp = aCurrentNode;
   PRBool hasChildren;
   aCurrentNode->HasChildNodes(&hasChildren);
-  while (hasChildren)
-  {
+  while (hasChildren) {
     temp->GetLastChild(getter_AddRefs(resultNode));
-    if (resultNode)
-    {
-      if (bNoBlockCrossing && IsBlockNode(resultNode))
-         return resultNode;
+    if (resultNode) {
+      if (bNoBlockCrossing && IsBlockNode(resultNode)) {
+        return resultNode.forget();
+      }
       resultNode->HasChildNodes(&hasChildren);
       temp = resultNode;
-    }
-    else 
+    } else {
       hasChildren = PR_FALSE;
+    }
   }
 
-  return resultNode;
+  return resultNode.forget();
 }
 
-nsCOMPtr<nsIDOMNode>
+already_AddRefed<nsIDOMNode>
 nsEditor::GetLeftmostChild(nsIDOMNode *aCurrentNode,
                            PRBool bNoBlockCrossing)
 {
   NS_ENSURE_TRUE(aCurrentNode, nsnull);
-  nsCOMPtr<nsIDOMNode> resultNode, temp=aCurrentNode;
+  nsCOMPtr<nsIDOMNode> resultNode, temp = aCurrentNode;
   PRBool hasChildren;
   aCurrentNode->HasChildNodes(&hasChildren);
-  while (hasChildren)
-  {
+  while (hasChildren) {
     temp->GetFirstChild(getter_AddRefs(resultNode));
-    if (resultNode)
-    {
-      if (bNoBlockCrossing && IsBlockNode(resultNode))
-         return resultNode;
+    if (resultNode) {
+      if (bNoBlockCrossing && IsBlockNode(resultNode)) {
+        return resultNode.forget();
+      }
       resultNode->HasChildNodes(&hasChildren);
       temp = resultNode;
-    }
-    else 
+    } else {
       hasChildren = PR_FALSE;
+    }
   }
 
-  return resultNode;
+  return resultNode.forget();
 }
 
 PRBool 
@@ -3799,7 +3791,20 @@ nsEditor::GetChildAt(nsIDOMNode *aParent, PRInt32 aOffset)
 
   return resultNode;
 }
-  
+
+///////////////////////////////////////////////////////////////////////////
+// GetNodeAtRangeOffsetPoint: returns the node at this position in a range,
+// assuming that aParentOrNode is the node itself if it's a text node, or
+// the node's parent otherwise.
+//
+nsCOMPtr<nsIDOMNode>
+nsEditor::GetNodeAtRangeOffsetPoint(nsIDOMNode* aParentOrNode, PRInt32 aOffset)
+{
+  if (IsTextNode(aParentOrNode)) {
+    return aParentOrNode;
+  }
+  return GetChildAt(aParentOrNode, aOffset);
+}
 
 
 ///////////////////////////////////////////////////////////////////////////

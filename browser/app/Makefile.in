@@ -156,10 +156,6 @@ endif
 
 include $(topsrcdir)/config/rules.mk
 
-ifeq ($(MOZ_WIDGET_TOOLKIT),photon)
-LIBS += -lphexlib
-endif
-
 ifeq ($(OS_ARCH),WINNT)
 #
 # Control the default heap size.
@@ -203,13 +199,6 @@ libs::
 	$(INSTALL) $(IFLAGS1) $(DIST)/branding/default16.png  $(DIST)/bin/chrome/icons/default
 	$(INSTALL) $(IFLAGS1) $(DIST)/branding/default32.png  $(DIST)/bin/chrome/icons/default
 	$(INSTALL) $(IFLAGS1) $(DIST)/branding/default48.png  $(DIST)/bin/chrome/icons/default
-endif
-
-ifdef MOZ_SPLASHSCREEN
-ifeq ($(MOZ_WIDGET_TOOLKIT),windows)
-libs::
-	$(INSTALL) $(IFLAGS1) $(DIST)/branding/splash.bmp $(DIST)/bin
-endif
 endif
 
 libs:: $(srcdir)/profile/prefs.js

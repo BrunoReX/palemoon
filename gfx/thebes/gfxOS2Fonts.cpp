@@ -127,11 +127,11 @@ static void FillMetricsDefaults(gfxFont::Metrics *aMetrics)
 // line as close to the original position as possible.
 static void SnapLineToPixels(gfxFloat& aOffset, gfxFloat& aSize)
 {
-    gfxFloat snappedSize = NS_MAX(NS_floor(aSize + 0.5), 1.0);
+    gfxFloat snappedSize = NS_MAX(floor(aSize + 0.5), 1.0);
     // Correct offset for change in size
     gfxFloat offset = aOffset - 0.5 * (aSize - snappedSize);
     // Snap offset
-    aOffset = NS_floor(offset + 0.5);
+    aOffset = floor(offset + 0.5);
     aSize = snappedSize;
 }
 
@@ -155,7 +155,7 @@ const gfxFont::Metrics& gfxOS2Font::GetMetrics()
 
     // round size to integer pixels, this is to get full pixels for layout
     // together with internal/external leading (see below)
-    mMetrics->emHeight = NS_floor(GetStyle()->size + 0.5);
+    mMetrics->emHeight = floor(GetStyle()->size + 0.5);
 
     cairo_scaled_font_t* scaledFont = CairoScaledFont();
     if (!scaledFont) {
@@ -274,9 +274,9 @@ const gfxFont::Metrics& gfxOS2Font::GetMetrics()
     // leadings are not available directly (only for WinFNTs);
     // better compute them on our own, to get integer values and make
     // layout happy (see // LockedFTFace::GetMetrics in gfxPangoFonts.cpp)
-    mMetrics->internalLeading = NS_floor(mMetrics->maxHeight
+    mMetrics->internalLeading = floor(mMetrics->maxHeight
                                          - mMetrics->emHeight + 0.5);
-    gfxFloat lineHeight = NS_floor(mMetrics->maxHeight + 0.5);
+    gfxFloat lineHeight = floor(mMetrics->maxHeight + 0.5);
     mMetrics->externalLeading = lineHeight
                               - mMetrics->internalLeading - mMetrics->emHeight;
 
@@ -711,7 +711,7 @@ void gfxOS2FontGroup::CreateGlyphRunsFT(gfxTextRun *aTextRun, const PRUint8 *aUT
     const PRUint32 appUnitsPerDevUnit = aTextRun->GetAppUnitsPerDevUnit();
     gfxOS2Platform *platform = gfxOS2Platform::GetPlatform();
 
-    aTextRun->AddGlyphRun(font0, 0);
+    aTextRun->AddGlyphRun(font0, gfxTextRange::kFontGroup, 0, PR_FALSE);
     // a textRun likely has the same font for most of the characters, so we can
     // lock it before the loop for efficiency
     FT_Face face0 = cairo_ft_scaled_font_lock_face(font0->CairoScaledFont());
@@ -772,7 +772,7 @@ void gfxOS2FontGroup::CreateGlyphRunsFT(gfxTextRun *aTextRun, const PRUint8 *aUT
                 }
 
                 // select the current font into the text run
-                aTextRun->AddGlyphRun(font, utf16Offset);
+                aTextRun->AddGlyphRun(font, gfxTextRange::kFontGroup, utf16Offset, PR_FALSE);
 
                 PRInt32 advance = 0;
                 if (gid == font->GetSpaceGlyph()) {
@@ -874,6 +874,7 @@ void gfxOS2FontGroup::CreateGlyphRunsFT(gfxTextRun *aTextRun, const PRUint8 *aUT
 // append aFontName to aClosure string array, if not already present
 PRBool gfxOS2FontGroup::FontCallback(const nsAString& aFontName,
                                      const nsACString& aGenericName,
+                                     PRBool aUseFontSet,
                                      void *aClosure)
 {
     nsTArray<nsString> *sa = static_cast<nsTArray<nsString>*>(aClosure);

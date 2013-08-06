@@ -149,6 +149,20 @@ ThreadData::triggerOperationCallback(JSRuntime *rt)
 
 } /* namespace js */
 
+JSScript *
+js_GetCurrentScript(JSContext *cx)
+{
+#ifdef JS_TRACER
+    VOUCH_DOES_NOT_REQUIRE_STACK();
+    if (JS_ON_TRACE(cx)) {
+        VMSideExit *bailExit = JS_TRACE_MONITOR_ON_TRACE(cx)->bailExit;
+        return bailExit ? bailExit->script : NULL;
+    }
+#endif
+    return cx->hasfp() ? cx->fp()->maybeScript() : NULL;
+}
+
+
 #ifdef JS_THREADSAFE
 
 JSThread *
@@ -497,7 +511,8 @@ js_DestroyContext(JSContext *cx, JSDestroyContextMode mode)
             js_FinishCommonAtoms(cx);
 
             /* Clear debugging state to remove GC roots. */
-            JS_ClearAllTraps(cx);
+            for (JSCompartment **c = rt->compartments.begin(); c != rt->compartments.end(); c++)
+                (*c)->clearTraps(cx, NULL);
             JS_ClearAllWatchPoints(cx);
         }
 
@@ -1418,6 +1433,12 @@ JSContext::generatorFor(StackFrame *fp) const
     }
     JS_NOT_REACHED("no matching generator");
     return NULL;
+}
+
+bool
+JSContext::runningWithTrustedPrincipals() const
+{
+    return !compartment || compartment->principals == runtime->trustedPrincipals();
 }
 
 JS_FRIEND_API(void)

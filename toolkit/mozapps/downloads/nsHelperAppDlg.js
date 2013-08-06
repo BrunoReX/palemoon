@@ -29,6 +29,7 @@
 #   Dan Mosedale <dmose@mozilla.org>
 #   Jim Mathies <jmathies@mozilla.com>
 #   Ehsan Akhgari <ehsan.akhgari@gmail.com>
+#   Kailas Patil <patilkr24@gmail.com>
 #
 # Alternatively, the contents of this file may be used under the terms of
 # either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -139,6 +140,7 @@ const nsITimer = Components.interfaces.nsITimer;
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 Components.utils.import("resource://gre/modules/DownloadLastDir.jsm");
 Components.utils.import("resource://gre/modules/DownloadPaths.jsm");
+Components.utils.import("resource://gre/modules/DownloadUtils.jsm");
 
 /* ctor
  */
@@ -189,7 +191,7 @@ nsUnknownContentTypeDialog.prototype = {
   reallyShow: function() {
     try {
       var ir = this.mContext.QueryInterface(Components.interfaces.nsIInterfaceRequestor);
-      var dwi = ir.getInterface(Components.interfaces.nsIDOMWindowInternal);
+      var dwi = ir.getInterface(Components.interfaces.nsIDOMWindow);
       var ww = Components.classes["@mozilla.org/embedcomp/window-watcher;1"]
                          .getService(Components.interfaces.nsIWindowWatcher);
       this.mDialog = ww.openWindow(dwi,
@@ -279,7 +281,7 @@ nsUnknownContentTypeDialog.prototype = {
     var nsIFilePicker = Components.interfaces.nsIFilePicker;
     var picker = Components.classes["@mozilla.org/filepicker;1"].createInstance(nsIFilePicker);
     var windowTitle = bundle.GetStringFromName("saveDialogTitle");
-    var parent = aContext.QueryInterface(Components.interfaces.nsIInterfaceRequestor).getInterface(Components.interfaces.nsIDOMWindowInternal);
+    var parent = aContext.QueryInterface(Components.interfaces.nsIInterfaceRequestor).getInterface(Components.interfaces.nsIDOMWindow);
     picker.init(parent, windowTitle, nsIFilePicker.modeSave);
     picker.defaultString = aDefaultFile;
 
@@ -609,8 +611,16 @@ nsUnknownContentTypeDialog.prototype = {
       else
         typeString = mimeInfo.MIMEType;
     }
-
-    type.value = typeString;
+    if (this.mLauncher.contentLength) {
+      let [size, unit] = DownloadUtils.
+                         convertByteUnits(this.mLauncher.contentLength);
+      type.value = this.dialogElement("strings")
+                       .getFormattedString("fileSizeWithType", 
+                                           [typeString, size, unit]);
+    }
+    else {
+      type.value = typeString;
+    }
   },
 
   _blurred: false,

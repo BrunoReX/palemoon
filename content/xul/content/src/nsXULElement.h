@@ -333,14 +333,7 @@ public:
                      nsIDocument* aDocument,
                      nsIScriptGlobalObjectOwner* aGlobalOwner);
 
-    void UnlinkJSObjects()
-    {
-        if (mScriptObject.mObject) {
-            nsContentUtils::DropScriptObjects(mScriptObject.mLangID, this,
-                                              &NS_CYCLE_COLLECTION_NAME(nsXULPrototypeNode));
-            mScriptObject.mObject = nsnull;
-        }
-    }
+    void UnlinkJSObjects();
 
     void Set(nsScriptObjectHolder &aHolder)
     {
@@ -350,23 +343,7 @@ public:
         mScriptObject.mLangID = aHolder.getScriptTypeID();
         Set((void*)aHolder);
     }
-    void Set(void *aObject)
-    {
-        NS_ASSERTION(!mScriptObject.mObject, "Leaking script object.");
-        if (!aObject) {
-            mScriptObject.mObject = nsnull;
-
-            return;
-        }
-
-        nsresult rv = nsContentUtils::HoldScriptObject(mScriptObject.mLangID,
-                                                       this,
-                                                       &NS_CYCLE_COLLECTION_NAME(nsXULPrototypeNode),
-                                                       aObject, PR_FALSE);
-        if (NS_SUCCEEDED(rv)) {
-            mScriptObject.mObject = aObject;
-        }
-    }
+    void Set(void *aObject);
 
     struct ScriptObjectHolder
     {
@@ -657,10 +634,8 @@ protected:
                                   const nsAString& aValue,
                                   nsAttrValue& aResult);
 
-    virtual nsresult
-      GetEventListenerManagerForAttr(nsEventListenerManager** aManager,
-                                     nsISupports** aTarget,
-                                     PRBool* aDefer);
+    virtual nsEventListenerManager*
+      GetEventListenerManagerForAttr(PRBool* aDefer);
   
     /**
      * Return our prototype's attribute, if one exists.

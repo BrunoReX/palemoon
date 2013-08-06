@@ -38,7 +38,7 @@
 MOZ_APP_NAME=fennec
 MOZ_APP_UA_NAME=Fennec
 
-MOZ_APP_VERSION=7.0
+MOZ_APP_VERSION=8.0
 
 MOZ_BRANDING_DIRECTORY=mobile/branding/unofficial
 MOZ_OFFICIAL_BRANDING_DIRECTORY=mobile/branding/official
@@ -53,7 +53,6 @@ if test "$LIBXUL_SDK"; then
 MOZ_XULRUNNER=1
 else
 MOZ_XULRUNNER=
-MOZ_MORK=
 MOZ_PLACES=1
 fi
 

@@ -51,10 +51,8 @@
 #include "nsFrameList.h"
 #include "nsGkAtoms.h"
 #include "nsMenuParent.h"
-#include "nsIMenuFrame.h"
 #include "nsXULPopupManager.h"
 #include "nsITimer.h"
-#include "nsIDOMText.h"
 #include "nsIContent.h"
 
 nsIFrame* NS_NewMenuFrame(nsIPresShell* aPresShell, nsStyleContext* aContext);
@@ -73,6 +71,12 @@ enum nsMenuType {
   // a radio menuitem where only one of it and its siblings with the same
   // name attribute can be checked at a time
   eMenuType_Radio = 2
+};
+
+enum nsMenuListType {
+  eNotMenuList,      // not a menulist
+  eReadonlyMenuList, // <menulist/>
+  eEditableMenuList  // <menulist editable="true"/>
 };
 
 class nsMenuFrame;
@@ -101,12 +105,12 @@ private:
   nsMenuFrame* mFrame;
 };
 
-class nsMenuFrame : public nsBoxFrame, 
-                    public nsIMenuFrame
+class nsMenuFrame : public nsBoxFrame
 {
 public:
   nsMenuFrame(nsIPresShell* aShell, nsStyleContext* aContext);
 
+  NS_DECL_QUERYFRAME_TARGET(nsMenuFrame)
   NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS
 
@@ -185,11 +189,11 @@ public:
 
   // nsMenuFrame methods 
 
-  virtual PRBool IsOnMenuBar() { return mMenuParent && mMenuParent->IsMenuBar(); }
-  virtual PRBool IsOnActiveMenuBar() { return IsOnMenuBar() && mMenuParent->IsActive(); }
+  PRBool IsOnMenuBar() { return mMenuParent && mMenuParent->IsMenuBar(); }
+  PRBool IsOnActiveMenuBar() { return IsOnMenuBar() && mMenuParent->IsActive(); }
   virtual PRBool IsOpen();
   virtual PRBool IsMenu();
-  virtual nsMenuListType GetParentMenuListType();
+  nsMenuListType GetParentMenuListType();
   PRBool IsDisabled();
   void ToggleMenuState();
 
@@ -248,7 +252,7 @@ protected:
   NS_IMETHOD AttributeChanged(PRInt32 aNameSpaceID,
                               nsIAtom* aAttribute,
                               PRInt32 aModType);
-  virtual ~nsMenuFrame();
+  virtual ~nsMenuFrame() { };
 
   PRBool SizeToPopup(nsBoxLayoutState& aState, nsSize& aSize);
 
@@ -284,14 +288,6 @@ protected:
   nsRefPtr<nsXULMenuCommandEvent> mDelayedMenuCommandEvent;
 
   nsString mGroupName;
-  
-  //we load some display strings from platformKeys.properties only once
-  static nsrefcnt gRefCnt; 
-  static nsString *gShiftText;
-  static nsString *gControlText;
-  static nsString *gMetaText;
-  static nsString *gAltText;
-  static nsString *gModifierSeparator;
 
 }; // class nsMenuFrame
 

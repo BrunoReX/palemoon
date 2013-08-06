@@ -279,6 +279,7 @@ let Content = {
       addEventListener("DOMActivate", this, true);
 
     addEventListener("MozApplicationManifest", this, false);
+    addEventListener("DOMContentLoaded", this, false);
     addEventListener("pagehide", this, false);
     addEventListener("keypress", this, false, false);
 
@@ -384,6 +385,10 @@ let Content = {
         break;
       }
 
+      case "DOMContentLoaded":
+        this._maybeNotifyErroPage();
+        break;
+
       case "pagehide":
         if (aEvent.target == content.document)
           this._resetFontSize();          
@@ -400,7 +405,7 @@ let Content = {
     switch (aMessage.name) {
       case "Browser:ContextCommand": {
         let wrappedTarget = elementFromPoint(x, y);
-        if (!wrappedTarget)
+        if (!wrappedTarget || !(wrappedTarget instanceof Ci.nsIDOMNSEditableElement))
           break;
         let target = wrappedTarget.QueryInterface(Ci.nsIDOMNSEditableElement);
         if (!target)
@@ -600,6 +605,14 @@ let Content = {
         break;
       }
     }
+  },
+
+  _maybeNotifyErroPage: function _maybeNotifyErroPage() {
+    // Notify browser that an error page is being shown instead
+    // of the target location. Necessary to get proper thumbnail
+    // updates on chrome for error pages.
+    if (content.location.href !== content.document.documentURI)
+      sendAsyncMessage("Browser:ErrorPage", null);
   },
 
   _resetFontSize: function _resetFontSize() {

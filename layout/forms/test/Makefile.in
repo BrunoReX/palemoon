@@ -77,10 +77,13 @@ _TEST_FILES =	test_bug231389.html \
 		test_bug620936.html \
 		test_bug595310.html \
 		test_bug644542.html \
+		test_bug672810.html \
 		$(NULL)
 
 _CHROME_FILES = \
 		test_bug536567.html \
+		test_bug665540.html \
+		     bug665540_window.xul \
 		$(NULL)
 
 libs:: $(_TEST_FILES)

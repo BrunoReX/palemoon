@@ -125,16 +125,8 @@ ifndef relativesrcdir
 $(error Must define relativesrcdir when defining XPCSHELL_TESTS.)
 endif
 
-# Test file installation
-ifneq (,$(filter WINNT os2-emx,$(HOST_OS_ARCH)))
-# Windows and OS/2 nsinstall can't recursively copy directories, so use nsinstall.py
-TEST_INSTALLER = $(PYTHON) $(topsrcdir)/config/nsinstall.py
-else
-TEST_INSTALLER = $(INSTALL)
-endif
-
 define _INSTALL_TESTS
-$(TEST_INSTALLER) $(wildcard $(srcdir)/$(dir)/*) $(testxpcobjdir)/$(relativesrcdir)/$(dir)
+$(DIR_INSTALL) $(wildcard $(srcdir)/$(dir)/*) $(testxpcobjdir)/$(relativesrcdir)/$(dir)
 
 endef # do not remove the blank line!
 
@@ -200,7 +192,7 @@ ifdef CPP_UNIT_TESTS
 CPPSRCS += $(CPP_UNIT_TESTS)
 SIMPLE_PROGRAMS += $(CPP_UNIT_TESTS:.cpp=$(BIN_SUFFIX))
 INCLUDES += -I$(DIST)/include/testing
-LIBS += $(XPCOM_GLUE_LDOPTS) $(NSPR_LIBS)
+LIBS += $(XPCOM_GLUE_LDOPTS) $(NSPR_LIBS) $(MOZ_JS_LIBS)
 
 # ...and run them the usual way
 check::
@@ -390,7 +382,7 @@ ifndef MOZ_AUTO_DEPS
 ifneq (,$(OBJS)$(XPIDLSRCS)$(SIMPLE_PROGRAMS))
 MDDEPFILES		= $(addprefix $(MDDEPDIR)/,$(OBJS:.$(OBJ_SUFFIX)=.pp))
 ifndef NO_GEN_XPT
-MDDEPFILES		+= $(addprefix $(MDDEPDIR)/,$(XPIDLSRCS:.idl=.xpt))
+MDDEPFILES		+= $(addprefix $(MDDEPDIR)/,$(XPIDLSRCS:.idl=.h.pp) $(XPIDLSRCS:.idl=.xpt.pp))
 endif
 endif
 endif
@@ -1089,6 +1081,7 @@ endif
 
 ifdef DTRACE_PROBE_OBJ
 EXTRA_DEPS += $(DTRACE_PROBE_OBJ)
+OBJS += $(DTRACE_PROBE_OBJ)
 endif
 
 $(filter %.$(LIB_SUFFIX),$(LIBRARY)): $(OBJS) $(LOBJS) $(SHARED_LIBRARY_LIBS_DEPS) $(EXTRA_DEPS) $(GLOBAL_DEPS)
@@ -1129,8 +1122,8 @@ ifdef HAVE_DTRACE
 ifndef XP_MACOSX
 ifdef DTRACE_PROBE_OBJ
 ifndef DTRACE_LIB_DEPENDENT
-$(DTRACE_PROBE_OBJ): $(OBJS)
-	dtrace -G -C -s $(MOZILLA_DTRACE_SRC) -o $(DTRACE_PROBE_OBJ) $(OBJS)
+$(DTRACE_PROBE_OBJ):
+	dtrace -G -C -s $(MOZILLA_DTRACE_SRC) -o $(DTRACE_PROBE_OBJ)
 endif
 endif
 endif
@@ -1152,7 +1145,7 @@ endif
 	$(EXPAND_MKSHLIB) $(SHLIB_LDSTARTFILE) $(OBJS) $(LOBJS) $(SUB_SHLOBJS) $(DTRACE_PROBE_OBJ) $(MOZILLA_PROBE_LIBS) $(RESFILE) $(LDFLAGS) $(SHARED_LIBRARY_LIBS) $(EXTRA_DSO_LDOPTS) $(OS_LIBS) $(EXTRA_LIBS) $(DEF_FILE) $(SHLIB_LDENDFILE)
 	@$(RM) $(DTRACE_PROBE_OBJ)
 else # ! DTRACE_LIB_DEPENDENT
-	$(EXPAND_MKSHLIB) $(SHLIB_LDSTARTFILE) $(OBJS) $(DTRACE_PROBE_OBJ) $(LOBJS) $(SUB_SHLOBJS) $(RESFILE) $(LDFLAGS) $(SHARED_LIBRARY_LIBS) $(EXTRA_DSO_LDOPTS) $(OS_LIBS) $(EXTRA_LIBS) $(DEF_FILE) $(SHLIB_LDENDFILE)
+	$(EXPAND_MKSHLIB) $(SHLIB_LDSTARTFILE) $(OBJS) $(LOBJS) $(SUB_SHLOBJS) $(RESFILE) $(LDFLAGS) $(SHARED_LIBRARY_LIBS) $(EXTRA_DSO_LDOPTS) $(OS_LIBS) $(EXTRA_LIBS) $(DEF_FILE) $(SHLIB_LDENDFILE)
 endif # DTRACE_LIB_DEPENDENT
 	@$(call CHECK_STDCXX,$@)
 
@@ -1538,18 +1531,31 @@ $(XPIDL_GEN_DIR)/.done:
 # don't depend on $(XPIDL_GEN_DIR), because the modification date changes
 # with any addition to the directory, regenerating all .h files -> everything.
 
-$(XPIDL_GEN_DIR)/%.h: %.idl $(XPIDL_COMPILE) $(XPIDL_GEN_DIR)/.done
+XPIDL_DEPS = \
+  $(topsrcdir)/xpcom/idl-parser/header.py \
+  $(topsrcdir)/xpcom/idl-parser/typelib.py \
+  $(topsrcdir)/xpcom/idl-parser/xpidl.py \
+  $(NULL)
+
+$(XPIDL_GEN_DIR)/%.h: %.idl $(XPIDL_DEPS) $(XPIDL_GEN_DIR)/.done
 	$(REPORT_BUILD)
-	$(ELOG) $(XPIDL_COMPILE) -m header -w $(XPIDL_FLAGS) -o $(XPIDL_GEN_DIR)/$* $(_VPATH_SRCS)
+	$(PYTHON_PATH) \
+	  -I$(topsrcdir)/other-licenses/ply \
+	  -I$(topsrcdir)/xpcom/idl-parser \
+	  $(topsrcdir)/xpcom/idl-parser/header.py --cachedir=$(topsrcdir)/xpcom/idl-parser $(XPIDL_FLAGS) $(_VPATH_SRCS) -d $(MDDEPDIR)/$(@F).pp -o $@
 	@if test -n "$(findstring $*.h, $(EXPORTS))"; \
 	  then echo "*** WARNING: file $*.h generated from $*.idl overrides $(srcdir)/$*.h"; else true; fi
 
 ifndef NO_GEN_XPT
 # generate intermediate .xpt files into $(XPIDL_GEN_DIR), then link
 # into $(XPIDL_MODULE).xpt and export it to $(FINAL_TARGET)/components.
-$(XPIDL_GEN_DIR)/%.xpt: %.idl $(XPIDL_COMPILE) $(XPIDL_GEN_DIR)/.done
+$(XPIDL_GEN_DIR)/%.xpt: %.idl $(XPIDL_DEPS) $(XPIDL_GEN_DIR)/.done
 	$(REPORT_BUILD)
-	$(ELOG) $(XPIDL_COMPILE) -m typelib -w $(XPIDL_FLAGS) -e $@ -d $(MDDEPDIR)/$*.pp $(_VPATH_SRCS)
+	$(PYTHON_PATH) \
+	  -I$(topsrcdir)/other-licenses/ply \
+	  -I$(topsrcdir)/xpcom/idl-parser \
+	  -I$(topsrcdir)/xpcom/typelib/xpt/tools \
+	  $(topsrcdir)/xpcom/idl-parser/typelib.py --cachedir=$(topsrcdir)/xpcom/idl-parser $(XPIDL_FLAGS) $(_VPATH_SRCS) -d $(MDDEPDIR)/$(@F).pp -o $@
 
 # no need to link together if XPIDLSRCS contains only XPIDL_MODULE
 ifneq ($(XPIDL_MODULE).idl,$(strip $(XPIDLSRCS)))
@@ -2020,6 +2026,7 @@ showbuild:
 	@echo "MKSHLIB            = $(MKSHLIB)"
 	@echo "MKCSHLIB           = $(MKCSHLIB)"
 	@echo "RC                 = $(RC)"
+	@echo "MC                 = $(MC)"
 	@echo "CFLAGS             = $(CFLAGS)"
 	@echo "OS_CFLAGS          = $(OS_CFLAGS)"
 	@echo "COMPILE_CFLAGS     = $(COMPILE_CFLAGS)"

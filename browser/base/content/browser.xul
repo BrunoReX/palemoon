@@ -234,14 +234,6 @@
            close="true"
            onpopuphiding="InspectorUI.closeInspectorUI();"
            label="&inspectPanelTitle.label;">
-      <toolbar id="inspector-toolbar"
-               nowindowdrag="true">
-        <toolbarbutton id="inspector-inspect-toolbutton"
-                       label="&inspectButton.label;"
-                       accesskey="&inspectButton.accesskey;"
-                       class="toolbarbutton-text"
-                       command="Inspector:Inspect"/>
-      </toolbar>
       <hbox id="tree-panel-resizer-box" align="end">
         <spacer flex="1" />
         <resizer dir="bottomend" />
@@ -281,10 +273,10 @@
                 oncommand="BrowserFullScreen();"/>
     </menupopup>
 
-    <menupopup id="contentAreaContextMenu"
+    <menupopup id="contentAreaContextMenu" pagemenu="start"
                onpopupshowing="if (event.target != this)
                                  return true;
-                               gContextMenu = new nsContextMenu(this, gBrowser);
+                               gContextMenu = new nsContextMenu(this, gBrowser, event.shiftKey);
                                if (gContextMenu.shouldDisplay)
                                  updateEditUIVisibility();
                                return gContextMenu.shouldDisplay;"
@@ -399,6 +391,24 @@
     </panel>
 
     <tooltip id="tabbrowser-tab-tooltip" onpopupshowing="gBrowser.createTooltip(event);"/>
+
+    <tooltip id="back-button-tooltip">
+      <label value="&backButton.tooltip;"/>
+#ifdef XP_MACOSX
+      <label value="&backForwardButtonMenuMac.tooltip;"/>
+#else
+      <label value="&backForwardButtonMenu.tooltip;"/>
+#endif
+    </tooltip>
+  
+    <tooltip id="forward-button-tooltip">
+      <label value="&forwardButton.tooltip;"/>
+#ifdef XP_MACOSX
+      <label value="&backForwardButtonMenuMac.tooltip;"/>
+#else
+      <label value="&backForwardButtonMenu.tooltip;"/>
+#endif
+    </tooltip>
   </popupset>
 
 #ifdef CAN_DRAW_IN_TITLEBAR
@@ -468,12 +478,12 @@
                        label="&backCmd.label;"
                        command="Browser:BackOrBackDuplicate"
                        onclick="checkForMiddleClick(this, event);"
-                       tooltiptext="&backButton.tooltip;"/>
+                       tooltip="back-button-tooltip"/>
         <toolbarbutton id="forward-button" class="toolbarbutton-1"
                        label="&forwardCmd.label;"
                        command="Browser:ForwardOrForwardDuplicate"
                        onclick="checkForMiddleClick(this, event);"
-                       tooltiptext="&forwardButton.tooltip;"/>
+                       tooltip="forward-button-tooltip"/>
       </toolbaritem>
 
       <toolbarbutton id="reload-button" class="toolbarbutton-1 chromeclass-toolbar-additional"
@@ -756,7 +766,7 @@
              aria-label="&tabsToolbar.label;"
              context="toolbar-context-menu"
 #ifdef APPMENU_ON_TABBAR
-             defaultset="appmenu-toolbar-button,tabbrowser-tabs,new-tab-button,tabview-button,alltabs-button,tabs-closebutton"
+             defaultset="appmenu-toolbar-button,tabbrowser-tabs,new-tab-button,alltabs-button,tabs-closebutton"
 #else
              defaultset="tabbrowser-tabs,new-tab-button,tabview-button,alltabs-button,tabs-closebutton"
 #endif
@@ -895,7 +905,6 @@
                      label="&fullScreenCmd.label;"
                      tooltiptext="&fullScreenButton.tooltip;"/>
 
-
       <toolbaritem id="zoom-controls" class="chromeclass-toolbar-additional"
                    title="&zoomControls.label;">
         <toolbarbutton id="zoom-out-button" class="toolbarbutton-1"
@@ -926,6 +935,7 @@
                    oncommand="return FeedHandler.subscribeToFeed(null, event);"
                    onclick="checkForMiddleClick(this, event);"/>
       </toolbarbutton>
+
     </toolbarpalette>
   </toolbox>
 
@@ -955,6 +965,19 @@
   </hbox>
 
   <vbox id="browser-bottombox" layer="true">
+    <toolbar id="inspector-toolbar"
+             nowindowdrag="true"
+             hidden="true">
+      <toolbarbutton id="inspector-inspect-toolbutton"
+                     label="&inspectButton.label;"
+                     accesskey="&inspectButton.accesskey;"
+                     class="toolbarbutton-text"
+                     command="Inspector:Inspect"/>
+      <toolbarseparator />
+      <hbox id="inspector-tools">
+        <!-- registered tools go here -->
+      </hbox>
+    </toolbar>
     <toolbar id="addon-bar"
              toolbarname="&addonBarCmd.label;" accesskey="&addonBarCmd.accesskey;"
              collapsed="true"
@@ -988,7 +1011,7 @@
   <svg:svg height="0">
     <svg:mask id="pinstripe-keyhole-forward-mask" maskContentUnits="objectBoundingBox">
       <svg:rect x="0" y="0" width="1" height="1" fill="white"/>
-      <svg:circle cx="-0.46" cy="0.48" r="0.65"/>
+      <svg:circle cx="-0.41" cy="0.5" r="0.65"/>
     </svg:mask>
     <svg:mask id="pinstripe-tab-ontop-left-curve-mask" maskContentUnits="userSpaceOnUse">
       <svg:circle cx="9" cy="3" r="3" fill="white"/>
@@ -1026,12 +1049,6 @@
 #endif
 
 </vbox>
-# <iframe id="highlighter-frame"
-#   transparent="true"
-#   type="content"
-#   src="chrome://content/base/highlighter.html"/> is dynamically appended as
-#     the last child of #tab-view-deck, only when it is needed, for minimal
-#     performance impact.
 # <iframe id="tab-view"> is dynamically appended as the 2nd child of #tab-view-deck.
 #     Introducing the iframe dynamically, as needed, was found to be better than
 #     starting with an empty iframe here in browser.xul from a Ts standpoint.

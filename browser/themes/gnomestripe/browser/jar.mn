@@ -17,7 +17,6 @@ browser.jar:
   skin/classic/browser/Geolocation-16.png
   skin/classic/browser/Geolocation-64.png
   skin/classic/browser/Go-arrow.png
-* skin/classic/browser/highlighter.css
   skin/classic/browser/identity.png
   skin/classic/browser/Info.png
   skin/classic/browser/KUI-close.png
@@ -64,6 +63,7 @@ browser.jar:
   skin/classic/browser/places/tag.png                 (places/tag.png)
   skin/classic/browser/places/toolbarDropMarker.png   (places/toolbarDropMarker.png)
   skin/classic/browser/places/unsortedBookmarks.png   (places/unsortedBookmarks.png)
+  skin/classic/browser/places/downloads.png           (places/downloads.png)
   skin/classic/browser/preferences/alwaysAsk.png      (preferences/alwaysAsk.png)
   skin/classic/browser/preferences/mail.png           (preferences/mail.png)
   skin/classic/browser/preferences/Options.png        (preferences/Options.png)
@@ -80,7 +80,6 @@ browser.jar:
   skin/classic/browser/tabbrowser/tab-overflow-border.png (tabbrowser/tab-overflow-border.png)
   skin/classic/browser/tabbrowser/tabDragIndicator.png (tabbrowser/tabDragIndicator.png)
   skin/classic/browser/tabview/edit-light.png         (tabview/edit-light.png)
-  skin/classic/browser/tabview/new-tab.png            (tabview/new-tab.png)
   skin/classic/browser/tabview/search.png             (tabview/search.png)  
   skin/classic/browser/tabview/stack-expander.png     (tabview/stack-expander.png)
   skin/classic/browser/tabview/tabview.png            (tabview/tabview.png)

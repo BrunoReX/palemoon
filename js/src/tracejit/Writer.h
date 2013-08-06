@@ -529,20 +529,35 @@ class Writer
     }
 
     nj::LIns *ldpObjSlots(nj::LIns *obj) const {
-        return name(lir->insLoad(nj::LIR_ldp, obj, offsetof(JSObject, slots), ACCSET_OBJ_SLOTS),
+        return name(lir->insLoad(nj::LIR_ldp, obj, JSObject::offsetOfSlots(), ACCSET_OBJ_SLOTS),
                     "slots");
     }
 
+    nj::LIns *ldpObjFixedSlots(nj::LIns *obj) const {
+        //return name(lir->insLoad(nj::LIR_ldp, obj, sizeof(JSObject), ACCSET_SLOTS),
+#if JS_BITS_PER_WORD == 32
+        return name(lir->ins2(nj::LIR_addp, obj, lir->insImmI(sizeof(JSObject))),
+#else
+        return name(lir->ins2(nj::LIR_addp, obj, lir->insImmQ(sizeof(JSObject))),
+#endif
+                "fixed_slots");
+    }
+
     nj::LIns *ldiConstTypedArrayLength(nj::LIns *array) const {
-        return name(lir->insLoad(nj::LIR_ldi, array, js::TypedArray::lengthOffset(), ACCSET_TARRAY,
+        return name(lir->insLoad(nj::LIR_ldi, array, sizeof(Value) * js::TypedArray::FIELD_LENGTH + sPayloadOffset, ACCSET_TARRAY,
                                  nj::LOAD_CONST),
                     "typedArrayLength");
     }
 
-    nj::LIns *ldpConstTypedArrayData(nj::LIns *array) const {
-        return name(lir->insLoad(nj::LIR_ldp, array, js::TypedArray::dataOffset(), ACCSET_TARRAY,
+    nj::LIns *ldiConstTypedArrayByteOffset(nj::LIns *array) const {
+        return name(lir->insLoad(nj::LIR_ldi, array, sizeof(Value) * js::TypedArray::FIELD_BYTEOFFSET + sPayloadOffset, ACCSET_TARRAY,
                                  nj::LOAD_CONST),
-                    "typedElems");
+                    "typedArrayByteOffset");
+    }
+
+    nj::LIns *ldpConstTypedArrayData(nj::LIns *obj) const {
+        uint32 offset = offsetof(JSObject, privateData);
+        return name(lir->insLoad(nj::LIR_ldp, obj, offset, ACCSET_TARRAY, nj::LOAD_CONST), "typedArrayData");
     }
 
     nj::LIns *ldc2iTypedArrayElement(nj::LIns *elems, nj::LIns *index) const {

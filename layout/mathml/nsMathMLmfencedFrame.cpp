@@ -24,6 +24,7 @@
  *   David J. Fiddes <D.J.Fiddes@hw.ac.uk>
  *   Pierre Phaneuf <pp@ludusdesign.com>
  *   Frederic Wang <fred.wang@free.fr>
+ *   Florian Scholz <elchi3@elchi3.de>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either of the GNU General Public License Version 2 or later (the "GPL"),
@@ -249,9 +250,9 @@ nsMathMLmfencedFrame::Reflow(nsPresContext*          aPresContext,
 
   PRInt32 i;
   const nsStyleFont* font = GetStyleFont();
-  aReflowState.rendContext->SetFont(font->mFont,
-                                    aPresContext->GetUserFontSet());
-  nsFontMetrics* fm = aReflowState.rendContext->FontMetrics();
+  nsRefPtr<nsFontMetrics> fm;
+  nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm));
+  aReflowState.rendContext->SetFont(fm);
   nscoord axisHeight, em;
   GetAxisHeight(*aReflowState.rendContext, fm, axisHeight);
   GetEmHeight(fm, em);
@@ -351,12 +352,10 @@ nsMathMLmfencedFrame::Reflow(nsPresContext*          aPresContext,
   // adjust the origin of children.
 
   // we need to center around the axis
-  if (firstChild) { // do nothing for an empty <mfenced></mfenced>
-    nscoord delta = NS_MAX(containerSize.ascent - axisHeight, 
-                           containerSize.descent + axisHeight);
-    containerSize.ascent = delta + axisHeight;
-    containerSize.descent = delta - axisHeight;
-  }
+  nscoord delta = NS_MAX(containerSize.ascent - axisHeight, 
+                         containerSize.descent + axisHeight);
+  containerSize.ascent = delta + axisHeight;
+  containerSize.descent = delta - axisHeight;
 
   /////////////////
   // opening fence ...
@@ -595,7 +594,8 @@ nsMathMLmfencedFrame::GetIntrinsicWidth(nsRenderingContext* aRenderingContext)
 
   nsPresContext* presContext = PresContext();
   const nsStyleFont* font = GetStyleFont();
-  nsRefPtr<nsFontMetrics> fm = presContext->GetMetricsFor(font->mFont);
+  nsRefPtr<nsFontMetrics> fm;
+  nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm));
   nscoord em;
   GetEmHeight(fm, em);
 

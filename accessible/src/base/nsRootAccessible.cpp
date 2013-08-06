@@ -38,15 +38,16 @@
 #define CreateEvent CreateEventA
 #include "nsIDOMDocument.h"
 
-#include "States.h"
 #include "nsAccessibilityService.h"
 #include "nsApplicationAccessibleWrap.h"
 #include "nsAccUtils.h"
 #include "nsCoreUtils.h"
-#include "nsRelUtils.h"
+#include "Relation.h"
+#include "States.h"
 
 #include "mozilla/dom/Element.h"
 #include "nsHTMLSelectAccessible.h"
+#include "nsIAccessibleRelation.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
 #include "nsIDocShellTreeNode.h"
@@ -67,7 +68,7 @@
 #include "nsIDocument.h"
 #include "nsEventListenerManager.h"
 #include "nsIFrame.h"
-#include "nsIMenuFrame.h"
+#include "nsMenuFrame.h"
 #include "nsIHTMLDocument.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsISelectionPrivate.h"
@@ -86,6 +87,7 @@
 #endif
 
 using namespace mozilla;
+using namespace mozilla::a11y;
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsISupports
@@ -352,8 +354,6 @@ nsRootAccessible::FireAccessibleFocusEvent(nsAccessible* aFocusAccessible,
 
   nsDocAccessible* focusDocument = focusAccessible->GetDocAccessible();
   NS_ASSERTION(focusDocument, "No document while accessible is in document?!");
-
-  gLastFocusedAccessiblesState = focusAccessible->State();
 
   // Fire menu start/end events for ARIA menus.
   if (focusAccessible->ARIARole() == nsIAccessibleRole::ROLE_MENUITEM) {
@@ -666,7 +666,6 @@ nsRootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
   }
   else if (eventType.EqualsLiteral("blur")) {
     NS_IF_RELEASE(gLastFocusedNode);
-    gLastFocusedAccessiblesState = 0;
   }
   else if (eventType.EqualsLiteral("AlertActive")) { 
     nsEventShell::FireEvent(nsIAccessibleEvent::EVENT_ALERT, accessible);
@@ -688,28 +687,25 @@ nsRootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
         return; // Tree with nothing selected
       }
 #endif
-      nsIFrame* menuFrame = accessible->GetFrame();
-      if (!menuFrame)
-        return;
 
-      nsIMenuFrame* imenuFrame = do_QueryFrame(menuFrame);
-      if (imenuFrame)
+      nsMenuFrame* menuFrame = do_QueryFrame(accessible->GetFrame());
+      if (menuFrame)
         fireFocus = PR_TRUE;
-      // QI failed for nsIMenuFrame means it's not on menu bar
-      if (imenuFrame && imenuFrame->IsOnMenuBar() &&
-                       !imenuFrame->IsOnActiveMenuBar()) {
+      // QI failed for nsMenuFrame means it's not on menu bar
+      if (menuFrame && menuFrame->IsOnMenuBar() &&
+                       !menuFrame->IsOnActiveMenuBar()) {
         // It is a top level menuitem. Only fire a focus event when the menu bar
         // is active.
         return;
       } else {
-        nsAccessible *containerAccessible = accessible->GetParent();
-        if (!containerAccessible)
+        nsAccessible* container = accessible->Parent();
+        if (!container)
           return;
         // It is not top level menuitem
         // Only fire focus event if it is not inside collapsed popup
         // and not a listitem of a combo box
-        if (containerAccessible->State() & states::COLLAPSED) {
-          nsAccessible *containerParent = containerAccessible->GetParent();
+        if (container->State() & states::COLLAPSED) {
+          nsAccessible* containerParent = container->Parent();
           if (!containerParent)
             return;
           if (containerParent->Role() != nsIAccessibleRole::ROLE_COMBOBOX) {
@@ -799,7 +795,7 @@ nsRootAccessible::GetContentDocShell(nsIDocShellTreeItem *aStart)
     // If ancestor chain of accessibles is not completely visible,
     // don't use this one. This happens for example if it's inside
     // a background tab (tabbed browsing)
-    nsAccessible *parent = accDoc->GetParent();
+    nsAccessible* parent = accDoc->Parent();
     while (parent) {
       if (parent->State() & states::INVISIBLE)
         return nsnull;
@@ -807,7 +803,7 @@ nsRootAccessible::GetContentDocShell(nsIDocShellTreeItem *aStart)
       if (parent == this)
         break; // Don't check past original root accessible we started with
 
-      parent = parent->GetParent();
+      parent = parent->Parent();
     }
 
     NS_ADDREF(aStart);
@@ -832,27 +828,20 @@ nsRootAccessible::GetContentDocShell(nsIDocShellTreeItem *aStart)
 }
 
 // nsIAccessible method
-NS_IMETHODIMP
-nsRootAccessible::GetRelationByType(PRUint32 aRelationType,
-                                    nsIAccessibleRelation **aRelation)
+Relation
+nsRootAccessible::RelationByType(PRUint32 aType)
 {
-  NS_ENSURE_ARG_POINTER(aRelation);
-  *aRelation = nsnull;
-
-  if (!mDocument || aRelationType != nsIAccessibleRelation::RELATION_EMBEDS) {
-    return nsDocAccessibleWrap::GetRelationByType(aRelationType, aRelation);
-  }
+  if (!mDocument || aType != nsIAccessibleRelation::RELATION_EMBEDS)
+    return nsDocAccessibleWrap::RelationByType(aType);
 
   nsCOMPtr<nsIDocShellTreeItem> treeItem =
     nsCoreUtils::GetDocShellTreeItemFor(mDocument);
   nsCOMPtr<nsIDocShellTreeItem> contentTreeItem = GetContentDocShell(treeItem);
   // there may be no content area, so we need a null check
-  if (contentTreeItem) {
-    nsDocAccessible *accDoc = nsAccUtils::GetDocAccessibleFor(contentTreeItem);
-    return nsRelUtils::AddTarget(aRelationType, aRelation, accDoc);
-  }
+  if (!contentTreeItem)
+    return Relation();
 
-  return NS_OK;
+  return Relation(nsAccUtils::GetDocAccessibleFor(contentTreeItem));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -881,7 +870,7 @@ nsRootAccessible::HandlePopupShownEvent(nsAccessible* aAccessible)
 
   if (role == nsIAccessibleRole::ROLE_COMBOBOX_LIST) {
     // Fire expanded state change event for comboboxes and autocompeletes.
-    nsAccessible* combobox = aAccessible->GetParent();
+    nsAccessible* combobox = aAccessible->Parent();
     if (!combobox)
       return;
 
@@ -917,7 +906,7 @@ nsRootAccessible::HandlePopupHidingEvent(nsINode* aNode,
       aAccessible->Role() != nsIAccessibleRole::ROLE_COMBOBOX_LIST)
     return;
 
-  nsAccessible* combobox = aAccessible->GetParent();
+  nsAccessible* combobox = aAccessible->Parent();
   if (!combobox)
     return;
 

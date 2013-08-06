@@ -51,19 +51,23 @@ CPPSRCS = \
   selfTest.cpp \
   testArgumentsObject.cpp \
   testBug604087.cpp \
+  testChromeBuffer.cpp \
   testClassGetter.cpp \
   testCloneScript.cpp \
   testConservativeGC.cpp \
   testContexts.cpp \
+  testCustomIterator.cpp \
   testDebugger.cpp \
   testDeepFreeze.cpp \
   testDefineGetterSetterNonEnumerable.cpp \
   testDefineProperty.cpp \
   testExtendedEq.cpp \
+  testExternalStrings.cpp \
   testFuncCallback.cpp \
   testFunctionProperties.cpp \
   testGCChunkAlloc.cpp \
   testGetPropertyDefault.cpp \
+  testIndexToString.cpp \
   testIntString.cpp \
   testIntern.cpp \
   testLookup.cpp \
@@ -75,6 +79,7 @@ CPPSRCS = \
   testRegExp.cpp \
   testResolveRecursion.cpp \
   testSameValue.cpp \
+  testScriptInfo.cpp \
   testScriptObject.cpp \
   testSetProperty.cpp \
   testStringBuffer.cpp \
@@ -84,8 +89,6 @@ CPPSRCS = \
   testUTF8.cpp \
   testVersion.cpp \
   testXDR.cpp \
-  testCustomIterator.cpp \
-  testExternalStrings.cpp \
   $(NULL)
 
 # Disabled: an entirely unrelated test seems to cause this to fail.  Moreover,
@@ -97,12 +100,6 @@ CPPSRCS = \
 #  $(NULL)
 
 DEFINES         += -DEXPORT_JS_API
-
-# Some platforms that have stdint.h include it in system headers.  So
-# to reliably get limit macros defined, we'd always have to define the
-# one below before including any header, but that's obscure and
-# fragile, so we do it here.
-DEFINES         += -D__STDC_LIMIT_MACROS
 
 LIBS      = $(DEPTH)/$(LIB_PREFIX)js_static.$(LIB_SUFFIX) $(NSPR_LIBS)
 

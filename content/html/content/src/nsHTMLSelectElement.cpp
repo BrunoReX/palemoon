@@ -360,12 +360,6 @@ nsHTMLSelectElement::RemoveOptionsFromList(nsIContent* aOptions,
   return NS_OK;
 }
 
-static PRBool IsOptGroup(nsIContent *aContent)
-{
-  return (aContent->NodeInfo()->Equals(nsGkAtoms::optgroup) &&
-          aContent->IsHTML());
-}
-
 // If the document is such that recursing over these options gets us
 // deeper than four levels, there is something terribly wrong with the
 // world.
@@ -394,7 +388,7 @@ nsHTMLSelectElement::InsertOptionsIntoListRecurse(nsIContent* aOptions,
   }
 
   // Recurse down into optgroups
-  if (IsOptGroup(aOptions)) {
+  if (aOptions->IsHTML(nsGkAtoms::optgroup)) {
     mOptGroupCount++;
 
     PRUint32 numChildren = aOptions->GetChildCount();
@@ -438,7 +432,7 @@ nsHTMLSelectElement::RemoveOptionsFromListRecurse(nsIContent* aOptions,
   }
 
   // Recurse down deeper for options
-  if (mOptGroupCount && IsOptGroup(aOptions)) {
+  if (mOptGroupCount && aOptions->IsHTML(nsGkAtoms::optgroup)) {
     mOptGroupCount--;
 
     PRUint32 numChildren = aOptions->GetChildCount();
@@ -643,7 +637,7 @@ nsHTMLSelectElement::GetSelectFrame()
   return select_frame;
 }
 
-NS_IMETHODIMP
+nsresult
 nsHTMLSelectElement::Add(nsIDOMHTMLElement* aElement,
                          nsIDOMHTMLElement* aBefore)
 {
@@ -677,6 +671,45 @@ nsHTMLSelectElement::Add(nsIDOMHTMLElement* aElement,
   // If the before parameter is not null, we are equivalent to the
   // insertBefore method on the parent of before.
   return parent->InsertBefore(aElement, aBefore, getter_AddRefs(added));
+}
+
+NS_IMETHODIMP
+nsHTMLSelectElement::Add(nsIDOMHTMLElement* aElement,
+                         nsIVariant* aBefore)
+{
+  PRUint16 dataType;
+  nsresult rv = aBefore->GetDataType(&dataType);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // aBefore is omitted, undefined or null
+  if (dataType == nsIDataType::VTYPE_EMPTY ||
+      dataType == nsIDataType::VTYPE_VOID) {
+    return Add(aElement);
+  }
+
+  nsCOMPtr<nsISupports> supports;
+  nsCOMPtr<nsIDOMHTMLElement> beforeElement;
+
+  // whether aBefore is nsIDOMHTMLElement...
+  if (NS_SUCCEEDED(aBefore->GetAsISupports(getter_AddRefs(supports)))) {
+    beforeElement = do_QueryInterface(supports);
+
+    NS_ENSURE_TRUE(beforeElement, NS_ERROR_DOM_SYNTAX_ERR);
+    return Add(aElement, beforeElement);
+  }
+
+  // otherwise, whether aBefore is long
+  PRInt32 index;
+  NS_ENSURE_SUCCESS(aBefore->GetAsInt32(&index), NS_ERROR_DOM_SYNTAX_ERR);
+
+  // If item index is out of range, insert to last.
+  // (since beforeElement becomes null, it is inserted to last)
+  nsCOMPtr<nsIDOMNode> beforeNode;
+  if (NS_SUCCEEDED(Item(index, getter_AddRefs(beforeNode)))) {
+    beforeElement = do_QueryInterface(beforeNode);
+  }
+
+  return Add(aElement, beforeElement);
 }
 
 NS_IMETHODIMP
@@ -1504,24 +1537,15 @@ nsHTMLSelectElement::GetAttributeMappingFunction() const
 nsresult
 nsHTMLSelectElement::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
 {
-  aVisitor.mCanHandle = PR_FALSE;
-  // Do not process any DOM events if the element is disabled
-  // XXXsmaug This is not the right thing to do. But what is?
-  if (IsDisabled()) {
-    return NS_OK;
-  }
-
   nsIFormControlFrame* formControlFrame = GetFormControlFrame(PR_FALSE);
   nsIFrame* formFrame = nsnull;
+  if (formControlFrame) {
+    formFrame = do_QueryFrame(formControlFrame);
+  }
 
-  if (formControlFrame &&
-      (formFrame = do_QueryFrame(formControlFrame))) {
-    const nsStyleUserInterface* uiStyle = formFrame->GetStyleUserInterface();
-
-    if (uiStyle->mUserInput == NS_STYLE_USER_INPUT_NONE ||
-        uiStyle->mUserInput == NS_STYLE_USER_INPUT_DISABLED) {
-      return NS_OK;
-    }
+  aVisitor.mCanHandle = PR_FALSE;
+  if (IsElementDisabledForEvents(aVisitor.mEvent->message, formFrame)) {
+    return NS_OK;
   }
 
   return nsGenericHTMLFormElement::PreHandleEvent(aVisitor);
@@ -1843,15 +1867,15 @@ void nsHTMLSelectElement::DispatchContentReset() {
 static void
 AddOptionsRecurse(nsIContent* aRoot, nsHTMLOptionCollection* aArray)
 {
-  nsIContent* child;
-  for(PRUint32 i = 0; (child = aRoot->GetChildAt(i)); ++i) {
-    nsHTMLOptionElement *opt = nsHTMLOptionElement::FromContent(child);
+  for (nsIContent* cur = aRoot->GetFirstChild();
+       cur;
+       cur = cur->GetNextSibling()) {
+    nsHTMLOptionElement* opt = nsHTMLOptionElement::FromContent(cur);
     if (opt) {
       // If we fail here, then at least we've tried our best
       aArray->AppendOption(opt);
-    }
-    else if (IsOptGroup(child)) {
-      AddOptionsRecurse(child, aArray);
+    } else if (cur->IsHTML(nsGkAtoms::optgroup)) {
+      AddOptionsRecurse(cur, aArray);
     }
   }
 }
@@ -1939,15 +1963,15 @@ static void
 VerifyOptionsRecurse(nsIContent* aRoot, PRInt32& aIndex,
                      nsHTMLOptionCollection* aArray)
 {
-  nsIContent* child;
-  for(PRUint32 i = 0; (child = aRoot->GetChildAt(i)); ++i) {
-    nsCOMPtr<nsIDOMHTMLOptionElement> opt = do_QueryInterface(child);
+  for (nsIContent* cur = aRoot->GetFirstChild();
+       cur;
+       cur = cur->GetNextSibling()) {
+    nsCOMPtr<nsIDOMHTMLOptionElement> opt = do_QueryInterface(cur);
     if (opt) {
       NS_ASSERTION(opt == aArray->ItemAsOption(aIndex++),
                    "Options collection broken");
-    }
-    else if (IsOptGroup(child)) {
-      VerifyOptionsRecurse(child, aIndex, aArray);
+    } else if (cur->IsHTML(nsGkAtoms::optgroup)) {
+      VerifyOptionsRecurse(cur, aIndex, aArray);
     }
   }
 }
@@ -2203,35 +2227,17 @@ nsHTMLOptionCollection::GetSelect(nsIDOMHTMLSelectElement **aReturn)
 
 NS_IMETHODIMP
 nsHTMLOptionCollection::Add(nsIDOMHTMLOptionElement *aOption,
-                            PRInt32 aIndex, PRUint8 optional_argc)
+                            nsIVariant *aBefore)
 {
   if (!aOption) {
     return NS_ERROR_INVALID_ARG;
-  }
-
-  if (aIndex < -1) {
-    return NS_ERROR_DOM_INDEX_SIZE_ERR;
   }
 
   if (!mSelect) {
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  PRUint32 length;
-  GetLength(&length);
-
-  if (optional_argc == 0 || aIndex == -1 || aIndex > (PRInt32)length) {
-    // IE appends in these cases
-    aIndex = length;
-  }
-
-  nsCOMPtr<nsIDOMNode> beforeNode;
-  Item(aIndex, getter_AddRefs(beforeNode));
-
-  nsCOMPtr<nsIDOMHTMLOptionElement> beforeElement =
-    do_QueryInterface(beforeNode);
-
-  return mSelect->Add(aOption, beforeElement);
+  return mSelect->Add(aOption, aBefore);
 }
 
 NS_IMETHODIMP

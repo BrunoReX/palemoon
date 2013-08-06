@@ -29,6 +29,13 @@ var ContextCommands = {
     }
   },
 
+  pasteAndGo: function cc_pasteAndGo() {
+    let target = ContextHelper.popupState.target;
+    target.editor.selectAll();
+    target.editor.paste(Ci.nsIClipboard.kGlobalClipboard);
+    BrowserUI.goToURI();
+  },
+
   selectAll: function cc_selectAll() {
     let target = ContextHelper.popupState.target;
     if (target.localName == "browser") {
@@ -62,6 +69,11 @@ var ContextCommands = {
                                   popupState.contentDisposition,
                                   popupState.contentType, false, "SaveImageTitle",
                                   null, browser.documentURI, true, null);
+  },
+
+  copyLink: function cc_copyLink() {
+    let clipboard = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper);
+    clipboard.copyString(ContextHelper.popupState.linkURL);
   },
 
   shareLink: function cc_shareLink() {
@@ -103,5 +115,10 @@ var ContextCommands = {
   removeBookmark: function cc_removeBookmark() {
     let target = ContextHelper.popupState.target;
     target.remove();
+  },
+
+  shortcutBookmark: function cc_shortcutBookmark() {
+    let target = ContextHelper.popupState.target;
+    BookmarkHelper.createShortcut(target.getAttribute("title"), target.getAttribute("uri"), target.getAttribute("src"));
   }
 };

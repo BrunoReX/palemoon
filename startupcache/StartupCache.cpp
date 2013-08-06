@@ -255,7 +255,7 @@ StartupCache::GetBuffer(const char* id, char** outbuf, PRUint32* length)
 
   if (mozilla::Omnijar::GetReader(mozilla::Omnijar::APP)) {
     // no need to checksum omnijarred entries
-    nsZipItemPtr<char> zipItem(mozilla::Omnijar::GetReader(mozilla::Omnijar::APP), id, true);
+    nsZipItemPtr<char> zipItem(mozilla::Omnijar::GetReader(mozilla::Omnijar::APP), id);
     if (zipItem) {
       *outbuf = zipItem.Forget();
       *length = zipItem.Length();
@@ -265,7 +265,7 @@ StartupCache::GetBuffer(const char* id, char** outbuf, PRUint32* length)
 
   if (mozilla::Omnijar::GetReader(mozilla::Omnijar::GRE)) {
     // no need to checksum omnijarred entries
-    nsZipItemPtr<char> zipItem(mozilla::Omnijar::GetReader(mozilla::Omnijar::GRE), id, true);
+    nsZipItemPtr<char> zipItem(mozilla::Omnijar::GetReader(mozilla::Omnijar::GRE), id);
     if (zipItem) {
       *outbuf = zipItem.Forget();
       *length = zipItem.Length();
@@ -510,7 +510,7 @@ StartupCacheDebugOutputStream::CheckReferences(nsISupports* aObject)
   
   PRUint32 flags;
   rv = classInfo->GetFlags(&flags);
-  NS_ENSURE_SUCCESS(rv, rv);
+  NS_ENSURE_SUCCESS(rv, PR_FALSE);
   if (flags & nsIClassInfo::SINGLETON)
     return PR_TRUE;
   

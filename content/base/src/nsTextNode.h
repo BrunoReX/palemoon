@@ -41,12 +41,11 @@
 
 #include "nsGenericDOMDataNode.h"
 #include "nsIDOMText.h"
-#include "nsContentUtils.h"
-#include "nsIDOMEventListener.h"
-#include "nsIDOMMutationEvent.h"
+
 #include "nsIAttribute.h"
 #include "nsIDocument.h"
 #include "nsThreadUtils.h"
+#include "nsDOMMemoryReporter.h"
 
 /**
  * Class used to implement DOM text nodes
@@ -69,6 +68,9 @@ public:
 
   // nsIDOMText
   NS_FORWARD_NSIDOMTEXT(nsGenericDOMDataNode::)
+
+  // DOM Memory Reporter participant.
+  NS_DECL_AND_IMPL_DOM_MEMORY_REPORTER_SIZEOF(nsTextNode, nsGenericDOMDataNode)
 
   // nsINode
   virtual PRBool IsNodeOfType(PRUint32 aFlags) const;

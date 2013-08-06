@@ -105,6 +105,8 @@
 #include "mozilla/ipc/TestShellParent.h"
 #include "mozilla/ipc/XPCShellEnvironment.h"
 
+#include "mozilla/Util.h" // for DebugOnly
+
 #ifdef MOZ_IPDL_TESTS
 #include "mozilla/_ipdltest/IPDLUnitTests.h"
 #include "mozilla/_ipdltest/IPDLUnitTestProcessChild.h"
@@ -369,15 +371,19 @@ XRE_InitChildProcess(int aArgc,
   // on windows and mac, |crashReporterArg| is the named pipe on which the
   // server is listening for requests, or "-" if crash reporting is
   // disabled.
-  if (0 != strcmp("-", crashReporterArg)
-      && !XRE_SetRemoteExceptionHandler(crashReporterArg))
-    return 1;
+  if (0 != strcmp("-", crashReporterArg) && 
+      !XRE_SetRemoteExceptionHandler(crashReporterArg)) {
+    // Bug 684322 will add better visibility into this condition
+    NS_WARNING("Could not setup crash reporting\n");
+  }
 #  elif defined(OS_LINUX)
   // on POSIX, |crashReporterArg| is "true" if crash reporting is
   // enabled, false otherwise
-  if (0 != strcmp("false", crashReporterArg)
-      && !XRE_SetRemoteExceptionHandler(NULL))
-    return 1;
+  if (0 != strcmp("false", crashReporterArg) && 
+      !XRE_SetRemoteExceptionHandler(NULL)) {
+    // Bug 684322 will add better visibility into this condition
+    NS_WARNING("Could not setup crash reporting\n");
+  }
 #  else
 #    error "OOP crash reporting unsupported on this platform"
 #  endif   
@@ -417,7 +423,7 @@ XRE_InitChildProcess(int aArgc,
   NS_ABORT_IF_FALSE(!*end, "invalid parent PID");
 
   base::ProcessHandle parentHandle;
-  bool ok = base::OpenProcessHandle(parentPID, &parentHandle);
+  mozilla::DebugOnly<bool> ok = base::OpenProcessHandle(parentPID, &parentHandle);
   NS_ABORT_IF_FALSE(ok, "can't open handle to parent");
 
 #if defined(XP_WIN)
@@ -683,7 +689,7 @@ XRE_ShutdownChildProcess()
 {
   NS_ABORT_IF_FALSE(MessageLoopForUI::current(), "Wrong thread!");
 
-  MessageLoop* ioLoop = XRE_GetIOMessageLoop();
+  mozilla::DebugOnly<MessageLoop*> ioLoop = XRE_GetIOMessageLoop();
   NS_ABORT_IF_FALSE(!!ioLoop, "Bad shutdown order");
 
   // Quit() sets off the following chain of events

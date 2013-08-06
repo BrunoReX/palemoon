@@ -604,6 +604,8 @@ function testListing(metadata, response)
   var [links, count] = list(metadata.path,
                             metadata.getProperty("directory"),
                             true);
+  var table_class = metadata.queryString.indexOf("hideResultsTable=1") > -1 ? "invisible": "";
+
   dumpn("count: " + count);
   var tests = jsonArrayOfTestFiles(links);
   response.write(
@@ -613,17 +615,18 @@ function testListing(metadata, response)
         LINK({rel: "stylesheet",
               type: "text/css", href: "/static/harness.css"}
         ),
-        SCRIPT({type: "text/javascript", src: "/MochiKit/packed.js"}),
+        SCRIPT({type: "text/javascript",
+                 src: "/tests/SimpleTest/LogController.js"}),
         SCRIPT({type: "text/javascript",
                  src: "/tests/SimpleTest/TestRunner.js"}),
         SCRIPT({type: "text/javascript",
-                 src: "/tests/SimpleTest/MozillaFileLogger.js"}),
+                 src: "/tests/SimpleTest/MozillaLogger.js"}),
         SCRIPT({type: "text/javascript",
                  src: "/tests/SimpleTest/quit.js"}),
         SCRIPT({type: "text/javascript",
                  src: "/tests/SimpleTest/setup.js"}),
         SCRIPT({type: "text/javascript"},
-               "connect(window, 'onload', hookup); gTestList=" + tests + ";"
+               "window.onload =  hookup; gTestList=" + tests + ";"
         )
       ),
       BODY(
@@ -658,10 +661,15 @@ function testListing(metadata, response)
             BR()
           ),
     
-          TABLE({cellpadding: 0, cellspacing: 0, id: "test-table"},
+          TABLE({cellpadding: 0, cellspacing: 0, class: table_class, id: "test-table"},
             TR(TD("Passed"), TD("Failed"), TD("Todo"), TD("Test Files")),
             linksToTableRows(links, 0)
           ),
+
+          BR(),
+          TABLE({cellpadding: 0, cellspacing: 0, border: 1, bordercolor: "red", id: "fail-table"}
+          ),
+
           DIV({class: "clear"})
         )
       )

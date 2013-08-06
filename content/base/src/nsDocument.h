@@ -87,7 +87,6 @@
 #include "pldhash.h"
 #include "nsAttrAndChildArray.h"
 #include "nsDOMAttributeMap.h"
-#include "nsContentUtils.h"
 #include "nsThreadUtils.h"
 #include "nsIDocumentViewer.h"
 #include "nsIDOMXPathNSResolver.h"
@@ -99,7 +98,7 @@
 #include "imgIRequest.h"
 #include "nsIDOMDOMImplementation.h"
 #include "nsIDOMTouchEvent.h"
-
+#include "nsDataHashtable.h"
 #include "TimeStamp.h"
 
 #define XML_DECLARATION_BITS_DECLARATION_EXISTS   (1 << 0)
@@ -490,7 +489,7 @@ class nsDocument : public nsIDocument,
                    public nsIDOMDocumentXBL,
                    public nsSupportsWeakReference,
                    public nsIScriptObjectPrincipal,
-                   public nsIRadioGroupContainer_MOZILLA_2_0_BRANCH,
+                   public nsIRadioGroupContainer,
                    public nsIApplicationCacheContainer,
                    public nsStubMutationObserver,
                    public nsIDOMDocumentTouch
@@ -499,6 +498,7 @@ public:
   typedef mozilla::dom::Element Element;
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_DOM_MEMORY_REPORTER_SIZEOF
 
   using nsINode::GetScriptTypeID;
 
@@ -522,7 +522,7 @@ public:
   virtual void NotifyPossibleTitleChange(PRBool aBoundTitleElement);
 
   virtual void SetDocumentURI(nsIURI* aURI);
-  
+
   /**
    * Set the principal responsible for this document.
    */
@@ -864,7 +864,10 @@ public:
 
   virtual void UnsuppressEventHandlingAndFireEvents(PRBool aFireEvents);
   
-  void DecreaseEventSuppression() { --mEventsSuppressed; }
+  void DecreaseEventSuppression() {
+    --mEventsSuppressed;
+    MaybeRescheduleAnimationFrameNotifications();
+  }
 
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(nsDocument,
                                                          nsIDocument)
@@ -884,7 +887,8 @@ public:
 
   void MaybeEndOutermostXBLUpdate();
 
-  virtual void MaybePreLoadImage(nsIURI* uri);
+  virtual void MaybePreLoadImage(nsIURI* uri,
+                                 const nsAString &aCrossOriginAttr);
 
   virtual void PreloadStyle(nsIURI* uri, const nsAString& charset);
 
@@ -1147,8 +1151,9 @@ private:
 
   // Revoke any pending notifications due to mozRequestAnimationFrame calls
   void RevokeAnimationFrameNotifications();
-  // Reschedule any notifications we need to handle mozRequestAnimationFrame
-  void RescheduleAnimationFrameNotifications();
+  // Reschedule any notifications we need to handle
+  // mozRequestAnimationFrame, if it's OK to do so.
+  void MaybeRescheduleAnimationFrameNotifications();
 
   // These are not implemented and not supported.
   nsDocument(const nsDocument& aOther);

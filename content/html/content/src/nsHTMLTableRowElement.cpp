@@ -47,6 +47,7 @@
 #include "nsStyleConsts.h"
 #include "nsHTMLParts.h"
 #include "nsRuleData.h"
+#include "nsContentUtils.h"
 
 class nsHTMLTableRowElement : public nsGenericHTMLElement,
                               public nsIDOMHTMLTableRowElement
@@ -359,11 +360,11 @@ nsHTMLTableRowElement::DeleteCell(PRInt32 aValue)
   return RemoveChild(cell, getter_AddRefs(retChild));
 }
 
-NS_IMPL_STRING_ATTR_DEFAULT_VALUE(nsHTMLTableRowElement, Align, align, "left")
+NS_IMPL_STRING_ATTR(nsHTMLTableRowElement, Align, align)
 NS_IMPL_STRING_ATTR(nsHTMLTableRowElement, BgColor, bgcolor)
-NS_IMPL_STRING_ATTR_DEFAULT_VALUE(nsHTMLTableRowElement, Ch, _char, ".")
+NS_IMPL_STRING_ATTR(nsHTMLTableRowElement, Ch, _char)
 NS_IMPL_STRING_ATTR(nsHTMLTableRowElement, ChOff, charoff)
-NS_IMPL_STRING_ATTR_DEFAULT_VALUE(nsHTMLTableRowElement, VAlign, valign, "middle")
+NS_IMPL_STRING_ATTR(nsHTMLTableRowElement, VAlign, valign)
 
 
 PRBool

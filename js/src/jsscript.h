@@ -420,6 +420,11 @@ class JSPCCounters {
     }
 };
 
+static const uint32 JS_SCRIPT_COOKIE = 0xc00cee;
+
+static JSObject * const JS_NEW_SCRIPT = (JSObject *)0x12345678;
+static JSObject * const JS_CACHED_SCRIPT = (JSObject *)0x12341234;
+
 struct JSScript {
     /*
      * Two successively less primitive ways to make a new JSScript.  The first
@@ -443,6 +448,10 @@ struct JSScript {
     JSCList         links;      /* Links for compartment script list */
     jsbytecode      *code;      /* bytecodes and their immediate operands */
     uint32          length;     /* length of code vector */
+
+#ifdef JS_CRASH_DIAGNOSTICS
+    uint32          cookie1;
+#endif
 
   private:
     uint16          version;    /* JS version under which script was compiled */
@@ -471,7 +480,7 @@ struct JSScript {
 
     bool            noScriptRval:1; /* no need for result value of last
                                        expression statement */
-    bool            savedCallerFun:1; /* object 0 is caller function */
+    bool            savedCallerFun:1; /* can call getCallerFunction() */
     bool            hasSharps:1;      /* script uses sharp variables */
     bool            strictModeCode:1; /* code is in strict mode */
     bool            compileAndGo:1;   /* script was compiled with TCF_COMPILE_N_GO */
@@ -498,6 +507,14 @@ struct JSScript {
     js::Bindings    bindings;   /* names of top-level variables in this script
                                    (and arguments if this is a function script) */
     JSPrincipals    *principals;/* principals for this script */
+    jschar          *sourceMap; /* source map file or null */
+
+#ifdef JS_CRASH_DIAGNOSTICS
+    JSObject        *ownerObject;
+#endif
+
+    void setOwnerObject(JSObject *owner);
+
     union {
         /*
          * A script object of class js_ScriptClass, to ensure the script is GC'd.
@@ -508,12 +525,6 @@ struct JSScript {
          * - Temporary scripts created by obj_eval, JS_EvaluateScript, and
          *   similar functions never have these objects; such scripts are
          *   explicitly destroyed by the code that created them.
-         * Debugging API functions (JSDebugHooks::newScriptHook;
-         * JS_GetFunctionScript) may reveal sans-script-object Function and
-         * temporary scripts to clients, but clients must never call
-         * JS_NewScriptObject on such scripts: doing so would double-free them,
-         * once from the explicit call to js_DestroyScript, and once when the
-         * script object is garbage collected.
          */
         JSObject    *object;
         JSScript    *nextToGC;  /* next to GC in rt->scriptsToGC list */
@@ -527,6 +538,10 @@ struct JSScript {
 
     /* array of execution counters for every JSOp in the script, by runmode */
     JSPCCounters    pcCounters;
+
+#ifdef JS_CRASH_DIAGNOSTICS
+    uint32          cookie2;
+#endif
 
   public:
 #ifdef JS_METHODJIT
@@ -636,6 +651,7 @@ struct JSScript {
     }
 
     inline JSFunction *getFunction(size_t index);
+    inline JSFunction *getCallerFunction();
 
     inline JSObject *getRegExp(size_t index);
 
@@ -695,30 +711,11 @@ extern JS_FRIEND_DATA(js::Class) js_ScriptClass;
 extern JSObject *
 js_InitScriptClass(JSContext *cx, JSObject *obj);
 
-namespace js {
-
-extern bool
-InitRuntimeScriptState(JSRuntime *rt);
-
-/*
- * On JS_DestroyRuntime(rt), forcibly free script filename prefixes and any
- * script filename table entries that have not been GC'd.
- *
- * This allows script filename prefixes to outlive any context in rt.
- */
-extern void
-FreeRuntimeScriptState(JSRuntime *rt);
-
-} /* namespace js */
-
 extern void
 js_MarkScriptFilename(const char *filename);
 
 extern void
-js_MarkScriptFilenames(JSRuntime *rt);
-
-extern void
-js_SweepScriptFilenames(JSRuntime *rt);
+js_SweepScriptFilenames(JSCompartment *comp);
 
 /*
  * New-script-hook calling is factored from js_NewScriptFromCG so that it
@@ -737,10 +734,10 @@ js_CallDestroyScriptHook(JSContext *cx, JSScript *script);
  * only on the current thread.
  */
 extern void
-js_DestroyScript(JSContext *cx, JSScript *script);
+js_DestroyScript(JSContext *cx, JSScript *script, uint32 caller);
 
 extern void
-js_DestroyScriptFromGC(JSContext *cx, JSScript *script);
+js_DestroyScriptFromGC(JSContext *cx, JSScript *script, JSObject *owner);
 
 /*
  * Script objects may be cached and reused, in which case their JSD-visible
@@ -752,7 +749,7 @@ extern void
 js_DestroyCachedScript(JSContext *cx, JSScript *script);
 
 extern void
-js_TraceScript(JSTracer *trc, JSScript *script);
+js_TraceScript(JSTracer *trc, JSScript *script, JSObject *owner);
 
 extern JSObject *
 js_NewScriptObject(JSContext *cx, JSScript *script);

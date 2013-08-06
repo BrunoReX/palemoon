@@ -20,6 +20,7 @@
  *
  * Contributor(s):
  *  Dan Mills <thunder@mozilla.com>
+ *  Philipp von Weitershausen <philipp@weitershausen.de>
  *  Richard Newman <rnewman@mozilla.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
@@ -41,7 +42,6 @@ let EXPORTED_SYMBOLS = [((this[key] = val), key) for ([key, val] in Iterator({
 
 WEAVE_CHANNEL:                         "@weave_channel@",
 WEAVE_VERSION:                         "@weave_version@",
-WEAVE_ID:                              "@weave_id@",
 
 // Sync Server API version that the client supports.
 SYNC_API_VERSION:                      "1.1",
@@ -123,17 +123,9 @@ SCORE_INCREMENT_XLARGE:                300 + 1, //MULTI_DEVICE_THRESHOLD + 1
 // Delay before incrementing global score
 SCORE_UPDATE_DELAY:                    100,
 
-// File IO Flags
-MODE_RDONLY:                           0x01,
-MODE_WRONLY:                           0x02,
-MODE_CREATE:                           0x08,
-MODE_APPEND:                           0x10,
-MODE_TRUNCATE:                         0x20,
-
-// File Permission flags
-PERMS_FILE:                            0644,
-PERMS_PASSFILE:                        0600,
-PERMS_DIRECTORY:                       0755,
+// Delay for the back observer debouncer. This is chosen to be longer than any
+// observed spurious idle/back events and short enough to pre-empt user activity.
+IDLE_OBSERVER_BACK_DELAY:              100,
 
 // Number of records to upload in a single POST (multiple POSTS if exceeded)
 // FIXME: Record size limit is 256k (new cluster), so this can be quite large!
@@ -195,6 +187,12 @@ JPAKE_ERROR_NODATA:                    "jpake.error.nodata",
 JPAKE_ERROR_KEYMISMATCH:               "jpake.error.keymismatch",
 JPAKE_ERROR_WRONGMESSAGE:              "jpake.error.wrongmessage",
 JPAKE_ERROR_USERABORT:                 "jpake.error.userabort",
+
+// info types for Service.getStorageInfo
+INFO_COLLECTIONS:                      "collections",
+INFO_COLLECTION_USAGE:                 "collection_usage",
+INFO_COLLECTION_COUNTS:                "collection_counts",
+INFO_QUOTA:                            "quota",
 
 // Ways that a sync can be disabled (messages only to be printed in debug log)
 kSyncMasterPasswordLocked:             "User elected to leave Master Password locked",

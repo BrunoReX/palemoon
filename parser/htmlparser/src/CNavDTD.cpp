@@ -50,7 +50,6 @@
 #include "plstr.h"
 #include "nsDTDUtils.h"
 #include "nsHTMLTokenizer.h"
-#include "nsTime.h"
 #include "nsParserNode.h"
 #include "nsHTMLEntities.h"
 #include "nsLinebreakConverter.h"
@@ -60,6 +59,7 @@
 #include "nsUnicharUtils.h"
 #include "prmem.h"
 #include "nsIServiceManager.h"
+#include "nsParserConstants.h"
 
 #ifdef NS_DEBUG
 #include "nsLoggingSink.h"

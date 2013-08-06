@@ -49,10 +49,8 @@
 #include "nsContentCID.h"
 #include "nsIDOMCharacterData.h"
 #include "nsIDOMDocument.h"
-#include "nsPIDOMWindow.h"        
 #include "nsIDOMRange.h"
 #include "nsIDOMNSRange.h"
-#include "nsIDOMWindowInternal.h"
 #include "nsIDOMXULDocument.h"
 #include "nsIEditingSession.h"
 #include "nsIEditor.h"
@@ -62,11 +60,12 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIPlaintextEditor.h"
 #include "nsIScrollableFrame.h"
-#include "nsISelection2.h"
 #include "nsISelectionPrivate.h"
 #include "nsIServiceManager.h"
 #include "nsTextFragment.h"
 #include "gfxSkipChars.h"
+
+using namespace mozilla::a11y;
 
 static NS_DEFINE_IID(kRangeCID, NS_RANGE_CID);
 
@@ -623,9 +622,9 @@ nsHyperTextAccessible::DOMPointToHypertextOffset(nsINode *aNode,
   }
 
   // From the descendant, go up and get the immediate child of this hypertext
-  nsAccessible *childAccAtOffset = nsnull;
+  nsAccessible* childAccAtOffset = nsnull;
   while (descendantAcc) {
-    nsAccessible *parentAcc = descendantAcc->GetParent();
+    nsAccessible* parentAcc = descendantAcc->Parent();
     if (parentAcc == this) {
       childAccAtOffset = descendantAcc;
       break;
@@ -1791,8 +1790,7 @@ nsHyperTextAccessible::GetSelections(PRInt16 aType,
   }
 
   if (aRanges) {
-    nsCOMPtr<nsISelection2> selection2(do_QueryInterface(domSel));
-    NS_ENSURE_TRUE(selection2, NS_ERROR_FAILURE);
+    nsCOMPtr<nsISelectionPrivate> privSel(do_QueryInterface(domSel));
 
     nsCOMPtr<nsINode> startNode = GetNode();
     if (peditor) {
@@ -1804,7 +1802,7 @@ nsHyperTextAccessible::GetSelections(PRInt16 aType,
 
     PRUint32 childCount = startNode->GetChildCount();
     nsCOMPtr<nsIDOMNode> startDOMNode(do_QueryInterface(startNode));
-    nsresult rv = selection2->
+    nsresult rv = privSel->
       GetRangesForIntervalCOMArray(startDOMNode, 0, startDOMNode, childCount,
                                    PR_TRUE, aRanges);
     NS_ENSURE_SUCCESS(rv, rv);

@@ -122,7 +122,7 @@ const TOOLKIT_ID                      = "toolkit@mozilla.org";
 
 const BRANCH_REGEXP                   = /^([^\.]+\.[0-9]+[a-z]*).*/gi;
 
-const DB_SCHEMA                       = 5;
+const DB_SCHEMA                       = 6;
 const REQ_VERSION                     = 2;
 
 #ifdef MOZ_COMPATIBILITY_NIGHTLY
@@ -146,7 +146,7 @@ const DB_METADATA        = ["installDate", "updateDate", "size", "sourceURI",
                             "releaseNotesURI", "applyBackgroundUpdates"];
 const DB_BOOL_METADATA   = ["visible", "active", "userDisabled", "appDisabled",
                             "pendingUninstall", "bootstrap", "skinnable",
-                            "softDisabled"];
+                            "softDisabled", "foreignInstall"];
 
 const BOOTSTRAP_REASONS = {
   APP_STARTUP     : 1,
@@ -168,6 +168,8 @@ const TYPES = {
 };
 
 const MSG_JAR_FLUSH = "AddonJarFlush";
+
+var gGlobalScope = this;
 
 /**
  * Valid IDs fit this pattern.
@@ -967,6 +969,7 @@ function flushJarCache(aJarFile) {
 
 function flushStartupCache() {
   // Init this, so it will get the notification.
+  Cc["@mozilla.org/xul/xul-prototype-cache;1"].getService(Ci.nsISupports);
   Services.obs.notifyObservers(null, "startupcache-invalidate", null);
 }
 
@@ -1707,9 +1710,6 @@ var XPIProvider = {
    * Shows the "Compatibility Updates" UI
    */
   showUpgradeUI: function XPI_showUpgradeUI() {
-    // Flip a flag to indicate that we interrupted startup with an interactive prompt
-    Services.startup.interrupted = true;
-
     if (!Prefs.getBoolPref(PREF_SHOWN_SELECTION_UI, false)) {
       // This *must* be modal as it has to block startup.
       var features = "chrome,centerscreen,dialog,titlebar,modal";
@@ -2547,10 +2547,16 @@ var XPIProvider = {
         newAddon = aManifests[aInstallLocation.name][aId];
 
       try {
-        // Otherwise load the manifest from the add-on
+        // Otherwise the add-on has appeared in the install location.
         if (!newAddon) {
+          // Load the manifest from the add-on.
           let file = aInstallLocation.getLocationForID(aId);
           newAddon = loadManifestFromFile(file);
+
+          // The default theme is never a foreign install
+          if (newAddon.type != "theme" || newAddon.internalName != XPIProvider.defaultSkin)
+            newAddon.foreignInstall = true;
+
         }
         // The add-on in the manifest should match the add-on ID.
         if (newAddon.id != aId)
@@ -2574,9 +2580,10 @@ var XPIProvider = {
       newAddon.installDate = aAddonState.mtime;
       newAddon.updateDate = aAddonState.mtime;
 
-      // Check if the add-on is in a scope where add-ons should install disabled
+      // Check if the add-on is a foreign install and is in a scope where
+      // add-ons that were dropped in should default to disabled.
       let disablingScopes = Prefs.getIntPref(PREF_EM_AUTO_DISABLED_SCOPES, 0);
-      if (aInstallLocation.scope & disablingScopes)
+      if (newAddon.foreignInstall && aInstallLocation.scope & disablingScopes)
         newAddon.userDisabled = true;
 
       // If there is migration data then apply it.
@@ -2590,14 +2597,22 @@ var XPIProvider = {
           newAddon.installDate = aMigrateData.installDate;
         if ("softDisabled" in aMigrateData)
           newAddon.softDisabled = aMigrateData.softDisabled;
+        if ("applyBackgroundUpdates" in aMigrateData)
+          newAddon.applyBackgroundUpdates = aMigrateData.applyBackgroundUpdates;
+        if ("sourceURI" in aMigrateData)
+          newAddon.sourceURI = aMigrateData.sourceURI;
+        if ("releaseNotesURI" in aMigrateData)
+          newAddon.releaseNotesURI = aMigrateData.releaseNotesURI;
+        if ("foreignInstall" in aMigrateData)
+          newAddon.foreignInstall = aMigrateData.foreignInstall;
 
         // Some properties should only be migrated if the add-on hasn't changed.
         // The version property isn't a perfect check for this but covers the
         // vast majority of cases.
-        if (aMigrateData.version == newAddon.version) {
+        if (aMigrateData.version == newAddon.version &&
+            "targetApplications" in aMigrateData) {
           LOG("Migrating compatibility info");
-          if ("targetApplications" in aMigrateData)
-            newAddon.applyCompatibilityUpdate(aMigrateData, true);
+          newAddon.applyCompatibilityUpdate(aMigrateData, true);
         }
 
         // Since the DB schema has changed make sure softDisabled is correct
@@ -3461,17 +3476,12 @@ var XPIProvider = {
 
     let principal = Cc["@mozilla.org/systemprincipal;1"].
                     createInstance(Ci.nsIPrincipal);
+    this.bootstrapScopes[aId] = new Components.utils.Sandbox(principal);
 
     if (!aFile.exists()) {
-      this.bootstrapScopes[aId] = new Components.utils.Sandbox(principal,
-                                                               {sandboxName: aFile.path});
       ERROR("Attempted to load bootstrap scope from missing directory " + bootstrap.path);
       return;
     }
-
-    let uri = getURIForResourceInFile(aFile, "bootstrap.js").spec;
-    this.bootstrapScopes[aId] = new Components.utils.Sandbox(principal,
-                                                             {sandboxName: uri});
 
     let loader = Cc["@mozilla.org/moz/jssubscript-loader;1"].
                  createInstance(Ci.mozIJSSubScriptLoader);
@@ -3480,7 +3490,8 @@ var XPIProvider = {
       // As we don't want our caller to control the JS version used for the
       // bootstrap file, we run loadSubScript within the context of the
       // sandbox with the latest JS version set explicitly.
-      this.bootstrapScopes[aId].__SCRIPT_URI_SPEC__ = uri;
+      this.bootstrapScopes[aId].__SCRIPT_URI_SPEC__ =
+          getURIForResourceInFile(aFile, "bootstrap.js").spec;
       Components.utils.evalInSandbox(
         "Components.classes['@mozilla.org/moz/jssubscript-loader;1'] \
                    .createInstance(Components.interfaces.mozIJSSubScriptLoader) \
@@ -3493,6 +3504,12 @@ var XPIProvider = {
     // Copy the reason values from the global object into the bootstrap scope.
     for (let name in BOOTSTRAP_REASONS)
       this.bootstrapScopes[aId][name] = BOOTSTRAP_REASONS[name];
+
+    // Add other stuff that extensions want.
+    const features = [ "Worker", "ChromeWorker" ];
+
+    for each (let feature in features)
+      this.bootstrapScopes[aId][feature] = gGlobalScope[feature];
   },
 
   /**
@@ -3819,7 +3836,8 @@ const FIELDS_ADDON = "internal_id, id, location, version, type, internalName, " 
                      "iconURL, icon64URL, defaultLocale, visible, active, " +
                      "userDisabled, appDisabled, pendingUninstall, descriptor, " +
                      "installDate, updateDate, applyBackgroundUpdates, bootstrap, " +
-                     "skinnable, size, sourceURI, releaseNotesURI, softDisabled";
+                     "skinnable, size, sourceURI, releaseNotesURI, softDisabled, " +
+                     "foreignInstall";
 
 /**
  * A helper function to log an SQL error.
@@ -3964,7 +3982,8 @@ var XPIDatabase = {
                             ":userDisabled, :appDisabled, :pendingUninstall, " +
                             ":descriptor, :installDate, :updateDate, " +
                             ":applyBackgroundUpdates, :bootstrap, :skinnable, " +
-                            ":size, :sourceURI, :releaseNotesURI, :softDisabled)",
+                            ":size, :sourceURI, :releaseNotesURI, :softDisabled, " +
+                            ":foreignInstall)",
     addAddonMetadata_addon_locale: "INSERT INTO addon_locale VALUES " +
                                    "(:internal_id, :name, :locale)",
     addAddonMetadata_locale: "INSERT INTO locale (name, description, creator, " +
@@ -3997,8 +4016,8 @@ var XPIDatabase = {
     getInstallLocations: "SELECT DISTINCT location FROM addon",
     getVisibleAddonForID: "SELECT " + FIELDS_ADDON + " FROM addon WHERE " +
                           "visible=1 AND id=:id",
-    getVisibleAddonForInternalName: "SELECT " + FIELDS_ADDON + " FROM addon " +
-                                    "WHERE visible=1 AND internalName=:internalName",
+    getVisibleAddoForInternalName: "SELECT " + FIELDS_ADDON + " FROM addon " +
+                                   "WHERE visible=1 AND internalName=:internalName",
     getVisibleAddons: "SELECT " + FIELDS_ADDON + " FROM addon WHERE visible=1",
     getVisibleAddonsWithPendingOperations: "SELECT " + FIELDS_ADDON + " FROM " +
                                            "addon WHERE visible=1 " +
@@ -4331,7 +4350,14 @@ var XPIDatabase = {
       // and future versions of the schema
       var sql = [];
       sql.push("SELECT internal_id, id, location, userDisabled, " +
-               "softDisabled, installDate, version FROM addon");
+               "softDisabled, installDate, version, applyBackgroundUpdates, " +
+               "sourceURI, releaseNotesURI, foreignInstall FROM addon");
+      sql.push("SELECT internal_id, id, location, userDisabled, " +
+               "softDisabled, installDate, version, applyBackgroundUpdates, " +
+               "sourceURI, releaseNotesURI FROM addon");
+      sql.push("SELECT internal_id, id, location, userDisabled, " +
+               "installDate, version, applyBackgroundUpdates, " +
+               "sourceURI, releaseNotesURI FROM addon");
       sql.push("SELECT internal_id, id, location, userDisabled, installDate, " +
                "version FROM addon");
 
@@ -4362,6 +4388,14 @@ var XPIDatabase = {
 
         if ("softDisabled" in row)
           migrateData[row.location][row.id].softDisabled = row.softDisabled == 1;
+        if ("applyBackgroundUpdates" in row)
+          migrateData[row.location][row.id].applyBackgroundUpdates = row.applyBackgroundUpdates == 1;
+        if ("sourceURI" in row)
+          migrateData[row.location][row.id].sourceURI = row.sourceURI;
+        if ("releaseNotesURI" in row)
+          migrateData[row.location][row.id].releaseNotesURI = row.releaseNotesURI;
+        if ("foreignInstall" in row)
+          migrateData[row.location][row.id].foreignInstall = row.foreignInstall;
       }
 
       var taStmt = this.connection.createStatement("SELECT id, minVersion, " +
@@ -4482,6 +4516,7 @@ var XPIDatabase = {
                                   "bootstrap INTEGER, skinnable INTEGER, " +
                                   "size INTEGER, sourceURI TEXT, " +
                                   "releaseNotesURI TEXT, softDisabled INTEGER, " +
+                                  "foreignInstall INTEGER, " +
                                   "UNIQUE (id, location)");
       this.connection.createTable("targetApplication",
                                   "addon_internal_id INTEGER, " +
@@ -4947,8 +4982,7 @@ var XPIDatabase = {
       stmt = this.getStatement("getVisibleAddons");
     }
     else {
-      let sql = "SELECT " + FIELDS_ADDON + " FROM addon WHERE visible=1 AND " +
-                "type IN (";
+      let sql = "SELECT * FROM addon WHERE visible=1 AND type IN (";
       for (let i = 1; i <= aTypes.length; i++) {
         sql += "?" + i;
         if (i < aTypes.length)
@@ -4987,7 +5021,7 @@ var XPIDatabase = {
    * @return a DBAddonInternal
    */
   getVisibleAddonForInternalName: function XPIDB_getVisibleAddonForInternalName(aInternalName) {
-    let stmt = this.getStatement("getVisibleAddonForInternalName");
+    let stmt = this.getStatement("getVisibleAddoForInternalName");
 
     let addon = null;
     stmt.params.internalName = aInternalName;
@@ -5156,6 +5190,7 @@ var XPIDatabase = {
       this.removeAddonMetadata(aOldAddon);
       aNewAddon.installDate = aOldAddon.installDate;
       aNewAddon.applyBackgroundUpdates = aOldAddon.applyBackgroundUpdates;
+      aNewAddon.foreignInstall = aOldAddon.foreignInstall;
       aNewAddon.active = (aNewAddon.visible && !aNewAddon.userDisabled &&
                           !aNewAddon.appDisabled)
       this.addAddonMetadata(aNewAddon, aDescriptor);
@@ -6767,6 +6802,7 @@ AddonInternal.prototype = {
   softDisabled: false,
   sourceURI: null,
   releaseNotesURI: null,
+  foreignInstall: false,
 
   get selectedLocale() {
     if (this._selectedLocale)
@@ -7039,7 +7075,7 @@ function AddonWrapper(aAddon) {
 
   ["id", "version", "type", "isCompatible", "isPlatformCompatible",
    "providesUpdatesSecurely", "blocklistState", "blocklistURL", "appDisabled",
-   "softDisabled", "skinnable", "size"].forEach(function(aProp) {
+   "softDisabled", "skinnable", "size", "foreignInstall"].forEach(function(aProp) {
      this.__defineGetter__(aProp, function() aAddon[aProp]);
   }, this);
 

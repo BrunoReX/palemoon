@@ -113,8 +113,9 @@ mjit::Compiler::Compiler(JSContext *cx, StackFrame *fp)
     doubleList(CompilerAllocPolicy(cx, *thisFromCtor())),
     jumpTables(CompilerAllocPolicy(cx, *thisFromCtor())),
     jumpTableOffsets(CompilerAllocPolicy(cx, *thisFromCtor())),
+    rootedObjects(CompilerAllocPolicy(cx, *thisFromCtor())),
     stubcc(cx, *thisFromCtor(), frame, script),
-    debugMode_(cx->compartment->debugMode),
+    debugMode_(cx->compartment->debugMode()),
 #if defined JS_TRACER
     addTraceHints(cx->traceJitEnabled),
 #endif
@@ -332,10 +333,16 @@ mjit::Compiler::generatePrologue()
         Jump stackCheck = masm.branchPtr(Assembler::AboveOrEqual, Registers::ReturnReg,
                                          FrameAddress(offsetof(VMFrame, stackLimit)));
 
-        /* If the stack check fails... */
+        /*
+         * If the stack check fails then we need to either commit more of the
+         * reserved stack space or throw an error. Specify that the number of
+         * local slots is 0 (instead of the default script->nfixed) since the
+         * range [fp->slots(), fp->base()) may not be commited. (The calling
+         * contract requires only that the caller has reserved space for fp.)
+         */
         {
             stubcc.linkExitDirect(stackCheck, stubcc.masm.label());
-            OOL_STUBCALL(stubs::HitStackQuota);
+            OOL_STUBCALL_LOCAL_SLOTS(stubs::HitStackQuota, 0);
             stubcc.crossJump(stubcc.masm.jump(), masm.label());
         }
 
@@ -407,7 +414,8 @@ mjit::Compiler::finishThisUp(JITScript **jitp)
     masm.forceFlushConstantPool();
     stubcc.masm.forceFlushConstantPool();
 #endif
-    JaegerSpew(JSpew_Insns, "## Fast code (masm) size = %u, Slow code (stubcc) size = %u.\n", masm.size(), stubcc.size());
+    JaegerSpew(JSpew_Insns, "## Fast code (masm) size = %lu, Slow code (stubcc) size = %lu.\n",
+               (unsigned long) masm.size(), (unsigned long) stubcc.size());
 
     size_t codeSize = masm.size() +
                       stubcc.size() +
@@ -451,7 +459,8 @@ mjit::Compiler::finishThisUp(JITScript **jitp)
                        sizeof(ic::GetElementIC) * getElemICs.length() +
                        sizeof(ic::SetElementIC) * setElemICs.length() +
 #endif
-                       sizeof(CallSite) * callSites.length();
+                       sizeof(CallSite) * callSites.length() +
+                       sizeof(JSObject *) * rootedObjects.length();
 
     uint8 *cursor = (uint8 *)cx->calloc_(dataSize);
     if (!cursor) {
@@ -814,6 +823,13 @@ mjit::Compiler::finishThisUp(JITScript **jitp)
         to.initialize(codeOffset, from.pc - script->code, from.id);
     }
 
+    /* Build the list of objects rooted by the script. */
+    JSObject **jitRooted = (JSObject **)cursor;
+    jit->nRootedObjects = rootedObjects.length();
+    cursor += sizeof(JSObject *) * jit->nRootedObjects;
+    for (size_t i = 0; i < jit->nRootedObjects; i++)
+        jitRooted[i] = rootedObjects[i];
+
     JS_ASSERT(size_t(cursor - (uint8*)jit) == dataSize);
 
     *jitp = jit;
@@ -1032,17 +1048,9 @@ mjit::Compiler::generateMethod()
             frame.pushSynced();
           END_CASE(JSOP_ARGUMENTS)
 
-          BEGIN_CASE(JSOP_FORARG)
-            iterNext();
-            frame.storeArg(GET_SLOTNO(PC), true);
-            frame.pop();
-          END_CASE(JSOP_FORARG)
-
-          BEGIN_CASE(JSOP_FORLOCAL)
-            iterNext();
-            frame.storeLocal(GET_SLOTNO(PC), true);
-            frame.pop();
-          END_CASE(JSOP_FORLOCAL)
+          BEGIN_CASE(JSOP_ITERNEXT)
+            iterNext(GET_INT8(PC));
+          END_CASE(JSOP_ITERNEXT)
 
           BEGIN_CASE(JSOP_DUP)
             frame.dup();
@@ -1212,7 +1220,7 @@ mjit::Compiler::generateMethod()
             FrameEntry *top = frame.peek(-1);
             if (top->isConstant() && top->getValue().isPrimitive()) {
                 double d;
-                JS_ALWAYS_TRUE(ValueToNumber(cx, top->getValue(), &d));
+                JS_ALWAYS_TRUE(ToNumber(cx, top->getValue(), &d));
                 d = -d;
                 frame.pop();
                 frame.push(NumberValue(d));
@@ -1664,24 +1672,6 @@ mjit::Compiler::generateMethod()
           }
           END_CASE(JSOP_LOCALDEC)
 
-          BEGIN_CASE(JSOP_FORNAME)
-            jsop_forname(script->getAtom(fullAtomIndex(PC)));
-          END_CASE(JSOP_FORNAME)
-
-          BEGIN_CASE(JSOP_FORGNAME)
-            jsop_forgname(script->getAtom(fullAtomIndex(PC)));
-          END_CASE(JSOP_FORGNAME)
-
-          BEGIN_CASE(JSOP_FORPROP)
-            jsop_forprop(script->getAtom(fullAtomIndex(PC)));
-          END_CASE(JSOP_FORPROP)
-
-          BEGIN_CASE(JSOP_FORELEM)
-            // This opcode is for the decompiler; it is succeeded by an
-            // ENUMELEM, which performs the actual array store.
-            iterNext();
-          END_CASE(JSOP_FORELEM)
-
           BEGIN_CASE(JSOP_BINDNAME)
             jsop_bindname(script->getAtom(fullAtomIndex(PC)), true);
           END_CASE(JSOP_BINDNAME)
@@ -2013,7 +2003,7 @@ mjit::Compiler::generateMethod()
           BEGIN_CASE(JSOP_DEBUGGER)
             prepareStubCall(Uses(0));
             masm.move(ImmPtr(PC), Registers::ArgReg1);
-            INLINE_STUBCALL(stubs::Debugger);
+            INLINE_STUBCALL(stubs::DebuggerStatement);
           END_CASE(JSOP_DEBUGGER)
 
           BEGIN_CASE(JSOP_UNBRAND)
@@ -2876,8 +2866,8 @@ mjit::Compiler::compareTwoValues(JSContext *cx, JSOp op, const Value &lhs, const
         double ld, rd;
         
         /* These should be infallible w/ primitives. */
-        JS_ALWAYS_TRUE(ValueToNumber(cx, lhs, &ld));
-        JS_ALWAYS_TRUE(ValueToNumber(cx, rhs, &rd));
+        JS_ALWAYS_TRUE(ToNumber(cx, lhs, &ld));
+        JS_ALWAYS_TRUE(ToNumber(cx, rhs, &rd));
         switch(op) {
           case JSOP_LT:
             return ld < rd;
@@ -3260,6 +3250,12 @@ mjit::Compiler::jsop_callprop_str(JSAtom *atom)
     JSObject *obj;
     if (!js_GetClassPrototype(cx, &fp->scopeChain(), JSProto_String, &obj))
         return false;
+
+    /*
+     * Root the proto, since JS_ClearScope might overwrite the global object's
+     * copy.
+     */
+    rootedObjects.append(obj);
 
     /* Force into a register because getprop won't expect a constant. */
     RegisterID reg = frame.allocReg();
@@ -3776,7 +3772,7 @@ mjit::Compiler::jsop_gnameinc(JSOp op, VoidStubAtom stub, uint32 index)
         frame.push(Int32Value(amt));
         // V 1
 
-        /* Use sub since it calls ValueToNumber instead of string concat. */
+        /* Use sub since it calls ToNumber instead of string concat. */
         jsop_binary(JSOP_SUB, stubs::Sub);
         // N+1
 
@@ -3864,7 +3860,7 @@ mjit::Compiler::jsop_nameinc(JSOp op, VoidStubAtom stub, uint32 index)
         frame.push(Int32Value(amt));
         // V 1
 
-        /* Use sub since it calls ValueToNumber instead of string concat. */
+        /* Use sub since it calls ToNumber instead of string concat. */
         jsop_binary(JSOP_SUB, stubs::Sub);
         // N+1
 
@@ -3961,7 +3957,7 @@ mjit::Compiler::jsop_propinc(JSOp op, VoidStubAtom stub, uint32 index)
             frame.push(Int32Value(amt));
             // OBJ V 1
 
-            /* Use sub since it calls ValueToNumber instead of string concat. */
+            /* Use sub since it calls ToNumber instead of string concat. */
             jsop_binary(JSOP_SUB, stubs::Sub);
             // OBJ V+1
 
@@ -4132,13 +4128,13 @@ mjit::Compiler::iter(uintN flags)
 }
 
 /*
- * This big nasty function emits a fast-path for native iterators, producing
- * a temporary value on the stack for FORLOCAL,ARG,GLOBAL,etc ops to use.
+ * This big nasty function implements JSOP_ITERNEXT, which is used in the head
+ * of a for-in loop to put the next value on the stack.
  */
 void
-mjit::Compiler::iterNext()
+mjit::Compiler::iterNext(ptrdiff_t offset)
 {
-    FrameEntry *fe = frame.peek(-1);
+    FrameEntry *fe = frame.peek(-offset);
     RegisterID reg = frame.tempRegForData(fe);
 
     /* Is it worth trying to pin this longer? Prolly not. */
@@ -4182,6 +4178,7 @@ mjit::Compiler::iterNext()
     frame.freeReg(T2);
 
     stubcc.leave();
+    stubcc.masm.move(Imm32(offset), Registers::ArgReg1);
     OOL_STUBCALL(stubs::IterNext);
 
     frame.pushUntypedPayload(JSVAL_TYPE_STRING, T3);
@@ -4858,7 +4855,7 @@ mjit::Compiler::enterBlock(JSObject *obj)
     uintN count = OBJ_BLOCK_COUNT(cx, obj);
     uintN limit = base + count;
     for (uintN slot = base, i = 0; slot < limit; slot++, i++) {
-        const Value &v = obj->getSlotRef(slot);
+        const Value &v = obj->getSlot(slot);
         if (v.isBoolean() && v.toBoolean())
             frame.setClosedVar(oldFrameDepth + i);
     }
@@ -5016,65 +5013,3 @@ mjit::Compiler::jsop_callelem_slow()
     frame.pushSynced();
     frame.pushSynced();
 }
-
-void
-mjit::Compiler::jsop_forprop(JSAtom *atom)
-{
-    // Before: ITER OBJ
-    // After:  ITER OBJ ITER
-    frame.dupAt(-2);
-
-    // Before: ITER OBJ ITER 
-    // After:  ITER OBJ ITER VALUE
-    iterNext();
-
-    // Before: ITER OBJ ITER VALUE
-    // After:  ITER OBJ VALUE
-    frame.shimmy(1);
-
-    // Before: ITER OBJ VALUE
-    // After:  ITER VALUE
-    jsop_setprop(atom, false);
-
-    // Before: ITER VALUE
-    // After:  ITER
-    frame.pop();
-}
-
-void
-mjit::Compiler::jsop_forname(JSAtom *atom)
-{
-    // Before: ITER
-    // After:  ITER SCOPEOBJ
-    jsop_bindname(atom, false);
-    jsop_forprop(atom);
-}
-
-void
-mjit::Compiler::jsop_forgname(JSAtom *atom)
-{
-    // Before: ITER
-    // After:  ITER GLOBAL
-    jsop_bindgname();
-
-    // Before: ITER GLOBAL
-    // After:  ITER GLOBAL ITER
-    frame.dupAt(-2);
-
-    // Before: ITER GLOBAL ITER 
-    // After:  ITER GLOBAL ITER VALUE
-    iterNext();
-
-    // Before: ITER GLOBAL ITER VALUE
-    // After:  ITER GLOBAL VALUE
-    frame.shimmy(1);
-
-    // Before: ITER GLOBAL VALUE
-    // After:  ITER VALUE
-    jsop_setgname(atom, false);
-
-    // Before: ITER VALUE
-    // After:  ITER
-    frame.pop();
-}
-

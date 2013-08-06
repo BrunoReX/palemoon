@@ -182,14 +182,6 @@ let Util = {
 #endif
   },
 
-  get isKeyboardOpened() {
-    let isChromeWindow = this.isParentProcess() && window["ViewableAreaObserver"];
-    if (isChromeWindow)
-      return ViewableAreaObserver.isKeyboardOpened;
-
-    return (sendSyncMessage("Content:IsKeyboardOpened", {}))[0];
-  },
-
   get displayDPI() {
     delete this.displayDPI;
     return this.displayDPI = this.getWindowUtils(window).displayDPI;

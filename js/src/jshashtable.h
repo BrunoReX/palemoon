@@ -45,6 +45,7 @@
 
 #include "jsalloc.h"
 #include "jstl.h"
+#include "jsutil.h"
 
 namespace js {
 
@@ -77,7 +78,9 @@ class HashTableEntry {
 
   public:
     HashTableEntry() : keyHash(0), t() {}
+    HashTableEntry(MoveRef<HashTableEntry> rhs) : keyHash(rhs->keyHash), t(Move(rhs->t)) { }
     void operator=(const HashTableEntry &rhs) { keyHash = rhs.keyHash; t = rhs.t; }
+    void operator=(MoveRef<HashTableEntry> rhs) { keyHash = rhs->keyHash; t = Move(rhs->t); }
 
     NonConstT t;
 
@@ -552,7 +555,7 @@ class HashTable : private AllocPolicy
         for (Entry *src = oldTable, *end = src + oldCap; src != end; ++src) {
             if (src->isLive()) {
                 src->unsetCollision();
-                findFreeEntry(src->getKeyHash()) = *src;
+                findFreeEntry(src->getKeyHash()) = Move(*src);
             }
         }
 
@@ -625,12 +628,16 @@ class HashTable : private AllocPolicy
         return !entryCount;
     }
 
-    uint32 count() const{
+    uint32 count() const {
         return entryCount;
     }
 
     uint32 generation() const {
         return gen;
+    }
+
+    size_t tableSize() const {
+        return tableCapacity * sizeof(Entry);
     }
 
     Ptr lookup(const Lookup &l) const {
@@ -742,6 +749,44 @@ class HashTable : private AllocPolicy
 
 /*****************************************************************************/
 
+template <typename T>
+class TaggedPointerEntry
+{
+    uintptr_t bits;
+
+    typedef TaggedPointerEntry<T> ThisT;
+
+    static const uintptr_t NO_TAG_MASK = uintptr_t(-1) - 1;
+
+  public:
+    TaggedPointerEntry() : bits(0) {}
+    TaggedPointerEntry(const TaggedPointerEntry &other) : bits(other.bits) {}
+    TaggedPointerEntry(T *ptr, bool tagged)
+      : bits(uintptr_t(ptr) | uintptr_t(tagged))
+    {
+        JS_ASSERT((uintptr_t(ptr) & 0x1) == 0);
+    }
+
+    bool isTagged() const {
+        return bits & 0x1;
+    }
+
+    /*
+     * Non-branching code sequence. Note that the const_cast is safe because
+     * the hash function doesn't consider the tag to be a portion of the key.
+     */
+    void setTagged(bool enabled) const {
+        const_cast<ThisT *>(this)->bits |= uintptr_t(enabled);
+    }
+
+    T *asPtr() const {
+        JS_ASSERT(bits != 0);
+        return reinterpret_cast<T *>(bits & NO_TAG_MASK);
+    }
+};
+
+/*****************************************************************************/
+
 /*
  * Hash policy
  *
@@ -807,6 +852,22 @@ struct PointerHasher
     }
 };
 
+template <typename Key, size_t zeroBits>
+struct TaggedPointerHasher
+{
+    typedef Key Lookup;
+
+    static HashNumber hash(const Lookup &l) {
+        return PointerHasher<Key, zeroBits>::hash(l);
+    }
+
+    static const uintptr_t COMPARE_MASK = uintptr_t(-1) - 1;
+
+    static bool match(const Key &k, const Lookup &l) {
+        return (uintptr_t(k) & COMPARE_MASK) == uintptr_t(l);
+    }
+};
+
 /*
  * Specialized hashing policy for pointer types. It assumes that the type is
  * at least word-aligned. For types with smaller size use PointerHasher.
@@ -829,6 +890,12 @@ class HashMapEntry
   public:
     HashMapEntry() : key(), value() {}
     HashMapEntry(const Key &k, const Value &v) : key(k), value(v) {}
+    HashMapEntry(MoveRef<HashMapEntry> rhs) 
+      : key(Move(rhs->key)), value(Move(rhs->value)) { }
+    void operator=(MoveRef<HashMapEntry> rhs) {
+        const_cast<Key &>(key) = Move(rhs->key);
+        value = Move(rhs->value);
+    }
 
     const Key key;
     Value value;
@@ -967,6 +1034,15 @@ class HashMap
         return true;
     }
 
+    bool add(AddPtr &p, const Key &k, MoveRef<Value> v) {
+        Entry *pentry;
+        if (!impl.add(p, &pentry))
+            return false;
+        const_cast<Key &>(pentry->key) = k;
+        pentry->value = v;
+        return true;
+    }
+
     bool add(AddPtr &p, const Key &k) {
         Entry *pentry;
         if (!impl.add(p, &pentry))
@@ -992,6 +1068,7 @@ class HashMap
     typedef typename Impl::Range Range;
     Range all() const                                 { return impl.all(); }
     size_t count() const                              { return impl.count(); }
+    size_t tableSize() const                          { return impl.tableSize(); }
 
     /*
      * Typedef for the enumeration class. An Enum may be used to examine and
@@ -1190,6 +1267,7 @@ class HashSet
     typedef typename Impl::Range Range;
     Range all() const                                 { return impl.all(); }
     size_t count() const                              { return impl.count(); }
+    size_t tableSize() const                          { return impl.tableSize(); }
 
     /*
      * Typedef for the enumeration class. An Enum may be used to examine and

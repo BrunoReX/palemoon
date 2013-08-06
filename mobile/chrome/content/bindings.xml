@@ -1309,7 +1309,12 @@
           let lastTitle = null;
           let msPerDay = 86400000;
           let msPerWeek = msPerDay * 7;
-          let today = new Date(Date.now() - (Date.now() % msPerDay));
+
+          let today = new Date();
+          today.setHours(0);
+          today.setMinutes(0);
+          today.setSeconds(0);
+
           for (let i = 0; i < childCount; i++) {
             let node = rootNode.getChild(i);
             let time = new Date(node.time / 1000); // node.time is microseconds
@@ -1584,12 +1589,15 @@
             return;
 
           // There is a race condition with getBoundingClientRect and when the
-          // box is displayed, the padding is ignored in the size calculation
+          // box is displayed, the padding is ignored in the size calculation.
+          // A nested timeouts below are used to workaround this problem.
           this.getBoundingClientRect();
 
           setTimeout(function(self) {
-            let height = Math.floor(self.getBoundingClientRect().height);
-            self.top = window.innerHeight - height;
+            setTimeout(function(self) {
+              let height = Math.floor(self.getBoundingClientRect().height);
+              self.top = window.innerHeight - height;
+            }, 0, self);
           }, 0, this);
         ]]></body>
       </method>
@@ -1812,8 +1820,12 @@
           let flavors = ["text/unicode"];
           let hasData = clipboard.hasDataMatchingFlavors(flavors, flavors.length, Ci.nsIClipboard.kGlobalClipboard);
 
-          if (hasData && (!aTextbox.readOnly || aIgnoreReadOnly))
+          if (hasData && (!aTextbox.readOnly || aIgnoreReadOnly)) {
             json.types.push("paste");
+            if (aTextbox.type == "url") {
+              json.types.push("paste-url");
+            }
+          }
 
           ContextHelper.showPopup({ target: aTextbox, json: json });
         ]]></body>

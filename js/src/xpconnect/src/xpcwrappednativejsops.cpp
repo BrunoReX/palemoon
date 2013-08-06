@@ -812,9 +812,11 @@ XPC_WN_Equality(JSContext *cx, JSObject *obj, const jsval *valp, JSBool *bp)
     XPCNativeScriptableInfo* si = wrapper->GetScriptableInfo();
     if(si && si->GetFlags().WantEquality())
     {
-        nsresult rv = si->GetCallback()->Equality(wrapper, cx, obj, v, bp);
+        PRBool res;
+        nsresult rv = si->GetCallback()->Equality(wrapper, cx, obj, v, &res);
         if(NS_FAILED(rv))
             return Throw(rv, cx);
+        *bp = res;
     }
     else if(!JSVAL_IS_PRIMITIVE(v))
     {
@@ -898,7 +900,8 @@ js::Class XPC_WN_NoHelper_JSClass = {
         nsnull, // outerObject
         nsnull, // innerObject
         nsnull, // iteratorObject
-        nsnull, // wrappedObject
+        nsnull, // unused
+        true,   // isWrappedNative
     },
    
     // ObjectOps
@@ -1064,8 +1067,10 @@ static JSBool
 XPC_WN_Helper_HasInstance(JSContext *cx, JSObject *obj, const jsval *valp, JSBool *bp)
 {
     SLIM_LOG_WILL_MORPH(cx, obj);
+    PRBool retval2;
     PRE_HELPER_STUB_NO_SLIM
-    HasInstance(wrapper, cx, obj, *valp, bp, &retval);
+    HasInstance(wrapper, cx, obj, *valp, &retval2, &retval);
+    *bp = retval2;
     POST_HELPER_STUB
 }
 
@@ -1103,7 +1108,7 @@ XPC_WN_Helper_NewResolve(JSContext *cx, JSObject *obj, jsid id, uintN flags,
                          JSObject **objp)
 {
     nsresult rv = NS_OK;
-    JSBool retval = JS_TRUE;
+    PRBool retval = JS_TRUE;
     JSObject* obj2FromScriptable = nsnull;
     if(IS_SLIM_WRAPPER(obj))
     {
@@ -1552,6 +1557,8 @@ XPCNativeScriptableShared::PopulateJSClass(JSBool isGlobal)
 
     if(!(mFlags & nsIXPCScriptable::WANT_OUTER_OBJECT))
         mCanBeSlim = JS_TRUE;
+
+    mJSClass.base.ext.isWrappedNative = true;
 }
 
 /***************************************************************************/

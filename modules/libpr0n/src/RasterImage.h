@@ -64,6 +64,7 @@
 #include "imgFrame.h"
 #include "nsThreadUtils.h"
 #include "DiscardTracker.h"
+#include "mozilla/TimeStamp.h"
 #ifdef DEBUG
   #include "imgIContainerDebug.h"
 #endif
@@ -148,7 +149,7 @@ namespace imagelib {
 class imgDecodeWorker;
 class Decoder;
 
-class RasterImage : public mozilla::imagelib::Image
+class RasterImage : public Image
                   , public nsITimerCallback
                   , public nsIProperties
                   , public nsSupportsWeakReference
@@ -209,8 +210,10 @@ public:
   /* The total number of frames in this image. */
   PRUint32 GetNumFrames();
 
-  PRUint32 GetDecodedDataSize();
-  PRUint32 GetSourceDataSize();
+  virtual PRUint32 GetDecodedHeapSize();
+  virtual PRUint32 GetDecodedNonheapSize();
+  virtual PRUint32 GetDecodedOutOfProcessSize();
+  virtual PRUint32 GetSourceHeapSize();
 
   /* Triggers discarding. */
   void Discard(bool force = false);
@@ -230,29 +233,31 @@ public:
    */
   nsresult SetSize(PRInt32 aWidth, PRInt32 aHeight);
 
-  nsresult EnsureCleanFrame(PRUint32 aFramenum, PRInt32 aX, PRInt32 aY,
-                            PRInt32 aWidth, PRInt32 aHeight,
-                            gfxASurface::gfxImageFormat aFormat,
-                            PRUint8** imageData,
-                            PRUint32* imageLength);
 
   /**
-   * Adds to the end of the list of frames.
+   * Ensures that a given frame number exists with the given parameters, and
+   * returns pointers to the data storage for that frame.
+   * It is not possible to create sparse frame arrays; you can only append
+   * frames to the current frame array.
    */
-  nsresult AppendFrame(PRInt32 aX, PRInt32 aY,
+  nsresult EnsureFrame(PRUint32 aFramenum, PRInt32 aX, PRInt32 aY,
+                       PRInt32 aWidth, PRInt32 aHeight,
+                       gfxASurface::gfxImageFormat aFormat,
+                       PRUint8 aPaletteDepth,
+                       PRUint8** imageData,
+                       PRUint32* imageLength,
+                       PRUint32** paletteData,
+                       PRUint32* paletteLength);
+
+  /**
+   * A shorthand for EnsureFrame, above, with aPaletteDepth = 0 and paletteData
+   * and paletteLength set to null.
+   */
+  nsresult EnsureFrame(PRUint32 aFramenum, PRInt32 aX, PRInt32 aY,
                        PRInt32 aWidth, PRInt32 aHeight,
                        gfxASurface::gfxImageFormat aFormat,
                        PRUint8** imageData,
                        PRUint32* imageLength);
-
-  nsresult AppendPalettedFrame(PRInt32 aX, PRInt32 aY,
-                               PRInt32 aWidth, PRInt32 aHeight,
-                               gfxASurface::gfxImageFormat aFormat,
-                               PRUint8 aPaletteDepth,
-                               PRUint8**  imageData,
-                               PRUint32*  imageLength,
-                               PRUint32** paletteData,
-                               PRUint32*  paletteLength);
 
   void FrameUpdated(PRUint32 aFrameNum, nsIntRect& aUpdatedRect);
 
@@ -373,13 +378,14 @@ private:
    */
   void DeleteImgFrame(PRUint32 framenum);
 
+  imgFrame* GetImgFrameNoDecode(PRUint32 framenum);
   imgFrame* GetImgFrame(PRUint32 framenum);
   imgFrame* GetDrawableImgFrame(PRUint32 framenum);
   imgFrame* GetCurrentImgFrame();
   imgFrame* GetCurrentDrawableImgFrame();
   PRUint32 GetCurrentImgFrameIndex() const;
   
-  inline Anim* ensureAnimExists()
+  inline void EnsureAnimExists()
   {
     if (!mAnim) {
 
@@ -397,7 +403,6 @@ private:
       // is acceptable for the moment.
       LockImage();
     }
-    return mAnim;
   }
   
   /** Function for doing the frame compositing of animations
@@ -528,6 +533,7 @@ private: // data
   nsresult WriteToDecoder(const char *aBuffer, PRUint32 aCount);
   nsresult DecodeSomeData(PRUint32 aMaxBytes);
   PRBool   IsDecodeFinished();
+  TimeStamp mDrawStartTime;
 
   // Decoder shutdown
   enum eShutdownIntent {
@@ -540,13 +546,13 @@ private: // data
 
   // Helpers
   void DoError();
-  PRBool CanDiscard();
-  PRBool CanForciblyDiscard();
-  PRBool DiscardingActive();
-  PRBool StoringSourceData();
+  bool CanDiscard();
+  bool CanForciblyDiscard();
+  bool DiscardingActive();
+  bool StoringSourceData();
 
 protected:
-  PRBool ShouldAnimate();
+  bool ShouldAnimate();
 };
 
 // XXXdholbert These helper classes should move to be inside the
@@ -569,6 +575,7 @@ class imgDecodeWorker : public nsRunnable
 
   private:
     nsWeakPtr mContainer;
+    TimeDuration mDecodeTime; // the default constructor initializes to 0
 };
 
 // Asynchronous Decode Requestor

@@ -11,8 +11,6 @@
  * for the specific language governing rights and limitations under the
  * License.
  *
- * The Original Code is the nsTryToClose component.
- *
  * The Initial Developer of the Original Code is
  * the Mozilla Foundation
  * Portions created by the Initial Developer are Copyright (C) 2011
@@ -49,19 +47,29 @@ const PAYLOAD_VERSION = 1;
 const PREF_SERVER = "toolkit.telemetry.server";
 const PREF_ENABLED = "toolkit.telemetry.enabled";
 // Do not gather data more than once a minute
-const TELEMETRY_INTERVAL = 60;
+const TELEMETRY_INTERVAL = 60000;
 // Delay before intializing telemetry (ms)
 const TELEMETRY_DELAY = 60000;
 // about:memory values to turn into histograms
 const MEM_HISTOGRAMS = {
   "js-gc-heap": "MEMORY_JS_GC_HEAP",
+  "js-compartments-system": "MEMORY_JS_COMPARTMENTS_SYSTEM",
+  "js-compartments-user": "MEMORY_JS_COMPARTMENTS_USER",
   "resident": "MEMORY_RESIDENT",
   "explicit/layout/all": "MEMORY_LAYOUT_ALL",
   "explicit/images/content/used/uncompressed":
     "MEMORY_IMAGES_CONTENT_USED_UNCOMPRESSED",
-  "heap-used": "MEMORY_HEAP_USED",
-  "hard-page-faults": "HARD_PAGE_FAULTS"
+  "heap-allocated": "MEMORY_HEAP_ALLOCATED",
+  "page-faults-hard": "PAGE_FAULTS_HARD"
 };
+
+var gLastMemoryPoll = null;
+
+function getLocale() {
+  return Cc["@mozilla.org/chrome/chrome-registry;1"].
+         getService(Ci.nsIXULChromeRegistry).
+         getSelectedLocale('global');
+}
 
 XPCOMUtils.defineLazyGetter(this, "Telemetry", function () {
   return Cc["@mozilla.org/base/telemetry;1"].getService(Ci.nsITelemetry);
@@ -143,6 +151,7 @@ function getMetadata(reason) {
     appName: ai.name,
     appBuildID: ai.appBuildID,
     platformBuildID: ai.platformBuildID,
+    locale: getLocale(),
   };
 
   // sysinfo fields is not always available, get what we can.
@@ -179,11 +188,19 @@ function getSimpleMeasurements() {
     // uptime in minutes
     uptime: Math.round((new Date() - si.process) / 60000)
   }
-  for each (let field in ["main", "firstPaint", "sessionRestored"]) {
-    if (!(field in si))
-      continue;
-    ret[field] = si[field] - si.process
+
+  if (si.process) {
+    for each (let field in ["main", "firstPaint", "sessionRestored"]) {
+      if (!(field in si))
+        continue;
+      ret[field] = si[field] - si.process
+    }
   }
+
+  ret.js = Cc["@mozilla.org/js/xpc/XPConnect;1"]
+           .getService(Ci.nsIJSEngineTelemetryStats)
+           .telemetryValue;
+
   return ret;
 }
 
@@ -229,8 +246,11 @@ TelemetryPing.prototype = {
         val = Math.floor(mr.amount / 1024);
       }
       else if (mr.units == Ci.nsIMemoryReporter.UNITS_COUNT) {
-        // If the reporter gives us a count, we'll report the difference in its
-        // value between now and our previous ping.
+        val = mr.amount;
+      }
+      else if (mr.units == Ci.nsIMemoryReporter.UNITS_COUNT_CUMULATIVE) {
+        // If the reporter gives us a cumulative count, we'll report the
+        // difference in its value between now and our previous ping.
 
         // Read mr.amount just once so our arithmetic is consistent.
         let curVal = mr.amount;
@@ -251,9 +271,11 @@ TelemetryPing.prototype = {
       }
       this.addValue(mr.path, id, val);
     }
-    // XXX: bug 660731 will enable this
     // "explicit" is found differently.
-    //this.addValue("explicit", "MEMORY_EXPLICIT", Math.floor(mgr.explicit / 1024));
+    let explicit = mgr.explicit;    // Get it only once, it's reasonably expensive
+    if (explicit != -1) {
+      this.addValue("explicit", "MEMORY_EXPLICIT", Math.floor(explicit / 1024));
+    }
   },
   
   /**
@@ -307,19 +329,15 @@ TelemetryPing.prototype = {
   attachObservers: function attachObservers() {
     if (!this._initialized)
       return;
-    let idleService = Cc["@mozilla.org/widget/idleservice;1"].
-                      getService(Ci.nsIIdleService);
-    idleService.addIdleObserver(this, TELEMETRY_INTERVAL);
+    Services.obs.addObserver(this, "cycle-collector-begin", false);
     Services.obs.addObserver(this, "idle-daily", false);
   },
 
   detachObservers: function detachObservers() {
     if (!this._initialized)
       return;
-    let idleService = Cc["@mozilla.org/widget/idleservice;1"].
-                      getService(Ci.nsIIdleService);
-    idleService.removeIdleObserver(this, TELEMETRY_INTERVAL);
     Services.obs.removeObserver(this, "idle-daily");
+    Services.obs.removeObserver(this, "cycle-collector-begin");
   },
 
   /**
@@ -379,8 +397,13 @@ TelemetryPing.prototype = {
     case "profile-before-change":
       this.uninstall();
       break;
-    case "idle":
-      this.gatherMemory();
+    case "cycle-collector-begin":
+      let now = new Date();
+      if (!gLastMemoryPoll
+          || (TELEMETRY_INTERVAL <= now - gLastMemoryPoll)) {
+        gLastMemoryPoll = now;
+        this.gatherMemory();
+      }
       break;
     case "private-browsing":
       Telemetry.canRecord = aData == "exit";

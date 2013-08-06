@@ -230,7 +230,7 @@ Section "Uninstall"
   ${EndIf}
 
   SetShellVarContext current  ; Set SHCTX to HKCU
-  ${un.RegCleanMain} "Software\Moonchild Productions"
+  ${un.RegCleanMain} "Software\Mozilla"
   ${un.RegCleanUninstall}
   ${un.DeleteShortcuts}
 

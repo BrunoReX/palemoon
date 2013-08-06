@@ -37,7 +37,46 @@
  * ***** END LICENSE BLOCK ***** */
 
 TestRunner.logEnabled = true;
-TestRunner.logger = new Logger();
+TestRunner.logger = LogController;
+
+/* Helper function */
+parseQueryString = function(encodedString, useArrays) {
+  // strip a leading '?' from the encoded string
+  var qstr = (encodedString[0] == "?") ? encodedString.substring(1) : 
+                                         encodedString;
+  var pairs = qstr.replace(/\+/g, "%20").split(/(\&amp\;|\&\#38\;|\&#x26;|\&)/);
+  var o = {};
+  var decode;
+  if (typeof(decodeURIComponent) != "undefined") {
+    decode = decodeURIComponent;
+  } else {
+    decode = unescape;
+  }
+  if (useArrays) {
+    for (var i = 0; i < pairs.length; i++) {
+      var pair = pairs[i].split("=");
+      if (pair.length !== 2) {
+        continue;
+      }
+      var name = decode(pair[0]);
+      var arr = o[name];
+      if (!(arr instanceof Array)) {
+        arr = [];
+        o[name] = arr;
+      }
+      arr.push(decode(pair[1]));
+    }
+  } else {
+    for (i = 0; i < pairs.length; i++) {
+      pair = pairs[i].split("=");
+      if (pair.length !== 2) {
+        continue;
+      }
+      o[decode(pair[0])] = decode(pair[1]);
+    }
+  }
+  return o;
+};
 
 // Check the query string for arguments
 var params = parseQueryString(location.search.substring(1), true);
@@ -69,6 +108,11 @@ if (params.timeout) {
 var fileLevel =  params.fileLevel || null;
 var consoleLevel = params.consoleLevel || null;
 
+// loop tells us how many times to run the tests
+if (params.loops) {
+  TestRunner.loops = params.loops;
+} 
+
 // closeWhenDone tells us to call quit.js when complete
 if (params.closeWhenDone) {
   TestRunner.onComplete = goQuitApplication;
@@ -76,8 +120,8 @@ if (params.closeWhenDone) {
 
 // logFile to write our results
 if (params.logFile) {
-  MozillaFileLogger.init(params.logFile);
-  TestRunner.logger.addListener("mozLogger", fileLevel + "", MozillaFileLogger.getLogCallback());
+  var spl = new SpecialPowersLogger(params.logFile);
+  TestRunner.logger.addListener("mozLogger", fileLevel + "", spl.getLogCallback());
 }
 
 // if we get a quiet param, don't log to the console
@@ -154,6 +198,7 @@ RunSet.runall = function(e) {
   }
   TestRunner.runTests(my_tests);
 }
+
 RunSet.reloadAndRunAll = function(e) {
   e.preventDefault();
   //window.location.hash = "";
@@ -165,8 +210,7 @@ RunSet.reloadAndRunAll = function(e) {
     window.location.href += "&autorun=1";
   } else {
     window.location.href += "?autorun=1";
-  }
-  
+  }  
 };
 
 // UI Stuff
@@ -190,7 +234,7 @@ function isVisible(elem) {
 
 function toggleNonTests (e) {
   e.preventDefault();
-  var elems = getElementsByTagAndClassName("*", "non-test");
+  var elems = document.getElementsClassName("non-test");
   for (var i="0"; i<elems.length; i++) {
     toggleVisible(elems[i]);
   }
@@ -203,9 +247,9 @@ function toggleNonTests (e) {
 
 // hook up our buttons
 function hookup() {
-  connect("runtests", "onclick", RunSet, "reloadAndRunAll");
-  connect("toggleNonTests", "onclick", toggleNonTests);
-  // run automatically if
+  document.getElementById('runtests').onclick = RunSet.reloadAndRunAll;
+  document.getElementById('toggleNonTests').onclick = toggleNonTests; 
+  // run automatically if autorun specified
   if (params.autorun) {
     RunSet.runall();
   }

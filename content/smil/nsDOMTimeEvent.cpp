@@ -39,6 +39,7 @@
 #include "nsGUIEvent.h"
 #include "nsPresContext.h"
 #include "nsIInterfaceRequestorUtils.h"
+#include "nsDOMClassInfoID.h"
 
 nsDOMTimeEvent::nsDOMTimeEvent(nsPresContext* aPresContext, nsEvent* aEvent)
   : nsDOMEvent(aPresContext, aEvent ? aEvent : new nsUIEvent(PR_FALSE, 0, 0)),
@@ -62,7 +63,7 @@ nsDOMTimeEvent::nsDOMTimeEvent(nsPresContext* aPresContext, nsEvent* aEvent)
   if (mPresContext) {
     nsCOMPtr<nsISupports> container = mPresContext->GetContainer();
     if (container) {
-      nsCOMPtr<nsIDOMWindowInternal> window = do_GetInterface(container);
+      nsCOMPtr<nsIDOMWindow> window = do_GetInterface(container);
       if (window) {
         mView = do_QueryInterface(window);
       }

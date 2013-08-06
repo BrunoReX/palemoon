@@ -157,7 +157,7 @@ public:
     typedef nsAutoTArray<PRUint32, 8> IndexList;
     PLDHashTableOps ops;
     FontNameCache() : mWriteNeeded(PR_FALSE) {
-        ops = {
+        ops = (PLDHashTableOps) {
             PL_DHashAllocTable,
             PL_DHashFreeTable,
             StringHash,
@@ -670,8 +670,8 @@ gfxAndroidPlatform::FindFontForChar(PRUint32 aCh, gfxFont *aFont)
 
     if (data.mBestMatch) {
         nsRefPtr<gfxFT2Font> font =
-            gfxFT2Font::GetOrMakeFont(static_cast<FontEntry*>(data.mBestMatch.get()), 
-                                      aFont->GetStyle()); 
+            gfxFT2Font::GetOrMakeFont(static_cast<FontEntry*>(data.mBestMatch.get()),
+                                      aFont->GetStyle());
         gfxFont* ret = font.forget().get();
         return already_AddRefed<gfxFont>(ret);
     }
