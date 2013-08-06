@@ -118,13 +118,14 @@
 // objects alive during the unlinking.
 // 
 
-#if !defined(__MINGW32__) && !defined(WINCE)
+#if !defined(__MINGW32__)
 #ifdef WIN32
 #include <crtdbg.h>
 #include <errno.h>
 #endif
 #endif
 
+#include "base/basictypes.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsCycleCollectorUtils.h"
 #include "nsIProgrammingLanguage.h"
@@ -151,7 +152,8 @@
 #include "nsIXPConnect.h"
 #include "nsIJSRuntimeService.h"
 #include "xpcpublic.h"
-
+#include "base/histogram.h"
+#include "base/logging.h"
 #include <stdio.h>
 #include <string.h>
 #ifdef WIN32
@@ -980,8 +982,7 @@ struct nsCycleCollector
     PRBool mScanInProgress;
     PRBool mFollowupCollection;
     PRUint32 mCollectedObjects;
-    PRBool mFirstCollection;
-    PRTime mCollectionStart;
+    TimeStamp mCollectionStart;
 
     nsCycleCollectionLanguageRuntime *mRuntimes[nsIProgrammingLanguage::MAX+1];
     nsCycleCollectionXPCOMRuntime mXPCOMRuntime;
@@ -1020,11 +1021,11 @@ struct nsCycleCollector
 
     // Prepare for and cleanup after one or more collection(s).
     PRBool PrepareForCollection(nsTPtrArray<PtrInfo> *aWhiteNodes);
+    void GCIfNeeded(PRBool aForceGC);
     void CleanupAfterCollection();
 
     // Start and finish an individual collection.
-    PRBool BeginCollection(PRBool aForceGC,
-                           nsICycleCollectorListener *aListener);
+    PRBool BeginCollection(nsICycleCollectorListener *aListener);
     PRBool FinishCollection();
 
     PRUint32 SuspectedCount();
@@ -2145,7 +2146,6 @@ nsCycleCollector::nsCycleCollector() :
     mCollectionInProgress(PR_FALSE),
     mScanInProgress(PR_FALSE),
     mCollectedObjects(0),
-    mFirstCollection(PR_TRUE),
     mWhiteNodes(nsnull),
     mWhiteNodeCount(0),
 #ifdef DEBUG_CC
@@ -2461,6 +2461,42 @@ nsCycleCollector::Freed(void *n)
 }
 #endif
 
+// The cycle collector uses the mark bitmap to discover what JS objects
+// were reachable only from XPConnect roots that might participate in
+// cycles. We ask the JS runtime whether we need to force a GC before
+// this CC. It returns true on startup (before the mark bits have been set),
+// and also when UnmarkGray has run out of stack.  We also force GCs on shut 
+// down to collect cycles involving both DOM and JS.
+void
+nsCycleCollector::GCIfNeeded(PRBool aForceGC)
+{
+    NS_ASSERTION(NS_IsMainThread(),
+                 "nsCycleCollector::GCIfNeeded() must be called on the main thread.");
+
+    if (mParams.mDoNothing)
+        return;
+
+    if (!mRuntimes[nsIProgrammingLanguage::JAVASCRIPT])
+        return;
+
+    nsCycleCollectionJSRuntime* rt =
+        static_cast<nsCycleCollectionJSRuntime*>
+            (mRuntimes[nsIProgrammingLanguage::JAVASCRIPT]);
+    if (!rt->NeedCollect() && !aForceGC)
+        return;
+
+#ifdef COLLECT_TIME_DEBUG
+    PRTime start = PR_Now();
+#endif
+    // rt->Collect() must be called from the main thread,
+    // because it invokes XPCJSRuntime::GCCallback(cx, JSGC_BEGIN)
+    // which returns false if not in the main thread.
+    rt->Collect();
+#ifdef COLLECT_TIME_DEBUG
+    printf("cc: GC() took %lldms\n", (PR_Now() - start) / PR_USEC_PER_MSEC);
+#endif
+}
+
 PRBool
 nsCycleCollector::PrepareForCollection(nsTPtrArray<PtrInfo> *aWhiteNodes)
 {
@@ -2477,8 +2513,8 @@ nsCycleCollector::PrepareForCollection(nsTPtrArray<PtrInfo> *aWhiteNodes)
 
 #ifdef COLLECT_TIME_DEBUG
     printf("cc: nsCycleCollector::PrepareForCollection()\n");
-    mCollectionStart = PR_Now();
 #endif
+    mCollectionStart = TimeStamp::Now();
 
     mCollectionInProgress = PR_TRUE;
 
@@ -2508,10 +2544,13 @@ nsCycleCollector::CleanupAfterCollection()
     _heapmin();
 #endif
 
+    PRUint32 interval((TimeStamp::Now() - mCollectionStart).ToMilliseconds());
 #ifdef COLLECT_TIME_DEBUG
-    printf("cc: CleanupAfterCollection(), total time %lldms\n",
-           (PR_Now() - mCollectionStart) / PR_USEC_PER_MSEC);
+    printf("cc: CleanupAfterCollection(), total time %ums\n", interval);
 #endif
+    UMA_HISTOGRAM_TIMES("nsCycleCollector::Collect (ms)",
+                        base::TimeDelta::FromMilliseconds(interval));
+
 #ifdef DEBUG_CC
     ExplainLiveExpectedGarbage();
 #endif
@@ -2528,8 +2567,9 @@ nsCycleCollector::Collect(PRUint32 aTryCollections,
 
     PRUint32 totalCollections = 0;
     while (aTryCollections > totalCollections) {
-        // Synchronous cycle collection. Always force a JS GC as well.
-        if (!(BeginCollection(PR_TRUE, aListener) && FinishCollection()))
+        // Synchronous cycle collection. Always force a JS GC beforehand.
+        GCIfNeeded(PR_TRUE);
+        if (!(BeginCollection(aListener) && FinishCollection()))
             break;
 
         ++totalCollections;
@@ -2541,32 +2581,10 @@ nsCycleCollector::Collect(PRUint32 aTryCollections,
 }
 
 PRBool
-nsCycleCollector::BeginCollection(PRBool aForceGC,
-                                  nsICycleCollectorListener *aListener)
+nsCycleCollector::BeginCollection(nsICycleCollectorListener *aListener)
 {
     if (mParams.mDoNothing)
         return PR_FALSE;
-
-    // The cycle collector uses the mark bitmap to discover what JS objects
-    // were reachable only from XPConnect roots that might participate in
-    // cycles. If this is the first cycle collection after startup force
-    // a garbage collection, otherwise the GC might not have run yet and
-    // the bitmap is invalid.
-    if (mFirstCollection && mRuntimes[nsIProgrammingLanguage::JAVASCRIPT]) {
-        aForceGC = PR_TRUE;
-        mFirstCollection = PR_FALSE;
-    }
-
-    if (aForceGC && mRuntimes[nsIProgrammingLanguage::JAVASCRIPT]) {
-#ifdef COLLECT_TIME_DEBUG
-        PRTime start = PR_Now();
-#endif
-        static_cast<nsCycleCollectionJSRuntime*>
-            (mRuntimes[nsIProgrammingLanguage::JAVASCRIPT])->Collect();
-#ifdef COLLECT_TIME_DEBUG
-        printf("cc: GC() took %lldms\n", (PR_Now() - start) / PR_USEC_PER_MSEC);
-#endif
-    }
 
     if (aListener && NS_FAILED(aListener->Begin())) {
         aListener = nsnull;
@@ -2770,6 +2788,13 @@ nsCycleCollector::Shutdown()
     // Here we want to run a final collection and then permanently
     // disable the collector because the program is shutting down.
 
+#ifdef DEBUG_CC
+    if (sCollector->mParams.mDrawGraphs) {
+        nsCOMPtr<nsICycleCollectorListener> listener =
+            new nsCycleCollectorLogger();
+        Collect(SHUTDOWN_COLLECTIONS(mParams), listener);
+    } else
+#endif
     Collect(SHUTDOWN_COLLECTIONS(mParams), nsnull);
 
 #ifdef DEBUG_CC
@@ -3312,7 +3337,7 @@ public:
                 return NS_OK;
             }
 
-            mCollected = mCollector->BeginCollection(PR_FALSE, mListener);
+            mCollected = mCollector->BeginCollection(mListener);
 
             mReply.Notify();
         }
@@ -3348,6 +3373,8 @@ public:
 
         NS_ASSERTION(!mListener, "Should have cleared this already!");
         mListener = aListener;
+
+        mCollector->GCIfNeeded(PR_FALSE);
 
         mRequest.Notify();
         mReply.Wait();

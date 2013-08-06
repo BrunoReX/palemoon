@@ -15,6 +15,8 @@
     locale/browser/baseMenuOverlay.dtd             (%chrome/browser/baseMenuOverlay.dtd)
     locale/browser/browser.properties              (%chrome/browser/browser.properties)
     locale/browser/inspector.properties            (%chrome/browser/inspector.properties)
+    locale/browser/scratchpad.properties           (%chrome/browser/scratchpad.properties)
+    locale/browser/scratchpad.dtd                  (%chrome/browser/scratchpad.dtd)
     locale/browser/openLocation.dtd                (%chrome/browser/openLocation.dtd)
     locale/browser/openLocation.properties         (%chrome/browser/openLocation.properties)
 *   locale/browser/pageInfo.dtd                    (%chrome/browser/pageInfo.dtd)
@@ -46,6 +48,8 @@
     locale/browser/feeds/subscribe.properties       (%chrome/browser/feeds/subscribe.properties)
     locale/browser/migration/migration.dtd         (%chrome/browser/migration/migration.dtd)
     locale/browser/migration/migration.properties  (%chrome/browser/migration/migration.properties)
+    locale/browser/preferences/aboutPermissions.dtd          (%chrome/browser/preferences/aboutPermissions.dtd)
+    locale/browser/preferences/aboutPermissions.properties   (%chrome/browser/preferences/aboutPermissions.properties)
     locale/browser/preferences/advanced.dtd           (%chrome/browser/preferences/advanced.dtd)
 *   locale/browser/preferences/advanced-scripts.dtd   (%chrome/browser/preferences/advanced-scripts.dtd)
     locale/browser/preferences/applicationManager.dtd        (%chrome/browser/preferences/applicationManager.dtd)
@@ -67,7 +71,6 @@
     locale/browser/preferences/sync.dtd               (%chrome/browser/preferences/sync.dtd)
 #endif
     locale/browser/preferences/tabs.dtd               (%chrome/browser/preferences/tabs.dtd)
-    locale/browser/sidebar/sidebar.properties      (%chrome/browser/sidebar/sidebar.properties)
 #ifdef MOZ_SERVICES_SYNC
     locale/browser/syncBrand.dtd                (%chrome/browser/syncBrand.dtd)
     locale/browser/syncSetup.dtd                (%chrome/browser/syncSetup.dtd)

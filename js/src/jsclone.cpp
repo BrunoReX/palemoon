@@ -468,7 +468,7 @@ JSStructuredCloneWriter::startObject(JSObject *obj)
     JS_ASSERT(obj->isArray() || obj->isObject());
 
     /* Fail if obj is already on the stack. */
-    HashSet<JSObject *>::AddPtr p = memory.lookupForAdd(obj);
+    MemorySet::AddPtr p = memory.lookupForAdd(obj);
     if (p) {
         JSContext *cx = context();
         if (callbacks && callbacks->reportError)
@@ -822,7 +822,7 @@ JSStructuredCloneReader::readId(jsid *idp)
         JSString *str = readString(data);
         if (!str)
             return false;
-        JSAtom *atom = js_AtomizeString(context(), str, 0);
+        JSAtom *atom = js_AtomizeString(context(), str);
         if (!atom)
             return false;
         *idp = ATOM_TO_JSID(atom);

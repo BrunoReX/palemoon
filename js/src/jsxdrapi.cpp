@@ -652,7 +652,7 @@ js_XDRAtom(JSXDRState *xdr, JSAtom **atomp)
     }
 
     if (XDRChars(xdr, chars, nchars))
-        atom = js_AtomizeChars(cx, chars, nchars, 0);
+        atom = js_AtomizeChars(cx, chars, nchars);
     if (chars != stackChars)
         cx->free_(chars);
 

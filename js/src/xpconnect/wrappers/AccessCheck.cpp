@@ -49,6 +49,7 @@
 #include "FilteringWrapper.h"
 #include "WrapperFactory.h"
 
+#include "jsfriendapi.h"
 #include "jsstr.h"
 
 namespace xpc {
@@ -71,17 +72,14 @@ AccessCheck::isSameOrigin(JSCompartment *a, JSCompartment *b)
     if (!aprin || !bprin)
         return true;
 
-    nsCOMPtr<nsIURI> auri;
-    aprin->GetURI(getter_AddRefs(auri));
+    PRBool equals;
+    nsresult rv = aprin->EqualsIgnoringDomain(bprin, &equals);
+    if (NS_FAILED(rv)) {
+        NS_ERROR("unable to ask about equality");
+        return false;
+    }
 
-    nsCOMPtr<nsIURI> buri;
-    bprin->GetURI(getter_AddRefs(buri));
-
-    if (!auri || !buri)
-        return aprin == bprin;
-
-    nsIScriptSecurityManager *ssm = XPCWrapper::GetSecurityManager();
-    return !ssm || NS_SUCCEEDED(ssm->CheckSameOriginURI(auri, buri, PR_FALSE));
+    return equals;
 }
 
 bool
@@ -240,13 +238,13 @@ AccessCheck::documentDomainMakesSameOrigin(JSContext *cx, JSObject *obj)
     JSStackFrame *fp = nsnull;
     JS_FrameIterator(cx, &fp);
     if (fp) {
-        while (fp->isDummyFrame()) {
+        while (!JS_IsScriptFrame(cx, fp)) {
             if (!JS_FrameIterator(cx, &fp))
                 break;
         }
 
         if (fp)
-            scope = &fp->scopeChain();
+            scope = JS_GetFrameScopeChainRaw(fp);
     }
 
     if (!scope)

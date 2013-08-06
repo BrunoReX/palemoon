@@ -47,6 +47,7 @@
 #include "nsCSSFrameConstructor.h"
 #include "gfxUtils.h"
 #include "nsImageFrame.h"
+#include "nsRenderingContext.h"
 
 #ifdef DEBUG
 #include <stdio.h>
@@ -715,27 +716,19 @@ FrameLayerBuilder::GetOldLayerFor(nsIFrame* aFrame, PRUint32 aDisplayItemKey)
 
 /**
  * Invalidate aRegion in aLayer. aLayer is in the coordinate system
- * *after* aLayer's transform has been applied, so we need to
+ * *after* aTranslation has been applied, so we need to
  * apply the inverse of that transform before calling InvalidateRegion.
- * Currently we assume that the transform is just an integer translation,
- * since that's all we need for scrolling.
  */
 static void
-InvalidatePostTransformRegion(ThebesLayer* aLayer, const nsIntRegion& aRegion)
+InvalidatePostTransformRegion(ThebesLayer* aLayer, const nsIntRegion& aRegion,
+                              const nsIntPoint& aTranslation)
 {
-  gfxMatrix transform;
-  if (aLayer->GetTransform().Is2D(&transform)) {
-    NS_ASSERTION(!transform.HasNonIntegerTranslation(),
-                 "Matrix not just an integer translation?");
-    // Convert the region from the coordinates of the container layer
-    // (relative to the snapped top-left of the display list reference frame)
-    // to the ThebesLayer's own coordinates
-    nsIntRegion rgn = aRegion;
-    rgn.MoveBy(-nsIntPoint(PRInt32(transform.x0), PRInt32(transform.y0)));
-    aLayer->InvalidateRegion(rgn);
-  } else {
-    NS_ERROR("Only 2D transformations currently supported");
-  }
+  // Convert the region from the coordinates of the container layer
+  // (relative to the snapped top-left of the display list reference frame)
+  // to the ThebesLayer's own coordinates
+  nsIntRegion rgn = aRegion;
+  rgn.MoveBy(-aTranslation);
+  aLayer->InvalidateRegion(rgn);
 }
 
 already_AddRefed<ColorLayer>
@@ -782,6 +775,18 @@ ContainerState::CreateOrRecycleImageLayer()
   return layer.forget();
 }
 
+static nsIntPoint
+GetTranslationForThebesLayer(ThebesLayer* aLayer)
+{
+  gfxMatrix transform;
+  if (!aLayer->GetTransform().Is2D(&transform) &&
+      transform.HasNonIntegerTranslation()) {
+    NS_ERROR("ThebesLayers should have integer translations only");
+    return nsIntPoint(0, 0);
+  }
+  return nsIntPoint(PRInt32(transform.x0), PRInt32(transform.y0));
+}
+
 already_AddRefed<ThebesLayer>
 ContainerState::CreateOrRecycleThebesLayer(nsIFrame* aActiveScrolledRoot)
 {
@@ -807,7 +812,8 @@ ContainerState::CreateOrRecycleThebesLayer(nsIFrame* aActiveScrolledRoot)
       nsIntRect invalidate = layer->GetValidRegion().GetBounds();
       layer->InvalidateRegion(invalidate);
     } else {
-      InvalidatePostTransformRegion(layer, mInvalidThebesContent);
+      InvalidatePostTransformRegion(layer, mInvalidThebesContent,
+                                    GetTranslationForThebesLayer(layer));
     }
     // We do not need to Invalidate these areas in the widget because we
     // assume the caller of InvalidateThebesLayerContents has ensured
@@ -821,6 +827,8 @@ ContainerState::CreateOrRecycleThebesLayer(nsIFrame* aActiveScrolledRoot)
     layer->SetUserData(&gThebesDisplayItemLayerUserData,
         new ThebesDisplayItemLayerUserData());
   }
+
+  mBuilder->LayerBuilder()->SaveLastPaintOffset(layer);
 
   // Set up transform so that 0,0 in the Thebes layer corresponds to the
   // (pixel-snapped) top-left of the aActiveScrolledRoot.
@@ -1418,12 +1426,14 @@ ContainerState::InvalidateForLayerChange(nsDisplayItem* aItem, Layer* aNewLayer)
 
     ThebesLayer* t = oldLayer->AsThebesLayer();
     if (t) {
-      InvalidatePostTransformRegion(t, r);
+      InvalidatePostTransformRegion(t, r,
+          mBuilder->LayerBuilder()->GetLastPaintOffset(t));
     }
     if (aNewLayer) {
       ThebesLayer* newLayer = aNewLayer->AsThebesLayer();
       if (newLayer) {
-        InvalidatePostTransformRegion(newLayer, r);
+        InvalidatePostTransformRegion(newLayer, r,
+            GetTranslationForThebesLayer(newLayer));
       }
     }
 
@@ -1452,7 +1462,7 @@ FrameLayerBuilder::AddThebesDisplayItem(ThebesLayer* aLayer,
                                         nsIFrame* aContainerLayerFrame,
                                         LayerState aLayerState)
 {
-  AddLayerDisplayItem(aLayer, aItem);
+  AddLayerDisplayItem(aLayer, aItem, aLayerState);
 
   ThebesLayerItemsEntry* entry = mThebesLayerItems.PutEntry(aLayer);
   if (entry) {
@@ -1475,8 +1485,26 @@ FrameLayerBuilder::AddLayerDisplayItem(Layer* aLayer,
   nsIFrame* f = aItem->GetUnderlyingFrame();
   DisplayItemDataEntry* entry = mNewDisplayItemData.PutEntry(f);
   if (entry) {
-    entry->mData.AppendElement(
-      DisplayItemData(aLayer, aItem->GetPerFrameKey(), aLayerState));
+    entry->mData.AppendElement(DisplayItemData(aLayer, aItem->GetPerFrameKey(), aLayerState));
+  }
+}
+
+nsIntPoint
+FrameLayerBuilder::GetLastPaintOffset(ThebesLayer* aLayer)
+{
+  ThebesLayerItemsEntry* entry = mThebesLayerItems.PutEntry(aLayer);
+  if (entry && entry->mHasExplicitLastPaintOffset)
+    return entry->mLastPaintOffset;
+  return GetTranslationForThebesLayer(aLayer);
+}
+
+void
+FrameLayerBuilder::SaveLastPaintOffset(ThebesLayer* aLayer)
+{
+  ThebesLayerItemsEntry* entry = mThebesLayerItems.PutEntry(aLayer);
+  if (entry) {
+    entry->mLastPaintOffset = GetTranslationForThebesLayer(aLayer);
+    entry->mHasExplicitLastPaintOffset = PR_TRUE;
   }
 }
 
@@ -1662,7 +1690,7 @@ FrameLayerBuilder::BuildContainerLayerFor(nsDisplayListBuilder* aBuilder,
   state.Finish(&flags);
 
   nsRect bounds = state.GetChildrenBounds();
-  NS_ASSERTION(bounds == aChildren.GetBounds(aBuilder), "Wrong bounds");
+  NS_ASSERTION(bounds.IsEqualInterior(aChildren.GetBounds(aBuilder)), "Wrong bounds");
   nsIntRect pixBounds = bounds.ToOutsidePixels(appUnitsPerDevPixel);
   containerLayer->SetVisibleRegion(pixBounds);
   // Make sure that rounding the visible region out didn't add any area
@@ -1832,18 +1860,11 @@ FrameLayerBuilder::DrawThebesLayer(ThebesLayer* aLayer,
     aContext->Fill();
   }
 
-  gfxMatrix transform;
-  if (!aLayer->GetTransform().Is2D(&transform)) {
-    NS_ERROR("non-2D transform in our Thebes layer!");
-    return;
-  }
-  NS_ASSERTION(!transform.HasNonIntegerTranslation(),
-               "Matrix not just an integer translation?");
   // make the origin of the context coincide with the origin of the
   // ThebesLayer
-  gfxContextMatrixAutoSaveRestore saveMatrix(aContext); 
-  aContext->Translate(-gfxPoint(transform.x0, transform.y0));
-  nsIntPoint offset(PRInt32(transform.x0), PRInt32(transform.y0));
+  gfxContextMatrixAutoSaveRestore saveMatrix(aContext);
+  nsIntPoint offset = GetTranslationForThebesLayer(aLayer);
+  aContext->Translate(-gfxPoint(offset.x, offset.y));
 
   nsPresContext* presContext = containerLayerFrame->PresContext();
   PRInt32 appUnitsPerDevPixel = presContext->AppUnitsPerDevPixel();
@@ -1903,11 +1924,7 @@ FrameLayerBuilder::DrawThebesLayer(ThebesLayer* aLayer,
     }
   }
 
-  nsRefPtr<nsIRenderingContext> rc;
-  nsresult rv =
-    presContext->DeviceContext()->CreateRenderingContextInstance(*getter_AddRefs(rc));
-  if (NS_FAILED(rv))
-    return;
+  nsRefPtr<nsRenderingContext> rc = new nsRenderingContext();
   rc->Init(presContext->DeviceContext(), aContext);
 
   Clip currentClip;

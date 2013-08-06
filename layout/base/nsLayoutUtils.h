@@ -50,7 +50,7 @@ class nsIDOMEvent;
 class nsRegion;
 class nsDisplayListBuilder;
 class nsDisplayItem;
-class nsIFontMetrics;
+class nsFontMetrics;
 class nsClientRectList;
 
 #include "prtypes.h"
@@ -643,7 +643,7 @@ public:
    * necessarily correspond to what's visible in the window; we don't
    * want to mess up the widget's layer tree.
    */
-  static nsresult PaintFrame(nsIRenderingContext* aRenderingContext, nsIFrame* aFrame,
+  static nsresult PaintFrame(nsRenderingContext* aRenderingContext, nsIFrame* aFrame,
                              const nsRegion& aDirtyRegion, nscolor aBackstop,
                              PRUint32 aFlags = 0);
 
@@ -666,7 +666,7 @@ public:
    * before the cursor aIndex contains the index of the text where the cursor falls
    */
   static PRBool
-  BinarySearchForPosition(nsIRenderingContext* acx,
+  BinarySearchForPosition(nsRenderingContext* acx,
                           const PRUnichar* aText,
                           PRInt32    aBaseWidth,
                           PRInt32    aBaseInx,
@@ -751,7 +751,7 @@ public:
    * @return success or failure code
    */
   static nsresult GetFontMetricsForFrame(const nsIFrame* aFrame,
-                                         nsIFontMetrics** aFontMetrics);
+                                         nsFontMetrics** aFontMetrics);
 
   /**
    * Get the font metrics corresponding to the given style data.
@@ -760,7 +760,7 @@ public:
    * @return success or failure code
    */
   static nsresult GetFontMetricsForStyleContext(nsStyleContext* aStyleContext,
-                                                nsIFontMetrics** aFontMetrics);
+                                                nsFontMetrics** aFontMetrics);
 
   /**
    * Find the immediate child of aParent whose frame subtree contains
@@ -822,7 +822,7 @@ public:
    * and margin.
    */
   enum IntrinsicWidthType { MIN_WIDTH, PREF_WIDTH };
-  static nscoord IntrinsicForContainer(nsIRenderingContext* aRenderingContext,
+  static nscoord IntrinsicForContainer(nsRenderingContext* aRenderingContext,
                                        nsIFrame* aFrame,
                                        IntrinsicWidthType aType);
 
@@ -852,7 +852,7 @@ public:
    * @param aCoord The width value to compute.
    */
   static nscoord ComputeWidthValue(
-                   nsIRenderingContext* aRenderingContext,
+                   nsRenderingContext* aRenderingContext,
                    nsIFrame*            aFrame,
                    nscoord              aContainingBlockWidth,
                    nscoord              aContentEdgeToBoxSizing,
@@ -917,28 +917,28 @@ public:
    *   http://www.w3.org/TR/CSS21/visudet.html#min-max-widths
    */
   static nsSize ComputeSizeWithIntrinsicDimensions(
-                    nsIRenderingContext* aRenderingContext, nsIFrame* aFrame,
+                    nsRenderingContext* aRenderingContext, nsIFrame* aFrame,
                     const nsIFrame::IntrinsicSize& aIntrinsicSize,
                     nsSize aIntrinsicRatio, nsSize aCBSize,
                     nsSize aMargin, nsSize aBorder, nsSize aPadding);
 
   // Implement nsIFrame::GetPrefWidth in terms of nsIFrame::AddInlinePrefWidth
   static nscoord PrefWidthFromInline(nsIFrame* aFrame,
-                                     nsIRenderingContext* aRenderingContext);
+                                     nsRenderingContext* aRenderingContext);
 
   // Implement nsIFrame::GetMinWidth in terms of nsIFrame::AddInlineMinWidth
   static nscoord MinWidthFromInline(nsIFrame* aFrame,
-                                    nsIRenderingContext* aRenderingContext);
+                                    nsRenderingContext* aRenderingContext);
 
   static void DrawString(const nsIFrame*      aFrame,
-                         nsIRenderingContext* aContext,
+                         nsRenderingContext* aContext,
                          const PRUnichar*     aString,
                          PRInt32              aLength,
                          nsPoint              aPoint,
                          PRUint8              aDirection = NS_STYLE_DIRECTION_INHERIT);
 
   static nscoord GetStringWidth(const nsIFrame*      aFrame,
-                                nsIRenderingContext* aContext,
+                                nsRenderingContext* aContext,
                                 const PRUnichar*     aString,
                                 PRInt32              aLength);
 
@@ -948,7 +948,7 @@ public:
    *
    * Returns the baseline position relative to the top of the line.
    */
-  static nscoord GetCenteredFontBaseline(nsIFontMetrics* aFontMetrics,
+  static nscoord GetCenteredFontBaseline(nsFontMetrics* aFontMetrics,
                                          nscoord         aLineHeight);
 
   /**
@@ -1035,7 +1035,7 @@ public:
    *   @param aDirty            Pixels outside this area may be skipped.
    *   @param aImageFlags       Image flags of the imgIContainer::FLAG_* variety
    */
-  static nsresult DrawImage(nsIRenderingContext* aRenderingContext,
+  static nsresult DrawImage(nsRenderingContext* aRenderingContext,
                             imgIContainer*       aImage,
                             GraphicsFilter       aGraphicsFilter,
                             const nsRect&        aDest,
@@ -1065,7 +1065,7 @@ public:
    *                            pixel-aligned in the output.
    *   @param aDirty            Pixels outside this area may be skipped.
    */
-  static void DrawPixelSnapped(nsIRenderingContext* aRenderingContext,
+  static void DrawPixelSnapped(nsRenderingContext* aRenderingContext,
                                gfxDrawable*         aDrawable,
                                GraphicsFilter       aFilter,
                                const nsRect&        aDest,
@@ -1089,7 +1089,7 @@ public:
    *                            in appunits. For best results it should
    *                            be aligned with image pixels.
    */
-  static nsresult DrawSingleUnscaledImage(nsIRenderingContext* aRenderingContext,
+  static nsresult DrawSingleUnscaledImage(nsRenderingContext* aRenderingContext,
                                           imgIContainer*       aImage,
                                           GraphicsFilter       aGraphicsFilter,
                                           const nsPoint&       aDest,
@@ -1112,7 +1112,7 @@ public:
    *                            be aligned with image pixels.
    *   @param aImageFlags       Image flags of the imgIContainer::FLAG_* variety
    */
-  static nsresult DrawSingleImage(nsIRenderingContext* aRenderingContext,
+  static nsresult DrawSingleImage(nsRenderingContext* aRenderingContext,
                                   imgIContainer*       aImage,
                                   GraphicsFilter       aGraphicsFilter,
                                   const nsRect&        aDest,
@@ -1153,7 +1153,7 @@ public:
   /**
    * Set the font on aRC based on the style in aSC
    */
-  static void SetFontFromStyle(nsIRenderingContext* aRC, nsStyleContext* aSC);
+  static void SetFontFromStyle(nsRenderingContext* aRC, nsStyleContext* aSC);
 
   /**
    * Determine if any corner radius is of nonzero size
@@ -1225,7 +1225,7 @@ public:
    * dimensions for the given docshell.  For some reason, this is more
    * complicated than it ought to be in multi-monitor situations.
    */
-  static nsIDeviceContext*
+  static nsDeviceContext*
   GetDeviceContextForScreenInfo(nsIDocShell* aDocShell);
 
   /**

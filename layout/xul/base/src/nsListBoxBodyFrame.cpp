@@ -58,9 +58,7 @@
 #include "nsIView.h"
 #include "nsIViewManager.h"
 #include "nsStyleContext.h"
-#include "nsIRenderingContext.h"
-#include "nsIDeviceContext.h"
-#include "nsIFontMetrics.h"
+#include "nsFontMetrics.h"
 #include "nsITimer.h"
 #include "nsAutoPtr.h"
 #include "nsStyleSet.h"
@@ -81,10 +79,6 @@
  * do this until the timer finally first because the user has stopped moving
  * the mouse. Then do all the queued requests in on shot.
  */
-
-#ifdef XP_MAC
-#pragma mark -
-#endif
 
 // the longest amount of time that can go by before the use
 // notices it as a delay.
@@ -226,9 +220,9 @@ nsListBoxBodyFrame::Init(nsIContent*     aContent,
       scrollbarFrame->SetScrollbarMediatorContent(GetContent());
     }
   }
-  nsCOMPtr<nsIFontMetrics> fm;
+  nsRefPtr<nsFontMetrics> fm;
   nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm));
-  fm->GetHeight(mRowHeight);
+  mRowHeight = fm->MaxHeight();
 
   return rv;
 }
@@ -729,7 +723,7 @@ nsListBoxBodyFrame::ComputeIntrinsicWidth(nsBoxLayoutState& aBoxLayoutState)
       nsIContent *child = (*iter);
 
       if (child->Tag() == nsGkAtoms::listitem) {
-        nsIRenderingContext* rendContext = aBoxLayoutState.GetRenderingContext();
+        nsRenderingContext* rendContext = aBoxLayoutState.GetRenderingContext();
         if (rendContext) {
           nsAutoString value;
           PRUint32 textCount = child->GetChildCount();

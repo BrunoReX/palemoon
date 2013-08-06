@@ -59,7 +59,6 @@
 #include "nsISelectionPrivate.h"
 #include "nsPresContext.h"
 #include "nsIDOMDataTransfer.h"
-#include "nsIEventStateManager.h"
 #include "nsICanvasElementExternal.h"
 #include "nsIImageLoadingContent.h"
 #include "imgIContainer.h"
@@ -67,10 +66,12 @@
 #include "nsIViewObserver.h"
 #include "nsRegion.h"
 #include "nsGUIEvent.h"
-#include "nsIPrefService.h"
+#include "mozilla/Preferences.h"
 
 #include "gfxContext.h"
 #include "gfxPlatform.h"
+
+using namespace mozilla;
 
 #define DRAGIMAGES_PREF "nglayout.enable_drag_images"
 
@@ -454,10 +455,7 @@ nsBaseDragService::DrawDrag(nsIDOMNode* aDOMNode,
   *aPresContext = presShell->GetPresContext();
 
   // check if drag images are disabled
-  PRBool enableDragImages = PR_TRUE;
-  nsCOMPtr<nsIPrefBranch> prefs(do_GetService(NS_PREFSERVICE_CONTRACTID));
-  if (prefs)
-    prefs->GetBoolPref(DRAGIMAGES_PREF, &enableDragImages);
+  PRBool enableDragImages = Preferences::GetBool(DRAGIMAGES_PREF, PR_TRUE);
 
   // didn't want an image, so just set the screen rectangle to the frame size
   if (!enableDragImages || !mHasImage) {
@@ -588,7 +586,7 @@ nsBaseDragService::DrawDragForImage(nsPresContext* aPresContext,
 
   // if the image is larger than half the screen size, scale it down. This
   // scaling algorithm is the same as is used in nsPresShell::PaintRangePaintInfo
-  nsIDeviceContext* deviceContext = aPresContext->DeviceContext();
+  nsDeviceContext* deviceContext = aPresContext->DeviceContext();
   nsRect maxSize;
   deviceContext->GetClientRect(maxSize);
   nscoord maxWidth = aPresContext->AppUnitsToDevPixels(maxSize.width >> 1);

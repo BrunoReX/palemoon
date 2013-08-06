@@ -42,8 +42,6 @@
 #include "nsPresContext.h"
 #include "nsStyleContext.h"
 #include "nsStyleConsts.h"
-#include "nsIRenderingContext.h"
-#include "nsIFontMetrics.h"
 #include "nsContentUtils.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsMathMLTokenFrame.h"
@@ -60,6 +58,17 @@ nsMathMLTokenFrame::~nsMathMLTokenFrame()
 {
 }
 
+NS_IMETHODIMP
+nsMathMLTokenFrame::InheritAutomaticData(nsIFrame* aParent)
+{
+  // let the base class get the default from our parent
+  nsMathMLContainerFrame::InheritAutomaticData(aParent);
+
+  ProcessTextData();
+
+  return NS_OK;
+}
+
 eMathMLFrameType
 nsMathMLTokenFrame::GetMathMLFrameType()
 {
@@ -69,15 +78,15 @@ nsMathMLTokenFrame::GetMathMLFrameType()
   }
 
   // for <mi>, distinguish between italic and upright...
-  // Don't use nsMathMLFrame::GetAttribute for mathvariant or fontstyle as
-  // default values are not inherited.
   nsAutoString style;
   // mathvariant overrides fontstyle
   // http://www.w3.org/TR/2003/REC-MathML2-20031021/chapter3.html#presm.deprecatt
   mContent->GetAttr(kNameSpaceID_None,
                     nsGkAtoms::_moz_math_fontstyle_, style) ||
-    mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::mathvariant_, style) ||
-    mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::fontstyle_, style);
+    GetAttribute(mContent, mPresentationData.mstyle, nsGkAtoms::mathvariant_,
+                 style) ||
+    GetAttribute(mContent, mPresentationData.mstyle, nsGkAtoms::fontstyle_,
+                 style);
 
   if (style.EqualsLiteral("italic") || style.EqualsLiteral("bold-italic") ||
       style.EqualsLiteral("script") || style.EqualsLiteral("bold-script") ||
@@ -159,7 +168,7 @@ nsMathMLTokenFrame::Reflow(nsPresContext*          aPresContext,
   // initializations needed for empty markup like <mtag></mtag>
   aDesiredSize.width = aDesiredSize.height = 0;
   aDesiredSize.ascent = 0;
-  aDesiredSize.mBoundingMetrics.Clear();
+  aDesiredSize.mBoundingMetrics = nsBoundingMetrics();
 
   nsSize availSize(aReflowState.ComputedWidth(), NS_UNCONSTRAINEDSIZE);
   nsIFrame* childFrame = GetFirstChild(nsnull);
@@ -197,11 +206,11 @@ nsMathMLTokenFrame::Reflow(nsPresContext*          aPresContext,
 // pass, it is not computed here because our children may be text frames
 // that do not implement the GetBoundingMetrics() interface.
 /* virtual */ nsresult
-nsMathMLTokenFrame::Place(nsIRenderingContext& aRenderingContext,
+nsMathMLTokenFrame::Place(nsRenderingContext& aRenderingContext,
                           PRBool               aPlaceOrigin,
                           nsHTMLReflowMetrics& aDesiredSize)
 {
-  mBoundingMetrics.Clear();
+  mBoundingMetrics = nsBoundingMetrics();
   for (nsIFrame* childFrame = GetFirstChild(nsnull); childFrame;
        childFrame = childFrame->GetNextSibling()) {
     nsHTMLReflowMetrics childSize;
@@ -211,11 +220,10 @@ nsMathMLTokenFrame::Place(nsIRenderingContext& aRenderingContext,
     mBoundingMetrics += childSize.mBoundingMetrics;
   }
 
-  nsCOMPtr<nsIFontMetrics> fm =
+  nsRefPtr<nsFontMetrics> fm =
     PresContext()->GetMetricsFor(GetStyleFont()->mFont);
-  nscoord ascent, descent;
-  fm->GetMaxAscent(ascent);
-  fm->GetMaxDescent(descent);
+  nscoord ascent = fm->MaxAscent();
+  nscoord descent = fm->MaxDescent();
 
   aDesiredSize.mBoundingMetrics = mBoundingMetrics;
   aDesiredSize.width = mBoundingMetrics.width;
@@ -333,8 +341,11 @@ nsMathMLTokenFrame::SetTextStyle()
   }
   else {
     // Attributes override the default behavior.
-    if (!(mContent->HasAttr(kNameSpaceID_None, nsGkAtoms::mathvariant_) ||
-          mContent->HasAttr(kNameSpaceID_None, nsGkAtoms::fontstyle_))) {
+    nsAutoString value;
+    if (!(GetAttribute(mContent, mPresentationData.mstyle,
+                       nsGkAtoms::mathvariant_, value) ||
+          GetAttribute(mContent, mPresentationData.mstyle,
+                       nsGkAtoms::fontstyle_, value))) {
       if (!isSingleCharacter) {
         fontstyle.AssignLiteral("normal");
       }

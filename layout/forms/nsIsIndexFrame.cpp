@@ -187,7 +187,7 @@ nsIsIndexFrame::SetFocus(PRBool aOn, PRBool aRepaint)
 }
 
 nsresult
-nsIsIndexFrame::CreateAnonymousContent(nsTArray<nsIContent*>& aElements)
+nsIsIndexFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
 {
   // Get the node info manager (used to create hr's and input's)
   nsCOMPtr<nsIDocument> doc = mContent->GetDocument();
@@ -259,7 +259,7 @@ NS_IMPL_ISUPPORTS2(nsIsIndexFrame::KeyListener,
                    nsIDOMEventListener)
 
 nscoord
-nsIsIndexFrame::GetMinWidth(nsIRenderingContext *aRenderingContext)
+nsIsIndexFrame::GetMinWidth(nsRenderingContext *aRenderingContext)
 {
   nscoord result;
   DISPLAY_MIN_WIDTH(this, result);
@@ -429,7 +429,7 @@ nsIsIndexFrame::OnSubmit(nsPresContext* aPresContext)
 
   // Now pretend we're triggering a link
   nsContentUtils::TriggerLink(mContent, aPresContext, uri,
-                              EmptyString(), PR_TRUE, PR_TRUE);
+                              EmptyString(), PR_TRUE, PR_TRUE, PR_TRUE);
   return result;
 }
 

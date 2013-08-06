@@ -75,6 +75,7 @@
 #include "ocsp.h"
 #include "nssb64.h"
 #include "secerr.h"
+#include "sslerr.h"
 
 using namespace mozilla;
 
@@ -958,6 +959,60 @@ void PR_CALLBACK HandshakeCallback(PRFileDesc* fd, void* client_data) {
   PR_Free(signer);
 }
 
+SECStatus
+PSM_SSL_PKIX_AuthCertificate(PRFileDesc *fd, CERTCertificate *peerCert, PRBool checksig, PRBool isServer)
+{
+    SECStatus          rv;
+    SECCertUsage       certUsage;
+    SECCertificateUsage certificateusage;
+    void *             pinarg;
+    char *             hostname;
+    
+    pinarg = SSL_RevealPinArg(fd);
+    hostname = SSL_RevealURL(fd);
+    
+    /* this may seem backwards, but isn't. */
+    certUsage = isServer ? certUsageSSLClient : certUsageSSLServer;
+    certificateusage = isServer ? certificateUsageSSLClient : certificateUsageSSLServer;
+
+    if (!nsNSSComponent::globalConstFlagUsePKIXVerification) {
+        rv = CERT_VerifyCertNow(CERT_GetDefaultCertDB(), peerCert, checksig, certUsage,
+                                pinarg);
+    }
+    else {
+        nsresult nsrv;
+        nsCOMPtr<nsINSSComponent> inss = do_GetService(kNSSComponentCID, &nsrv);
+        if (!inss)
+          return SECFailure;
+        nsRefPtr<nsCERTValInParamWrapper> survivingParams;
+        if (NS_FAILED(inss->GetDefaultCERTValInParam(survivingParams)))
+          return SECFailure;
+
+        CERTValOutParam cvout[1];
+        cvout[0].type = cert_po_end;
+
+        rv = CERT_PKIXVerifyCert(peerCert, certificateusage,
+                                survivingParams->GetRawPointerForNSS(),
+                                cvout, pinarg);
+    }
+
+    if ( rv == SECSuccess && !isServer ) {
+        /* cert is OK.  This is the client side of an SSL connection.
+        * Now check the name field in the cert against the desired hostname.
+        * NB: This is our only defense against Man-In-The-Middle (MITM) attacks!
+        */
+        if (hostname && hostname[0])
+            rv = CERT_VerifyCertName(peerCert, hostname);
+        else
+            rv = SECFailure;
+        if (rv != SECSuccess)
+            PORT_SetError(SSL_ERROR_BAD_CERT_DOMAIN);
+    }
+        
+    PORT_Free(hostname);
+    return rv;
+}
+
 struct nsSerialBinaryBlacklistEntry
 {
   unsigned int len;
@@ -978,6 +1033,70 @@ static struct nsSerialBinaryBlacklistEntry myUTNBlacklistEntries[] = {
   { 17, "\x00\xf5\xc8\x6a\xf3\x61\x62\xf1\x3a\x64\xf5\x4f\x6d\xc9\x58\x7c\x06" },
   { 0, 0 } // end marker
 };
+
+// Call this if we have already decided that a cert should be treated as INVALID,
+// in order to check if we to worsen the error to REVOKED.
+PRErrorCode
+PSM_SSL_DigiNotarTreatAsRevoked(CERTCertificate * serverCert,
+                                CERTCertList * serverCertChain)
+{
+  // If any involved cert was issued by DigiNotar, 
+  // and serverCert was issued after 01-JUL-2011,
+  // then worsen the error to revoked.
+  
+  PRTime cutoff = 0;
+  PRStatus status = PR_ParseTimeString("01-JUL-2011 00:00", PR_TRUE, &cutoff);
+  if (status != PR_SUCCESS) {
+    NS_ASSERTION(status == PR_SUCCESS, "PR_ParseTimeString failed");
+    // be safe, assume it's afterwards, keep going
+  } else {
+    PRTime notBefore = 0, notAfter = 0;
+    if (CERT_GetCertTimes(serverCert, &notBefore, &notAfter) == SECSuccess &&
+           notBefore < cutoff) {
+      // no worsening for certs issued before the cutoff date
+      return 0;
+    }
+  }
+  
+  for (CERTCertListNode *node = CERT_LIST_HEAD(serverCertChain);
+       !CERT_LIST_END(node, serverCertChain);
+       node = CERT_LIST_NEXT(node)) {
+    if (node->cert->issuerName &&
+        strstr(node->cert->issuerName, "CN=DigiNotar")) {
+      return SEC_ERROR_REVOKED_CERTIFICATE;
+    }
+  }
+  
+  return 0;
+}
+
+// Call this only if a cert has been reported by NSS as VALID
+PRErrorCode
+PSM_SSL_BlacklistDigiNotar(CERTCertificate * serverCert,
+                           CERTCertList * serverCertChain)
+{
+  PRBool isDigiNotarIssuedCert = PR_FALSE;
+
+  for (CERTCertListNode *node = CERT_LIST_HEAD(serverCertChain);
+       !CERT_LIST_END(node, serverCertChain);
+       node = CERT_LIST_NEXT(node)) {
+    if (!node->cert->issuerName)
+      continue;
+
+    if (strstr(node->cert->issuerName, "CN=DigiNotar")) {
+      isDigiNotarIssuedCert = PR_TRUE;
+    }
+  }
+
+  if (isDigiNotarIssuedCert) {
+    // let's see if we want to worsen the error code to revoked.
+    PRErrorCode revoked_code = PSM_SSL_DigiNotarTreatAsRevoked(serverCert, serverCertChain);
+    return (revoked_code != 0) ? revoked_code : SEC_ERROR_UNTRUSTED_ISSUER;
+  }
+
+  return 0;
+}
+
 
 SECStatus PR_CALLBACK AuthCertificateCallback(void* client_data, PRFileDesc* fd,
                                               PRBool checksig, PRBool isServer) {
@@ -1024,9 +1143,8 @@ SECStatus PR_CALLBACK AuthCertificateCallback(void* client_data, PRFileDesc* fd,
       }
     }
   }
-  
-  // first the default action
-  SECStatus rv = SSL_AuthCertificate(CERT_GetDefaultCertDB(), fd, checksig, isServer);
+
+  SECStatus rv = PSM_SSL_PKIX_AuthCertificate(fd, serverCert, checksig, isServer);
 
   // We want to remember the CA certs in the temp db, so that the application can find the
   // complete chain at any time it might need it.
@@ -1041,14 +1159,37 @@ SECStatus PR_CALLBACK AuthCertificateCallback(void* client_data, PRFileDesc* fd,
       nsc = nsNSSCertificate::Create(serverCert);
     }
 
-    if (SECSuccess == rv) {
+    CERTCertList *certList = nsnull;
+    certList = CERT_GetCertChainFromCert(serverCert, PR_Now(), certUsageSSLCA);
+    if (!certList) {
+      rv = SECFailure;
+    } else {
+      PRErrorCode blacklistErrorCode;
+      if (rv == SECSuccess) { // PSM_SSL_PKIX_AuthCertificate said "valid cert"
+        blacklistErrorCode = PSM_SSL_BlacklistDigiNotar(serverCert, certList);
+      } else { // PSM_SSL_PKIX_AuthCertificate said "invalid cert"
+        PRErrorCode savedErrorCode = PORT_GetError();
+        // Check if we want to worsen the error code to "revoked".
+        blacklistErrorCode = PSM_SSL_DigiNotarTreatAsRevoked(serverCert, certList);
+        if (blacklistErrorCode == 0) {
+          // we don't worsen the code, let's keep the original error code from NSS
+          PORT_SetError(savedErrorCode);
+        }
+      }
+      
+      if (blacklistErrorCode != 0) {
+        infoObject->SetCertIssuerBlacklisted();
+        PORT_SetError(blacklistErrorCode);
+        rv = SECFailure;
+      }
+    }
+
+    if (rv == SECSuccess) {
       if (nsc) {
         PRBool dummyIsEV;
         nsc->GetIsExtendedValidation(&dummyIsEV); // the nsc object will cache the status
       }
     
-      CERTCertList *certList = CERT_GetCertChainFromCert(serverCert, PR_Now(), certUsageSSLCA);
-
       nsCOMPtr<nsINSSComponent> nssComponent;
       
       for (CERTCertListNode *node = CERT_LIST_HEAD(certList);
@@ -1084,6 +1225,9 @@ SECStatus PR_CALLBACK AuthCertificateCallback(void* client_data, PRFileDesc* fd,
         PR_FREEIF(nickname);
       }
 
+    }
+
+    if (certList) {
       CERT_DestroyCertList(certList);
     }
 

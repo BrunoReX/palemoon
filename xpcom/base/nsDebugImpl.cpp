@@ -329,7 +329,7 @@ NS_DebugBreak(PRUint32 aSeverity, const char *aStr, const char *aExpr,
      return;
 
    case NS_DEBUG_ABORT: {
-#if defined(MOZ_CRASHREPORTER) && defined(MOZ_ENABLE_LIBXUL)
+#if defined(MOZ_CRASHREPORTER)
      nsCString note("xpcom_runtime_abort(");
      note += buf.buffer;
      note += ")";
@@ -392,9 +392,7 @@ static void
 RealBreak()
 {
 #if defined(_WIN32)
-#ifndef WINCE
   ::DebugBreak();
-#endif
 #elif defined(XP_OS2)
    asm("int $3");
 #elif defined(XP_MACOSX)
@@ -419,7 +417,6 @@ static void
 Break(const char *aMsg)
 {
 #if defined(_WIN32)
-#ifndef WINCE // we really just want to crash for now
   static int ignoreDebugger;
   if (!ignoreDebugger) {
     const char *shouldIgnoreDebugger = getenv("XPCOM_DEBUG_DLG");
@@ -475,7 +472,6 @@ Break(const char *aMsg)
   }
 
   RealBreak();
-#endif // WINCE
 #elif defined(XP_OS2)
    char msg[1200];
    PR_snprintf(msg, sizeof(msg),

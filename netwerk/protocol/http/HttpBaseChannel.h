@@ -23,6 +23,7 @@
  *
  * Contributor(s):
  *   Daniel Witte <dwitte@mozilla.com>
+ *   Jason Duell <jduell.mcbugs@gmail.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -59,6 +60,7 @@
 #include "nsISupportsPriority.h"
 #include "nsIApplicationCache.h"
 #include "nsIResumableChannel.h"
+#include "nsITraceableChannel.h"
 #include "mozilla/net/NeckoCommon.h"
 
 namespace mozilla {
@@ -79,11 +81,13 @@ class HttpBaseChannel : public nsHashPropertyBag
                       , public nsIUploadChannel2
                       , public nsISupportsPriority
                       , public nsIResumableChannel
+                      , public nsITraceableChannel
 {
 public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIUPLOADCHANNEL
   NS_DECL_NSIUPLOADCHANNEL2
+  NS_DECL_NSITRACEABLECHANNEL
 
   HttpBaseChannel();
   virtual ~HttpBaseChannel();
@@ -155,6 +159,10 @@ public:
   NS_IMETHOD GetChannelIsForDownload(PRBool *aChannelIsForDownload);
   NS_IMETHOD SetChannelIsForDownload(PRBool aChannelIsForDownload);
   NS_IMETHOD SetCacheKeysRedirectChain(nsTArray<nsCString> *cacheKeys);
+  NS_IMETHOD GetLocalAddress(nsACString& addr);
+  NS_IMETHOD GetLocalPort(PRInt32* port);
+  NS_IMETHOD GetRemoteAddress(nsACString& addr);
+  NS_IMETHOD GetRemotePort(PRInt32* port);
   inline void CleanRedirectCacheChainIfNecessary()
   {
       if (mRedirectedCachekeys) {
@@ -162,6 +170,8 @@ public:
           mRedirectedCachekeys = nsnull;
       }
   }
+  NS_IMETHOD HTTPUpgrade(const nsACString & aProtocolName,
+                         nsIHttpUpgradeListener *aListener); 
 
   // nsISupportsPriority
   NS_IMETHOD GetPriority(PRInt32 *value);
@@ -196,6 +206,9 @@ public:
 
     nsHttpResponseHead * GetResponseHead() const { return mResponseHead; }
     nsHttpRequestHead * GetRequestHead() { return &mRequestHead; }
+
+    const PRNetAddr& GetSelfAddr() { return mSelfAddr; }
+    const PRNetAddr& GetPeerAddr() { return mPeerAddr; }
 
 protected:
   nsresult ApplyContentConversions();
@@ -236,6 +249,13 @@ protected:
   nsCString                         mContentCharsetHint;
   nsCString                         mUserSetCookieHeader;
 
+  PRNetAddr                         mSelfAddr;
+  PRNetAddr                         mPeerAddr;
+
+  // HTTP Upgrade Data
+  nsCString                        mUpgradeProtocol;
+  nsCOMPtr<nsIHttpUpgradeListener> mUpgradeProtocolCallback;
+
   // Resumable channel specific data
   nsCString                         mEntityID;
   PRUint64                          mStartPos;
@@ -258,6 +278,9 @@ protected:
   PRUint32                          mChooseApplicationCache     : 1;
   PRUint32                          mLoadedFromApplicationCache : 1;
   PRUint32                          mChannelIsForDownload       : 1;
+  PRUint32                          mTracingEnabled             : 1;
+  // True if timing collection is enabled
+  PRUint32                          mTimingEnabled              : 1;
 
   nsTArray<nsCString>              *mRedirectedCachekeys;
 };

@@ -45,6 +45,7 @@
 
 #if !defined JS_CPU_X64 && \
     !defined JS_CPU_X86 && \
+    !defined JS_CPU_SPARC && \
     !defined JS_CPU_ARM
 # error "Oh no, you should define a platform so this compiles."
 #endif
@@ -59,6 +60,39 @@ namespace mjit { struct JITScript; }
 
 struct VMFrame
 {
+#if defined(JS_CPU_SPARC)
+    void *savedL0;
+    void *savedL1;
+    void *savedL2;
+    void *savedL3;
+    void *savedL4;
+    void *savedL5;
+    void *savedL6;
+    void *savedL7;
+    void *savedI0;
+    void *savedI1;
+    void *savedI2;
+    void *savedI3;
+    void *savedI4;
+    void *savedI5;
+    void *savedI6;
+    void *savedI7;
+
+    void *str_p;
+
+    void *outgoing_p0;
+    void *outgoing_p1;
+    void *outgoing_p2;
+    void *outgoing_p3;
+    void *outgoing_p4;
+    void *outgoing_p5;
+
+    void *outgoing_p6;
+
+    void *reserve_0;
+    void *reserve_1;
+#endif
+
     union Arguments {
         struct {
             void *ptr;
@@ -73,10 +107,10 @@ struct VMFrame
 
     VMFrame      *previous;
     void         *unused;
-    JSFrameRegs  regs;
+    FrameRegs    regs;
     JSContext    *cx;
     Value        *stackLimit;
-    JSStackFrame *entryfp;
+    StackFrame   *entryfp;
 
 #if defined(JS_CPU_X86)
     void *savedEBX;
@@ -131,14 +165,30 @@ struct VMFrame
     inline void** returnAddressLocation() {
         return reinterpret_cast<void**>(this) - 1;
     }
+#elif defined(JS_CPU_SPARC)
+    JSStackFrame *topRetrunAddr;
+    void* veneerReturn;
+    void* _align;
+    inline void** returnAddressLocation() {
+        return reinterpret_cast<void**>(&this->veneerReturn);
+    }
 #else
 # error "The VMFrame layout isn't defined for your processor architecture!"
 #endif
 
     JSRuntime *runtime() { return cx->runtime; }
 
-    JSStackFrame *&fp() { return regs.fp; }
+    StackFrame *fp() { return regs.fp(); }
     mjit::JITScript *jit() { return fp()->jit(); }
+
+#if defined(JS_CPU_SPARC)
+    static const size_t offsetOfFp = 31 * sizeof(void *) + FrameRegs::offsetOfFp;
+#else
+    static const size_t offsetOfFp = 5 * sizeof(void *) + FrameRegs::offsetOfFp;
+#endif
+    static void staticAssert() {
+        JS_STATIC_ASSERT(offsetOfFp == offsetof(VMFrame, regs) + FrameRegs::offsetOfFp);
+    }
 };
 
 #ifdef JS_CPU_ARM
@@ -368,9 +418,10 @@ struct JITScript {
     void purgePICs();
 
     size_t scriptDataSize();
-
-    size_t mainCodeSize() { return code.m_size; } /* doesn't account for fragmentation */
-
+#ifdef DEBUG
+    /* length script->length array of execution counters for every JSOp in the compiled script */
+    int             *pcProfile;
+#endif
     jsbytecode *nativeToPC(void *returnAddress) const;
 
   private:
@@ -384,7 +435,7 @@ struct JITScript {
  * Execute the given mjit code. This is a low-level call and callers must
  * provide the same guarantees as JaegerShot/CheckStackAndEnterMethodJIT.
  */
-JSBool EnterMethodJIT(JSContext *cx, JSStackFrame *fp, void *code, Value *stackLimit);
+JSBool EnterMethodJIT(JSContext *cx, StackFrame *fp, void *code, Value *stackLimit);
 
 /* Execute a method that has been JIT compiled. */
 JSBool JaegerShot(JSContext *cx);
@@ -404,7 +455,7 @@ void JS_FASTCALL
 ProfileStubCall(VMFrame &f);
 
 CompileStatus JS_NEVER_INLINE
-TryCompile(JSContext *cx, JSStackFrame *fp);
+TryCompile(JSContext *cx, StackFrame *fp);
 
 void
 ReleaseScriptCode(JSContext *cx, JSScript *script);
@@ -441,6 +492,9 @@ ResetTraceHint(JSScript *script, jsbytecode *pc, uint16_t index, bool full);
 
 uintN
 GetCallTargetCount(JSScript *script, jsbytecode *pc);
+
+void
+DumpAllProfiles(JSContext *cx);
 
 inline void * bsearch_nmap(NativeMapEntry *nmap, size_t nPairs, size_t bcOff)
 {

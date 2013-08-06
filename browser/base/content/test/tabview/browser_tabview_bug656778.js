@@ -5,16 +5,9 @@ function test() {
   waitForExplicitFinish();
 
   registerCleanupFunction(function () {
-    let prefs = [
-      TabView.PREF_FIRST_RUN,
-      TabView.PREF_STARTUP_PAGE,
-      TabView.PREF_RESTORE_ENABLED_ONCE
-    ];
-
-    prefs.forEach(function (pref) {
-      if (Services.prefs.prefHasUserValue(pref))
-        Services.prefs.clearUserPref(pref);
-    });
+    Services.prefs.clearUserPref(TabView.PREF_FIRST_RUN);
+    Services.prefs.clearUserPref(TabView.PREF_STARTUP_PAGE);
+    Services.prefs.clearUserPref(TabView.PREF_RESTORE_ENABLED_ONCE);
   });
 
   let assertBoolPref = function (pref, value) {

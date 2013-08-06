@@ -35,7 +35,7 @@
 }
 
 tabpanels {
-  background-color: white;
+  background-color: transparent;
 }
 
 .tab-drop-indicator {
@@ -53,5 +53,5 @@ tabpanels {
 }
 
 .tabbrowser-tabs:not(:hover) > .tabbrowser-arrowscrollbox > .closing-tabs-spacer {
-  -moz-transition: width 75ms ease-out;
+  -moz-transition: width .15s ease-out;
 }

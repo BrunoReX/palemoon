@@ -54,6 +54,7 @@
 #   Rob Campbell <rcampbell@mozilla.com>
 #   David Dahl <ddahl@mozilla.com>
 #   Patrick Walton <pcwalton@mozilla.com>
+#   Mihai Sucan <mihai.sucan@gmail.com>
 #
 # Alternatively, the contents of this file may be used under the terms of
 # either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -84,6 +85,8 @@ var gLastValidURLStr = "";
 var gInPrintPreviewMode = false;
 var gDownloadMgr = null;
 var gContextMenu = null; // nsContextMenu instance
+var gDelayedStartupTimeoutId;
+var gStartupRan = false;
 
 #ifndef XP_MACOSX
 var gEditUIVisible = true;
@@ -188,7 +191,6 @@ let gInitialPages = [
 
 XPCOMUtils.defineLazyGetter(this, "Win7Features", function () {
 #ifdef XP_WIN
-#ifndef WINCE
   const WINTASKBAR_CONTRACTID = "@mozilla.org/windows-taskbar;1";
   if (WINTASKBAR_CONTRACTID in Cc &&
       Cc[WINTASKBAR_CONTRACTID].getService(Ci.nsIWinTaskbar).available) {
@@ -204,7 +206,6 @@ XPCOMUtils.defineLazyGetter(this, "Win7Features", function () {
       }
     };
   }
-#endif
 #endif
   return null;
 });
@@ -260,10 +261,10 @@ function UpdateBackForwardCommands(aWebNavigation) {
 function SetClickAndHoldHandlers() {
   var timer;
 
-  function timerCallback(aButton) {
+  function openMenu(aButton) {
+    cancelHold(aButton);
     aButton.firstChild.hidden = false;
     aButton.open = true;
-    timer = null;
   }
 
   function mousedownHandler(aEvent) {
@@ -275,7 +276,29 @@ function SetClickAndHoldHandlers() {
     // Prevent the menupopup from opening immediately
     aEvent.currentTarget.firstChild.hidden = true;
 
-    timer = setTimeout(timerCallback, 500, aEvent.currentTarget);
+    aEvent.currentTarget.addEventListener("mouseout", mouseoutHandler, false);
+    aEvent.currentTarget.addEventListener("mouseup", mouseupHandler, false);
+    timer = setTimeout(openMenu, 500, aEvent.currentTarget);
+  }
+
+  function mouseoutHandler(aEvent) {
+    let buttonRect = aEvent.currentTarget.getBoundingClientRect();
+    if (aEvent.clientX >= buttonRect.left &&
+        aEvent.clientX <= buttonRect.right &&
+        aEvent.clientY >= buttonRect.bottom)
+      openMenu(aEvent.currentTarget);
+    else
+      cancelHold(aEvent.currentTarget);
+  }
+
+  function mouseupHandler(aEvent) {
+    cancelHold(aEvent.currentTarget);
+  }
+
+  function cancelHold(aButton) {
+    clearTimeout(timer);
+    aButton.removeEventListener("mouseout", mouseoutHandler, false);
+    aButton.removeEventListener("mouseup", mouseupHandler, false);
   }
 
   function clickHandler(aEvent) {
@@ -291,36 +314,33 @@ function SetClickAndHoldHandlers() {
     }
   }
 
-  function stopTimer(aEvent) {
-    if (timer) {
-      clearTimeout(timer);
-      timer = null;
-    }
-  }
-
   function _addClickAndHoldListenersOnElement(aElm) {
     aElm.addEventListener("mousedown", mousedownHandler, true);
-    aElm.addEventListener("mouseup", stopTimer, false);
-    aElm.addEventListener("mouseout", stopTimer, false);
     aElm.addEventListener("click", clickHandler, true);
   }
 
-  // Bug 414797: Clone the dropmarker's menu into both the back and
-  // the forward buttons.
+  // Bug 414797: Clone unified-back-forward-button's context menu into both the
+  // back and the forward buttons.
   var unifiedButton = document.getElementById("unified-back-forward-button");
   if (unifiedButton && !unifiedButton._clickHandlersAttached) {
-    var popup = document.getElementById("backForwardMenu").cloneNode(true);
+    unifiedButton._clickHandlersAttached = true;
+
+    let popup = document.getElementById("backForwardMenu").cloneNode(true);
     popup.removeAttribute("id");
-    var backButton = document.getElementById("back-button");
+    // Prevent the context attribute on unified-back-forward-button from being
+    // inherited.
+    popup.setAttribute("context", "");
+
+    let backButton = document.getElementById("back-button");
     backButton.setAttribute("type", "menu");
     backButton.appendChild(popup);
     _addClickAndHoldListenersOnElement(backButton);
-    var forwardButton = document.getElementById("forward-button");
+
+    let forwardButton = document.getElementById("forward-button");
     popup = popup.cloneNode(true);
     forwardButton.setAttribute("type", "menu");
     forwardButton.appendChild(popup);
     _addClickAndHoldListenersOnElement(forwardButton);
-    unifiedButton._clickHandlersAttached = true;
   }
 }
 
@@ -1334,7 +1354,8 @@ function BrowserStartup() {
 
   retrieveToolbarIconsizesFromTheme();
 
-  setTimeout(delayedStartup, 0, isLoadingBlank, mustLoadSidebar);
+  gDelayedStartupTimeoutId = setTimeout(delayedStartup, 0, isLoadingBlank, mustLoadSidebar);
+  gStartupRan = true;
 }
 
 function HandleAppCommandEvent(evt) {
@@ -1377,7 +1398,7 @@ function prepareForStartup() {
   gBrowser.addEventListener("NewPluginInstalled", gPluginHandler.newPluginInstalled, true);
 #ifdef XP_MACOSX
   gBrowser.addEventListener("npapi-carbon-event-model-failure", gPluginHandler, true);
-#endif 
+#endif
 
   Services.obs.addObserver(gPluginHandler.pluginCrashed, "plugin-crashed", false);
 
@@ -1454,6 +1475,8 @@ function prepareForStartup() {
 }
 
 function delayedStartup(isLoadingBlank, mustLoadSidebar) {
+  gDelayedStartupTimeoutId = null;
+
   Services.obs.addObserver(gSessionHistoryObserver, "browser:purge-session-history", false);
   Services.obs.addObserver(gXPInstallObserver, "addon-install-disabled", false);
   Services.obs.addObserver(gXPInstallObserver, "addon-install-started", false);
@@ -1579,22 +1602,10 @@ function delayedStartup(isLoadingBlank, mustLoadSidebar) {
   gPrefService.addObserver(ctrlTab.prefName, ctrlTab, false);
   gPrefService.addObserver(allTabs.prefName, allTabs, false);
 
-  // Initialize the microsummary service by retrieving it, prompting its factory
-  // to create its singleton, whose constructor initializes the service.
-  // Started 4 seconds after delayedStartup (before the livemarks service below).
-  setTimeout(function() {
-    try {
-      Cc["@mozilla.org/microsummary/service;1"].getService(Ci.nsIMicrosummaryService);
-    } catch (ex) {
-      Components.utils.reportError("Failed to init microsummary service:\n" + ex);
-    }
-  }, 4000);
-
   // Delayed initialization of the livemarks update timer.
   // Livemark updates don't need to start until after bookmark UI
   // such as the toolbar has initialized. Starting 5 seconds after
-  // delayedStartup in order to stagger this after the microsummary
-  // service (see above) and before the download manager starts (see below).
+  // delayedStartup in order to stagger this before the download manager starts.
   setTimeout(function() PlacesUtils.livemarks.start(), 5000);
 
   // Initialize the download manager some time after the app starts so that
@@ -1662,6 +1673,16 @@ function delayedStartup(isLoadingBlank, mustLoadSidebar) {
 #endif
   }
 
+  // Enable Scratchpad in the UI, if the preference allows this.
+  let scratchpadEnabled = gPrefService.getBoolPref(Scratchpad.prefEnabledName);
+  if (scratchpadEnabled) {
+    document.getElementById("menu_scratchpad").hidden = false;
+    document.getElementById("Tools:Scratchpad").removeAttribute("disabled");
+#ifdef MENUBAR_CAN_AUTOHIDE
+    document.getElementById("appmenu_scratchpad").hidden = false;
+#endif
+  }
+
 #ifdef MENUBAR_CAN_AUTOHIDE
   // If the user (or the locale) hasn't enabled the top-level "Character
   // Encoding" menu via the "browser.menu.showCharacterEncoding" preference,
@@ -1674,16 +1695,16 @@ function delayedStartup(isLoadingBlank, mustLoadSidebar) {
   Services.obs.notifyObservers(window, "browser-delayed-startup-finished", "");
 }
 
-function BrowserShutdown()
-{
-  if (Win7Features)
-    Win7Features.onCloseWindow();
+function BrowserShutdown() {
+  // In certain scenarios it's possible for unload to be fired before onload,
+  // (e.g. if the window is being closed after browser.js loads but before the
+  // load completes). In that case, there's nothing to do here.
+  if (!gStartupRan)
+    return;
 
-  gPrefService.removeObserver(ctrlTab.prefName, ctrlTab);
-  gPrefService.removeObserver(allTabs.prefName, allTabs);
-  ctrlTab.uninit();
+  // First clean up services initialized in BrowserStartup (or those whose
+  // uninit methods don't depend on the services having been initialized).
   allTabs.uninit();
-  TabView.uninit();
 
   CombinedStopReload.uninit();
 
@@ -1691,21 +1712,7 @@ function BrowserShutdown()
 
   FullScreen.cleanup();
 
-  try {
-    FullZoom.destroy();
-  }
-  catch(ex) {
-    Components.utils.reportError(ex);
-  }
-
-  Services.obs.removeObserver(gSessionHistoryObserver, "browser:purge-session-history");
-  Services.obs.removeObserver(gXPInstallObserver, "addon-install-disabled");
-  Services.obs.removeObserver(gXPInstallObserver, "addon-install-started");
-  Services.obs.removeObserver(gXPInstallObserver, "addon-install-blocked");
-  Services.obs.removeObserver(gXPInstallObserver, "addon-install-failed");
-  Services.obs.removeObserver(gXPInstallObserver, "addon-install-complete");
   Services.obs.removeObserver(gPluginHandler.pluginCrashed, "plugin-crashed");
-  Services.obs.removeObserver(gFormSubmitObserver, "invalidformsubmit");
 
   try {
     gBrowser.removeProgressListener(window.XULBrowserWindow);
@@ -1715,17 +1722,8 @@ function BrowserShutdown()
 
   PlacesStarButton.uninit();
 
-  try {
-    gPrefService.removeObserver(gHomeButton.prefDomain, gHomeButton);
-  } catch (ex) {
-    Components.utils.reportError(ex);
-  }
-
-  BrowserOffline.uninit();
-  OfflineApps.uninit();
   gPrivateBrowsingUI.uninit();
-  IndexedDBPromptHelper.uninit();
-  AddonManager.removeAddonListener(AddonsMgrListener);
+
   TabsInTitlebar.uninit();
 
   var enumerator = Services.wm.getEnumerator(null);
@@ -1737,6 +1735,47 @@ function BrowserShutdown()
     document.persist("sidebar-title", "value");
   }
 
+  // Now either cancel delayedStartup, or clean up the services initialized from
+  // it.
+  if (gDelayedStartupTimeoutId) {
+    clearTimeout(gDelayedStartupTimeoutId);
+  } else {
+    if (Win7Features)
+      Win7Features.onCloseWindow();
+
+    gPrefService.removeObserver(ctrlTab.prefName, ctrlTab);
+    gPrefService.removeObserver(allTabs.prefName, allTabs);
+    ctrlTab.uninit();
+    TabView.uninit();
+
+    try {
+      FullZoom.destroy();
+    }
+    catch(ex) {
+      Components.utils.reportError(ex);
+    }
+
+    Services.obs.removeObserver(gSessionHistoryObserver, "browser:purge-session-history");
+    Services.obs.removeObserver(gXPInstallObserver, "addon-install-disabled");
+    Services.obs.removeObserver(gXPInstallObserver, "addon-install-started");
+    Services.obs.removeObserver(gXPInstallObserver, "addon-install-blocked");
+    Services.obs.removeObserver(gXPInstallObserver, "addon-install-failed");
+    Services.obs.removeObserver(gXPInstallObserver, "addon-install-complete");
+    Services.obs.removeObserver(gFormSubmitObserver, "invalidformsubmit");
+
+    try {
+      gPrefService.removeObserver(gHomeButton.prefDomain, gHomeButton);
+    } catch (ex) {
+      Components.utils.reportError(ex);
+    }
+
+    BrowserOffline.uninit();
+    OfflineApps.uninit();
+    IndexedDBPromptHelper.uninit();
+    AddonManager.removeAddonListener(AddonsMgrListener);
+  }
+
+  // Final window teardown, do this last.
   window.XULBrowserWindow.destroy();
   window.XULBrowserWindow = null;
   window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
@@ -1752,8 +1791,7 @@ function BrowserShutdown()
 // nonBrowserWindowStartup(), nonBrowserWindowDelayedStartup(), and
 // nonBrowserWindowShutdown() are used for non-browser windows in
 // macBrowserOverlay
-function nonBrowserWindowStartup()
-{
+function nonBrowserWindowStartup() {
   // Disable inappropriate commands / submenus
   var disabledItems = ['Browser:SavePage',
                        'Browser:SendLink', 'cmd_pageSetup', 'cmd_print', 'cmd_find', 'cmd_findAgain',
@@ -1763,8 +1801,7 @@ function nonBrowserWindowStartup()
                        'View:PageInfo', 'Tasks:InspectPage', 'Browser:ToggleTabView', ];
   var element;
 
-  for (var id in disabledItems)
-  {
+  for (var id in disabledItems) {
     element = document.getElementById(disabledItems[id]);
     if (element)
       element.setAttribute("disabled", "true");
@@ -1772,11 +1809,9 @@ function nonBrowserWindowStartup()
 
   // If no windows are active (i.e. we're the hidden window), disable the close, minimize
   // and zoom menu commands as well
-  if (window.location.href == "chrome://browser/content/hiddenWindow.xul")
-  {
+  if (window.location.href == "chrome://browser/content/hiddenWindow.xul") {
     var hiddenWindowDisabledItems = ['cmd_close', 'minimizeWindow', 'zoomWindow'];
-    for (var id in hiddenWindowDisabledItems)
-    {
+    for (var id in hiddenWindowDisabledItems) {
       element = document.getElementById(hiddenWindowDisabledItems[id]);
       if (element)
         element.setAttribute("disabled", "true");
@@ -1804,12 +1839,12 @@ function nonBrowserWindowStartup()
     }
   }
 
-
-  setTimeout(nonBrowserWindowDelayedStartup, 0);
+  gDelayedStartupTimeoutId = setTimeout(nonBrowserWindowDelayedStartup, 0);
 }
 
-function nonBrowserWindowDelayedStartup()
-{
+function nonBrowserWindowDelayedStartup() {
+  gDelayedStartupTimeoutId = null;
+
   // initialise the offline listener
   BrowserOffline.init();
 
@@ -1823,10 +1858,18 @@ function nonBrowserWindowDelayedStartup()
   // initialize the sync UI
   gSyncUI.init();
 #endif
+
+  gStartupRan = true;
 }
 
-function nonBrowserWindowShutdown()
-{
+function nonBrowserWindowShutdown() {
+  // If nonBrowserWindowDelayedStartup hasn't run yet, we have no work to do -
+  // just cancel the pending timeout and return;
+  if (gDelayedStartupTimeoutId) {
+    clearTimeout(gDelayedStartupTimeoutId);
+    return;
+  }
+
   BrowserOffline.uninit();
 
   gPrivateBrowsingUI.uninit();
@@ -2214,7 +2257,11 @@ function loadURI(uri, referrer, postData, allowThirdPartyFixup)
   }
 }
 
-function getShortcutOrURI(aURL, aPostDataRef) {
+function getShortcutOrURI(aURL, aPostDataRef, aMayInheritPrincipal) {
+  // Initialize outparam to false
+  if (aMayInheritPrincipal)
+    aMayInheritPrincipal.value = false;
+
   var shortcutURL = null;
   var keyword = aURL;
   var param = "";
@@ -2260,9 +2307,15 @@ function getShortcutOrURI(aURL, aPostDataRef) {
       } catch (e) {}
     }
 
+    // encodeURIComponent produces UTF-8, and cannot be used for other charsets.
+    // escape() works in those cases, but it doesn't uri-encode +, @, and /.
+    // Therefore we need to manually replace these ASCII characters by their
+    // encodeURIComponent result, to match the behavior of nsEscape() with
+    // url_XPAlphas
     var encodedParam = "";
-    if (charset)
-      encodedParam = escape(convertFromUnicode(charset, param));
+    if (charset && charset != "UTF-8")
+      encodedParam = escape(convertFromUnicode(charset, param)).
+                     replace(/[+@\/]+/g, encodeURIComponent);
     else // Default charset is UTF-8
       encodedParam = encodeURIComponent(param);
 
@@ -2279,6 +2332,11 @@ function getShortcutOrURI(aURL, aPostDataRef) {
 
     return aURL;
   }
+
+  // This URL came from a bookmark, so it's safe to let it inherit the current
+  // document's principal.
+  if (aMayInheritPrincipal)
+    aMayInheritPrincipal.value = true;
 
   return shortcutURL;
 }
@@ -2669,6 +2727,11 @@ function BrowserOnClick(event) {
         gBrowser.loadURIWithFlags(content.location.href,
                                   nsIWebNavigation.LOAD_FLAGS_BYPASS_CLASSIFIER,
                                   null, null, null);
+
+        Services.perms.add(makeURI(content.location.href), "safe-browsing",
+                           Ci.nsIPermissionManager.ALLOW_ACTION,
+                           Ci.nsIPermissionManager.EXPIRE_SESSION);
+
         let buttons = [{
           label: gNavigatorBundle.getString("safebrowsing.getMeOutOfHereButton.label"),
           accessKey: gNavigatorBundle.getString("safebrowsing.getMeOutOfHereButton.accessKey"),
@@ -2819,7 +2882,7 @@ var PrintPreviewListener = {
     this._printPreviewTab = null;
   },
   _toggleAffectedChrome: function () {
-    gNavToolbox.hidden = gInPrintPreviewMode;
+    gNavToolbox.collapsed = gInPrintPreviewMode;
 
     if (gInPrintPreviewMode)
       this._hideChrome();
@@ -3296,16 +3359,15 @@ const BrowserSearch = {
         win.BrowserSearch.webSearch();
       } else {
         // If there are no open browser windows, open a new one
-
-        // This needs to be in a timeout so that we don't end up refocused
-        // in the url bar
-        function webSearchCallback() {
-          setTimeout(BrowserSearch.webSearch, 0);
+        function observer(subject, topic, data) {
+          if (subject == win) {
+            BrowserSearch.webSearch();
+            Services.obs.removeObserver(observer, "browser-delayed-startup-finished");
+          }
         }
-
         win = window.openDialog("chrome://browser/content/", "_blank",
                                 "chrome,all,dialog=no", "about:blank");
-        win.addEventListener("load", webSearchCallback, false);
+        Services.obs.addObserver(observer, "browser-delayed-startup-finished", false); 
       }
       return;
     }
@@ -4034,16 +4096,19 @@ var FullScreen = {
     // controls on nav bar.
     var fullscreenflex = document.getElementById("fullscreenflex");
     var fullscreenctls = document.getElementById("window-controls");
-    var ctlsOnTabbar = TabsOnTop.enabled &&
-                       !gPrefService.getBoolPref("browser.tabs.autoHide");
-    if (fullscreenctls.parentNode.id == "nav-bar" && ctlsOnTabbar) {
+    var navbar = document.getElementById("nav-bar");
+    var ctlsOnTabbar = window.toolbar.visible &&
+                       (navbar.collapsed ||
+                          (TabsOnTop.enabled &&
+                           !gPrefService.getBoolPref("browser.tabs.autoHide")));
+    if (fullscreenctls.parentNode == navbar && ctlsOnTabbar) {
       document.getElementById("TabsToolbar").appendChild(fullscreenctls);
       // we don't need this space in tabs-on-top mode, so prevent it from 
       // being shown
       fullscreenflex.removeAttribute("fullscreencontrol");
     }
     else if (fullscreenctls.parentNode.id == "TabsToolbar" && !ctlsOnTabbar) {
-      document.getElementById("nav-bar").appendChild(fullscreenctls);
+      navbar.appendChild(fullscreenctls);
       fullscreenflex.setAttribute("fullscreencontrol", "true");
     }
 
@@ -4081,7 +4146,7 @@ var XULBrowserWindow = {
   startTime: 0,
   statusText: "",
   isBusy: false,
-  inContentWhitelist: ["about:addons"],
+  inContentWhitelist: ["about:addons", "about:permissions"],
 
   QueryInterface: function (aIID) {
     if (aIID.equals(Ci.nsIWebProgressListener) ||
@@ -5557,7 +5622,7 @@ function middleMousePaste(event) {
 
   // Strip embedded newlines and surrounding whitespace, to match the URL
   // bar's behavior (stripsurroundingwhitespace)
-  clipboard.replace(/\s*\n\s*/g, "");
+  clipboard = clipboard.replace(/\s*\n\s*/g, "");
 
   let url = getShortcutOrURI(clipboard);
   try {
@@ -6655,11 +6720,14 @@ var gPluginHandler = {
   handleEvent : function(event) {
     let self = gPluginHandler;
     let plugin = event.target;
-    let hideBarPrefName;
+    let doc = plugin.ownerDocument;
 
     // We're expecting the target to be a plugin.
     if (!(plugin instanceof Ci.nsIObjectLoadingContent))
       return;
+
+    // Force a style flush, so that we ensure our binding is attached.
+    plugin.clientTop;
 
     switch (event.type) {
       case "PluginCrashed":
@@ -6670,31 +6738,37 @@ var gPluginHandler = {
         // For non-object plugin tags, register a click handler to install the
         // plugin. Object tags can, and often do, deal with that themselves,
         // so don't stomp on the page developers toes.
-        if (!(plugin instanceof HTMLObjectElement))
-          self.addLinkClickCallback(plugin, "installSinglePlugin");
+        if (!(plugin instanceof HTMLObjectElement)) {
+          // We don't yet check to see if there's actually an installer available.
+          let installStatus = doc.getAnonymousElementByAttribute(plugin, "class", "installStatus");
+          installStatus.setAttribute("status", "ready");
+          let iconStatus = doc.getAnonymousElementByAttribute(plugin, "class", "icon");
+          iconStatus.setAttribute("status", "ready");
+
+          let installLink = doc.getAnonymousElementByAttribute(plugin, "class", "installPluginLink");
+          self.addLinkClickCallback(installLink, "installSinglePlugin", plugin);
+        }
         /* FALLTHRU */
+
       case "PluginBlocklisted":
       case "PluginOutdated":
-        hideBarPrefName = event.type == "PluginOutdated" ?
-                                "plugins.hide_infobar_for_outdated_plugin" :
-                                "plugins.hide_infobar_for_missing_plugin";
-        if (gPrefService.getBoolPref(hideBarPrefName))
-          return;
-
-        self.pluginUnavailable(plugin, event.type);
-        break;
 #ifdef XP_MACOSX
       case "npapi-carbon-event-model-failure":
-        hideBarPrefName = "plugins.hide_infobar_for_carbon_failure_plugin";
-        if (gPrefService.getBoolPref(hideBarPrefName))
-          return;
-
+#endif
         self.pluginUnavailable(plugin, event.type);
         break;
-#endif
+
       case "PluginDisabled":
-        self.addLinkClickCallback(plugin, "managePlugins");
+        let manageLink = doc.getAnonymousElementByAttribute(plugin, "class", "managePluginsLink");
+        self.addLinkClickCallback(manageLink, "managePlugins");
         break;
+    }
+
+    // Hide the in-content UI if it's too big. The crashed plugin handler already did this.
+    if (event.type != "PluginCrashed") {
+      let overlay = doc.getAnonymousElementByAttribute(plugin, "class", "mainBox");
+      if (self.isTooSmall(plugin, overlay))
+          overlay.style.visibility = "hidden";
     }
   },
 
@@ -6714,10 +6788,10 @@ var gPluginHandler = {
   },
 
   // Callback for user clicking on a missing (unsupported) plugin.
-  installSinglePlugin: function (aEvent) {
+  installSinglePlugin: function (plugin) {
     var missingPluginsArray = {};
 
-    var pluginInfo = getPluginInfo(aEvent.target);
+    var pluginInfo = getPluginInfo(plugin);
     missingPluginsArray[pluginInfo.mimetype] = pluginInfo;
 
     openDialog("chrome://mozapps/content/plugins/pluginInstallerWizard.xul",
@@ -6767,9 +6841,6 @@ var gPluginHandler = {
     let blockedNotification  = notificationBox.getNotificationWithValue("blocked-plugins");
     let missingNotification  = notificationBox.getNotificationWithValue("missing-plugins");
 
-    // If there is already an outdated plugin notification then do nothing
-    if (outdatedNotification)
-      return;
 
     function showBlocklistInfo() {
       var url = formatURL("extensions.blocklist.detailsURL", true);
@@ -6801,7 +6872,7 @@ var gPluginHandler = {
       let cancelQuit = Cc["@mozilla.org/supports-PRBool;1"].
                          createInstance(Ci.nsISupportsPRBool);
       Services.obs.notifyObservers(cancelQuit, "quit-application-requested", null);
- 
+
       // Something aborted the quit process.
       if (cancelQuit.data)
         return;
@@ -6855,7 +6926,7 @@ var gPluginHandler = {
       "npapi-carbon-event-model-failure" : {
                                              barID    : "carbon-failure-plugins",
                                              iconURL  : "chrome://mozapps/skin/plugins/notifyPluginGeneric.png",
-                                             message  : gNavigatorBundle.getString("carbonFailurePluginsMessage.title"),
+                                             message  : gNavigatorBundle.getString("carbonFailurePluginsMessage.message"),
                                              buttons: [{
                                                          label     : gNavigatorBundle.getString("carbonFailurePluginsMessage.restartButton.label"),
                                                          accessKey : gNavigatorBundle.getString("carbonFailurePluginsMessage.restartButton.accesskey"),
@@ -6865,10 +6936,17 @@ var gPluginHandler = {
                             }
 #endif
     };
+
+    // If there is already an outdated plugin notification then do nothing
+    if (outdatedNotification)
+      return;
+
 #ifdef XP_MACOSX
     if (eventType == "npapi-carbon-event-model-failure") {
+      if (gPrefService.getBoolPref("plugins.hide_infobar_for_carbon_failure_plugin"))
+        return;
 
-      let carbonFailureNotification = 
+      let carbonFailureNotification =
         notificationBox.getNotificationWithValue("carbon-failure-plugins");
 
       if (carbonFailureNotification)
@@ -6880,11 +6958,18 @@ var gPluginHandler = {
         eventType = "PluginNotFound";
     }
 #endif
+
     if (eventType == "PluginBlocklisted") {
+      if (gPrefService.getBoolPref("plugins.hide_infobar_for_missing_plugin")) // XXX add a new pref?
+        return;
+
       if (blockedNotification || missingNotification)
         return;
     }
     else if (eventType == "PluginOutdated") {
+      if (gPrefService.getBoolPref("plugins.hide_infobar_for_outdated_plugin"))
+        return;
+
       // Cancel any notification about blocklisting/missing plugins
       if (blockedNotification)
         blockedNotification.close();
@@ -6892,6 +6977,9 @@ var gPluginHandler = {
         missingNotification.close();
     }
     else if (eventType == "PluginNotFound") {
+      if (gPrefService.getBoolPref("plugins.hide_infobar_for_missing_plugin"))
+        return;
+
       if (missingNotification)
         return;
 
@@ -6947,9 +7035,6 @@ var gPluginHandler = {
     // Remap the plugin name to a more user-presentable form.
     pluginName = this.makeNicePluginName(pluginName, pluginFilename);
 
-    // Force a style flush, so that we ensure our binding is attached.
-    plugin.clientTop;
-
     let messageString = gNavigatorBundle.getFormattedString("crashedpluginsMessage.title", [pluginName]);
 
     //
@@ -6957,12 +7042,6 @@ var gPluginHandler = {
     //
     let doc = plugin.ownerDocument;
     let overlay = doc.getAnonymousElementByAttribute(plugin, "class", "mainBox");
-
-    // The binding has role="link" here, since missing/disabled/blocked
-    // plugin UI has a onclick handler on the whole thing. This isn't needed
-    // for the plugin-crashed UI, because we use actual HTML links in the text.
-    overlay.removeAttribute("role");
-
     let statusDiv = doc.getAnonymousElementByAttribute(plugin, "class", "submitStatus");
 #ifdef MOZ_CRASHREPORTER
     let status;
@@ -7616,12 +7695,6 @@ var gIdentityHandler = {
           icon_label = this.getEffectiveHost();
       }
 
-      // We need a port number for all lookups.  If one hasn't been specified, use
-      // the https default
-      var lookupHost = this._lastLocation.host;
-      if (lookupHost.indexOf(':') < 0)
-        lookupHost += ":443";
-
       // Verifier is either the CA Org, for a normal cert, or a special string
       // for certs that are trusted because of a security exception.
       var tooltip = gNavigatorBundle.getFormattedString("identity.identified.verifier",
@@ -7631,7 +7704,12 @@ var gIdentityHandler = {
       // thing here in terms of converting _lastLocation.port from string to int, but
       // the overrideService doesn't like undefined ports, so make sure we have
       // something in the default case (bug 432241).
-      if (this._overrideService.hasMatchingOverride(this._lastLocation.hostname,
+      // .hostname can return an empty string in some exceptional cases -
+      // hasMatchingOverride does not handle that, so avoid calling it.
+      // Updating the tooltip value in those cases isn't critical.
+      // FIXME: Fixing bug 646690 would probably makes this check unnecessary
+      if (this._lastLocation.hostname &&
+          this._overrideService.hasMatchingOverride(this._lastLocation.hostname,
                                                     (this._lastLocation.port || 443),
                                                     iData.cert, {}, {}))
         tooltip = gNavigatorBundle.getString("identity.identified.verified_by_you");
@@ -7792,7 +7870,7 @@ var gIdentityHandler = {
     dt.setData("text/uri-list", value);
     dt.setData("text/plain", value);
     dt.setData("text/html", htmlString);
-    dt.addElement(event.currentTarget);
+    dt.setDragImage(gProxyFavIcon, 16, 16);
   }
 };
 
@@ -8451,13 +8529,18 @@ var TabContextMenu = {
   updateContextMenu: function updateContextMenu(aPopupMenu) {
     this.contextTab = document.popupNode.localName == "tab" ?
                       document.popupNode : gBrowser.selectedTab;
-    let disabled = gBrowser.visibleTabs.length == 1;
+    let disabled = gBrowser.tabs.length == 1;
 
     // Enable the "Close Tab" menuitem when the window doesn't close with the last tab.
     document.getElementById("context_closeTab").disabled =
       disabled && gBrowser.tabContainer._closeWindowWithLastTab;
 
     var menuItems = aPopupMenu.getElementsByAttribute("tbattr", "tabbrowser-multiple");
+    for (var i = 0; i < menuItems.length; i++)
+      menuItems[i].disabled = disabled;
+
+    disabled = gBrowser.visibleTabs.length == 1;
+    menuItems = aPopupMenu.getElementsByAttribute("tbattr", "tabbrowser-multiple-visible");
     for (var i = 0; i < menuItems.length; i++)
       menuItems[i].disabled = disabled;
 
@@ -8604,6 +8687,19 @@ function toggleAddonBar() {
   let addonBar = document.getElementById("addon-bar");
   setToolbarVisibility(addonBar, addonBar.collapsed);
 }
+
+var Scratchpad = {
+  prefEnabledName: "devtools.scratchpad.enabled",
+
+  openScratchpad: function SP_openScratchpad() {
+    const SCRATCHPAD_WINDOW_URL = "chrome://browser/content/scratchpad.xul";
+    const SCRATCHPAD_WINDOW_FEATURES = "chrome,titlebar,toolbar,centerscreen,resizable,dialog=no";
+
+    return Services.ww.openWindow(null, SCRATCHPAD_WINDOW_URL, "_blank",
+                                  SCRATCHPAD_WINDOW_FEATURES, null);
+  },
+};
+
 
 XPCOMUtils.defineLazyGetter(window, "gShowPageResizers", function () {
 #ifdef XP_WIN

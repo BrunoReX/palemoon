@@ -228,7 +228,6 @@ NS_IMPL_FRAMEARENA_HELPERS(nsSVGGlyphFrame)
 // nsQueryFrame methods
 
 NS_QUERYFRAME_HEAD(nsSVGGlyphFrame)
-  NS_QUERYFRAME_ENTRY(nsISVGGlyphFragmentLeaf)
   NS_QUERYFRAME_ENTRY(nsISVGGlyphFragmentNode)
   NS_QUERYFRAME_ENTRY(nsISVGChildFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsSVGGlyphFrameBase)
@@ -474,7 +473,7 @@ nsSVGGlyphFrame::GetCoveredRegion()
 NS_IMETHODIMP
 nsSVGGlyphFrame::UpdateCoveredRegion()
 {
-  mRect.Empty();
+  mRect.SetEmpty();
 
   gfxMatrix matrix = GetCanvasTM();
   if (matrix.IsSingular()) {
@@ -491,11 +490,11 @@ nsSVGGlyphFrame::UpdateCoveredRegion()
     return NS_OK;
   }
 
-  SetMatrixPropagation(PR_FALSE);
+  mPropagateTransform = PR_FALSE;
   CharacterIterator iter(this, PR_TRUE);
   iter.SetInitialMatrix(tmpCtx);
   AddBoundingBoxesToPath(&iter, tmpCtx);
-  SetMatrixPropagation(PR_TRUE);
+  mPropagateTransform = PR_TRUE;
   tmpCtx->IdentityMatrix();
 
   // Be careful when replacing the following logic to get the fill and stroke
@@ -669,12 +668,9 @@ nsSVGGlyphFrame::GetCharacterData(nsAString & aCharacterData)
   nsAutoString characterData;
   mContent->AppendTextTo(characterData);
 
-  if (mWhitespaceHandling & COMPRESS_WHITESPACE) {
-    PRBool trimLeadingWhitespace, trimTrailingWhitespace;
-    trimLeadingWhitespace = ((mWhitespaceHandling & TRIM_LEADING_WHITESPACE) != 0);
-    trimTrailingWhitespace = ((mWhitespaceHandling & TRIM_TRAILING_WHITESPACE) != 0);
-    characterData.CompressWhitespace(trimLeadingWhitespace, 
-                                     trimTrailingWhitespace);
+  if (mCompressWhitespace) {
+    characterData.CompressWhitespace(mTrimLeadingWhitespace,
+                                     mTrimTrailingWhitespace);
   } else {
     nsAString::iterator start, end;
     characterData.BeginWriting(start);
@@ -695,7 +691,7 @@ nsSVGGlyphFrame::GetCharacterPositions(nsTArray<CharacterPosition>* aCharacterPo
                                        float aMetricsScale)
 {
   PRUint32 strLength = mTextRun->GetLength();
-  NS_ASSERTION(strLength > 0, "no text");
+  NS_ABORT_IF_FALSE(strLength > 0, "no text");
 
   const gfxFloat radPerDeg = M_PI / 180.0;
 
@@ -972,20 +968,7 @@ nsSVGGlyphFrame::GetHighlight(PRUint32 *charnum, PRUint32 *nchars,
   // get the selection details 
   SelectionDetails *details = nsnull;
   {
-    nsCOMPtr<nsFrameSelection> frameSelection;
-    {
-      nsCOMPtr<nsISelectionController> controller;
-      GetSelectionController(presContext, getter_AddRefs(controller));
-      
-      if (!controller) {
-        NS_ERROR("no selection controller");
-        return NS_ERROR_FAILURE;
-      }
-      frameSelection = do_QueryInterface(controller);
-    }
-    if (!frameSelection) {
-      frameSelection = presContext->PresShell()->FrameSelection();
-    }
+    nsRefPtr<nsFrameSelection> frameSelection = presContext->PresShell()->FrameSelection();
     if (!frameSelection) {
       NS_ERROR("no frameselection interface");
       return NS_ERROR_FAILURE;
@@ -1036,9 +1019,9 @@ nsSVGGlyphFrame::GetHighlight(PRUint32 *charnum, PRUint32 *nchars,
 
 
 //----------------------------------------------------------------------
-// nsISVGGlyphFragmentLeaf interface:
+// Internal methods
 
-NS_IMETHODIMP_(void)
+void
 nsSVGGlyphFrame::SetGlyphPosition(gfxPoint *aPosition, PRBool aForceGlobalTransform)
 {
   float drawScale, metricsScale;
@@ -1105,7 +1088,7 @@ nsSVGGlyphFrame::SetGlyphPosition(gfxPoint *aPosition, PRBool aForceGlobalTransf
   }
 }
 
-NS_IMETHODIMP
+nsresult
 nsSVGGlyphFrame::GetStartPositionOfChar(PRUint32 charnum,
                                         nsIDOMSVGPoint **_retval)
 {
@@ -1119,7 +1102,7 @@ nsSVGGlyphFrame::GetStartPositionOfChar(PRUint32 charnum,
   return NS_OK;
 }
 
-NS_IMETHODIMP
+nsresult
 nsSVGGlyphFrame::GetEndPositionOfChar(PRUint32 charnum,
                                       nsIDOMSVGPoint **_retval)
 {
@@ -1137,7 +1120,7 @@ nsSVGGlyphFrame::GetEndPositionOfChar(PRUint32 charnum,
   return NS_OK;
 }
 
-NS_IMETHODIMP
+nsresult
 nsSVGGlyphFrame::GetExtentOfChar(PRUint32 charnum, nsIDOMSVGRect **_retval)
 {
   *_retval = nsnull;
@@ -1170,7 +1153,7 @@ nsSVGGlyphFrame::GetExtentOfChar(PRUint32 charnum, nsIDOMSVGRect **_retval)
   return NS_NewSVGRect(_retval, tmpCtx->GetUserPathExtent());
 }
 
-NS_IMETHODIMP
+nsresult
 nsSVGGlyphFrame::GetRotationOfChar(PRUint32 charnum, float *_retval)
 {
   CharacterIterator iter(this, PR_FALSE);
@@ -1186,7 +1169,7 @@ nsSVGGlyphFrame::GetRotationOfChar(PRUint32 charnum, float *_retval)
   return NS_OK;
 }
 
-NS_IMETHODIMP_(float)
+float
 nsSVGGlyphFrame::GetAdvance(PRBool aForceGlobalTransform)
 {
   float drawScale, metricsScale;
@@ -1196,7 +1179,7 @@ nsSVGGlyphFrame::GetAdvance(PRBool aForceGlobalTransform)
   return GetSubStringAdvance(0, mTextRun->GetLength(), metricsScale);
 }
 
-NS_IMETHODIMP_(nsSVGTextPathFrame*) 
+nsSVGTextPathFrame*
 nsSVGGlyphFrame::FindTextPathParent()
 {
   /* check if we're the child of a textPath */
@@ -1212,7 +1195,7 @@ nsSVGGlyphFrame::FindTextPathParent()
   return nsnull;
 }
 
-NS_IMETHODIMP_(PRBool)
+PRBool
 nsSVGGlyphFrame::IsStartOfChunk()
 {
   // this fragment is a chunk if it has a corresponding absolute
@@ -1222,19 +1205,19 @@ nsSVGGlyphFrame::IsStartOfChunk()
   return PR_FALSE;
 }
 
-NS_IMETHODIMP_(void)
+void
 nsSVGGlyphFrame::GetXY(SVGUserUnitList *aX, SVGUserUnitList *aY)
 {
   static_cast<nsSVGTextContainerFrame *>(mParent)->GetXY(aX, aY);
 }
 
-NS_IMETHODIMP_(void)
+void
 nsSVGGlyphFrame::SetStartIndex(PRUint32 aStartIndex)
 {
   mStartIndex = aStartIndex;
 }
 
-NS_IMETHODIMP_(void)
+void
 nsSVGGlyphFrame::GetEffectiveXY(PRInt32 strLength, nsTArray<float> &aX, nsTArray<float> &aY)
 {
   nsTArray<float> x, y;
@@ -1296,13 +1279,13 @@ nsSVGGlyphFrame::GetEffectiveRotate(PRInt32 strLength, nsTArray<float> &aRotate)
   }
 }
 
-NS_IMETHODIMP_(PRUint16)
+PRUint16
 nsSVGGlyphFrame::GetTextAnchor()
 {
   return GetStyleSVG()->mTextAnchor;
 }
 
-NS_IMETHODIMP_(PRBool)
+PRBool
 nsSVGGlyphFrame::IsAbsolutelyPositioned()
 {
   PRBool hasTextPathAncestor = PR_FALSE;
@@ -1340,12 +1323,13 @@ nsSVGGlyphFrame::IsAbsolutelyPositioned()
 PRUint32
 nsSVGGlyphFrame::GetNumberOfChars()
 {
-  if (mWhitespaceHandling == PRESERVE_WHITESPACE)
-    return mContent->TextLength();
+  if (mCompressWhitespace) {
+    nsAutoString text;
+    GetCharacterData(text);
+    return text.Length();
+  }
 
-  nsAutoString text;
-  GetCharacterData(text);
-  return text.Length();
+  return mContent->TextLength();
 }
 
 float
@@ -1418,20 +1402,24 @@ nsSVGGlyphFrame::GetCharNumAtPosition(nsIDOMSVGPoint *point)
   return last;
 }
 
-NS_IMETHODIMP_(nsISVGGlyphFragmentLeaf *)
-nsSVGGlyphFrame::GetFirstGlyphFragment()
+NS_IMETHODIMP_(nsSVGGlyphFrame *)
+nsSVGGlyphFrame::GetFirstGlyphFrame()
 {
-  return this;
+  nsSVGGlyphFrame *frame = this;
+  while (frame && frame->IsTextEmpty()) {
+    frame = frame->GetNextGlyphFrame();
+  }
+  return frame;
 }
 
-NS_IMETHODIMP_(nsISVGGlyphFragmentLeaf *)
-nsSVGGlyphFrame::GetNextGlyphFragment()
+NS_IMETHODIMP_(nsSVGGlyphFrame *)
+nsSVGGlyphFrame::GetNextGlyphFrame()
 {
   nsIFrame* sibling = GetNextSibling();
   while (sibling) {
     nsISVGGlyphFragmentNode *node = do_QueryFrame(sibling);
     if (node)
-      return node->GetFirstGlyphFragment();
+      return node->GetFirstGlyphFrame();
     sibling = sibling->GetNextSibling();
   }
 
@@ -1439,17 +1427,20 @@ nsSVGGlyphFrame::GetNextGlyphFragment()
   
   NS_ASSERTION(GetParent(), "null parent");
   nsISVGGlyphFragmentNode *node = do_QueryFrame(GetParent());
-  return node ? node->GetNextGlyphFragment() : nsnull;
+  return node ? node->GetNextGlyphFrame() : nsnull;
 }
 
-NS_IMETHODIMP_(void)
-nsSVGGlyphFrame::SetWhitespaceHandling(PRUint8 aWhitespaceHandling)
+PRBool
+nsSVGGlyphFrame::EndsWithWhitespace() const
 {
-  mWhitespaceHandling = aWhitespaceHandling;
+  const nsTextFragment* text = mContent->GetText();
+  NS_ABORT_IF_FALSE(text->GetLength() > 0, "text expected");
+
+  return NS_IsAsciiWhitespace(text->CharAt(text->GetLength() - 1));
 }
 
-NS_IMETHODIMP_(PRBool)
-nsSVGGlyphFrame::IsAllWhitespace()
+PRBool
+nsSVGGlyphFrame::IsAllWhitespace() const
 {
   const nsTextFragment* text = mContent->GetText();
 
@@ -1479,7 +1470,7 @@ nsSVGGlyphFrame::NotifyGlyphMetricsChange()
 PRBool
 nsSVGGlyphFrame::GetGlobalTransform(gfxMatrix *aMatrix)
 {
-  if (!GetMatrixPropagation()) {
+  if (!mPropagateTransform) {
     aMatrix->Reset();
     return PR_TRUE;
   }
@@ -1636,23 +1627,6 @@ nsSVGGlyphFrame::EnsureTextRun(float *aDrawScale, float *aMetricsScale,
   *aDrawScale = float(size/textRunSize);
   *aMetricsScale = (*aDrawScale)/GetTextRunUnitsFactor();
   return PR_TRUE;
-}
-
-NS_IMETHODIMP
-nsSVGGlyphFrame::SetMatrixPropagation(PRBool aPropagate)
-{
-  if (aPropagate) {
-    AddStateBits(NS_STATE_SVG_PROPAGATE_TRANSFORM);
-  } else {
-    RemoveStateBits(NS_STATE_SVG_PROPAGATE_TRANSFORM);
-  }
-  return NS_OK;
-}
-
-PRBool
-nsSVGGlyphFrame::GetMatrixPropagation()
-{
-  return (GetStateBits() & NS_STATE_SVG_PROPAGATE_TRANSFORM) != 0;
 }
 
 //----------------------------------------------------------------------

@@ -92,6 +92,7 @@ SDK_XPIDLSRCS =					\
 	nsIDOMHTMLParagraphElement.idl		\
 	nsIDOMHTMLParamElement.idl		\
 	nsIDOMHTMLPreElement.idl		\
+	nsIDOMHTMLProgressElement.idl		\
 	nsIDOMHTMLQuoteElement.idl		\
 	nsIDOMHTMLScriptElement.idl		\
 	nsIDOMHTMLSelectElement.idl		\
@@ -113,6 +114,7 @@ SDK_XPIDLSRCS =					\
 	nsIDOMHTMLVideoElement.idl		\
 	nsIDOMHTMLAudioElement.idl		\
 	nsIDOMValidityState.idl		\
+	nsIDOMDOMStringMap.idl		\
 	$(NULL)
 
 XPIDLSRCS = 					\

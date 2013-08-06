@@ -41,6 +41,139 @@
 #include "nsMemoryReporterManager.h"
 #include "nsArrayEnumerator.h"
 
+#if defined(XP_LINUX)
+
+#include <unistd.h>
+static PRInt64 GetProcSelfStatmField(int n)
+{
+    // There are more than two fields, but we're only interested in the first
+    // two.
+    static const int MAX_FIELD = 2;
+    size_t fields[MAX_FIELD];
+    NS_ASSERTION(n < MAX_FIELD, "bad field number");
+    FILE *f = fopen("/proc/self/statm", "r");
+    if (f) {
+        int nread = fscanf(f, "%lu %lu", &fields[0], &fields[1]);
+        fclose(f);
+        return (PRInt64) ((nread == MAX_FIELD) ? fields[n]*getpagesize() : -1);
+    }
+    return (PRInt64) -1;
+}
+
+static PRInt64 GetVsize(void *)
+{
+    return GetProcSelfStatmField(0);
+}
+
+static PRInt64 GetResident(void *)
+{
+    return GetProcSelfStatmField(1);
+}
+
+#elif defined(XP_MACOSX)
+
+#include <mach/mach_init.h>
+#include <mach/task.h>
+
+static bool GetTaskBasicInfo(struct task_basic_info *ti)
+{
+    mach_msg_type_number_t count = TASK_BASIC_INFO_COUNT;
+    kern_return_t kr = task_info(mach_task_self(), TASK_BASIC_INFO,
+                                 (task_info_t)ti, &count);
+    return kr == KERN_SUCCESS;
+}
+
+// The VSIZE figure on Mac includes huge amounts of shared memory and is always
+// absurdly high, eg. 2GB+ even at start-up.  But both 'top' and 'ps' report
+// it, so we might as well too.
+static PRInt64 GetVsize(void *)
+{
+    task_basic_info ti;
+    return (PRInt64) (GetTaskBasicInfo(&ti) ? ti.virtual_size : -1);
+}
+
+static PRInt64 GetResident(void *)
+{
+    task_basic_info ti;
+    return (PRInt64) (GetTaskBasicInfo(&ti) ? ti.resident_size : -1);
+}
+
+#elif defined(XP_WIN)
+
+#include <windows.h>
+#include <psapi.h>
+
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
+static PRInt64 GetPrivate(void *)
+{
+    PROCESS_MEMORY_COUNTERS_EX pmcex;
+    pmcex.cb = sizeof(PROCESS_MEMORY_COUNTERS_EX);
+
+    if (!GetProcessMemoryInfo(GetCurrentProcess(),
+                              (PPROCESS_MEMORY_COUNTERS) &pmcex, sizeof(pmcex)))
+    return (PRInt64) -1;
+
+    return pmcex.PrivateUsage;
+}
+
+NS_MEMORY_REPORTER_IMPLEMENT(Private,
+    "private",
+    MR_OTHER,
+    "Memory that cannot be shared with other processes, including memory that "
+    "is committed and marked MEM_PRIVATE, data that is not mapped, and "
+    "executable pages that have been written to.",
+    GetPrivate,
+    NULL)
+#endif
+
+static PRInt64 GetResident(void *)
+{
+  PROCESS_MEMORY_COUNTERS pmc;
+  pmc.cb = sizeof(PROCESS_MEMORY_COUNTERS);
+
+  if (!GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))
+      return (PRInt64) -1;
+
+  return pmc.WorkingSetSize;
+}
+
+#else
+
+static PRInt64 GetResident(void *)
+{
+    return (PRInt64) -1;
+}
+
+#endif
+
+#if defined(XP_LINUX) || defined(XP_MACOSX)
+NS_MEMORY_REPORTER_IMPLEMENT(Vsize,
+    "vsize",
+    MR_OTHER,
+    "Memory mapped by the process, including code and data segments, the "
+    "heap, thread stacks, memory explicitly mapped by the process via mmap "
+    "and similar operations, and memory shared with other processes. "
+    "(Note that 'resident' is a better measure of the memory resources used "
+    "by the process.) "
+    "This is the vsize figure as reported by 'top' or 'ps'; on Mac the amount "
+    "of memory shared with other processes is very high and so this figure is "
+    "of limited use.",
+    GetVsize,
+    NULL)
+#endif
+
+NS_MEMORY_REPORTER_IMPLEMENT(Resident,
+    "resident",
+    MR_OTHER,
+    "Memory mapped by the process that is present in physical memory, "
+    "also known as the resident set size (RSS).  This is the best single "
+    "figure to use when considering the memory resources used by the process, "
+    "but it depends both on other processes being run and details of the OS "
+    "kernel and so is best used for comparing the memory usage of a single "
+    "process at different points in time.",
+    GetResident,
+    NULL)
+
 /**
  ** memory reporter implementation for jemalloc and OSX malloc,
  ** to obtain info on total memory in use (that we know about,
@@ -66,144 +199,126 @@ extern void jemalloc_stats(jemalloc_stats_t* stats)
 #endif  // MOZ_MEMORY
 
 #if HAVE_JEMALLOC_STATS
-#  define HAVE_MALLOC_REPORTERS 1
 
-PRInt64 getMallocMapped(void *) {
-    jemalloc_stats_t stats;
-    jemalloc_stats(&stats);
-    return (PRInt64) stats.mapped;
-}
-
-PRInt64 getMallocAllocated(void *) {
+static PRInt64 GetHeapUsed(void *)
+{
     jemalloc_stats_t stats;
     jemalloc_stats(&stats);
     return (PRInt64) stats.allocated;
 }
 
-PRInt64 getMallocCommitted(void *) {
+static PRInt64 GetHeapUnused(void *)
+{
+    jemalloc_stats_t stats;
+    jemalloc_stats(&stats);
+    return (PRInt64) (stats.mapped - stats.allocated);
+}
+
+static PRInt64 GetHeapCommitted(void *)
+{
     jemalloc_stats_t stats;
     jemalloc_stats(&stats);
     return (PRInt64) stats.committed;
 }
 
-PRInt64 getMallocDirty(void *) {
+static PRInt64 GetHeapDirty(void *)
+{
     jemalloc_stats_t stats;
     jemalloc_stats(&stats);
     return (PRInt64) stats.dirty;
 }
 
+NS_MEMORY_REPORTER_IMPLEMENT(HeapCommitted,
+    "heap-committed",
+    MR_OTHER,
+    "Memory mapped by the heap allocator that is committed, i.e. in physical "
+    "memory or paged to disk.",
+    GetHeapCommitted,
+    NULL)
+
+NS_MEMORY_REPORTER_IMPLEMENT(HeapDirty,
+    "heap-dirty",
+    MR_OTHER,
+    "Memory mapped by the heap allocator that is committed but unused.",
+    GetHeapDirty,
+    NULL)
+
 #elif defined(XP_MACOSX) && !defined(MOZ_MEMORY)
-#define HAVE_MALLOC_REPORTERS 1
 #include <malloc/malloc.h>
 
-static PRInt64 getMallocAllocated(void *) {
+static PRInt64 GetHeapUsed(void *)
+{
     struct mstats stats = mstats();
     return (PRInt64) stats.bytes_used;
 }
 
-static PRInt64 getMallocMapped(void *) {
+static PRInt64 GetHeapUnused(void *)
+{
     struct mstats stats = mstats();
-    return (PRInt64) stats.bytes_total;
+    return (PRInt64) (stats.bytes_total - stats.bytes_used);
 }
 
-static PRInt64 getMallocDefaultCommitted(void *) {
+static PRInt64 GetHeapZone0Committed(void *)
+{
     malloc_statistics_t stats;
     malloc_zone_statistics(malloc_default_zone(), &stats);
     return stats.size_in_use;
 }
 
-static PRInt64 getMallocDefaultAllocated(void *) {
+static PRInt64 GetHeapZone0Used(void *)
+{
     malloc_statistics_t stats;
     malloc_zone_statistics(malloc_default_zone(), &stats);
     return stats.size_allocated;
 }
 
-#endif
+NS_MEMORY_REPORTER_IMPLEMENT(HeapZone0Committed,
+    "heap-zone0-committed",
+    MR_OTHER,
+    "Memory mapped by the heap allocator that is committed in the default "
+    "zone.",
+    GetHeapZone0Committed,
+    NULL)
 
-
-#ifdef HAVE_MALLOC_REPORTERS
-NS_MEMORY_REPORTER_IMPLEMENT(MallocAllocated,
-                             "malloc/allocated",
-                             "Malloc bytes allocated (in use by application)",
-                             getMallocAllocated,
-                             NULL)
-
-NS_MEMORY_REPORTER_IMPLEMENT(MallocMapped,
-                             "malloc/mapped",
-                             "Malloc bytes mapped (not necessarily committed)",
-                             getMallocMapped,
-                             NULL)
-
-#if defined(HAVE_JEMALLOC_STATS)
-NS_MEMORY_REPORTER_IMPLEMENT(MallocCommitted,
-                             "malloc/committed",
-                             "Malloc bytes committed (readable/writable)",
-                             getMallocCommitted,
-                             NULL)
-
-NS_MEMORY_REPORTER_IMPLEMENT(MallocDirty,
-                             "malloc/dirty",
-                             "Malloc bytes dirty (committed unused pages)",
-                             getMallocDirty,
-                             NULL)
-#elif defined(XP_MACOSX) && !defined(MOZ_MEMORY)
-NS_MEMORY_REPORTER_IMPLEMENT(MallocDefaultCommitted,
-                             "malloc/zone0/committed",
-                             "Malloc bytes committed (r/w) in default zone",
-                             getMallocDefaultCommitted,
-                             NULL)
-
-NS_MEMORY_REPORTER_IMPLEMENT(MallocDefaultAllocated,
-                             "malloc/zone0/allocated",
-                             "Malloc bytes allocated (in use) in default zone",
-                             getMallocDefaultAllocated,
-                             NULL)
-#endif
-
-#endif
-
-#if defined(XP_WIN) && !defined(WINCE)
-#include <windows.h>
-#include <psapi.h>
-
-static PRInt64 GetWin32PrivateBytes(void *) {
-#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
-  PROCESS_MEMORY_COUNTERS_EX pmcex;
-  pmcex.cb = sizeof(PROCESS_MEMORY_COUNTERS_EX);
-
-  if (!GetProcessMemoryInfo(GetCurrentProcess(),
-                            (PPROCESS_MEMORY_COUNTERS) &pmcex,
-                            sizeof(PROCESS_MEMORY_COUNTERS_EX)))
-    return 0;
-
-  return pmcex.PrivateUsage;
+NS_MEMORY_REPORTER_IMPLEMENT(HeapZone0Used,
+    "heap-zone0-used",
+    MR_OTHER,
+    "Memory mapped by the heap allocator in the default zone that is "
+    "available for use by the application.",
+    GetHeapZone0Used,
+    NULL)
 #else
-  return 0;
-#endif
+
+static PRInt64 GetHeapUsed(void *)
+{
+    return (PRInt64) -1;
 }
 
-static PRInt64 GetWin32WorkingSetSize(void *) {
-  PROCESS_MEMORY_COUNTERS pmc;
-  pmc.cb = sizeof(PROCESS_MEMORY_COUNTERS);
-
-  if (!GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))
-      return 0;
-
-  return pmc.WorkingSetSize;
+static PRInt64 GetHeapUnused(void *)
+{
+    return (PRInt64) -1;
 }
 
-NS_MEMORY_REPORTER_IMPLEMENT(Win32WorkingSetSize,
-                             "win32/workingset",
-                             "Win32 working set size",
-                             GetWin32WorkingSetSize,
-                             nsnull);
-
-NS_MEMORY_REPORTER_IMPLEMENT(Win32PrivateBytes,
-                             "win32/privatebytes",
-                             "Win32 private bytes (cannot be shared with other processes).  (Available only on Windows XP SP2 or later.)",
-                             GetWin32PrivateBytes,
-                             nsnull);
 #endif
+
+NS_MEMORY_REPORTER_IMPLEMENT(HeapUsed,
+    "heap-used",
+    MR_OTHER,
+    "Memory mapped by the heap allocator that is available for use by the "
+    "application.  This may exceed the amount of memory requested by the "
+    "application due to the allocator rounding up request sizes. "
+    "(The exact amount requested is not measured.) ",
+    GetHeapUsed,
+    NULL)
+
+NS_MEMORY_REPORTER_IMPLEMENT(HeapUnused,
+    "heap-unused",
+    MR_OTHER,
+    "Memory mapped by the heap allocator and not available for use by the "
+    "application.  This can grow large if the heap allocator is holding onto "
+    "memory that the application has freed.",
+    GetHeapUnused,
+    NULL)
 
 /**
  ** nsMemoryReporterManager implementation
@@ -218,32 +333,25 @@ nsMemoryReporterManager::Init()
     if (!jemalloc_stats)
         return NS_ERROR_FAILURE;
 #endif
-    /*
-     * Register our core reporters
-     */
+
 #define REGISTER(_x)  RegisterReporter(new NS_MEMORY_REPORTER_NAME(_x))
 
-    /*
-     * Register our core jemalloc/malloc reporters
-     */
-#ifdef HAVE_MALLOC_REPORTERS
-    REGISTER(MallocAllocated);
-    REGISTER(MallocMapped);
+    REGISTER(HeapUsed);
+    REGISTER(HeapUnused);
+    REGISTER(Resident);
+
+#if defined(XP_LINUX) || defined(XP_MACOSX)
+    REGISTER(Vsize);
+#elif defined(XP_WIN) && MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
+    REGISTER(Private);
+#endif
 
 #if defined(HAVE_JEMALLOC_STATS)
-    REGISTER(MallocCommitted);
-    REGISTER(MallocDirty);
+    REGISTER(HeapCommitted);
+    REGISTER(HeapDirty);
 #elif defined(XP_MACOSX) && !defined(MOZ_MEMORY)
-    REGISTER(MallocDefaultCommitted);
-    REGISTER(MallocDefaultAllocated);
-#endif
-#endif
-
-#if defined(XP_WIN) && !defined(WINCE)
-#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
-    REGISTER(Win32PrivateBytes);
-#endif
-    REGISTER(Win32WorkingSetSize);
+    REGISTER(HeapZone0Committed);
+    REGISTER(HeapZone0Used);
 #endif
 
     return NS_OK;
@@ -262,7 +370,7 @@ NS_IMETHODIMP
 nsMemoryReporterManager::EnumerateReporters(nsISimpleEnumerator **result)
 {
     nsresult rv;
-    mozilla::MutexAutoLock autoLock(mMutex); 
+    mozilla::MutexAutoLock autoLock(mMutex);
     rv = NS_NewArrayEnumerator(result, mReporters);
     return rv;
 }
@@ -270,7 +378,7 @@ nsMemoryReporterManager::EnumerateReporters(nsISimpleEnumerator **result)
 NS_IMETHODIMP
 nsMemoryReporterManager::RegisterReporter(nsIMemoryReporter *reporter)
 {
-    mozilla::MutexAutoLock autoLock(mMutex); 
+    mozilla::MutexAutoLock autoLock(mMutex);
     if (mReporters.IndexOf(reporter) != -1)
         return NS_ERROR_FAILURE;
 
@@ -281,7 +389,7 @@ nsMemoryReporterManager::RegisterReporter(nsIMemoryReporter *reporter)
 NS_IMETHODIMP
 nsMemoryReporterManager::UnregisterReporter(nsIMemoryReporter *reporter)
 {
-    mozilla::MutexAutoLock autoLock(mMutex); 
+    mozilla::MutexAutoLock autoLock(mMutex);
     if (!mReporters.RemoveObject(reporter))
         return NS_ERROR_FAILURE;
 
@@ -292,14 +400,16 @@ NS_IMPL_ISUPPORTS1(nsMemoryReporter, nsIMemoryReporter)
 
 nsMemoryReporter::nsMemoryReporter(nsCString& prefix,
                                    nsCString& path,
+                                   PRInt32 kind,
                                    nsCString& desc,
                                    PRInt64 memoryUsed)
-: mDesc(desc)
-, mMemoryUsed(memoryUsed) 
+: mKind(kind)
+, mDesc(desc)
+, mMemoryUsed(memoryUsed)
 {
   if (!prefix.IsEmpty()) {
-    mPath.Append(prefix);
-    mPath.Append(NS_LITERAL_CSTRING(" - "));
+      mPath.Append(prefix);
+      mPath.Append(NS_LITERAL_CSTRING(":"));
   }
   mPath.Append(path);
 }
@@ -310,20 +420,26 @@ nsMemoryReporter::~nsMemoryReporter()
 
 NS_IMETHODIMP nsMemoryReporter::GetPath(char **aPath)
 {
-  *aPath = strdup(mPath.get());
-  return NS_OK;
+    *aPath = strdup(mPath.get());
+    return NS_OK;
+}
+
+NS_IMETHODIMP nsMemoryReporter::GetKind(PRInt32 *aKind)
+{
+    *aKind = mKind;
+    return NS_OK;
 }
 
 NS_IMETHODIMP nsMemoryReporter::GetDescription(char **aDescription)
 {
-  *aDescription = strdup(mDesc.get());
-  return NS_OK;
+    *aDescription = strdup(mDesc.get());
+    return NS_OK;
 }
 
 NS_IMETHODIMP nsMemoryReporter::GetMemoryUsed(PRInt64 *aMemoryUsed)
 {
-  *aMemoryUsed = mMemoryUsed;
-  return NS_OK;
+    *aMemoryUsed = mMemoryUsed;
+    return NS_OK;
 }
 
 

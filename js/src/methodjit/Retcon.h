@@ -63,14 +63,13 @@ namespace mjit {
 class AutoScriptRetrapper
 {
   public:
-    AutoScriptRetrapper(JSContext *cx1, JSScript *script1) :
-        cx(cx1), script(script1), traps(cx) {};
+    AutoScriptRetrapper(JSContext *cx, JSScript *script1) :
+        script(script1), traps(cx) {};
     ~AutoScriptRetrapper();
 
     bool untrap(jsbytecode *pc);
 
   private:
-    JSContext *cx;
     JSScript *script;
     Vector<jsbytecode*> traps;
 };
@@ -99,7 +98,7 @@ private:
     
     PatchableAddress findPatch(JITScript *jit, void **location);
     void applyPatch(Compiler& c, PatchableAddress& toPatch);
-    bool recompile(JSStackFrame *fp, Vector<PatchableAddress> &patches,
+    bool recompile(StackFrame *fp, Vector<PatchableAddress> &patches,
                    Vector<CallSite> &sites);
     bool saveTraps(JITScript *jit, Vector<CallSite> *sites);
 };

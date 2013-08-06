@@ -212,8 +212,8 @@ function get_expected_results(aSortBy, aLocalExpected) {
   var expectedOrder = null, unknownOrder = null;
   switch (aSortBy) {
     case "relevancescore":
-      expectedOrder = [ "remote4" , "addon2", "remote1" , "remote2",
-                        "install2", "addon1", "install1", "remote3" ];
+      expectedOrder = [ "addon2"  , "remote1", "install2", "addon1",
+                        "install1", "remote2", "remote3" , "remote4" ];
       unknownOrder = [];
       break;
     case "name":
@@ -594,6 +594,9 @@ add_test(function() {
   restart_manager(gManagerWindow, null, function(aWindow) {
     gManagerWindow = aWindow;
     gCategoryUtilities = new CategoryUtilities(gManagerWindow);
+
+    // We never restore to the search pane
+    is(gCategoryUtilities.selectedCategory, "discover", "View should have changed to discover");
 
     // Installed add-on is considered local on new search
     gAddonInstalled = true;

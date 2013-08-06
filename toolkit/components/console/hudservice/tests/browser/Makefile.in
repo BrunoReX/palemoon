@@ -128,9 +128,20 @@ _BROWSER_TEST_FILES = \
 	browser_webconsole_bug_611795.js \
 	browser_webconsole_bug_618311_close_panels.js \
 	browser_webconsole_bug_618311_private_browsing.js \
+	browser_webconsole_bug_626484_output_copy_order.js \
 	browser_webconsole_bug_632347_iterators_generators.js \
 	browser_webconsole_bug_642108_refForOutputNode.js \
 	browser_webconsole_bug_642108_pruneTest.js \
+	browser_webconsole_bug_585956_console_trace.js \
+	browser_webconsole_bug_595223_file_uri.js \
+	browser_webconsole_bug_632275_getters_document_width.js \
+	browser_webconsole_bug_644419_log_limits.js \
+	browser_webconsole_bug_646025_console_file_location.js \
+	browser_webconsole_position_ui.js \
+	browser_webconsole_bug_642615_autocomplete.js \
+	browser_webconsole_bug_585991_autocomplete_popup.js \
+	browser_webconsole_bug_585991_autocomplete_keys.js \
+	browser_webconsole_bug_660806_history_nav.js \
 	head.js \
 	$(NULL)
 
@@ -165,8 +176,6 @@ _BROWSER_TEST_PAGES = \
 	test-bug-595934-workers.js \
 	test-bug-595934-dom-html-external.html \
 	test-bug-595934-dom-html-external.js \
-	test-bug-595934-dom-events-external.html \
-	test-bug-595934-dom-events-external.js \
 	test-bug-595934-dom-events-external2.html \
 	test-bug-595934-dom-events-external2.js \
 	test-bug-595934-canvas.html \
@@ -199,6 +208,11 @@ _BROWSER_TEST_PAGES = \
 	test-bug-630733-response-redirect-headers.sjs \
 	test-bug-621644-jsterm-dollar.html \
 	test-bug-632347-iterators-generators.html \
+	test-bug-585956-console-trace.html \
+	test-bug-644419-log-limits.html \
+	test-bug-632275-getters.html \
+	test-bug-646025-console-file-location.html \
+	test-file-location.js \
 	$(NULL)
 
 libs:: $(_BROWSER_TEST_FILES)

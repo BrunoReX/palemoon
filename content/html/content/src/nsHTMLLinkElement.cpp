@@ -52,7 +52,6 @@
 #include "nsIDocument.h"
 #include "nsIDOMEvent.h"
 #include "nsIPrivateDOMEvent.h"
-#include "nsIDOMDocumentEvent.h"
 #include "nsIDOMEventTarget.h"
 #include "nsParserUtils.h"
 #include "nsContentUtils.h"
@@ -389,6 +388,12 @@ already_AddRefed<nsIURI>
 nsHTMLLinkElement::GetStyleSheetURL(PRBool* aIsInline)
 {
   *aIsInline = PR_FALSE;
+  nsAutoString href;
+  GetAttr(kNameSpaceID_None, nsGkAtoms::href, href);
+  href.Trim(" \t\n\r\f"); // trim HTML5 whitespace
+  if (href.IsEmpty()) {
+    return nsnull;
+  }
   return Link::GetURI();
 }
 

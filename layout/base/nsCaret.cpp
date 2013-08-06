@@ -51,14 +51,12 @@
 #include "nsIScrollableFrame.h"
 #include "nsIDOMNode.h"
 #include "nsIDOMRange.h"
-#include "nsIFontMetrics.h"
 #include "nsISelection.h"
 #include "nsISelectionPrivate.h"
 #include "nsIDOMCharacterData.h"
 #include "nsIContent.h"
 #include "nsIPresShell.h"
-#include "nsIRenderingContext.h"
-#include "nsIDeviceContext.h"
+#include "nsRenderingContext.h"
 #include "nsPresContext.h"
 #include "nsILookAndFeel.h"
 #include "nsBlockFrame.h"
@@ -357,12 +355,12 @@ nsCaret::GetGeometryForFrame(nsIFrame* aFrame,
   NS_ASSERTION(frame, "We should not be in the middle of reflow");
   nscoord baseline = frame->GetCaretBaseline();
   nscoord ascent = 0, descent = 0;
-  nsCOMPtr<nsIFontMetrics> fm;
+  nsRefPtr<nsFontMetrics> fm;
   nsLayoutUtils::GetFontMetricsForFrame(aFrame, getter_AddRefs(fm));
   NS_ASSERTION(fm, "We should be able to get the font metrics");
   if (fm) {
-    fm->GetMaxAscent(ascent);
-    fm->GetMaxDescent(descent);
+    ascent = fm->MaxAscent();
+    descent = fm->MaxDescent();
   }
   nscoord height = ascent + descent;
   framePos.y = baseline - ascent;
@@ -410,7 +408,7 @@ nsIFrame* nsCaret::GetGeometry(nsISelection* aSelection, nsRect* aRect,
   if (!contentNode)
     return nsnull;
 
-  nsCOMPtr<nsFrameSelection> frameSelection = GetFrameSelection();
+  nsRefPtr<nsFrameSelection> frameSelection = GetFrameSelection();
   if (!frameSelection)
     return nsnull;
   PRUint8 bidiLevel = frameSelection->GetCaretBidiLevel();
@@ -463,7 +461,7 @@ nsresult nsCaret::DrawAtPosition(nsIDOMNode* aNode, PRInt32 aOffset)
   NS_ENSURE_ARG(aNode);
 
   PRUint8 bidiLevel;
-  nsCOMPtr<nsFrameSelection> frameSelection = GetFrameSelection();
+  nsRefPtr<nsFrameSelection> frameSelection = GetFrameSelection();
   if (!frameSelection)
     return NS_ERROR_FAILURE;
   bidiLevel = frameSelection->GetCaretBidiLevel();
@@ -526,7 +524,7 @@ void nsCaret::UpdateCaretPosition()
 }
 
 void nsCaret::PaintCaret(nsDisplayListBuilder *aBuilder,
-                         nsIRenderingContext *aCtx,
+                         nsRenderingContext *aCtx,
                          nsIFrame* aForFrame,
                          const nsPoint &aOffset)
 {
@@ -704,7 +702,7 @@ nsCaret::DrawAtPositionWithHint(nsIDOMNode*             aNode,
 
     // If there has been a reflow, set the caret Bidi level to the level of the current frame
     if (aBidiLevel & BIDI_LEVEL_UNDEFINED) {
-      nsCOMPtr<nsFrameSelection> frameSelection = GetFrameSelection();
+      nsRefPtr<nsFrameSelection> frameSelection = GetFrameSelection();
       if (!frameSelection)
         return PR_FALSE;
       frameSelection->SetCaretBidiLevel(NS_GET_EMBEDDING_LEVEL(theFrame));
@@ -739,7 +737,7 @@ nsCaret::GetCaretFrameForNodeOffset(nsIContent*             aContentNode,
       presShell->GetDocument() != aContentNode->GetCurrentDoc())
     return NS_ERROR_FAILURE;
 
-  nsCOMPtr<nsFrameSelection> frameSelection = GetFrameSelection();
+  nsRefPtr<nsFrameSelection> frameSelection = GetFrameSelection();
   if (!frameSelection)
     return NS_ERROR_FAILURE;
 
@@ -1046,7 +1044,7 @@ void nsCaret::DrawCaret(PRBool aInvalidate)
     if (NS_FAILED(domSelection->GetFocusOffset(&offset)))
       return;
 
-    nsCOMPtr<nsFrameSelection> frameSelection = GetFrameSelection();
+    nsRefPtr<nsFrameSelection> frameSelection = GetFrameSelection();
     if (!frameSelection)
       return;
 
@@ -1095,7 +1093,7 @@ nsCaret::UpdateCaretRects(nsIFrame* aFrame, PRInt32 aFrameOffset)
     mCaretRect.x -= mCaretRect.width;
 
 #ifdef IBMBIDI
-  mHookRect.Empty();
+  mHookRect.SetEmpty();
 
   // Simon -- make a hook to draw to the left or right of the caret to show keyboard language direction
   PRBool isCaretRTL = PR_FALSE;
@@ -1185,17 +1183,3 @@ nsCaret::SetIgnoreUserModify(PRBool aIgnoreUserModify)
   }
   mIgnoreUserModify = aIgnoreUserModify;
 }
-
-//-----------------------------------------------------------------------------
-nsresult NS_NewCaret(nsCaret** aInstancePtrResult)
-{
-  NS_PRECONDITION(aInstancePtrResult, "null ptr");
-  
-  nsCaret* caret = new nsCaret();
-  if (nsnull == caret)
-      return NS_ERROR_OUT_OF_MEMORY;
-  NS_ADDREF(caret);
-  *aInstancePtrResult = caret;
-  return NS_OK;
-}
-

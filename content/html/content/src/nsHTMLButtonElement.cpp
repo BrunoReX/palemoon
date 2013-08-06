@@ -50,7 +50,6 @@
 #include "nsEventStateManager.h"
 #include "nsIFrame.h"
 #include "nsIFormControlFrame.h"
-#include "nsIEventStateManager.h"
 #include "nsIDOMEvent.h"
 #include "nsIDOMNSEvent.h"
 #include "nsIDocument.h"
@@ -64,6 +63,8 @@
 #include "nsHTMLFormElement.h"
 #include "nsIConstraintValidation.h"
 #include "mozAutoDocUpdate.h"
+
+using namespace mozilla::dom;
 
 #define NS_IN_SUBMIT_CLICK      (1 << 0)
 #define NS_OUTER_ACTIVATE_EVENT (1 << 1)
@@ -85,7 +86,8 @@ class nsHTMLButtonElement : public nsGenericHTMLFormElement,
 public:
   using nsIConstraintValidation::GetValidationMessage;
 
-  nsHTMLButtonElement(already_AddRefed<nsINodeInfo> aNodeInfo);
+  nsHTMLButtonElement(already_AddRefed<nsINodeInfo> aNodeInfo,
+                      FromParser aFromParser = NOT_FROM_PARSER);
   virtual ~nsHTMLButtonElement();
 
   // nsISupports
@@ -140,6 +142,7 @@ protected:
   PRUint8 mType;
   PRPackedBool mDisabledChanged;
   PRPackedBool mInInternalActivate;
+  PRPackedBool mInhibitStateRestoration;
 
 private:
   // The analogue of defaultValue in the DOM for input and textarea
@@ -151,14 +154,16 @@ private:
 // Construction, destruction
 
 
-NS_IMPL_NS_NEW_HTML_ELEMENT(Button)
+NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(Button)
 
 
-nsHTMLButtonElement::nsHTMLButtonElement(already_AddRefed<nsINodeInfo> aNodeInfo)
+nsHTMLButtonElement::nsHTMLButtonElement(already_AddRefed<nsINodeInfo> aNodeInfo,
+                                         FromParser aFromParser)
   : nsGenericHTMLFormElement(aNodeInfo),
     mType(kButtonDefaultType->value),
     mDisabledChanged(PR_FALSE),
-    mInInternalActivate(PR_FALSE)
+    mInInternalActivate(PR_FALSE),
+    mInhibitStateRestoration(!!(aFromParser & FROM_PARSER_FRAGMENT))
 {
   // <button> is always barred from constraint validation.
   SetBarredFromConstraintValidation(PR_TRUE);
@@ -377,7 +382,7 @@ nsHTMLButtonElement::PostHandleEvent(nsEventChainPostVisitor& aVisitor)
             if (static_cast<nsMouseEvent*>(aVisitor.mEvent)->button ==
                   nsMouseEvent::eLeftButton) {
               if (NS_IS_TRUSTED_EVENT(aVisitor.mEvent)) {
-                nsIEventStateManager* esm =
+                nsEventStateManager* esm =
                   aVisitor.mPresContext->EventStateManager();
                 nsEventStateManager::SetActiveManager(
                   static_cast<nsEventStateManager*>(esm), this);
@@ -546,8 +551,10 @@ nsHTMLButtonElement::SubmitNamesValues(nsFormSubmission* aFormSubmission)
 void
 nsHTMLButtonElement::DoneCreatingElement()
 {
-  // Restore state as needed.
-  RestoreFormControlState(this, this);
+  if (!mInhibitStateRestoration) {
+    // Restore state as needed.
+    RestoreFormControlState(this, this);
+  }
 }
 
 nsresult

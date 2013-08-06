@@ -3,7 +3,7 @@
 <assemblyIdentity
         version="1.0.0.0"
         processorArchitecture="*"
-        name="Firefox"
+        name="Pale Moon"
         type="win32"
 />
 <description>Firefox</description>

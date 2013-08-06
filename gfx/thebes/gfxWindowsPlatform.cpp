@@ -78,9 +78,6 @@
 #endif
 #endif
 
-#include <shlobj.h>
-#include <shlwapi.h>
-
 #ifdef CAIRO_HAS_D2D_SURFACE
 #include "gfxD2DSurface.h"
 
@@ -99,12 +96,17 @@ public:
     NS_DECL_ISUPPORTS
 
     NS_IMETHOD GetPath(char **memoryPath) {
-        *memoryPath = strdup("gfx/d2d/surfacecache");
+        *memoryPath = strdup("gfx-d2d-surfacecache");
+        return NS_OK;
+    }
+
+    NS_IMETHOD GetKind(PRInt32 *kind) {
+        *kind = MR_OTHER;
         return NS_OK;
     }
 
     NS_IMETHOD GetDescription(char **desc) {
-        *desc = strdup("Memory used by Direct2D internal surface cache.");
+        *desc = strdup("Memory used by the Direct2D internal surface cache.");
         return NS_OK;
     }
 
@@ -126,7 +128,12 @@ public:
     NS_DECL_ISUPPORTS
 
     NS_IMETHOD GetPath(char **memoryPath) {
-        *memoryPath = strdup("gfx/d2d/surfacevram");
+        *memoryPath = strdup("gfx-d2d-surfacevram");
+        return NS_OK;
+    }
+
+    NS_IMETHOD GetKind(PRInt32 *kind) {
+        *kind = MR_OTHER;
         return NS_OK;
     }
 
@@ -160,6 +167,13 @@ NS_IMPL_ISUPPORTS1(D2DVRAMReporter, nsIMemoryReporter)
 
 #define GFX_USE_CLEARTYPE_ALWAYS "gfx.font_rendering.cleartype.always_use_for_content"
 #define GFX_DOWNLOADABLE_FONTS_USE_CLEARTYPE "gfx.font_rendering.cleartype.use_for_downloadable_fonts"
+
+#define GFX_CLEARTYPE_PARAMS           "gfx.font_rendering.cleartype_params."
+#define GFX_CLEARTYPE_PARAMS_GAMMA     "gfx.font_rendering.cleartype_params.gamma"
+#define GFX_CLEARTYPE_PARAMS_CONTRAST  "gfx.font_rendering.cleartype_params.enhanced_contrast"
+#define GFX_CLEARTYPE_PARAMS_LEVEL     "gfx.font_rendering.cleartype_params.cleartype_level"
+#define GFX_CLEARTYPE_PARAMS_STRUCTURE "gfx.font_rendering.cleartype_params.pixel_structure"
+#define GFX_CLEARTYPE_PARAMS_MODE      "gfx.font_rendering.cleartype_params.rendering_mode"
 
 #ifdef MOZ_FT2_FONTS
 static FT_Library gPlatformFTLibrary = NULL;
@@ -345,6 +359,8 @@ gfxWindowsPlatform::UpdateRenderMode()
                 reinterpret_cast<IUnknown**>(&factory));
             mDWriteFactory = factory;
             factory->Release();
+
+            SetupClearTypeParams(pref);
 
             if (hr == S_OK)
               reporter.SetSuccessful();
@@ -779,34 +795,95 @@ gfxWindowsPlatform::GetDLLVersion(const PRUnichar *aDLLPath, nsAString& aVersion
     aVersion.Assign(NS_ConvertUTF8toUTF16(buf));
 }
 
-void
-gfxWindowsPlatform::GetFontCacheSize(nsAString& aSize)
+void 
+gfxWindowsPlatform::GetCleartypeParams(nsTArray<ClearTypeParameterInfo>& aParams)
 {
-    WIN32_FIND_DATAW findFileData;
-    HANDLE file;
-    WCHAR path[MAX_PATH];
+    HKEY  hKey, subKey;
+    DWORD i, rv, size, type;
+    WCHAR displayName[256], subkeyName[256];
 
-    aSize.Assign(L"n/a");
+    aParams.Clear();
 
-    if (FAILED(SHGetFolderPathW(NULL, CSIDL_WINDOWS, NULL, 0, path))) {
+    // construct subkeys based on HKLM subkeys, assume they are same for HKCU
+    rv = RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                       L"Software\\Microsoft\\Avalon.Graphics",
+                       0, KEY_READ, &hKey);
+
+    if (rv != ERROR_SUCCESS) {
         return;
     }
 
-    PathAppendW(path, 
-        L"ServiceProfiles\\LocalService\\AppData\\Local\\FontCache-*-*.dat");
-    file = FindFirstFileW(path, &findFileData);
-    if (file == INVALID_HANDLE_VALUE) {
-        return;
+    // enumerate over subkeys
+    for (i = 0, rv = ERROR_SUCCESS; rv != ERROR_NO_MORE_ITEMS; i++) {
+        size = NS_ARRAY_LENGTH(displayName);
+        rv = RegEnumKeyExW(hKey, i, displayName, &size, NULL, NULL, NULL, NULL);
+        if (rv != ERROR_SUCCESS) {
+            continue;
+        }
+
+        ClearTypeParameterInfo ctinfo;
+        ctinfo.displayName.Assign(displayName);
+
+        DWORD subrv, value;
+        bool foundData = false;
+
+        swprintf_s(subkeyName, NS_ARRAY_LENGTH(subkeyName),
+                   L"Software\\Microsoft\\Avalon.Graphics\\%s", displayName);
+
+        // subkey for gamma, pixel structure
+        subrv = RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                              subkeyName, 0, KEY_QUERY_VALUE, &subKey);
+
+        if (subrv == ERROR_SUCCESS) {
+            size = sizeof(value);
+            subrv = RegQueryValueExW(subKey, L"GammaLevel", NULL, &type,
+                                     (LPBYTE)&value, &size);
+            if (subrv == ERROR_SUCCESS && type == REG_DWORD) {
+                foundData = true;
+                ctinfo.gamma = value;
+            }
+
+            size = sizeof(value);
+            subrv = RegQueryValueExW(subKey, L"PixelStructure", NULL, &type,
+                                     (LPBYTE)&value, &size);
+            if (subrv == ERROR_SUCCESS && type == REG_DWORD) {
+                foundData = true;
+                ctinfo.pixelStructure = value;
+            }
+
+            RegCloseKey(subKey);
+        }
+
+        // subkey for cleartype level, enhanced contrast
+        subrv = RegOpenKeyExW(HKEY_CURRENT_USER,
+                              subkeyName, 0, KEY_QUERY_VALUE, &subKey);
+
+        if (subrv == ERROR_SUCCESS) {
+            size = sizeof(value);
+            subrv = RegQueryValueExW(subKey, L"ClearTypeLevel", NULL, &type,
+                                     (LPBYTE)&value, &size);
+            if (subrv == ERROR_SUCCESS && type == REG_DWORD) {
+                foundData = true;
+                ctinfo.clearTypeLevel = value;
+            }
+      
+            size = sizeof(value);
+            subrv = RegQueryValueExW(subKey, L"EnhancedContrastLevel",
+                                     NULL, &type, (LPBYTE)&value, &size);
+            if (subrv == ERROR_SUCCESS && type == REG_DWORD) {
+                foundData = true;
+                ctinfo.enhancedContrast = value;
+            }
+
+            RegCloseKey(subKey);
+        }
+
+        if (foundData) {
+            aParams.AppendElement(ctinfo);
+        }
     }
 
-    WCHAR size[256];
-
-    double sizeMB = (double(findFileData.nFileSizeLow) +
-                     findFileData.nFileSizeHigh * (double(MAXDWORD) + 1))
-                    / 1000000.0;
-    swprintf_s(size, NS_ARRAY_LENGTH(size), L"%.2f MB", sizeMB);
-    aSize.Assign(size);
-    FindClose(file);
+    RegCloseKey(hKey);
 }
 
 void
@@ -823,6 +900,8 @@ gfxWindowsPlatform::FontsPrefsChanged(nsIPrefBranch *aPrefBranch, const char *aP
         mUseClearTypeForDownloadableFonts = UNINITIALIZED_VALUE;
     } else if (!strcmp(GFX_USE_CLEARTYPE_ALWAYS, aPref)) {
         mUseClearTypeAlways = UNINITIALIZED_VALUE;
+    } else if (!strncmp(GFX_CLEARTYPE_PARAMS, aPref, strlen(GFX_CLEARTYPE_PARAMS))) {
+        SetupClearTypeParams(aPrefBranch);
     } else {
         clearTextFontCaches = PR_FALSE;
     }
@@ -834,6 +913,67 @@ gfxWindowsPlatform::FontsPrefsChanged(nsIPrefBranch *aPrefBranch, const char *aP
         }
         gfxTextRunWordCache::Flush();
     }
+}
+
+void
+gfxWindowsPlatform::SetupClearTypeParams(nsIPrefBranch *aPrefBranch)
+{
+#if CAIRO_HAS_DWRITE_FONT
+    if (GetDWriteFactory()) {
+        // any missing prefs will default to invalid (-1) and be ignored;
+        // out-of-range values will also be ignored
+        FLOAT gamma = -1.0;
+        FLOAT contrast = -1.0;
+        FLOAT level = -1.0;
+        int geometry = -1;
+        int mode = -1;
+        PRInt32 value;
+        if (NS_SUCCEEDED(aPrefBranch->GetIntPref(GFX_CLEARTYPE_PARAMS_GAMMA,
+                                                 &value))) {
+            if (value >= 1000 && value <= 2200) {
+                gamma = FLOAT(value / 1000.0);
+            }
+        }
+        if (NS_SUCCEEDED(aPrefBranch->GetIntPref(GFX_CLEARTYPE_PARAMS_CONTRAST,
+                                                 &value))) {
+            if (value >= 0 && value <= 1000) {
+                contrast = FLOAT(value / 100.0);
+            }
+        }
+        if (NS_SUCCEEDED(aPrefBranch->GetIntPref(GFX_CLEARTYPE_PARAMS_LEVEL,
+                                                 &value))) {
+            if (value >= 0 && value <= 100) {
+                level = FLOAT(value / 100.0);
+            }
+        }
+        if (NS_SUCCEEDED(aPrefBranch->GetIntPref(GFX_CLEARTYPE_PARAMS_STRUCTURE,
+                                                 &value))) {
+            if (value >= 0 && value <= 2) {
+                geometry = value;
+            }
+        }
+        if (NS_SUCCEEDED(aPrefBranch->GetIntPref(GFX_CLEARTYPE_PARAMS_MODE,
+                                                 &value))) {
+            if (value >= 0 && value <= 5) {
+                mode = value;
+            }
+        }
+        cairo_dwrite_set_cleartype_params(gamma, contrast, level, geometry, mode);
+
+        switch (mode) {
+        case DWRITE_RENDERING_MODE_ALIASED:
+        case DWRITE_RENDERING_MODE_CLEARTYPE_GDI_CLASSIC:
+            mMeasuringMode = DWRITE_MEASURING_MODE_GDI_CLASSIC;
+            break;
+        case DWRITE_RENDERING_MODE_CLEARTYPE_GDI_NATURAL:
+            mMeasuringMode = DWRITE_MEASURING_MODE_GDI_NATURAL;
+            break;
+        default:
+            mMeasuringMode = DWRITE_MEASURING_MODE_NATURAL;
+            break;
+        }
+    }
+#endif
 }
 
 bool

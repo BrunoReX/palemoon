@@ -72,7 +72,3 @@ LOCAL_INCLUDES += \
 		$(NULL)
 
 DEFINES += -D_IMPL_NS_LAYOUT
-
-# Pale Moon: Kill LTCG/SSE2 (PGO bug)
-CXXFLAGS := $(CXXFLAGS:arch:SSE2=arch:SSE)
-CXXFLAGS += -GL-

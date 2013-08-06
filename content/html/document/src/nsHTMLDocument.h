@@ -122,7 +122,7 @@ public:
   virtual NS_HIDDEN_(nsContentList*) GetFormControls();
  
   // nsIDOMDocument interface
-  NS_DECL_NSIDOMDOCUMENT
+  NS_FORWARD_NSIDOMDOCUMENT(nsDocument::)
 
   // nsIDOMNode interface
   NS_FORWARD_NSIDOMNODE(nsDocument::)
@@ -168,7 +168,7 @@ public:
   NS_DECL_NSIDOMNSHTMLDOCUMENT
 
   virtual nsresult ResolveName(const nsAString& aName,
-                               nsIDOMHTMLFormElement *aForm,
+                               nsIContent *aForm,
                                nsISupports **aResult,
                                nsWrapperCache **aCache);
 
@@ -242,8 +242,6 @@ public:
 protected:
   nsresult GetBodySize(PRInt32* aWidth,
                        PRInt32* aHeight);
-
-  nsresult PrePopulateIdentifierMap();
 
   nsIContent *MatchId(nsIContent *aContent, const nsAString& aId);
 

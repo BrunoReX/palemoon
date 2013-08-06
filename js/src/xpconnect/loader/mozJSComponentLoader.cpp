@@ -66,13 +66,11 @@
 #include "nsIObserverService.h"
 #include "nsIXPCScriptable.h"
 #include "nsString.h"
-#ifndef XPCONNECT_STANDALONE
 #include "nsIScriptSecurityManager.h"
 #include "nsIURI.h"
 #include "nsIFileURL.h"
 #include "nsIJARURI.h"
 #include "nsNetUtil.h"
-#endif
 #include "jsxdrapi.h"
 #include "jscompartment.h"
 #include "jsprf.h"
@@ -86,11 +84,10 @@
 #include "nsILocalFileWin.h"
 #endif
 #include "xpcprivate.h"
+#include "nsIResProtocolHandler.h"
 
-#ifdef MOZ_ENABLE_LIBXUL
 #include "mozilla/scache/StartupCache.h"
 #include "mozilla/scache/StartupCacheUtils.h"
-#endif
 #include "mozilla/Omnijar.h"
 
 #include "jsdbgapi.h"
@@ -343,7 +340,6 @@ ReportOnCaller(JSCLContextHelper &helper,
     return OutputError(cx, format, ap);
 }
 
-#ifdef MOZ_ENABLE_LIBXUL
 static nsresult
 ReadScriptFromStream(JSContext *cx, nsIObjectInputStream *stream,
                      JSObject **scriptObj)
@@ -445,7 +441,6 @@ WriteScriptToStream(JSContext *cx, JSObject *scriptObj,
     JS_XDRDestroy(xdr);
     return rv;
 }
-#endif // MOZ_ENABLE_LIBXUL
 
 mozJSComponentLoader::mozJSComponentLoader()
     : mRuntime(nsnull),
@@ -517,7 +512,6 @@ mozJSComponentLoader::ReallyInit()
     // Limit C stack consumption to a reasonable 512K
     JS_SetNativeStackQuota(mContext, 512 * 1024);
 
-#ifndef XPCONNECT_STANDALONE
     nsCOMPtr<nsIScriptSecurityManager> secman = 
         do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID);
     if (!secman)
@@ -526,7 +520,6 @@ mozJSComponentLoader::ReallyInit()
     rv = secman->GetSystemPrincipal(getter_AddRefs(mSystemPrincipal));
     if (NS_FAILED(rv) || !mSystemPrincipal)
         return NS_ERROR_FAILURE;
-#endif
 
     if (!mModules.Init(32))
         return NS_ERROR_OUT_OF_MEMORY;
@@ -623,27 +616,13 @@ const mozilla::Module*
 mozJSComponentLoader::LoadModuleFromJAR(nsILocalFile *aJarFile,
                                         const nsACString &aComponentPath)
 {
-#if !defined(XPCONNECT_STANDALONE)
     nsresult rv;
 
-    nsCAutoString fullSpec;
-
-#ifdef MOZ_OMNIJAR
-    PRBool equal;
-    rv = aJarFile->Equals(mozilla::OmnijarPath(), &equal);
-    if (NS_SUCCEEDED(rv) && equal) {
-        fullSpec = "resource://gre/";
-    } else {
-#endif
-        nsCAutoString fileSpec;
-        NS_GetURLSpecFromActualFile(aJarFile, fileSpec);
-        fullSpec = "jar:";
-        fullSpec += fileSpec;
-        fullSpec += "!/";
-#ifdef MOZ_OMNIJAR
-    }
-#endif
-
+    nsCAutoString fullSpec, fileSpec;
+    NS_GetURLSpecFromActualFile(aJarFile, fileSpec);
+    fullSpec = "jar:";
+    fullSpec += fileSpec;
+    fullSpec += "!/";
     fullSpec += aComponentPath;
 
     nsCOMPtr<nsIURI> uri;
@@ -659,9 +638,6 @@ mozJSComponentLoader::LoadModuleFromJAR(nsILocalFile *aJarFile,
     return LoadModuleImpl(aJarFile,
                           hashstring,
                           uri);
-#else
-    return NS_ERROR_NOT_IMPLEMENTED;
-#endif
 }
 
 const mozilla::Module*
@@ -827,51 +803,131 @@ class JSPrincipalsHolder
     JSPrincipals *mPrincipals;
 };
 
+static const char baseName[2][5] = { "gre/", "app/" };
+
+static inline PRBool
+canonicalizeBase(nsCAutoString &spec, nsACString &out, mozilla::Omnijar::Type aType)
+{
+    nsCAutoString base;
+    nsresult rv = mozilla::Omnijar::GetURIString(aType, base);
+
+    if (NS_FAILED(rv) || !base.Length())
+        return PR_FALSE;
+
+    if (base.Compare(spec.get(), PR_FALSE, base.Length()))
+        return PR_FALSE;
+
+    out.Append("/resource/");
+    out.Append(baseName[aType]);
+    out.Append(Substring(spec, base.Length()));
+    return PR_TRUE;
+}
 /**
  * PathifyURI transforms mozilla .js uris into useful zip paths
  * to make it makes it easier to manipulate startup cache entries
  * using standard zip tools.
  * Transformations applied:
- *  * jsloader/<scheme> prefix is used to group mozJSComponentLoader cache entries in
+ *  * jsloader/ prefix is used to group mozJSComponentLoader cache entries in
  *    a top-level zip directory.
- *  * In MOZ_OMNIJAR case resource:/// and resource://gre/ URIs refer to the same path
- *    so treat both of them as resource://gre/
+ *  * resource:// URIs are resolved to their corresponding file/jar URI to
+ *    canonicalize resources URIs other than gre and app.
+ *  * Paths under GRE or APP directory have their base path replaced with
+ *    resource/gre or resource/app to avoid depending on install location.
+ *  * jar:file:///path/to/file.jar!/sub/path urls are replaced with
+ *    /path/to/file.jar/sub/path
  *  * .bin suffix is added to the end of the path to indicate that jsloader/ entries
  *     are binary representations of JS source.
  * For example:
- *  resource://gre/modules/XPCOMUtils.jsm becomes
- *  jsloader/resource/gre/modules/XPCOMUtils.jsm.bin
+ *  resource://gre/modules/XPCOMUtils.jsm or
+ *  file://$GRE_DIR/modules/XPCOMUtils.jsm or
+ *  jar:file://$GRE_DIR/omni.jar!/modules/XPCOMUtils.jsm become
+ *     jsloader/resource/gre/modules/XPCOMUtils.jsm.bin
+ *  file://$PROFILE_DIR/extensions/{uuid}/components/component.js becomes
+ *     jsloader/$PROFILE_DIR/extensions/%7Buuid%7D/components/component.js.bin
+ *  jar:file://$PROFILE_DIR/extensions/some.xpi!/components/component.js becomes
+ *     jsloader/$PROFILE_DIR/extensions/some.xpi/components/component.js.bin
  */
 static nsresult
 PathifyURI(nsIURI *in, nsACString &out)
 { 
-   out = "jsloader/";
-   nsCAutoString scheme;
-   nsresult rv = in->GetScheme(scheme);
-   NS_ENSURE_SUCCESS(rv, rv);
-   out.Append(scheme);
-   nsCAutoString host;
-   // OK for GetHost to fail since it's not implemented sometimes
-   in->GetHost(host);
-#ifdef MOZ_OMNIJAR
-   if (scheme.Equals("resource") && host.Length() == 0){
-       host = "gre";
-   }
-#endif
-   if (host.Length()) {
-       out.Append("/");
-       out.Append(host);
-   }
-   nsCAutoString path;
-   rv = in->GetPath(path);
-   NS_ENSURE_SUCCESS(rv, rv);
-   out.Append(path);
-   out.Append(".bin");
-   return NS_OK;
+    PRBool equals;
+    nsresult rv;
+    nsCOMPtr<nsIURI> uri = in;
+    nsCAutoString spec;
+
+    out = "jsloader";
+
+    // Resolve resource:// URIs. At the end of this if/else block, we
+    // have both spec and uri variables identifying the same URI.
+    if (NS_SUCCEEDED(in->SchemeIs("resource", &equals)) && equals) {
+        nsCOMPtr<nsIIOService> ioService = do_GetIOService(&rv);
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        nsCOMPtr<nsIProtocolHandler> ph;
+        rv = ioService->GetProtocolHandler("resource", getter_AddRefs(ph));
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        nsCOMPtr<nsIResProtocolHandler> irph(do_QueryInterface(ph, &rv));
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        rv = irph->ResolveURI(in, spec);
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        rv = ioService->NewURI(spec, nsnull, nsnull, getter_AddRefs(uri));
+        NS_ENSURE_SUCCESS(rv, rv);
+    } else {
+        rv = in->GetSpec(spec);
+        NS_ENSURE_SUCCESS(rv, rv);
+    }
+
+    if (!canonicalizeBase(spec, out, mozilla::Omnijar::GRE) &&
+        !canonicalizeBase(spec, out, mozilla::Omnijar::APP)) {
+        if (NS_SUCCEEDED(uri->SchemeIs("file", &equals)) && equals) {
+            nsCOMPtr<nsIFileURL> baseFileURL;
+            baseFileURL = do_QueryInterface(uri, &rv);
+            NS_ENSURE_SUCCESS(rv, rv);
+
+            nsCAutoString path;
+            rv = baseFileURL->GetPath(path);
+            NS_ENSURE_SUCCESS(rv, rv);
+
+            out.Append(path);
+        } else if (NS_SUCCEEDED(uri->SchemeIs("jar", &equals)) && equals) {
+            nsCOMPtr<nsIJARURI> jarURI = do_QueryInterface(uri, &rv);
+            NS_ENSURE_SUCCESS(rv, rv);
+
+            nsCOMPtr<nsIURI> jarFileURI;
+            rv = jarURI->GetJARFile(getter_AddRefs(jarFileURI));
+            NS_ENSURE_SUCCESS(rv, rv);
+
+            nsCOMPtr<nsIFileURL> jarFileURL;
+            jarFileURL = do_QueryInterface(jarFileURI, &rv);
+            NS_ENSURE_SUCCESS(rv, rv);
+
+            nsCAutoString path;
+            rv = jarFileURL->GetPath(path);
+            NS_ENSURE_SUCCESS(rv, rv);
+            out.Append(path);
+
+            rv = jarURI->GetJAREntry(path);
+            NS_ENSURE_SUCCESS(rv, rv);
+            out.Append("/");
+            out.Append(path);
+        } else { // Very unlikely
+            nsCAutoString spec;
+            rv = uri->GetSpec(spec);
+            NS_ENSURE_SUCCESS(rv, rv);
+
+            out.Append("/");
+            out.Append(spec);
+        }
+    }
+
+    out.Append(".bin");
+    return NS_OK;
 }
 
 /* static */
-#ifdef MOZ_ENABLE_LIBXUL
 nsresult
 mozJSComponentLoader::ReadScript(StartupCache* cache, nsIURI *uri,
                                  JSContext *cx, JSObject **scriptObj)
@@ -929,7 +985,6 @@ mozJSComponentLoader::WriteScript(StartupCache* cache, JSObject *scriptObj,
     rv = cache->PutBuffer(spec.get(), buf, len);
     return rv;
 }
-#endif //MOZ_ENABLE_LIBXUL
 
 nsresult
 mozJSComponentLoader::GlobalForLocation(nsILocalFile *aComponentFile,
@@ -946,12 +1001,10 @@ mozJSComponentLoader::GlobalForLocation(nsILocalFile *aComponentFile,
     // preserve caller's compartment
     js::PreserveCompartment pc(cx);
     
-#ifndef XPCONNECT_STANDALONE
     rv = mSystemPrincipal->GetJSPrincipals(cx, &jsPrincipals);
     NS_ENSURE_SUCCESS(rv, rv);
 
     JSPrincipalsHolder princHolder(mContext, jsPrincipals);
-#endif
 
     nsCOMPtr<nsIXPCScriptable> backstagePass;
     rv = mRuntimeService->GetBackstagePass(getter_AddRefs(backstagePass));
@@ -1019,20 +1072,19 @@ mozJSComponentLoader::GlobalForLocation(nsILocalFile *aComponentFile,
     }
 
     nsCAutoString nativePath;
-    // Quick hack to unbust XPCONNECT_STANDALONE.
-    // This leaves the jsdebugger with a non-URL pathname in the 
-    // XPCONNECT_STANDALONE case - but at least it builds and runs otherwise.
-    // See: http://bugzilla.mozilla.org/show_bug.cgi?id=121438
-#ifdef XPCONNECT_STANDALONE
-    localFile->GetNativePath(nativePath);
-#else
     rv = aURI->GetSpec(nativePath);
     NS_ENSURE_SUCCESS(rv, rv);
-#endif
+
+    // Expose the URI from which the script was imported through a special
+    // variable that we insert into the JSM.
+    JSString *exposedUri = JS_NewStringCopyN(cx, nativePath.get(), nativePath.Length());
+    if (!JS_DefineProperty(cx, global, "__URI__",
+                           STRING_TO_JSVAL(exposedUri), nsnull, nsnull, 0))
+        return NS_ERROR_FAILURE;
+
 
     JSObject *scriptObj = nsnull;
 
-#ifdef MOZ_ENABLE_LIBXUL  
     // Before compiling the script, first check to see if we have it in
     // the startupcache.  Note: as a rule, startupcache errors are not fatal
     // to loading the script, since we can always slow-load.
@@ -1051,7 +1103,6 @@ mozJSComponentLoader::GlobalForLocation(nsILocalFile *aComponentFile,
             writeToCache = PR_TRUE;
         }
     }
-#endif
 
     if (!scriptObj) {
         // The script wasn't in the cache , so compile it now.
@@ -1132,7 +1183,7 @@ mozJSComponentLoader::GlobalForLocation(nsILocalFile *aComponentFile,
                 return NS_ERROR_FILE_NOT_FOUND;
             }
 
-            script = JS_CompileFileHandleForPrincipalsVersion(
+            scriptObj = JS_CompileFileHandleForPrincipalsVersion(
               cx, global, nativePath.get(), fileHandle, jsPrincipals, JSVERSION_LATEST);
 
             /* JS will close the filehandle after compilation is complete. */
@@ -1194,7 +1245,6 @@ mozJSComponentLoader::GlobalForLocation(nsILocalFile *aComponentFile,
             nativePath.get());
 #endif
 
-#ifdef MOZ_ENABLE_LIBXUL
     if (writeToCache) {
         // We successfully compiled the script, so cache it. 
         rv = WriteScript(cache, scriptObj, aComponentFile, aURI, cx);
@@ -1207,7 +1257,6 @@ mozJSComponentLoader::GlobalForLocation(nsILocalFile *aComponentFile,
             LOG(("Failed to write to cache\n"));
         }
     }
-#endif
 
     // Assign aGlobal here so that it's available to recursive imports.
     // See bug 384168.

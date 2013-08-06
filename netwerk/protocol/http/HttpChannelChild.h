@@ -58,7 +58,6 @@
 #include "nsIUploadChannel2.h"
 #include "nsIResumableChannel.h"
 #include "nsIProxiedChannel.h"
-#include "nsITraceableChannel.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIAssociatedContentSecurity.h"
 #include "nsIChildChannel.h"
@@ -71,7 +70,6 @@ class HttpChannelChild : public PHttpChannelChild
                        , public HttpBaseChannel
                        , public nsICacheInfoChannel
                        , public nsIProxiedChannel
-                       , public nsITraceableChannel
                        , public nsIApplicationCacheChannel
                        , public nsIAsyncVerifyRedirectCallback
                        , public nsIAssociatedContentSecurity
@@ -83,7 +81,6 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSICACHEINFOCHANNEL
   NS_DECL_NSIPROXIEDCHANNEL
-  NS_DECL_NSITRACEABLECHANNEL
   NS_DECL_NSIAPPLICATIONCACHECONTAINER
   NS_DECL_NSIAPPLICATIONCACHECHANNEL
   NS_DECL_NSIASYNCVERIFYREDIRECTCALLBACK
@@ -134,7 +131,9 @@ protected:
                           const PRBool& cacheEntryAvailable,
                           const PRUint32& cacheExpirationTime,
                           const nsCString& cachedCharset,
-                          const nsCString& securityInfoSerialization);
+                          const nsCString& securityInfoSerialization,
+                          const PRNetAddr& selfAddr,
+                          const PRNetAddr& peerAddr);
   bool RecvOnTransportAndData(const nsresult& status,
                               const PRUint64& progress,
                               const PRUint64& progressMax,
@@ -182,7 +181,9 @@ private:
                       const PRBool& cacheEntryAvailable,
                       const PRUint32& cacheExpirationTime,
                       const nsCString& cachedCharset,
-                      const nsCString& securityInfoSerialization);
+                      const nsCString& securityInfoSerialization,
+                      const PRNetAddr& selfAddr,
+                      const PRNetAddr& peerAddr);
   void OnTransportAndData(const nsresult& status,
                           const PRUint64 progress,
                           const PRUint64& progressMax,

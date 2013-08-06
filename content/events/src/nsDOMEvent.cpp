@@ -75,7 +75,7 @@ static const char* const sEventNames[] = {
   "DOMAttrModified", "DOMCharacterDataModified",
   "DOMActivate", "DOMFocusIn", "DOMFocusOut",
   "pageshow", "pagehide", "DOMMouseScroll", "MozMousePixelScroll",
-  "offline", "online", "copy", "cut", "paste",
+  "offline", "online", "copy", "cut", "paste", "open", "message",
 #ifdef MOZ_SVG
   "SVGLoad", "SVGUnload", "SVGAbort", "SVGError", "SVGResize", "SVGScroll",
   "SVGZoom",
@@ -105,7 +105,9 @@ static const char* const sEventNames[] = {
   "MozTouchMove",
   "MozTouchUp",
   "MozScrolledAreaChanged",
-  "transitionend"
+  "transitionend",
+  "devicemotion",
+  "deviceorientation"
 #ifdef MOZ_CSS_ANIMATIONS
   ,
   "animationstart",
@@ -316,8 +318,7 @@ nsDOMEvent::GetTargetFromFrame()
   if (!mPresContext) { return nsnull; }
 
   // Get the target frame (have to get the ESM first)
-  nsIFrame* targetFrame = nsnull;
-  mPresContext->EventStateManager()->GetEventTarget(&targetFrame);
+  nsIFrame* targetFrame = mPresContext->EventStateManager()->GetEventTarget();
   if (!targetFrame) { return nsnull; }
 
   // get the real content
@@ -1262,6 +1263,10 @@ const char* nsDOMEvent::GetEventName(PRUint32 aEventType)
     return sEventNames[eDOMEvents_cut];
   case NS_PASTE:
     return sEventNames[eDOMEvents_paste];
+  case NS_OPEN:
+    return sEventNames[eDOMEvents_open];
+  case NS_MESSAGE:
+    return sEventNames[eDOMEvents_message];
 #ifdef MOZ_SVG
   case NS_SVG_LOAD:
     return sEventNames[eDOMEvents_SVGLoad];
@@ -1364,6 +1369,10 @@ const char* nsDOMEvent::GetEventName(PRUint32 aEventType)
     return sEventNames[eDOMEvents_MozScrolledAreaChanged];
   case NS_TRANSITION_END:
     return sEventNames[eDOMEvents_transitionend];
+  case NS_DEVICE_MOTION:
+    return sEventNames[eDOMEvents_devicemotion];
+  case NS_DEVICE_ORIENTATION:
+    return sEventNames[eDOMEvents_deviceorientation];
 #ifdef MOZ_CSS_ANIMATIONS
   case NS_ANIMATION_START:
     return sEventNames[eDOMEvents_animationstart];
@@ -1389,6 +1398,12 @@ nsDOMEvent::GetPreventDefault(PRBool* aReturn)
   NS_ENSURE_ARG_POINTER(aReturn);
   *aReturn = mEvent && (mEvent->flags & NS_EVENT_FLAG_NO_DEFAULT);
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMEvent::GetDefaultPrevented(PRBool* aReturn)
+{
+  return GetPreventDefault(aReturn);
 }
 
 void

@@ -23,6 +23,11 @@ XPCOMUtils.defineLazyGetter(this, "gPrivateBrowsing", function() {
            getService(Ci.nsIPrivateBrowsingService);
 });
 
+XPCOMUtils.defineLazyGetter(this, "gFavIconService", function() {
+  return Cc["@mozilla.org/browser/favicon-service;1"].
+           getService(Ci.nsIFaviconService);
+});
+
 XPCOMUtils.defineLazyGetter(this, "gNetUtil", function() {
   var obj = {};
   Cu.import("resource://gre/modules/NetUtil.jsm", obj);
@@ -33,6 +38,7 @@ var gWindow = window.parent;
 var gBrowser = gWindow.gBrowser;
 var gTabView = gWindow.TabView;
 var gTabViewDeck = gWindow.document.getElementById("tab-view-deck");
+var gBrowserPanel = gWindow.document.getElementById("browser-panel");
 var gTabViewFrame = gWindow.document.getElementById("tab-view");
 
 # NB: Certain files need to evaluate before others

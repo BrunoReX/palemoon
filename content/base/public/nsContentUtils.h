@@ -130,8 +130,10 @@ class nsIMIMEHeaderParam;
 class nsIObserver;
 class nsPresContext;
 class nsIChannel;
+class nsAutoScriptBlockerSuppressNodeRemoved;
 struct nsIntMargin;
 class nsPIDOMWindow;
+class nsIDocumentLoaderFactory;
 
 #ifndef have_PrefChangedFunc_typedef
 typedef int (*PR_CALLBACK PrefChangedFunc)(const char *, void *);
@@ -183,10 +185,16 @@ struct nsShortcutCandidate {
 
 class nsContentUtils
 {
+  friend class nsAutoScriptBlockerSuppressNodeRemoved;
   typedef mozilla::dom::Element Element;
 
 public:
   static nsresult Init();
+
+  /**
+   * Get a JSContext from the document's scope object.
+   */
+  static JSContext* GetContextFromDocument(nsIDocument *aDocument);
 
   /**
    * Get a scope from aNewDocument. Also get a context through the scope of one
@@ -312,20 +320,6 @@ public:
                                PRBool* aDisconnected = nsnull);
 
   /**
-   * Find the first child of aParent with a resolved tag matching
-   * aNamespace and aTag. Both the explicit and anonymous children of
-   * aParent are examined. The return value is not addrefed.
-   *
-   * XXXndeakin this should return the first child whether in anonymous or
-   * explicit children, but currently XBL doesn't tell us the relative
-   * ordering of anonymous vs explicit children, so instead it searches
-   * the explicit children first then the anonymous children.
-   */
-  static nsIContent* FindFirstChildWithResolvedTag(nsIContent* aParent,
-                                                   PRInt32 aNamespace,
-                                                   nsIAtom* aTag);
-
-  /**
    * Brute-force search of the element subtree rooted at aContent for
    * an element with the given id.  aId must be nonempty, otherwise
    * this method may return nodes even if they have no id!
@@ -336,24 +330,6 @@ public:
    * Similar to above, but to be used if one already has an atom for the ID
    */
   static Element* MatchElementId(nsIContent *aContent, const nsIAtom* aId);
-
-  /**
-   * Given a URI containing an element reference (#whatever),
-   * resolve it to the target content element with the given ID.
-   *
-   * If aFromContent is anonymous XBL content then the URI
-   * must refer to its binding document and we will return
-   * a node in the same anonymous content subtree as aFromContent,
-   * if one exists with the correct ID.
-   *
-   * @param aFromContent the context of the reference;
-   *   currently we only support references to elements in the
-   *   same document as the context, so this must be non-null
-   *
-   * @return the element, or nsnull on failure
-   */
-  static nsIContent* GetReferencedElement(nsIURI* aURI,
-                                          nsIContent *aFromContent);
 
   /**
    * Reverses the document position flags passed in.
@@ -431,14 +407,6 @@ public:
   // Check if the (JS) caller can access aWindow.
   // aWindow can be either outer or inner window.
   static PRBool CanCallerAccess(nsPIDOMWindow* aWindow);
-
-  /**
-   * Get the docshell through the JS context that's currently on the stack.
-   * If there's no JS context currently on the stack aDocShell will be null.
-   *
-   * @param aDocShell The docshell or null if no JS context
-   */
-  static nsIDocShell *GetDocShellFromCaller();
 
   /**
    * Get the window through the JS context that's currently on the stack.
@@ -564,7 +532,7 @@ public:
    * since this can happen due to content fixup when a form spans table rows or
    * table cells.
    */
-  static PRBool BelongsInForm(nsIDOMHTMLFormElement *aForm,
+  static PRBool BelongsInForm(nsIContent *aForm,
                               nsIContent *aContent);
 
   static nsresult CheckQName(const nsAString& aQualifiedName,
@@ -930,9 +898,37 @@ public:
                                      nsINode* aTargetForSubtreeModified);
 
   /**
+   * Quick helper to determine whether there are any mutation listeners
+   * of a given type that apply to any content in this document. It is valid
+   * to pass null for aDocument here, in which case this function always
+   * returns PR_TRUE.
+   *
+   * @param aDocument The document to search for listeners
+   * @param aType     The type of listener (NS_EVENT_BITS_MUTATION_*)
+   *
+   * @return true if there are mutation listeners of the specified type
+   */
+  static PRBool HasMutationListeners(nsIDocument* aDocument,
+                                     PRUint32 aType);
+  /**
+   * Synchronously fire DOMNodeRemoved on aChild. Only fires the event if
+   * there really are listeners by checking using the HasMutationListeners
+   * function above. The function makes sure to hold the relevant objects alive
+   * for the duration of the event firing. However there are no guarantees
+   * that any of the objects are alive by the time the function returns.
+   * If you depend on that you need to hold references yourself.
+   *
+   * @param aChild    The node to fire DOMNodeRemoved at.
+   * @param aParent   The parent of aChild.
+   * @param aOwnerDoc The ownerDocument of aChild.
+   */
+  static void MaybeFireNodeRemoved(nsINode* aChild, nsINode* aParent,
+                                   nsIDocument* aOwnerDoc);
+
+  /**
    * This method creates and dispatches a trusted event.
    * Works only with events which can be created by calling
-   * nsIDOMDocumentEvent::CreateEvent() with parameter "Events".
+   * nsIDOMDocument::CreateEvent() with parameter "Events".
    * @param aDoc           The document which will be used to create the event.
    * @param aTarget        The target of the event, should be QIable to
    *                       nsIDOMEventTarget.
@@ -953,7 +949,7 @@ public:
    * This method creates and dispatches a trusted event to the chrome
    * event handler.
    * Works only with events which can be created by calling
-   * nsIDOMDocumentEvent::CreateEvent() with parameter "Events".
+   * nsIDOMDocument::CreateEvent() with parameter "Events".
    * @param aDocument      The document which will be used to create the event,
    *                       and whose window's chrome handler will be used to
    *                       dispatch the event.
@@ -989,6 +985,15 @@ public:
    * @param aName the event name to look up
    */
   static PRUint32 GetEventId(nsIAtom* aName);
+
+  /**
+   * Return the category for the event with the given name. The name is the
+   * event name *without* the 'on' prefix. Returns NS_EVENT if the event
+   * is not known to be in any particular category.
+   *
+   * @param aName the event name to look up
+   */
+  static PRUint32 GetEventCategory(const nsAString& aName);
 
   /**
    * Return the event id and atom for the event with the given name.
@@ -1162,6 +1167,12 @@ public:
     }
   }
 
+  static void DropScriptObject(PRUint32 aLangID, void *aObject,
+                               const char *name, void *aClosure)
+  {
+    DropScriptObject(aLangID, aObject, aClosure);
+  }
+
   /**
    * Unbinds the content from the tree and nulls it out if it's not null.
    */
@@ -1268,7 +1279,7 @@ public:
     if (aCache->PreservingWrapper()) {
       aCallback(nsIProgrammingLanguage::JAVASCRIPT,
                 aCache->GetWrapperPreserveColor(),
-                aClosure);
+                "Preserved wrapper", aClosure);
     }
   }
 
@@ -1335,10 +1346,13 @@ public:
    * @param aIsUserTriggered whether the user triggered the link. This would be
    *                         false for loads from auto XLinks or from the
    *                         click() method if we ever implement it.
+   * @param aIsTrusted If PR_FALSE, JS Context will be pushed to stack
+   *                   when the link is triggered.
    */
   static void TriggerLink(nsIContent *aContent, nsPresContext *aPresContext,
                           nsIURI *aLinkURI, const nsString& aTargetSpec,
-                          PRBool aClick, PRBool aIsUserTriggered);
+                          PRBool aClick, PRBool aIsUserTriggered,
+                          PRBool aIsTrusted);
 
   /**
    * Return top-level widget in the parent chain.
@@ -1404,6 +1418,14 @@ public:
    * Return true if aURI is a local file URI (i.e. file://).
    */
   static PRBool URIIsLocalFile(nsIURI *aURI);
+
+  /**
+   * Given a URI, return set beforeHash to the part before the '#', and
+   * afterHash to the remainder of the URI, including the '#'.
+   */
+  static nsresult SplitURIAtHash(nsIURI *aURI,
+                                 nsACString &aBeforeHash,
+                                 nsACString &aAfterHash);
 
   /**
    * Get the application manifest URI for this document.  The manifest URI
@@ -1640,16 +1662,6 @@ public:
   static nsresult CreateStructuredClone(JSContext* cx, jsval val, jsval* rval);
 
   /**
-   * Reparents the given object and all subobjects to the given scope. Also
-   * fixes all the prototypes. Assumes obj is properly rooted, that obj has no
-   * getter functions that can cause side effects, and that the only types of
-   * objects nested within obj are the types that are cloneable via the
-   * CreateStructuredClone function above.
-   */
-  static nsresult ReparentClonedObjectToScope(JSContext* cx, JSObject* obj,
-                                              JSObject* scope);
-
-  /**
    * Strip all \n, \r and nulls from the given string
    * @param aString the string to remove newlines from [in/out]
    */
@@ -1741,6 +1753,42 @@ public:
    */
   static bool AllowXULXBLForPrincipal(nsIPrincipal* aPrincipal);
 
+  enum ContentViewerType
+  {
+      TYPE_UNSUPPORTED,
+      TYPE_CONTENT,
+      TYPE_PLUGIN,
+      TYPE_UNKNOWN
+  };
+
+  static already_AddRefed<nsIDocumentLoaderFactory>
+  FindInternalContentViewer(const char* aType,
+                            ContentViewerType* aLoaderType = nsnull);
+
+  /**
+   * This helper method returns true if the aPattern pattern matches aValue.
+   * aPattern should not contain leading and trailing slashes (/).
+   * The pattern has to match the entire value not just a subset.
+   * aDocument must be a valid pointer (not null).
+   *
+   * This is following the HTML5 specification:
+   * http://dev.w3.org/html5/spec/forms.html#attr-input-pattern
+   *
+   * WARNING: This method mutates aPattern and aValue!
+   *
+   * @param aValue    the string to check.
+   * @param aPattern  the string defining the pattern.
+   * @param aDocument the owner document of the element.
+   * @result          whether the given string is matches the pattern.
+   */
+  static PRBool IsPatternMatching(nsAString& aValue, nsAString& aPattern,
+                                  nsIDocument* aDocument);
+
+  /**
+   * Calling this adds support for
+   * ontouch* event handler DOM attributes.
+   */
+  static void InitializeTouchEventTable();
 private:
   static PRBool InitializeEventTable();
 
@@ -1820,6 +1868,9 @@ private:
   static PRBool sInitialized;
   static PRUint32 sScriptBlockerCount;
   static PRUint32 sRemovableScriptBlockerCount;
+#ifdef DEBUG
+  static PRUint32 sDOMNodeRemovedSuppressCount;
+#endif
   static nsCOMArray<nsIRunnable>* sBlockedScriptRunners;
   static PRUint32 sRunnersCountAtFirstBlocker;
   static PRUint32 sScriptBlockerCountWhereRunnersPrevented;
@@ -1909,6 +1960,21 @@ private:
   nsCOMPtr<nsIDocument> mDocument;
   nsCOMPtr<nsIDocumentObserver> mObserver;
   MOZILLA_DECL_USE_GUARD_OBJECT_NOTIFIER
+};
+
+class NS_STACK_CLASS nsAutoScriptBlockerSuppressNodeRemoved :
+                          public nsAutoScriptBlocker {
+public:
+  nsAutoScriptBlockerSuppressNodeRemoved() {
+#ifdef DEBUG
+    ++nsContentUtils::sDOMNodeRemovedSuppressCount;
+#endif
+  }
+  ~nsAutoScriptBlockerSuppressNodeRemoved() {
+#ifdef DEBUG
+    --nsContentUtils::sDOMNodeRemovedSuppressCount;
+#endif
+  }
 };
 
 #define NS_INTERFACE_MAP_ENTRY_TEAROFF(_interface, _allocator)                \

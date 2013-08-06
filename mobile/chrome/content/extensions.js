@@ -324,7 +324,9 @@ var ExtensionsView = {
       let strings = Strings.browser;
       let anyUpdateable = false;
       for (let i = 0; i < items.length; i++) {
-        let listitem = self._createLocalAddon(items[i]);
+        let listitem = self.getElementForAddon(items[i].id)
+        if (!listitem)
+          listitem = self._createLocalAddon(items[i]);
         if ((items[i].permissions & AddonManager.PERM_CAN_UPGRADE) > 0)
           anyUpdateable = true;
 
@@ -546,7 +548,7 @@ var ExtensionsView = {
   appendSearchResults: function(aAddons, aShowRating, aShowCount) {
     let urlproperties = [ "iconURL", "homepageURL" ];
     let foundItem = false;
-    let appendedAddons = 0;
+    let appendedAddons = [];
     for (let i = 0; i < aAddons.length; i++) {
       let addon = aAddons[i];
 
@@ -564,7 +566,6 @@ var ExtensionsView = {
           continue;
       }
 
-      appendedAddons++;
       // Convert the numeric type to a string
       let types = {"2":"extension", "4":"theme", "8":"locale"};
       addon.type = types[addon.type];
@@ -579,7 +580,7 @@ var ExtensionsView = {
         listitem.setAttribute("rating", addon.averageRating);
 
       let item = this.addItem(listitem, "repo");
-
+      appendedAddons.push(listitem);
       // Hide any overflow add-ons. The user can see them later by pressing the
       // "See More" button
       aShowCount--;
@@ -656,7 +657,7 @@ var ExtensionsView = {
     // can see more by pressing the "Show More" button
     this.appendSearchResults(aRecommendedAddons, false, aRecommendedAddons.length);
     let minOverflow = (aRecommendedAddons.length >= kAddonPageSize ? 0 : kAddonPageSize);
-    let numAdded = this.appendSearchResults(aBrowseAddons, true, minOverflow);
+    let numAdded = this.appendSearchResults(aBrowseAddons, true, minOverflow).length;
 
     let totalAddons = aRecommendedAddons.length + numAdded;
 
@@ -688,10 +689,10 @@ var ExtensionsView = {
       return;
     }
 
-    let firstItem = this.appendSearchResults(aAddons, true);
-    if (aSelectFirstResult) {
-      this._list.selectItem(firstItem);
-      this._list.scrollBoxObject.scrollToElement(firstItem);
+    let firstAdded = this.appendSearchResults(aAddons, true)[0];
+    if (aSelectFirstResult && firstAdded) {
+      this._list.selectItem(firstAdded);
+      this._list.scrollBoxObject.scrollToElement(firstAdded);
     }
 
     let formatter = Cc["@mozilla.org/toolkit/URLFormatterService;1"].getService(Ci.nsIURLFormatter);
@@ -892,7 +893,7 @@ var AddonSearchResults = {
   selectFirstResult: false,
 
   searchSucceeded: function(aAddons, aAddonCount, aTotalResults) {
-    ExtensionsView.displaySearchResults(aAddons, aTotalResults, false, this.selectFirstResult);
+    ExtensionsView.displaySearchResults(aAddons, aTotalResults, this.selectFirstResult);
   },
 
   searchFailed: searchFailed

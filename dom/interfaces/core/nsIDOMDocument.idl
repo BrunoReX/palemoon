@@ -22,6 +22,9 @@
  * Contributor(s):
  *   Vidur Apparao <vidur@netscape.com> (original author)
  *   Johnny Stenback <jst@netscape.com>
+ *   Jonas Sicking <sicking@bigfoot.com>
+ *   Ms2ger <ms2ger@gmail.com>
+ *   Tom Pixley <joki@netscape.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either of the GNU General Public License Version 2 or later (the "GPL"),
@@ -39,7 +42,9 @@
 
 #include "nsIDOMNode.idl"
 
-interface nsIDOMDOMConfiguration;
+interface nsIDOMNodeIterator;
+interface nsIDOMNodeFilter;
+interface nsIDOMTreeWalker;
 
 /**
  * The nsIDOMDocument interface represents the entire HTML or XML document.
@@ -54,7 +59,7 @@ interface nsIDOMDOMConfiguration;
  * http://dvcs.w3.org/hg/domcore/raw-file/tip/Overview.html
  */
 
-[scriptable, uuid(3e7421c4-9964-4184-8c75-d291eecdba35)]
+[scriptable, uuid(61b2159c-614e-4aff-a626-f34af9bb1759)]
 interface nsIDOMDocument : nsIDOMNode
 {
   readonly attribute nsIDOMDocumentType         doctype;
@@ -104,19 +109,38 @@ interface nsIDOMDocument : nsIDOMNode
            attribute DOMString       xmlVersion;
                                         // raises(DOMException) on setting
   // Introduced in DOM Level 3:
-           attribute boolean         strictErrorChecking;
-  // Introduced in DOM Level 3:
            attribute DOMString       documentURI;
   // Introduced in DOM Level 3:
   nsIDOMNode         adoptNode(in nsIDOMNode source)
                                         raises(DOMException);
   // Introduced in DOM Level 3:
-  readonly attribute nsIDOMDOMConfiguration domConfig;
-  // Introduced in DOM Level 3:
   void               normalizeDocument();
-  // Introduced in DOM Level 3:
-  nsIDOMNode         renameNode(in nsIDOMNode node, 
-                                in DOMString namespaceURI, 
-                                in DOMString qualifiedName)
+
+  /**
+   * The window associated with this document.
+   *
+   * @see http://www.whatwg.org/html/#dom-document-defaultview
+   */
+  readonly attribute nsIDOMWindow    defaultView;
+
+  /**
+   * Create a range
+   *
+   * @see http://html5.org/specs/dom-range.html#dom-document-createrange
+   */
+  nsIDOMRange              createRange();
+
+  nsIDOMNodeIterator createNodeIterator(in nsIDOMNode root,
+                                        in unsigned long whatToShow,
+                                        in nsIDOMNodeFilter filter,
+                                        in boolean entityReferenceExpansion)
                                         raises(DOMException);
+  nsIDOMTreeWalker   createTreeWalker(in nsIDOMNode root,
+                                      in unsigned long whatToShow,
+                                      in nsIDOMNodeFilter filter,
+                                      in boolean entityReferenceExpansion)
+                                        raises(DOMException);
+
+  nsIDOMEvent               createEvent(in DOMString eventType)
+                                               raises(DOMException);
 };

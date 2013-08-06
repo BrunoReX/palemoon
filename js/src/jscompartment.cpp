@@ -41,6 +41,7 @@
 #include "jscntxt.h"
 #include "jscompartment.h"
 #include "jsgc.h"
+#include "jsgcmark.h"
 #include "jsiter.h"
 #include "jsproxy.h"
 #include "jsscope.h"
@@ -90,11 +91,6 @@ JSCompartment::JSCompartment(JSRuntime *rt)
 {
     JS_INIT_CLIST(&scripts);
 
-#ifdef JS_TRACER
-    /* InitJIT expects this area to be zero'd. */
-    PodZero(&traceMonitor);
-#endif
-
     PodArrayZero(scriptsToGC);
 }
 
@@ -102,10 +98,6 @@ JSCompartment::~JSCompartment()
 {
 #if ENABLE_YARR_JIT
     Foreground::delete_(regExpAllocator);
-#endif
-
-#if defined JS_TRACER
-    FinishJIT(&traceMonitor);
 #endif
 
 #ifdef JS_METHODJIT
@@ -128,9 +120,6 @@ JSCompartment::init()
         arenas[i].init();
     for (unsigned i = 0; i < FINALIZE_LIMIT; i++)
         freeLists.finalizables[i] = NULL;
-#ifdef JS_GCMETER
-    memset(&compartmentStats, 0, sizeof(JSGCArenaStats) * FINALIZE_LIMIT);
-#endif
     if (!crossCompartmentWrappers.init())
         return false;
 
@@ -142,7 +131,7 @@ JSCompartment::init()
 #endif
 
 #ifdef JS_TRACER
-    if (!InitJIT(&traceMonitor, rt))
+    if (!traceMonitor.init(rt))
         return false;
 #endif
 
@@ -163,6 +152,14 @@ JSCompartment::init()
     return true;
 #endif
 }
+
+#ifdef JS_METHODJIT
+size_t
+JSCompartment::getMjitCodeSize() const
+{
+    return jaegerCompartment->execAlloc()->getCodeSize();
+}
+#endif
 
 bool
 JSCompartment::arenaListsAreEmpty()
@@ -221,7 +218,7 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
      * This loses us some transparency, and is generally very cheesy.
      */
     JSObject *global;
-    if (cx->hasfp()) {
+    if (cx->running()) {
         global = cx->fp()->scopeChain().getGlobal();
     } else {
         global = cx->globalObject;

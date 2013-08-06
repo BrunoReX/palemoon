@@ -717,39 +717,74 @@ inline PRUint8 ClampColor(double aColor)
   return NSToIntRound(aColor);
 }
 
+template <typename T>
+T
+RestrictValue(PRUint32 aRestrictions, T aValue)
+{
+  T result = aValue;
+  switch (aRestrictions) {
+    case 0:
+      break;
+    case CSS_PROPERTY_VALUE_NONNEGATIVE:
+      if (result < 0) {
+        result = 0;
+      }
+      break;
+    case CSS_PROPERTY_VALUE_AT_LEAST_ONE:
+      if (result < 1) {
+        result = 1;
+      }
+      break;
+    default:
+      NS_ABORT_IF_FALSE(PR_FALSE, "bad value restriction");
+      break;
+  }
+  return result;
+}
+
+template <typename T>
+T
+RestrictValue(nsCSSProperty aProperty, T aValue)
+{
+  return RestrictValue(nsCSSProps::ValueRestrictions(aProperty), aValue);
+}
+
 static inline void
 AddCSSValuePixel(double aCoeff1, const nsCSSValue &aValue1,
                  double aCoeff2, const nsCSSValue &aValue2,
-                 nsCSSValue &aResult)
+                 nsCSSValue &aResult, PRUint32 aValueRestrictions = 0)
 {
   NS_ABORT_IF_FALSE(aValue1.GetUnit() == eCSSUnit_Pixel, "unexpected unit");
   NS_ABORT_IF_FALSE(aValue2.GetUnit() == eCSSUnit_Pixel, "unexpected unit");
-  aResult.SetFloatValue(aCoeff1 * aValue1.GetFloatValue() +
-                        aCoeff2 * aValue2.GetFloatValue(),
+  aResult.SetFloatValue(RestrictValue(aValueRestrictions,
+                                      aCoeff1 * aValue1.GetFloatValue() +
+                                      aCoeff2 * aValue2.GetFloatValue()),
                         eCSSUnit_Pixel);
 }
 
 static inline void
 AddCSSValueNumber(double aCoeff1, const nsCSSValue &aValue1,
                   double aCoeff2, const nsCSSValue &aValue2,
-                  nsCSSValue &aResult)
+                  nsCSSValue &aResult, PRUint32 aValueRestrictions = 0)
 {
   NS_ABORT_IF_FALSE(aValue1.GetUnit() == eCSSUnit_Number, "unexpected unit");
   NS_ABORT_IF_FALSE(aValue2.GetUnit() == eCSSUnit_Number, "unexpected unit");
-  aResult.SetFloatValue(aCoeff1 * aValue1.GetFloatValue() +
-                        aCoeff2 * aValue2.GetFloatValue(),
+  aResult.SetFloatValue(RestrictValue(aValueRestrictions,
+                                      aCoeff1 * aValue1.GetFloatValue() +
+                                      aCoeff2 * aValue2.GetFloatValue()),
                         eCSSUnit_Number);
 }
 
 static inline void
 AddCSSValuePercent(double aCoeff1, const nsCSSValue &aValue1,
                    double aCoeff2, const nsCSSValue &aValue2,
-                   nsCSSValue &aResult)
+                   nsCSSValue &aResult, PRUint32 aValueRestrictions = 0)
 {
   NS_ABORT_IF_FALSE(aValue1.GetUnit() == eCSSUnit_Percent, "unexpected unit");
   NS_ABORT_IF_FALSE(aValue2.GetUnit() == eCSSUnit_Percent, "unexpected unit");
-  aResult.SetPercentValue(aCoeff1 * aValue1.GetPercentValue() +
-                          aCoeff2 * aValue2.GetPercentValue());
+  aResult.SetPercentValue(RestrictValue(aValueRestrictions,
+                                        aCoeff1 * aValue1.GetPercentValue() +
+                                        aCoeff2 * aValue2.GetPercentValue()));
 }
 
 // Add two canonical-form calc values (eUnit_Calc) to make another
@@ -798,7 +833,9 @@ AddShadowItems(double aCoeff1, const nsCSSValue &aValue1,
 
   for (size_t i = 0; i < 4; ++i) {
     AddCSSValuePixel(aCoeff1, array1->Item(i), aCoeff2, array2->Item(i),
-                     resultArray->Item(i));
+                     resultArray->Item(i),
+                     // blur radius must be nonnegative
+                     (i == 2) ? CSS_PROPERTY_VALUE_NONNEGATIVE : 0);
   }
 
   const nsCSSValue& color1 = array1->Item(4);
@@ -1359,6 +1396,11 @@ nsStyleAnimation::AddWeighted(nsCSSProperty aProperty,
           // Animate just like eUnit_Integer.
           PRInt32 result = NS_floor(aCoeff1 * double(aValue1.GetIntValue()) +
                                     aCoeff2 * double(aValue2.GetIntValue()));
+          if (result < NS_STYLE_FONT_STRETCH_ULTRA_CONDENSED) {
+            result = NS_STYLE_FONT_STRETCH_ULTRA_CONDENSED;
+          } else if (result > NS_STYLE_FONT_STRETCH_ULTRA_EXPANDED) {
+            result = NS_STYLE_FONT_STRETCH_ULTRA_EXPANDED;
+          }
           aResultValue.SetIntValue(result, eUnit_Enumerated);
           return PR_TRUE;
         }
@@ -1382,26 +1424,33 @@ nsStyleAnimation::AddWeighted(nsCSSProperty aProperty,
       if (aProperty == eCSSProperty_font_weight) {
         NS_ASSERTION(result > 0, "unexpected value");
         result -= result % 100;
+        if (result < 100) {
+          result = 100;
+        } else if (result > 900) {
+          result = 900;
+        }
+      } else {
+        result = RestrictValue(aProperty, result);
       }
       aResultValue.SetIntValue(result, eUnit_Integer);
       return PR_TRUE;
     }
     case eUnit_Coord: {
-      aResultValue.SetCoordValue(NSToCoordRound(
+      aResultValue.SetCoordValue(RestrictValue(aProperty, NSToCoordRound(
         aCoeff1 * aValue1.GetCoordValue() +
-        aCoeff2 * aValue2.GetCoordValue()));
+        aCoeff2 * aValue2.GetCoordValue())));
       return PR_TRUE;
     }
     case eUnit_Percent: {
-      aResultValue.SetPercentValue(
+      aResultValue.SetPercentValue(RestrictValue(aProperty,
         aCoeff1 * aValue1.GetPercentValue() +
-        aCoeff2 * aValue2.GetPercentValue());
+        aCoeff2 * aValue2.GetPercentValue()));
       return PR_TRUE;
     }
     case eUnit_Float: {
-      aResultValue.SetFloatValue(
+      aResultValue.SetFloatValue(RestrictValue(aProperty,
         aCoeff1 * aValue1.GetFloatValue() +
-        aCoeff2 * aValue2.GetFloatValue());
+        aCoeff2 * aValue2.GetFloatValue()));
       return PR_TRUE;
     }
     case eUnit_Color: {
@@ -1478,17 +1527,18 @@ nsStyleAnimation::AddWeighted(nsCSSProperty aProperty,
       static nsCSSValue nsCSSValuePair::* const pairValues[2] = {
         &nsCSSValuePair::mXValue, &nsCSSValuePair::mYValue
       };
+      PRUint32 restrictions = nsCSSProps::ValueRestrictions(aProperty);
       for (PRUint32 i = 0; i < 2; ++i) {
         nsCSSValue nsCSSValuePair::*member = pairValues[i];
         switch (unit[i]) {
           case eCSSUnit_Pixel:
             AddCSSValuePixel(aCoeff1, pair1->*member, aCoeff2, pair2->*member,
-                             result->*member);
+                             result->*member, restrictions);
             break;
           case eCSSUnit_Percent:
             AddCSSValuePercent(aCoeff1, pair1->*member,
                                aCoeff2, pair2->*member,
-                               result->*member);
+                               result->*member, restrictions);
             break;
           case eCSSUnit_Calc:
             AddCSSValueCanonicalCalc(aCoeff1, pair1->*member,
@@ -1506,6 +1556,8 @@ nsStyleAnimation::AddWeighted(nsCSSProperty aProperty,
       return PR_TRUE;
     }
     case eUnit_CSSRect: {
+      NS_ABORT_IF_FALSE(nsCSSProps::ValueRestrictions(aProperty) == 0,
+                        "must add code for handling value restrictions");
       const nsCSSRect *rect1 = aValue1.GetCSSRectValue();
       const nsCSSRect *rect2 = aValue2.GetCSSRectValue();
       if (rect1->mTop.GetUnit() != rect2->mTop.GetUnit() ||
@@ -1588,9 +1640,11 @@ nsStyleAnimation::AddWeighted(nsCSSProperty aProperty,
         resultTail = &item->mNext;
 
         if (v1.GetUnit() == eCSSUnit_Number) {
-          AddCSSValueNumber(aCoeff1, v1, aCoeff2, v2, item->mValue);
+          AddCSSValueNumber(aCoeff1, v1, aCoeff2, v2, item->mValue,
+                            CSS_PROPERTY_VALUE_NONNEGATIVE);
         } else {
-          AddCSSValuePercent(aCoeff1, v1, aCoeff2, v2, item->mValue);
+          AddCSSValuePercent(aCoeff1, v1, aCoeff2, v2, item->mValue,
+                             CSS_PROPERTY_VALUE_NONNEGATIVE);
         }
 
         list1 = list1->mNext;
@@ -1735,6 +1789,7 @@ nsStyleAnimation::AddWeighted(nsCSSProperty aProperty,
           &nsCSSValuePairList::mXValue,
           &nsCSSValuePairList::mYValue,
         };
+        PRUint32 restrictions = nsCSSProps::ValueRestrictions(aProperty);
         for (PRUint32 i = 0; i < NS_ARRAY_LENGTH(pairListValues); ++i) {
           const nsCSSValue &v1 = list1->*(pairListValues[i]);
           const nsCSSValue &v2 = list2->*(pairListValues[i]);
@@ -1746,10 +1801,10 @@ nsStyleAnimation::AddWeighted(nsCSSProperty aProperty,
           }
           switch (unit) {
             case eCSSUnit_Pixel:
-              AddCSSValuePixel(aCoeff1, v1, aCoeff2, v2, vr);
+              AddCSSValuePixel(aCoeff1, v1, aCoeff2, v2, vr, restrictions);
               break;
             case eCSSUnit_Percent:
-              AddCSSValuePercent(aCoeff1, v1, aCoeff2, v2, vr);
+              AddCSSValuePercent(aCoeff1, v1, aCoeff2, v2, vr, restrictions);
               break;
             case eCSSUnit_Calc:
               AddCSSValueCanonicalCalc(aCoeff1, v1, aCoeff2, v2, vr);
@@ -1807,8 +1862,7 @@ BuildStyleRule(nsCSSProperty aProperty,
 
   // Get a parser, parse the property, and check for CSS parsing errors.
   // If any of these steps fails, we bail out and delete the declaration.
-  if (!parser ||
-      NS_FAILED(parser.ParseProperty(aProperty, aSpecifiedValue,
+  if (NS_FAILED(parser.ParseProperty(aProperty, aSpecifiedValue,
                                      doc->GetDocumentURI(), baseURI,
                                      aTargetElement->NodePrincipal(),
                                      declaration, &changed, PR_FALSE)) ||
@@ -2251,6 +2305,27 @@ nsStyleAnimation::ExtractComputedValue(nsCSSProperty aProperty,
           break;
         }
 
+        case eCSSProperty_text_decoration_color: {
+          const nsStyleTextReset *styleTextReset =
+            static_cast<const nsStyleTextReset*>(styleStruct);
+          nscolor color;
+          PRBool isForeground;
+          styleTextReset->GetDecorationColor(color, isForeground);
+          if (isForeground) {
+            color = aStyleContext->GetStyleColor()->mColor;
+          }
+          aComputedValue.SetColorValue(color);
+          break;
+        }
+
+        case eCSSProperty_text_decoration_style: {
+          PRUint8 decorationStyle =
+            static_cast<const nsStyleTextReset*>(styleStruct)->
+              GetDecorationStyle();
+          aComputedValue.SetIntValue(decorationStyle, eUnit_Enumerated);
+          break;
+        }
+
         case eCSSProperty_border_spacing: {
           const nsStyleTableBorder *styleTableBorder =
             static_cast<const nsStyleTableBorder*>(styleStruct);
@@ -2421,27 +2496,25 @@ nsStyleAnimation::ExtractComputedValue(nsCSSProperty aProperty,
             resultTail = &item->mNext;
 
             const nsStyleBackground::Position &pos = bg->mLayers[i].mPosition;
-            if (pos.mXPosition.mLength == 0) {
-              item->mXValue.SetPercentValue(pos.mXPosition.mPercent);
-            } else if (pos.mXPosition.mPercent == 0.0f) {
+            // XXXbz is there a good reason we can't just
+            // SetCalcValue(&pos.mXPosition, item->mXValue) here?
+            if (!pos.mXPosition.mHasPercent) {
+              NS_ABORT_IF_FALSE(pos.mXPosition.mPercent == 0.0f,
+                                "Shouldn't have mPercent!");
               nscoordToCSSValue(pos.mXPosition.mLength, item->mXValue);
+            } else if (pos.mXPosition.mLength == 0) {
+              item->mXValue.SetPercentValue(pos.mXPosition.mPercent);
             } else {
-              nsStyleCoord::Calc calc;
-              calc.mLength = pos.mXPosition.mLength;
-              calc.mPercent = pos.mXPosition.mPercent;
-              calc.mHasPercent = PR_TRUE;
-              SetCalcValue(&calc, item->mXValue);
+              SetCalcValue(&pos.mXPosition, item->mXValue);
             }
-            if (pos.mYPosition.mLength == 0) {
-              item->mYValue.SetPercentValue(pos.mYPosition.mPercent);
-            } else if (pos.mYPosition.mPercent == 0.0f) {
+            if (!pos.mYPosition.mHasPercent) {
+              NS_ABORT_IF_FALSE(pos.mYPosition.mPercent == 0.0f,
+                                "Shouldn't have mPercent!");
               nscoordToCSSValue(pos.mYPosition.mLength, item->mYValue);
+            } else if (pos.mYPosition.mLength == 0) {
+              item->mYValue.SetPercentValue(pos.mYPosition.mPercent);
             } else {
-              nsStyleCoord::Calc calc;
-              calc.mLength = pos.mYPosition.mLength;
-              calc.mPercent = pos.mYPosition.mPercent;
-              calc.mHasPercent = PR_TRUE;
-              SetCalcValue(&calc, item->mYValue);
+              SetCalcValue(&pos.mYPosition, item->mYValue);
             }
           }
 
@@ -2471,16 +2544,20 @@ nsStyleAnimation::ExtractComputedValue(nsCSSProperty aProperty,
                 item->mXValue.SetAutoValue();
                 break;
               case nsStyleBackground::Size::eLengthPercentage:
-                if (size.mWidth.mLength == 0) {
-                  item->mXValue.SetPercentValue(size.mWidth.mPercent);
-                } else if (size.mWidth.mPercent == 0.0f) {
+                // XXXbz is there a good reason we can't just
+                // SetCalcValue(&size.mWidth, item->mXValue) here?
+                if (!size.mWidth.mHasPercent &&
+                    // negative values must have come from calc()
+                    size.mWidth.mLength >= 0) {
+                  NS_ABORT_IF_FALSE(size.mWidth.mPercent == 0.0f,
+                                    "Shouldn't have mPercent");
                   nscoordToCSSValue(size.mWidth.mLength, item->mXValue);
+                } else if (size.mWidth.mLength == 0 &&
+                           // negative values must have come from calc()
+                           size.mWidth.mPercent >= 0.0f) {
+                  item->mXValue.SetPercentValue(size.mWidth.mPercent);
                 } else {
-                  nsStyleCoord::Calc calc;
-                  calc.mLength = size.mWidth.mLength;
-                  calc.mPercent = size.mWidth.mPercent;
-                  calc.mHasPercent = PR_TRUE;
-                  SetCalcValue(&calc, item->mXValue);
+                  SetCalcValue(&size.mWidth, item->mXValue);
                 }
                 break;
             }
@@ -2494,16 +2571,20 @@ nsStyleAnimation::ExtractComputedValue(nsCSSProperty aProperty,
                 item->mYValue.SetAutoValue();
                 break;
               case nsStyleBackground::Size::eLengthPercentage:
-                if (size.mHeight.mLength == 0) {
-                  item->mYValue.SetPercentValue(size.mHeight.mPercent);
-                } else if (size.mHeight.mPercent == 0.0f) {
+                // XXXbz is there a good reason we can't just
+                // SetCalcValue(&size.mHeight, item->mYValue) here?
+                if (!size.mHeight.mHasPercent &&
+                    // negative values must have come from calc()
+                    size.mHeight.mLength >= 0) {
+                  NS_ABORT_IF_FALSE(size.mHeight.mPercent == 0.0f,
+                                    "Shouldn't have mPercent");
                   nscoordToCSSValue(size.mHeight.mLength, item->mYValue);
+                } else if (size.mHeight.mLength == 0 &&
+                           // negative values must have come from calc()
+                           size.mHeight.mPercent >= 0.0f) {
+                  item->mYValue.SetPercentValue(size.mHeight.mPercent);
                 } else {
-                  nsStyleCoord::Calc calc;
-                  calc.mLength = size.mHeight.mLength;
-                  calc.mPercent = size.mHeight.mPercent;
-                  calc.mHasPercent = PR_TRUE;
-                  SetCalcValue(&calc, item->mYValue);
+                  SetCalcValue(&size.mHeight, item->mYValue);
                 }
                 break;
             }

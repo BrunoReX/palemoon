@@ -377,7 +377,7 @@ public class GeckoAppShell
         GeckoAppShell.setSurfaceView(GeckoApp.surfaceView);
 
         // First argument is the .apk path
-        String combinedArgs = apkPath + " -omnijar " + apkPath;
+        String combinedArgs = apkPath + " -greomni " + apkPath;
         if (args != null)
             combinedArgs += " " + args;
         if (url != null)
@@ -474,8 +474,9 @@ public class GeckoAppShell
             if (!mEnable)
                 return;
 
-            if (GeckoApp.surfaceView.mIMEState !=
-                GeckoSurfaceView.IME_STATE_DISABLED)
+            int state = GeckoApp.surfaceView.mIMEState;
+            if (state != GeckoSurfaceView.IME_STATE_DISABLED &&
+                state != GeckoSurfaceView.IME_STATE_PLUGIN)
                 imm.showSoftInput(GeckoApp.surfaceView, 0);
             else
                 imm.hideSoftInputFromWindow(
@@ -577,18 +578,29 @@ public class GeckoAppShell
             tmp.countDown();
     }
 
-    public static void enableAccelerometer(boolean enable) {
+    static Sensor gAccelerometerSensor = null;
+    static Sensor gOrientationSensor = null;
+
+    public static void enableDeviceMotion(boolean enable) {
+
         SensorManager sm = (SensorManager)
             GeckoApp.surfaceView.getContext().getSystemService(Context.SENSOR_SERVICE);
 
-        if (enable) {
-            Sensor accelSensor = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-            if (accelSensor == null)
-                return;
+        if (gAccelerometerSensor == null || gOrientationSensor == null) {
+            gAccelerometerSensor = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+            gOrientationSensor   = sm.getDefaultSensor(Sensor.TYPE_ORIENTATION);
+        }
 
-            sm.registerListener(GeckoApp.surfaceView, accelSensor, SensorManager.SENSOR_DELAY_GAME);
+        if (enable) {
+            if (gAccelerometerSensor != null)
+                sm.registerListener(GeckoApp.surfaceView, gAccelerometerSensor, SensorManager.SENSOR_DELAY_GAME);
+            if (gOrientationSensor != null)
+                sm.registerListener(GeckoApp.surfaceView, gOrientationSensor,   SensorManager.SENSOR_DELAY_GAME);
         } else {
-            sm.unregisterListener(GeckoApp.surfaceView);
+            if (gAccelerometerSensor != null)
+                sm.unregisterListener(GeckoApp.surfaceView, gAccelerometerSensor);
+            if (gOrientationSensor != null)
+                sm.unregisterListener(GeckoApp.surfaceView, gOrientationSensor);
         }
     }
 
@@ -828,6 +840,7 @@ public class GeckoAppShell
                 Field f = drawableClass.getField(resource);
                 icon = f.getInt(null);
             } catch (Exception e) {} // just means the resource doesn't exist
+            imageUri = null;
         }
 
         int notificationID = aAlertName.hashCode();
@@ -835,8 +848,10 @@ public class GeckoAppShell
         // Remove the old notification with the same ID, if any
         removeNotification(notificationID);
 
-        AlertNotification notification = new AlertNotification(GeckoApp.mAppContext,
-            notificationID, icon, aAlertTitle, aAlertText, System.currentTimeMillis());
+        AlertNotification notification = 
+            new AlertNotification(GeckoApp.mAppContext,notificationID, icon, 
+                                  aAlertTitle, aAlertText, 
+                                  System.currentTimeMillis());
 
         // The intent to launch when the user clicks the expanded notification
         Intent notificationIntent = new Intent(GeckoApp.ACTION_ALERT_CLICK);
@@ -849,7 +864,7 @@ public class GeckoAppShell
 
         PendingIntent contentIntent = PendingIntent.getBroadcast(GeckoApp.mAppContext, 0, notificationIntent, 0);
         notification.setLatestEventInfo(GeckoApp.mAppContext, aAlertTitle, aAlertText, contentIntent);
-
+        notification.setCustomIcon(imageUri);
         // The intent to execute when the status entry is deleted by the user with the "Clear All Notifications" button
         Intent clearNotificationIntent = new Intent(GeckoApp.ACTION_ALERT_CLEAR);
         clearNotificationIntent.setClassName(GeckoApp.mAppContext,
@@ -1001,6 +1016,42 @@ public class GeckoAppShell
         Configuration config = res.getConfiguration();
         config.locale = locale;
         res.updateConfiguration(config, res.getDisplayMetrics());
+    }
+
+    public static int[] getSystemColors() {
+        // attrsAppearance[] must correspond to AndroidSystemColors structure in android/AndroidBridge.h
+        final int[] attrsAppearance = {
+            android.R.attr.textColor,
+            android.R.attr.textColorPrimary,
+            android.R.attr.textColorPrimaryInverse,
+            android.R.attr.textColorSecondary,
+            android.R.attr.textColorSecondaryInverse,
+            android.R.attr.textColorTertiary,
+            android.R.attr.textColorTertiaryInverse,
+            android.R.attr.textColorHighlight,
+            android.R.attr.colorForeground,
+            android.R.attr.colorBackground,
+            android.R.attr.panelColorForeground,
+            android.R.attr.panelColorBackground
+        };
+
+        int[] result = new int[attrsAppearance.length];
+
+        final ContextThemeWrapper contextThemeWrapper =
+            new ContextThemeWrapper(GeckoApp.mAppContext, android.R.style.TextAppearance);
+
+        final TypedArray appearance = contextThemeWrapper.getTheme().obtainStyledAttributes(attrsAppearance);
+
+        if (appearance != null) {
+            for (int i = 0; i < appearance.getIndexCount(); i++) {
+                int idx = appearance.getIndex(i);
+                int color = appearance.getColor(idx, 0);
+                result[idx] = color;
+            }
+            appearance.recycle();
+        }
+
+        return result;
     }
 
     public static void killAnyZombies() {

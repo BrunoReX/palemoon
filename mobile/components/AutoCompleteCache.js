@@ -262,7 +262,7 @@ function AutoCompleteCache() {
   AutoCompleteUtils.init();
 
   Services.obs.addObserver(this, "browser:cache-session-history-reload", true);
-  Services.obs.addObserver(this, "browser:purge-session-history", true);
+  Services.obs.addObserver(this, "places-expiration-finished", true);
   Services.obs.addObserver(this, "browser-search-engine-modified", true);
 }
 
@@ -323,7 +323,8 @@ AutoCompleteCache.prototype = {
         for (let i = 0; i < this.searchEngines.length; i++) {
           let engine = this.searchEngines[i];
           let url = engine.getSubmission(aResult.searchString).uri.spec;
-          aResult.appendMatch(url, engine.name, engine.iconURI.spec, "search");
+          let iconURI = engine.iconURI;
+          aResult.appendMatch(url, engine.name, iconURI ? iconURI.spec : "", "search");
         }
         aResult.setSearchResult(Ci.nsIAutoCompleteResult.RESULT_SUCCESS);
       }
@@ -343,7 +344,7 @@ AutoCompleteCache.prototype = {
         else
           AutoCompleteUtils.fetch(AutoCompleteUtils.query);
         break;
-      case "browser:purge-session-history":
+      case "places-expiration-finished":
         AutoCompleteUtils.fetch(AutoCompleteUtils.query);
         break;
       case "browser-search-engine-modified":

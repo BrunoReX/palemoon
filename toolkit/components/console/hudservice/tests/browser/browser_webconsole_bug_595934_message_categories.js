@@ -60,46 +60,41 @@ const TESTS = [
     matchString: "document.all",
   },
   { // #9
-    file: "test-bug-595934-dom-events-external.html",
-    category: "DOM Events",
-    matchString: "clientWidth",
-  },
-  { // #10
     file: "test-bug-595934-dom-events-external2.html",
     category: "DOM Events",
     matchString: "preventBubble()",
   },
-  { // #11
+  { // #10
     file: "test-bug-595934-canvas.html",
     category: "Canvas",
     matchString: "strokeStyle",
   },
-  { // #12
+  { // #11
     file: "test-bug-595934-css-parser.html",
     category: "CSS Parser",
     matchString: "foobarCssParser",
   },
-  { // #13
+  { // #12
     file: "test-bug-595934-malformedxml-external.html",
     category: "malformed-xml",
     matchString: "</html>",
   },
-  { // #14
+  { // #13
     file: "test-bug-595934-empty-getelementbyid.html",
     category: "DOM",
     matchString: "getElementById",
   },
-  { // #15
+  { // #14
     file: "test-bug-595934-canvas-css.html",
     category: "CSS Parser",
     matchString: "foobarCanvasCssParser",
   },
-  { // #17
+  { // #15
     file: "test-bug-595934-getselection.html",
     category: "content javascript",
     matchString: "getSelection",
   },
-  { // #18
+  { // #16
     file: "test-bug-595934-image.html",
     category: "Image",
     matchString: "corrupt",
@@ -132,6 +127,8 @@ let TestObserver = {
       }
     }
     else {
+      ok(false, aSubject.sourceName + ':' + aSubject.lineNumber + '; ' +
+                aSubject.errorMessage);
       executeSoon(finish);
     }
   }
@@ -160,14 +157,18 @@ function testNext() {
 
   pos++;
   if (pos < TESTS.length) {
-    if (TESTS[pos].onload) {
+    let test = TESTS[pos];
+    let testLocation = TESTS_PATH + test.file;
+    if (test.onload) {
       browser.addEventListener("load", function(aEvent) {
-        browser.removeEventListener(aEvent.type, arguments.callee, true);
-        TESTS[pos].onload(aEvent);
+        if (content.location.href == testLocation) {
+          browser.removeEventListener(aEvent.type, arguments.callee, true);
+          test.onload(aEvent);
+        }
       }, true);
     }
 
-    content.location = TESTS_PATH + TESTS[pos].file;
+    content.location = testLocation;
   }
   else {
     executeSoon(finish);

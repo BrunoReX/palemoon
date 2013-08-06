@@ -233,6 +233,9 @@ public:
 #if defined(MOZ_WIDGET_GTK2) && !defined(MOZ_PLATFORM_MAEMO)
   nsRefPtr<gfxASurface> mSurface;
 #endif
+  void SetTiling(bool aTiling);
+private:
+  bool mTiling;
 };
 
 class ShadowImageLayerOGL : public ShadowImageLayer,
@@ -245,10 +248,9 @@ public:
   virtual ~ShadowImageLayerOGL();
 
   // ShadowImageLayer impl
-  virtual PRBool Init(gfxSharedImageSurface* aFront, const nsIntSize& aSize);
+  virtual PRBool Init(const SharedImage& aFront, const nsIntSize& aSize);
 
-  virtual already_AddRefed<gfxSharedImageSurface>
-  Swap(gfxSharedImageSurface* aNewFront);
+  virtual void Swap(const SharedImage& aFront, SharedImage* aNewBack);
 
   virtual void DestroyFrontBuffer();
 
@@ -264,12 +266,8 @@ public:
 
 private:
   nsRefPtr<TextureImage> mTexImage;
-
-
-  // XXX FIXME holding to free
-  nsRefPtr<gfxSharedImageSurface> mDeadweight;
-
-
+  GLTexture mYUVTexture[3];
+  gfxIntSize mSize;
 };
 
 } /* layers */

@@ -40,7 +40,6 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/PAudioChild.h"
 #include "mozilla/dom/AudioChild.h"
-#include "mozilla/Monitor.h"
 #include "nsXULAppAPI.h"
 using namespace mozilla::dom;
 
@@ -48,9 +47,13 @@ using namespace mozilla::dom;
 #include <math.h>
 #include "prlog.h"
 #include "prmem.h"
+#include "prdtoa.h"
 #include "nsAutoPtr.h"
 #include "nsAudioStream.h"
 #include "nsAlgorithm.h"
+#include "VideoUtils.h"
+#include "nsContentUtils.h"
+#include "mozilla/Mutex.h"
 extern "C" {
 #include "sydneyaudio/sydney_audio.h"
 }
@@ -74,7 +77,6 @@ PRLogModuleInfo* gAudioStreamLog = nsnull;
 #endif
 
 #define FAKE_BUFFER_SIZE 176400
-#define MILLISECONDS_PER_SECOND 1000
 
 class nsAudioStreamLocal : public nsAudioStream
 {
@@ -141,6 +143,7 @@ class nsAudioStreamRemote : public nsAudioStream
   PRBool IsPaused();
   PRInt32 GetMinWriteSamples();
 
+private:
   nsRefPtr<AudioChild> mAudioChild;
 
   SampleFormat mFormat;
@@ -226,6 +229,27 @@ class AudioSetVolumeEvent : public nsRunnable
   double mVolume;
 };
 
+
+class AudioMinWriteSampleEvent : public nsRunnable
+{
+ public:
+  AudioMinWriteSampleEvent(AudioChild* aChild)
+  {
+    mAudioChild = aChild;
+  }
+
+  NS_IMETHOD Run()
+  {
+    if (!mAudioChild->IsIPCOpen())
+      return NS_OK;
+
+    mAudioChild->SendMinWriteSample();
+    return NS_OK;
+  }
+
+  nsRefPtr<AudioChild> mAudioChild;
+};
+
 class AudioDrainEvent : public nsRunnable
 {
  public:
@@ -292,16 +316,47 @@ class AudioShutdownEvent : public nsRunnable
   nsRefPtr<AudioChild> mAudioChild;
 };
 
+static mozilla::Mutex* gVolumeScaleLock = nsnull;
+
+static double gVolumeScale = 1.0;
+
+static int VolumeScaleChanged(const char* aPref, void *aClosure) {
+  nsAdoptingString value =
+    nsContentUtils::GetStringPref("media.volume_scale");
+  mozilla::MutexAutoLock lock(*gVolumeScaleLock);
+  if (value.IsEmpty()) {
+    gVolumeScale = 1.0;
+  } else {
+    NS_ConvertUTF16toUTF8 utf8(value);
+    gVolumeScale = PR_MAX(0, PR_strtod(utf8.get(), nsnull));
+  }
+  return 0;
+}
+
+static double GetVolumeScale() {
+  mozilla::MutexAutoLock lock(*gVolumeScaleLock);
+  return gVolumeScale;
+}
 
 void nsAudioStream::InitLibrary()
 {
 #ifdef PR_LOGGING
   gAudioStreamLog = PR_NewLogModule("nsAudioStream");
 #endif
+  gVolumeScaleLock = new mozilla::Mutex("nsAudioStream::gVolumeScaleLock");
+  VolumeScaleChanged(nsnull, nsnull);
+  nsContentUtils::RegisterPrefCallback("media.volume_scale",
+                                       VolumeScaleChanged,
+                                       nsnull);
 }
 
 void nsAudioStream::ShutdownLibrary()
 {
+  nsContentUtils::UnregisterPrefCallback("media.volume_scale",
+                                         VolumeScaleChanged,
+                                         nsnull);
+  delete gVolumeScaleLock;
+  gVolumeScaleLock = nsnull;
 }
 
 nsIThread *
@@ -418,10 +473,11 @@ nsresult nsAudioStreamLocal::Write(const void* aBuf, PRUint32 aCount, PRBool aBl
     }
     mBufferOverflow.Clear();
 
+    double scaled_volume = GetVolumeScale() * mVolume;
     switch (mFormat) {
       case FORMAT_U8: {
         const PRUint8* buf = static_cast<const PRUint8*>(aBuf);
-        PRInt32 volume = PRInt32((1 << 16) * mVolume);
+        PRInt32 volume = PRInt32((1 << 16) * scaled_volume);
         for (PRUint32 i = 0; i < aCount; ++i) {
           s_data[i + offset] = short(((PRInt32(buf[i]) - 128) * volume) >> 8);
         }
@@ -429,7 +485,7 @@ nsresult nsAudioStreamLocal::Write(const void* aBuf, PRUint32 aCount, PRBool aBl
       }
       case FORMAT_S16_LE: {
         const short* buf = static_cast<const short*>(aBuf);
-        PRInt32 volume = PRInt32((1 << 16) * mVolume);
+        PRInt32 volume = PRInt32((1 << 16) * scaled_volume);
         for (PRUint32 i = 0; i < aCount; ++i) {
           short s = buf[i];
 #if defined(IS_BIG_ENDIAN)
@@ -442,7 +498,7 @@ nsresult nsAudioStreamLocal::Write(const void* aBuf, PRUint32 aCount, PRBool aBl
       case FORMAT_FLOAT32: {
         const float* buf = static_cast<const float*>(aBuf);
         for (PRUint32 i = 0; i <  aCount; ++i) {
-          float scaled_value = floorf(0.5 + 32768 * buf[i] * mVolume);
+          float scaled_value = floorf(0.5 + 32768 * buf[i] * scaled_volume);
           if (buf[i] < 0.0) {
             s_data[i + offset] = (scaled_value < -32768.0) ?
               -32768 :
@@ -551,7 +607,7 @@ PRInt64 nsAudioStreamLocal::GetPosition()
 {
   PRInt64 sampleOffset = GetSampleOffset();
   if (sampleOffset >= 0) {
-    return ((MILLISECONDS_PER_SECOND * sampleOffset) / mRate / mChannels);
+    return ((USECS_PER_S * sampleOffset) / mRate / mChannels);
   }
   return -1;
 }
@@ -566,7 +622,7 @@ PRInt64 nsAudioStreamLocal::GetSampleOffset()
 #if defined(XP_WIN)
   positionType = SA_POSITION_WRITE_HARDWARE;
 #endif
-  PRInt64 position = 0;
+  int64_t position = 0;
   if (sa_stream_get_position(static_cast<sa_stream_t*>(mAudioHandle),
                              positionType, &position) == SA_SUCCESS) {
     return position / sizeof(short);
@@ -670,9 +726,11 @@ nsAudioStreamRemote::Available()
 
 PRInt32 nsAudioStreamRemote::GetMinWriteSamples()
 {
-  /** TODO: Implement this function for remoting. We could potentially remote
-            to a backend which has a start threshold... */
-  return 1;
+  if (!mAudioChild)
+    return -1;
+  nsCOMPtr<nsIRunnable> event = new AudioMinWriteSampleEvent(mAudioChild);
+  NS_DispatchToMainThread(event);
+  return mAudioChild->WaitForMinWriteSample();
 }
 
 void
@@ -718,7 +776,7 @@ PRInt64 nsAudioStreamRemote::GetPosition()
 {
   PRInt64 sampleOffset = GetSampleOffset();
   if (sampleOffset >= 0) {
-    return ((MILLISECONDS_PER_SECOND * sampleOffset) / mRate / mChannels);
+    return ((USECS_PER_S * sampleOffset) / mRate / mChannels);
   }
   return 0;
 }
@@ -734,7 +792,7 @@ nsAudioStreamRemote::GetSampleOffset()
     return 0;
 
   PRInt64 time   = mAudioChild->GetLastKnownSampleOffsetTime();
-  PRInt64 result = offset + (mRate * mChannels * (PR_IntervalNow() - time) / MILLISECONDS_PER_SECOND);
+  PRInt64 result = offset + (mRate * mChannels * (PR_IntervalNow() - time) / USECS_PER_S);
 
   return result;
 }

@@ -60,7 +60,7 @@ DIRS += shell
 endif
 
 # FIXME: bug 530688 covers getting these working on Android
-ifneq (,$(filter-out ANDROID,$(OS_ARCH)))
+ifneq ($(OS_ARCH),ANDROID)
 ifdef ENABLE_TESTS
 DIRS += jsapi-tests
 endif
@@ -128,6 +128,7 @@ DIST_INSTALL = 1
 VPATH		= $(srcdir)
 
 CPPSRCS		= \
+		jsalloc.cpp \
 		jsanalyze.cpp \
 		jsapi.cpp \
 		jsarena.cpp \
@@ -146,6 +147,7 @@ CPPSRCS		= \
 		jsfriendapi.cpp \
 		jsfun.cpp \
 		jsgc.cpp \
+		jsgcmark.cpp \
 		jsgcchunk.cpp \
 		jsgcstats.cpp \
 		jshash.cpp \
@@ -175,11 +177,14 @@ CPPSRCS		= \
 		jsstr.cpp \
 		jstypedarray.cpp \
 		jsutil.cpp \
+		jsweakmap.cpp \
 		jswrapper.cpp \
 		jsxdrapi.cpp \
 		jsxml.cpp \
 		prmjtime.cpp \
 		sharkctl.cpp \
+		GlobalObject.cpp \
+		Stack.cpp \
 		$(NULL)
 
 INSTALLED_HEADERS = \
@@ -187,6 +192,7 @@ INSTALLED_HEADERS = \
 		jsautocfg.h \
 		$(CURDIR)/jsautokw.h \
 		js.msg \
+		jsalloc.h \
 		jsanalyze.h \
 		jsapi.h \
 		jsarray.h \
@@ -206,6 +212,7 @@ INSTALLED_HEADERS = \
 		jsfun.h \
 		jsfriendapi.h \
 		jsgc.h \
+		jsgcmark.h \
 		jscell.h \
 		jsgcchunk.h \
 		jsgcstats.h \
@@ -254,6 +261,7 @@ INSTALLED_HEADERS = \
 		jstl.h \
 		jshashtable.h \
 		jsversion.h \
+		jsweakmap.h \
 		jswrapper.h \
 		jsxdrapi.h \
 		jsxml.h \
@@ -263,15 +271,32 @@ INSTALLED_HEADERS = \
 		$(NULL)
 
 ###############################################
+# BEGIN include sources for the vm subdirectory
+#
+VPATH		+= \
+		$(srcdir)/vm 	\
+		$(NULL)
+
+EXPORTS_NAMESPACES = vm
+
+EXPORTS_vm = \
+		ArgumentsObject.h \
+		GlobalObject.h			\
+		Stack.h			\
+		StringObject.h \
+		$(NULL)
+
+###############################################
 # BEGIN include sources for low-level code shared with Gecko
 #
 VPATH		+= \
 		$(srcdir)/../../mfbt \
 		$(NULL)
 
-EXPORTS_NAMESPACES = mozilla
+EXPORTS_NAMESPACES += mozilla
 
 EXPORTS_mozilla = \
+		Types.h		\
 		Util.h          \
 		$(NULL)
 
@@ -366,6 +391,9 @@ endif
 ifeq (arm, $(TARGET_CPU))
 #CPPSRCS		+= only_on_arm.cpp
 endif
+ifeq (sparc, $(findstring sparc,$(TARGET_CPU)))
+ASFILES +=	TrampolineSparc.s
+endif
 #
 # END enclude sources for the method JIT
 #############################################
@@ -391,7 +419,7 @@ CPPSRCS += 	checks.cc \
 # END enclude sources for V8 dtoa
 #############################################
 
-ifeq (,$(filter-out powerpc sparc,$(TARGET_CPU)))
+ifeq (,$(filter arm% sparc %86 x86_64,$(TARGET_CPU)))
 
 VPATH +=	$(srcdir)/assembler \
 		$(srcdir)/assembler/wtf \
@@ -498,7 +526,7 @@ else
 CPPSRCS += pm_stub.cpp
 endif
 
-ifeq (,$(filter-out WINNT,$(OS_ARCH)))
+ifeq ($(OS_ARCH),WINNT)
 INSTALLED_HEADERS += jscpucfg.h
 endif
 
@@ -540,7 +568,7 @@ endif
 default::
 
 ifneq (,$(CROSS_COMPILE)$(filter-out WINNT OS2,$(OS_ARCH)))
-ifneq (,$(filter-out SYMBIAN,$(OS_ARCH)))
+ifneq ($(OS_ARCH),SYMBIAN)
 # nsinstall doesn't get built until we enter config/ in the exports phase,
 # so we'll have to manually ensure it gets built here if we want to use
 # $(EXPORTS)
@@ -613,7 +641,7 @@ endif
 # (it can't be done with %-expansion, because the files we want to skip aren't
 # in the vpath).
 ALL_FILES=$(shell find $(srcdir) \( -name "*.cpp" -o -name "*.h" \) -not -path "*/dist/*")
-check-malloc-function-usage: $(filter-out %jsutil.h %jscntxt.h, $(ALL_FILES))
+check-malloc-function-usage: $(filter-out %jsalloc.h %jscntxt.h %jsutil.h, $(ALL_FILES))
 
 	# js_malloc and friends are only used by other memory managers, and should
 	# never be used elsewhere directly.
@@ -628,10 +656,10 @@ check-malloc-function-usage: $(filter-out %jsutil.h %jscntxt.h, $(ALL_FILES))
 
 	# We desire these numbers to go down, not up. See "User guide to memory
 	# management within SpiderMonkey" in jsutil.h.
-	$(srcdir)/config/check_source_count.py OffTheBooks:: 54 \
+	$(srcdir)/config/check_source_count.py OffTheBooks:: 52 \
 		"in Makefile.in" "{cx,rt}->{new_,new_array,malloc_,calloc_,realloc_}" $^
 	# This should go to zero, if possible.
-	$(srcdir)/config/check_source_count.py UnwantedForeground:: 35 \
+	$(srcdir)/config/check_source_count.py UnwantedForeground:: 34 \
 		"in Makefile.in" "{cx,rt}->{free_,delete_,array_delete}" $^
 
 ifneq ($(OS_ARCH),WINNT) # FIXME: this should be made work on Windows too.
@@ -647,6 +675,8 @@ check-jit-test-valgrind::
 	$(wildcard $(RUN_TEST_PROGRAM)) $(PYTHON) -u $(srcdir)/jit-test/jit_test.py \
 	        --valgrind --no-slow --no-progress --tinderbox --jitflags=$(JITFLAGS) $(DIST)/bin/js$(BIN_SUFFIX)
 
+check:: check-jit-test
+check-valgrind:: check-jit-test-valgrind
 
 # jstests doesn't have a --jitflags option, so we need to loop, updating the
 # exit code (RC) after each invocation.
@@ -666,10 +696,28 @@ check-jstests:
 		done; \
 	exit $$RC
 
+# FIXME:
+# We want to run check-jstests as part of |make check| on all platforms, on
+# tinderbox. However, some configurations don't work quite right just yet.
+# Rather than risking regressions in major configurations while fixing these
+# secondary configuration, we work around them and fix the bugs later.
+#
+#   Bug 652154: On Windows, SM(!m !t) don't work because of path problems with
+#				their unusual directory layout
+#
+#   Bug 652155: On Mac, SM(d) doesn't work for unknown reasons 
 
-check:: check-jit-test
+ifeq ($(OS_ARCH),WINNT)
+ifdef ENABLE_METHODJIT
+ifdef ENABLE_TRACEJIT
 #check:: check-jstests
-check-valgrind:: check-jit-test-valgrind
+endif
+endif
+else
+ifndef HAVE_DTRACE
+#check:: check-jstests
+endif
+endif
 
 DIST_GARBAGE = config.cache config.log config.status \
    config/autoconf.mk \
@@ -684,6 +732,11 @@ export::
 	$(MKDIR) -p nanojit
 
 DEFINES		+= -DEXPORT_JS_API
+
+# mfbt is always packed with us, so if we're building a shared object,
+# we need to declare "exported" mfbt symbols on its behalf when we use
+# its headers.
+DEFINES		+= -DIMPL_MFBT
 
 # Some platforms that have stdint.h include it in system headers.  So
 # to reliably get limit macros defined, we'd always have to define the

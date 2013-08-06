@@ -231,13 +231,7 @@ public:
     TreeFragment* toTreeFragment();
 };
 
-#ifdef NJ_NO_VARIADIC_MACROS
-
-#define debug_only_stmt(action)            /* */
-static void debug_only_printf(int mask, const char *fmt, ...) JS_BEGIN_MACRO JS_END_MACRO
-#define debug_only_print0(mask, str)       JS_BEGIN_MACRO JS_END_MACRO
-
-#elif defined(JS_JIT_SPEW)
+#if defined(JS_JIT_SPEW)
 
 // Top level Nanojit config object.
 extern nanojit::Config NJConfig;
@@ -415,6 +409,7 @@ public:
       : mOutOfMemory(false)
       , mSize(0)
       , mReserve(reserve)
+      , mReserveSize(reserveSize)
       , mReserveCurr(uintptr_t(reserve))
       , mReserveLimit(uintptr_t(reserve + reserveSize))
       , mRt(rt)
@@ -476,6 +471,7 @@ public:
 
     /* See nanojit::Allocator::allocChunk() for details on these. */
     char* mReserve;
+    size_t mReserveSize;
     uintptr_t mReserveCurr;
     uintptr_t mReserveLimit;
 
@@ -659,7 +655,7 @@ public:
     JSScript *entryScript;
 
     /* The stack frame where we started profiling. Only valid while profiling! */
-    JSStackFrame *entryfp;
+    StackFrame *entryfp;
 
     /* The bytecode locations of the loop header and the back edge. */
     jsbytecode *top, *bottom;
@@ -722,12 +718,12 @@ public:
      * and how many iterations we execute it.
      */
     struct InnerLoop {
-        JSStackFrame *entryfp;
+        StackFrame *entryfp;
         jsbytecode *top, *bottom;
         uintN iters;
 
         InnerLoop() {}
-        InnerLoop(JSStackFrame *entryfp, jsbytecode *top, jsbytecode *bottom)
+        InnerLoop(StackFrame *entryfp, jsbytecode *top, jsbytecode *bottom)
             : entryfp(entryfp), top(top), bottom(bottom), iters(0) {}
     };
 
@@ -778,7 +774,7 @@ public:
             return StackValue(false);
     }
     
-    LoopProfile(TraceMonitor *tm, JSStackFrame *entryfp, jsbytecode *top, jsbytecode *bottom);
+    LoopProfile(TraceMonitor *tm, StackFrame *entryfp, jsbytecode *top, jsbytecode *bottom);
 
     void reset();
 
@@ -1194,9 +1190,9 @@ class TraceRecorder
     JS_REQUIRES_STACK ptrdiff_t nativespOffsetImpl(const void* p) const;
     JS_REQUIRES_STACK ptrdiff_t nativespOffset(const Value* p) const;
     JS_REQUIRES_STACK void importImpl(tjit::Address addr, const void* p, JSValueType t,
-                                      const char *prefix, uintN index, JSStackFrame *fp);
+                                      const char *prefix, uintN index, StackFrame *fp);
     JS_REQUIRES_STACK void import(tjit::Address addr, const Value* p, JSValueType t,
-                                  const char *prefix, uintN index, JSStackFrame *fp);
+                                  const char *prefix, uintN index, StackFrame *fp);
     JS_REQUIRES_STACK void import(TreeFragment* tree, nanojit::LIns* sp, unsigned stackSlots,
                                   unsigned callDepth, unsigned ngslots, JSValueType* typeMap);
     void trackNativeStackUse(unsigned slots);
@@ -1271,7 +1267,7 @@ class TraceRecorder
     JS_REQUIRES_STACK nanojit::LIns* scopeChain();
     JS_REQUIRES_STACK nanojit::LIns* entryScopeChain() const;
     JS_REQUIRES_STACK nanojit::LIns* entryFrameIns() const;
-    JS_REQUIRES_STACK JSStackFrame* frameIfInRange(JSObject* obj, unsigned* depthp = NULL) const;
+    JS_REQUIRES_STACK StackFrame* frameIfInRange(JSObject* obj, unsigned* depthp = NULL) const;
     JS_REQUIRES_STACK RecordingStatus traverseScopeChain(JSObject *obj, nanojit::LIns *obj_ins, JSObject *obj2, nanojit::LIns *&obj2_ins);
     JS_REQUIRES_STACK AbortableRecordingStatus scopeChainProp(JSObject* obj, Value*& vp, nanojit::LIns*& ins, NameResult& nr, JSObject **scopeObjp = NULL);
     JS_REQUIRES_STACK RecordingStatus callProp(JSObject* obj, JSProperty* shape, jsid id, Value*& vp, nanojit::LIns*& ins, NameResult& nr);
@@ -1488,8 +1484,8 @@ class TraceRecorder
     JS_REQUIRES_STACK RecordingStatus createThis(JSObject& ctor, nanojit::LIns* ctor_ins,
                                                  nanojit::LIns** thisobj_insp);
     JS_REQUIRES_STACK RecordingStatus guardCallee(Value& callee);
-    JS_REQUIRES_STACK JSStackFrame      *guardArguments(JSObject *obj, nanojit::LIns* obj_ins,
-                                                        unsigned *depthp);
+    JS_REQUIRES_STACK StackFrame *guardArguments(JSObject *obj, nanojit::LIns* obj_ins,
+                                                 unsigned *depthp);
     JS_REQUIRES_STACK nanojit::LIns* guardArgsLengthNotAssigned(nanojit::LIns* argsobj_ins);
     JS_REQUIRES_STACK void guardNotHole(nanojit::LIns* argsobj_ins, nanojit::LIns* ids_ins);
     JS_REQUIRES_STACK RecordingStatus getClassPrototype(JSObject* ctor,
@@ -1689,7 +1685,7 @@ class TraceRecorder
 #define TRACE_2(x,a,b)          TRACE_ARGS(x, (a, b))
 
 extern JS_REQUIRES_STACK MonitorResult
-MonitorLoopEdge(JSContext* cx, uintN& inlineCallCount, JSInterpMode interpMode);
+MonitorLoopEdge(JSContext* cx, uintN& inlineCallCount, InterpMode interpMode);
 
 extern JS_REQUIRES_STACK TracePointAction
 RecordTracePoint(JSContext*, uintN& inlineCallCount, bool* blacklist);
@@ -1701,11 +1697,11 @@ MonitorTracePoint(JSContext*, uintN& inlineCallCount, bool* blacklist,
 extern JS_REQUIRES_STACK TraceRecorder::AbortResult
 AbortRecording(JSContext* cx, const char* reason);
 
-extern bool
-InitJIT(TraceMonitor *tm, JSRuntime *rt);
+extern void
+InitJIT();
 
 extern void
-FinishJIT(TraceMonitor *tm);
+FinishJIT();
 
 extern void
 PurgeScriptFragments(TraceMonitor* tm, JSScript* script);

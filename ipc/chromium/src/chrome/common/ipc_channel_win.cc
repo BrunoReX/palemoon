@@ -65,16 +65,19 @@ void Channel::ChannelImpl::Close() {
     pipe_ = INVALID_HANDLE_VALUE;
   }
 
+#ifndef CHROMIUM_MOZILLA_BUILD
   // Make sure all IO has completed.
   base::Time start = base::Time::Now();
+#endif
   while (input_state_.is_pending || output_state_.is_pending) {
     MessageLoopForIO::current()->WaitForIOCompletion(INFINITE, this);
   }
+#ifndef CHROMIUM_MOZILLA_BUILD
   if (waited) {
     // We want to see if we block the message loop for too long.
     UMA_HISTOGRAM_TIMES("AsyncIO.IPCChannelClose", base::Time::Now() - start);
   }
-
+#endif
   while (!output_queue_.empty()) {
     Message* m = output_queue_.front();
     output_queue_.pop();
@@ -175,7 +178,9 @@ bool Channel::ChannelImpl::CreatePipe(const std::wstring& channel_id,
 }
 
 bool Channel::ChannelImpl::Connect() {
+#ifndef CHROMIUM_MOZILLA_BUILD
   DLOG(WARNING) << "Connect called twice";
+#endif
 
   if (!thread_check_.get())
     thread_check_.reset(new NonThreadSafe());

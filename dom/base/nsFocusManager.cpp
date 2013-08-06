@@ -53,7 +53,7 @@
 #include "nsIDOMHTMLInputElement.h"
 #include "nsIDOMHTMLMapElement.h"
 #include "nsIDOMHTMLLegendElement.h"
-#include "nsIDOMDocumentRange.h"
+#include "nsIDOMDocument.h"
 #include "nsIDOMRange.h"
 #include "nsIHTMLDocument.h"
 #include "nsIFormControlFrame.h"
@@ -68,7 +68,7 @@
 #include "nsFrameTraversal.h"
 #include "nsObjectFrame.h"
 #include "nsEventDispatcher.h"
-#include "nsIEventStateManager.h"
+#include "nsEventStateManager.h"
 #include "nsIMEStateManager.h"
 #include "nsIWebNavigation.h"
 #include "nsCaret.h"
@@ -80,7 +80,6 @@
 #include "nsFrameSelection.h"
 #include "nsXULPopupManager.h"
 #include "nsImageMapUtils.h"
-#include "nsTreeWalker.h"
 #include "nsIDOMNodeFilter.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIPrincipal.h"
@@ -196,9 +195,11 @@ nsFocusManager::Init()
     nsContentUtils::GetBoolPref("accessibility.mouse_focuses_formcontrol", PR_FALSE);
 
   nsIPrefBranch2* prefBranch = nsContentUtils::GetPrefBranch();
-  prefBranch->AddObserver("accessibility.browsewithcaret", fm, PR_TRUE);
-  prefBranch->AddObserver("accessibility.tabfocus_applies_to_xul", fm, PR_TRUE);
-  prefBranch->AddObserver("accessibility.mouse_focuses_formcontrol", fm, PR_TRUE);
+  if (prefBranch) {
+    prefBranch->AddObserver("accessibility.browsewithcaret", fm, PR_TRUE);
+    prefBranch->AddObserver("accessibility.tabfocus_applies_to_xul", fm, PR_TRUE);
+    prefBranch->AddObserver("accessibility.mouse_focuses_formcontrol", fm, PR_TRUE);
+  }
 
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   if (obs) {
@@ -333,6 +334,22 @@ nsFocusManager::GetRedirectedFocus(nsIContent* aContent)
 #endif
 
   return nsnull;
+}
+
+// static
+PRUint32
+nsFocusManager::GetFocusMoveReason(PRUint32 aFlags)
+{
+  PRUint32 reason = IMEContext::FOCUS_MOVED_UNKNOWN;
+  if (aFlags & nsIFocusManager::FLAG_BYMOUSE) {
+    reason = IMEContext::FOCUS_MOVED_BY_MOUSE;
+  } else if (aFlags & nsIFocusManager::FLAG_BYKEY) {
+    reason = IMEContext::FOCUS_MOVED_BY_KEY;
+  } else if (aFlags & nsIFocusManager::FLAG_BYMOVEFOCUS) {
+    reason = IMEContext::FOCUS_MOVED_BY_MOVEFOCUS;
+  }
+
+  return reason;
 }
 
 NS_IMETHODIMP
@@ -711,7 +728,7 @@ nsFocusManager::WindowRaised(nsIDOMWindow* aWindow)
   if (presShell) {
     // disable selection mousedown state on activation
     // XXXndeakin P3 not sure if this is necessary, but it doesn't hurt
-    nsCOMPtr<nsFrameSelection> frameSelection = presShell->FrameSelection();
+    nsRefPtr<nsFrameSelection> frameSelection = presShell->FrameSelection();
     frameSelection->SetMouseDownState(PR_FALSE);
   }
 
@@ -941,7 +958,7 @@ nsFocusManager::WindowHidden(nsIDOMWindow* aWindow)
 
   nsIMEStateManager::OnTextStateBlur(nsnull, nsnull);
   if (presShell) {
-    nsIMEStateManager::OnChangeFocus(presShell->GetPresContext(), nsnull);
+    nsIMEStateManager::OnChangeFocus(presShell->GetPresContext(), nsnull, IMEContext::FOCUS_REMOVED);
     SetCaretVisible(presShell, PR_FALSE, nsnull);
   }
 
@@ -1482,7 +1499,7 @@ nsFocusManager::Blur(nsPIDOMWindow* aWindowToClear,
   // compositionend event won't get fired at the element being blurred.
   nsIMEStateManager::OnTextStateBlur(nsnull, nsnull);
   if (mActiveWindow)
-    nsIMEStateManager::OnChangeFocus(presShell->GetPresContext(), nsnull);
+    nsIMEStateManager::OnChangeFocus(presShell->GetPresContext(), nsnull, IMEContext::FOCUS_REMOVED);
 
   // now adjust the actual focus, by clearing the fields in the focus manager
   // and in the window.
@@ -1725,7 +1742,8 @@ nsFocusManager::Focus(nsPIDOMWindow* aWindow,
           objectFrameWidget->SetFocus(PR_FALSE);
       }
 
-      nsIMEStateManager::OnChangeFocus(presContext, aContent);
+      PRUint32 reason = GetFocusMoveReason(aFlags);
+      nsIMEStateManager::OnChangeFocus(presContext, aContent, reason);
 
       // as long as this focus wasn't because a window was raised, update the
       // commands
@@ -1741,7 +1759,7 @@ nsFocusManager::Focus(nsPIDOMWindow* aWindow,
       nsIMEStateManager::OnTextStateFocus(presContext, aContent);
     } else {
       nsIMEStateManager::OnTextStateBlur(presContext, nsnull);
-      nsIMEStateManager::OnChangeFocus(presContext, nsnull);
+      nsIMEStateManager::OnChangeFocus(presContext, nsnull, IMEContext::FOCUS_REMOVED);
       if (!aWindowRaised) {
         aWindow->UpdateCommands(NS_LITERAL_STRING("focus"));
       }
@@ -1764,7 +1782,7 @@ nsFocusManager::Focus(nsPIDOMWindow* aWindow,
 
     nsPresContext* presContext = presShell->GetPresContext();
     nsIMEStateManager::OnTextStateBlur(presContext, nsnull);
-    nsIMEStateManager::OnChangeFocus(presContext, nsnull);
+    nsIMEStateManager::OnChangeFocus(presContext, nsnull, IMEContext::FOCUS_REMOVED);
 
     if (!aWindowRaised)
       aWindow->UpdateCommands(NS_LITERAL_STRING("focus"));
@@ -1991,10 +2009,10 @@ nsFocusManager::UpdateCaret(PRBool aMoveCaretToFocus,
 void
 nsFocusManager::MoveCaretToFocus(nsIPresShell* aPresShell, nsIContent* aContent)
 {
-  // rangeDoc is a document interface we can create a range with
-  nsCOMPtr<nsIDOMDocumentRange> rangeDoc(do_QueryInterface(aPresShell->GetDocument()));
-  if (rangeDoc) {
-    nsCOMPtr<nsFrameSelection> frameSelection = aPresShell->FrameSelection();
+  // domDoc is a document interface we can create a range with
+  nsCOMPtr<nsIDOMDocument> domDoc = do_QueryInterface(aPresShell->GetDocument());
+  if (domDoc) {
+    nsRefPtr<nsFrameSelection> frameSelection = aPresShell->FrameSelection();
     nsCOMPtr<nsISelection> domSelection = frameSelection->
       GetSelection(nsISelectionController::SELECTION_NORMAL);
     if (domSelection) {
@@ -2004,7 +2022,7 @@ nsFocusManager::MoveCaretToFocus(nsIPresShell* aPresShell, nsIContent* aContent)
       domSelection->RemoveAllRanges();
       if (currentFocusNode) {
         nsCOMPtr<nsIDOMRange> newRange;
-        nsresult rv = rangeDoc->CreateRange(getter_AddRefs(newRange));
+        nsresult rv = domDoc->CreateRange(getter_AddRefs(newRange));
         if (NS_SUCCEEDED(rv)) {
           // Set the range to the start of the currently focused node
           // Make sure it's collapsed
@@ -2044,7 +2062,7 @@ nsFocusManager::SetCaretVisible(nsIPresShell* aPresShell,
   if (!aVisible && !caretVisible)
     return NS_OK;
 
-  nsCOMPtr<nsFrameSelection> frameSelection;
+  nsRefPtr<nsFrameSelection> frameSelection;
   if (aContent) {
     NS_ASSERTION(aContent->GetDocument() == aPresShell->GetDocument(),
                  "Wrong document?");
@@ -2053,7 +2071,7 @@ nsFocusManager::SetCaretVisible(nsIPresShell* aPresShell,
       frameSelection = focusFrame->GetFrameSelection();
   }
 
-  nsCOMPtr<nsFrameSelection> docFrameSelection = aPresShell->FrameSelection();
+  nsRefPtr<nsFrameSelection> docFrameSelection = aPresShell->FrameSelection();
 
   if (docFrameSelection && caret &&
      (frameSelection == docFrameSelection || !aContent)) {
@@ -2094,8 +2112,7 @@ nsFocusManager::GetSelectionLocation(nsIDocument* aDocument,
   nsPresContext* presContext = aPresShell->GetPresContext();
   NS_ASSERTION(presContext, "mPresContent is null!!");
 
-  nsCOMPtr<nsFrameSelection> frameSelection;
-  frameSelection = aPresShell->FrameSelection();
+  nsRefPtr<nsFrameSelection> frameSelection = aPresShell->FrameSelection();
 
   nsCOMPtr<nsISelection> domSelection;
   if (frameSelection) {
@@ -2584,18 +2601,12 @@ nsFocusManager::GetNextTabbableContent(nsIPresShell* aPresShell,
         return NS_OK;
 
       // look for the next or previous content node in tree order
-      nsTreeWalker walker(aRootContent, nsIDOMNodeFilter::SHOW_ALL, nsnull, PR_TRUE);
-      nsCOMPtr<nsIDOMNode> nextNode = do_QueryInterface(iterStartContent);
-      walker.SetCurrentNode(nextNode);
-      if (NS_SUCCEEDED(aForward ? walker.NextNode(getter_AddRefs(nextNode)) :
-                                  walker.PreviousNode(getter_AddRefs(nextNode)))) {
-        iterStartContent = do_QueryInterface(nextNode);
-        // we've already skipped over the initial focused content, so we
-        // don't want to traverse frames.
-        getNextFrame = PR_FALSE;
-        if (iterStartContent)
-          continue;
-      }
+      iterStartContent = aForward ? iterStartContent->GetNextNode() : iterStartContent->GetPreviousContent();
+      // we've already skipped over the initial focused content, so we
+      // don't want to traverse frames.
+      getNextFrame = PR_FALSE;
+      if (iterStartContent)
+        continue;
 
       // otherwise, as a last attempt, just look at the root content
       iterStartContent = aRootContent;

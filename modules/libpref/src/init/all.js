@@ -105,7 +105,7 @@ pref("dom.indexedDB.warningQuota", 50);
 // of content viewers to cache based on the amount of available memory.
 pref("browser.sessionhistory.max_total_viewers", -1);
 
-pref("browser.sessionhistory.optimize_eviction", false);
+pref("browser.sessionhistory.optimize_eviction", true);
 
 pref("ui.use_native_colors", true);
 pref("ui.use_native_popup_windows", false);
@@ -169,6 +169,9 @@ pref("media.enforce_same_site_origin", false);
 // Media cache size in kilobytes
 pref("media.cache_size", 512000);
 
+// Master HTML5 media volume scale.
+pref("media.volume_scale", "1.0");
+
 #ifdef MOZ_RAW
 pref("media.raw.enabled", true);
 #endif
@@ -194,16 +197,11 @@ pref("gfx.color_management.rendering_intent", 0);
 pref("gfx.downloadable_fonts.enabled", true);
 pref("gfx.downloadable_fonts.fallback_delay", 3000);
 pref("gfx.downloadable_fonts.sanitize", true);
-#ifdef XP_MACOSX
-pref("gfx.downloadable_fonts.sanitize.preserve_otl_tables", false);
-#else
-pref("gfx.downloadable_fonts.sanitize.preserve_otl_tables", true);
-#endif
 
 // see gfx/thebes/gfxUnicodeProperties.h for definitions of script bits
 #ifdef XP_MACOSX
-// use harfbuzz for default (0x01) + arabic (0x02) + hebrew (0x04)
-pref("gfx.font_rendering.harfbuzz.scripts", 7);
+// use harfbuzz for default (0x01) + arabic (0x02) + hebrew (0x04) + thai (0x40)
+pref("gfx.font_rendering.harfbuzz.scripts", 71);
 #else
 // use harfbuzz for default (0x01) + arabic (0x02)
 pref("gfx.font_rendering.harfbuzz.scripts", 3);
@@ -276,6 +274,11 @@ pref("toolkit.autocomplete.richBoundaryCutoff", 200);
 pref("toolkit.scrollbox.smoothScroll", true);
 pref("toolkit.scrollbox.scrollIncrement", 20);
 pref("toolkit.scrollbox.clickToScroll.scrollDelay", 150);
+
+// Telemetry
+pref("toolkit.telemetry.enabled", false);
+// Telemetry test server to be used until the official one is public
+pref("toolkit.telemetry.server", "http://telemetry.allizom.org");
 
 // view source
 pref("view_source.syntax_highlight", true);
@@ -610,9 +613,9 @@ pref("javascript.options.relimit",          true);
 pref("javascript.options.tracejit.content",  true);
 pref("javascript.options.tracejit.chrome",   true);
 pref("javascript.options.methodjit.content", true);
-pref("javascript.options.methodjit.chrome",  false);
+pref("javascript.options.methodjit.chrome",  true);
 pref("javascript.options.jitprofiling.content", true);
-pref("javascript.options.jitprofiling.chrome",  false);
+pref("javascript.options.jitprofiling.chrome",  true);
 pref("javascript.options.methodjit_always", false);
 // This preference limits the memory usage of javascript.
 // If you want to change these values for your device,
@@ -700,8 +703,11 @@ pref("network.http.proxy.keep-alive", true);
 // the packet is lost or delayed on the route.
 pref("network.http.keep-alive.timeout", 115);
 
-// limit the absolute number of http connections.
-pref("network.http.max-connections", 30);
+// Limit the absolute number of http connections.
+// Note: the socket transport service will clamp the number below 256 if the OS
+// cannot allocate that many FDs, and it also always tries to reserve up to 250
+// file descriptors for things other than sockets.   
+pref("network.http.max-connections", 256);
 
 // limit the absolute number of http connections that can be established per
 // host.  if a http proxy server is enabled, then the "server" is the proxy
@@ -760,6 +766,11 @@ pref("network.http.prompt-temp-redirect", true);
 // Section 4.8 "High-Throughput Data Service Class"
 pref("network.http.qos", 0);
 
+// The number of milliseconds after sending a SYN for an HTTP connection,
+// to wait before trying a different connection. 0 means do not use a second
+// connection.
+pref("network.http.connection-retry-timeout", 250);
+
 // default values for FTP
 // in a DSCP environment this should be 40 (0x28, or AF11), per RFC-4594,
 // Section 4.8 "High-Throughput Data Service Class", and 80 (0x50, or AF22)
@@ -770,13 +781,41 @@ pref("network.ftp.control.qos", 0);
 // </http>
 
 // <ws>: WebSocket
-// The -76 websocket network protocol may be subject to HTTP cache poisoning
-// attacks. Until there is a secure open standard available and implemented
-// in necko the override-security-block preference must be set to true before
-// the normal enabled preference is considered. Bug 616733
-pref("network.websocket.override-security-block", false);
 pref("network.websocket.enabled", true);
+
+// mobile might want to set this much smaller
+pref("network.websocket.max-message-size", 16000000);
+
+// Should we automatically follow http 3xx redirects during handshake
+pref("network.websocket.auto-follow-http-redirects", false);
+
+// the number of seconds to wait for websocket connection to be opened
+pref("network.websocket.timeout.open", 20);
+
+// the number of seconds to wait for a clean close after sending the client
+// close message
+pref("network.websocket.timeout.close", 20);
+
+// the number of seconds of idle read activity to sustain before sending a
+// ping probe. 0 to disable.
+pref("network.websocket.timeout.ping.request", 0);
+
+// the deadline, expressed in seconds, for some read activity to occur after
+// generating a ping. If no activity happens then an error and unclean close
+// event is sent to the javascript websockets application
+pref("network.websocket.timeout.ping.response", 10);
+
+// Defines whether or not to try and negotiate the stream-deflate compression
+// extension with the websocket server
+pref("network.websocket.extensions.stream-deflate", false);
+
 // </ws>
+
+// Server-Sent Events
+
+pref("dom.server-events.enabled", true);
+// Equal to the DEFAULT_RECONNECTION_TIME_VALUE value in nsEventSource.cpp
+pref("dom.server-events.default-reconnection-time", 5000); // in milliseconds
 
 // If false, remote JAR files that are served with a content type other than
 // application/java-archive or application/x-jar will not be opened
@@ -822,6 +861,7 @@ pref("network.IDN.whitelist.kr", true);
 pref("network.IDN.whitelist.li", true);
 pref("network.IDN.whitelist.lt", true);
 pref("network.IDN.whitelist.lu", true);
+pref("network.IDN.whitelist.lv", true);
 pref("network.IDN.whitelist.no", true);
 pref("network.IDN.whitelist.nu", true);
 pref("network.IDN.whitelist.nz", true);
@@ -850,6 +890,9 @@ pref("network.IDN.whitelist.xn--mgba3a4f16a", true);
 pref("network.IDN.whitelist.xn--mgba3a4fra", true);
 // jo, Jordan, .<Al-Ordon>
 pref("network.IDN.whitelist.xn--mgbayh7gpa", true);
+// lk, Sri Lanka, .<Lanka> and .<Ilangai>
+pref("network.IDN.whitelist.xn--fzc2c9e2c", true);
+pref("network.IDN.whitelist.xn--xkc2al3hye2a", true);
 // qa, Qatar, .<Qatar>
 pref("network.IDN.whitelist.xn--wgbl6a", true);
 // ru, Russian Federation, .<RF>
@@ -859,11 +902,14 @@ pref("network.IDN.whitelist.xn--mgberp4a5d4ar", true);
 pref("network.IDN.whitelist.xn--mgberp4a5d4a87g", true);
 pref("network.IDN.whitelist.xn--mgbqly7c0a67fbc", true);
 pref("network.IDN.whitelist.xn--mgbqly7cvafr", true);
+// sy, Syria, .<Souria>
+pref("network.IDN.whitelist.xn--ogbpf8fl", true);
 // tw, Taiwan, <.Taiwan> with variants
 pref("network.IDN.whitelist.xn--kpry57d", true);  // Traditional
 pref("network.IDN.whitelist.xn--kprw13d", true);  // Simplified
 
 // gTLDs
+pref("network.IDN.whitelist.asia", true);
 pref("network.IDN.whitelist.biz", true);
 pref("network.IDN.whitelist.cat", true);
 pref("network.IDN.whitelist.info", true);
@@ -1045,6 +1091,11 @@ pref("intl.uidirection.ar", "rtl");
 pref("intl.uidirection.he", "rtl");
 pref("intl.uidirection.fa", "rtl");
 
+// use en-US hyphenation by default for content tagged with plain lang="en"
+pref("intl.hyphenation-alias.en", "en-us");
+// and for other subtags of en-*, if no specific patterns are available
+pref("intl.hyphenation-alias.en-*", "en-us");
+
 pref("font.mathfont-family", "STIXNonUnicode, STIXSizeOneSym, STIXSize1, STIXGeneral, Standard Symbols L, DejaVu Sans, Cambria Math");
 
 // Some CJK fonts have bad underline offset, their CJK character glyphs are overlapped (or adjoined)  to its underline.
@@ -1095,9 +1146,6 @@ pref("clipboard.autocopy", false);
 pref("mousewheel.transaction.timeout", 1500);
 // mouse wheel scroll transaction is held even if the mouse cursor is moved.
 pref("mousewheel.transaction.ignoremovedelay", 100);
-
-// Macbook touchpad two finger pixel scrolling
-pref("mousewheel.enable_pixel_scrolling", true);
 
 // prefs for app level mouse wheel scrolling acceleration.
 // number of mousewheel clicks when acceleration starts
@@ -1209,12 +1257,6 @@ pref("bidi.numeral", 0);
 // 2 = OsBidisupport
 // 3 = disableBidisupport
 pref("bidi.support", 1);
-// ------------------
-//  Charset Mode
-// ------------------
-// 1 = doccharactersetBidi *
-// 2 = defaultcharactersetBidi
-pref("bidi.characterset", 1);
 // Whether delete and backspace should immediately delete characters not
 // visually adjacent to the caret, or adjust the visual position of the caret
 // on the first keypress and delete the character on a second keypress
@@ -1426,22 +1468,22 @@ pref("font.name-list.serif.he", "Narkisim, David");
 pref("font.name-list.monospace.he", "Fixed Miriam Transparent, Miriam Fixed, Rod, Courier New");
 pref("font.name-list.cursive.he", "Guttman Yad, Ktav, Arial");
 
-pref("font.name.serif.ja", "ＭＳ Ｐ明朝"); // "MS PMincho"
-pref("font.name.sans-serif.ja", "ＭＳ Ｐゴシック"); // "MS PGothic"
-pref("font.name.monospace.ja", "ＭＳ ゴシック"); // "MS Gothic"
+pref("font.name.serif.ja", "MS PMincho");
+pref("font.name.sans-serif.ja", "MS PGothic");
+pref("font.name.monospace.ja", "MS Gothic");
 pref("font.name-list.serif.ja", "MS PMincho, MS Mincho, MS PGothic, MS Gothic");
 pref("font.name-list.sans-serif.ja", "MS PGothic, MS Gothic, MS PMincho, MS Mincho");
 pref("font.name-list.monospace.ja", "MS Gothic, MS Mincho, MS PGothic, MS PMincho");
 
-pref("font.name.serif.ko", "바탕"); // "Batang" 
-pref("font.name.sans-serif.ko", "굴림"); // "Gulim" 
-pref("font.name.monospace.ko", "굴림체"); // "GulimChe" 
-pref("font.name.cursive.ko", "궁서"); // "Gungseo"
+pref("font.name.serif.ko", "Batang");
+pref("font.name.sans-serif.ko", "Gulim");
+pref("font.name.monospace.ko", "GulimChe");
+pref("font.name.cursive.ko", "Gungsuh");
 
-pref("font.name-list.serif.ko", "Batang, Gulim"); 
-pref("font.name-list.sans-serif.ko", "Gulim"); 
-pref("font.name-list.monospace.ko", "GulimChe"); 
-pref("font.name-list.cursive.ko", "Gungseo"); 
+pref("font.name-list.serif.ko", "Batang, Gulim");
+pref("font.name-list.sans-serif.ko", "Gulim");
+pref("font.name-list.monospace.ko", "GulimChe");
+pref("font.name-list.cursive.ko", "Gungsuh");
 
 pref("font.name.serif.th", "Tahoma");
 pref("font.name.sans-serif.th", "Tahoma");
@@ -1478,9 +1520,9 @@ pref("font.name.sans-serif.x-western", "Arial");
 pref("font.name.monospace.x-western", "Courier New");
 pref("font.name.cursive.x-western", "Comic Sans MS");
 
-pref("font.name.serif.zh-CN", "宋体"); //MS Song
-pref("font.name.sans-serif.zh-CN", "宋体"); //MS Song
-pref("font.name.monospace.zh-CN", "宋体"); //MS Song
+pref("font.name.serif.zh-CN", "SimSun");
+pref("font.name.sans-serif.zh-CN", "SimSun");
+pref("font.name.monospace.zh-CN", "SimSun");
 pref("font.name-list.serif.zh-CN", "MS Song, SimSun");
 pref("font.name-list.sans-serif.zh-CN", "MS Song, SimSun");
 pref("font.name-list.monospace.zh-CN", "MS Song, SimSun");
@@ -1489,18 +1531,18 @@ pref("font.name-list.monospace.zh-CN", "MS Song, SimSun");
 // rendering Latin letters. (bug 88579)
 pref("font.name.serif.zh-TW", "Times New Roman"); 
 pref("font.name.sans-serif.zh-TW", "Arial");
-pref("font.name.monospace.zh-TW", "細明體");  // MingLiU
+pref("font.name.monospace.zh-TW", "MingLiU");
 pref("font.name-list.serif.zh-TW", "PMingLiu, MingLiU"); 
 pref("font.name-list.sans-serif.zh-TW", "PMingLiU, MingLiU");
 pref("font.name-list.monospace.zh-TW", "MingLiU");
 
-// hkscsm3u.ttf (HKSCS-2001) :  http://www.microsoft.com/hk/hkscs 
-// Hong Kong users have the same demand about glyphs for Latin letters (bug 88579) 
-pref("font.name.serif.zh-HK", "Times New Roman"); 
+// hkscsm3u.ttf (HKSCS-2001) :  http://www.microsoft.com/hk/hkscs
+// Hong Kong users have the same demand about glyphs for Latin letters (bug 88579)
+pref("font.name.serif.zh-HK", "Times New Roman");
 pref("font.name.sans-serif.zh-HK", "Arial");
-pref("font.name.monospace.zh-HK", "細明體_HKSCS"); 
-pref("font.name-list.serif.zh-HK", "MingLiu_HKSCS, Ming(for ISO10646), MingLiU"); 
-pref("font.name-list.sans-serif.zh-HK", "MingLiU_HKSCS, Ming(for ISO10646), MingLiU");  
+pref("font.name.monospace.zh-HK", "MingLiu_HKSCS");
+pref("font.name-list.serif.zh-HK", "MingLiu_HKSCS, Ming(for ISO10646), MingLiU");
+pref("font.name-list.sans-serif.zh-HK", "MingLiU_HKSCS, Ming(for ISO10646), MingLiU");
 pref("font.name-list.monospace.zh-HK", "MingLiU_HKSCS, Ming(for ISO10646), MingLiU");
 
 pref("font.name.serif.x-devanagari", "Mangal");
@@ -1546,19 +1588,19 @@ pref("font.name-list.monospace.x-ethi", "Ethiopia Jiret, Code2000");
 pref("font.name.serif.x-geor", "Sylfaen");
 pref("font.name.sans-serif.x-geor", "BPG Classic 99U");
 pref("font.name.monospace.x-geor", "Code2000");
-pref("font.name-list.serif.x-geor", "Sylfaen, BPG Paata Khutsuri U, TITUS Cyberbit Basic"); 
+pref("font.name-list.serif.x-geor", "Sylfaen, BPG Paata Khutsuri U, TITUS Cyberbit Basic");
 pref("font.name-list.monospace.x-geor", "BPG Classic 99U, Code2000, Arial Unicode MS");
 
 pref("font.name.serif.x-gujr", "Shruti");
 pref("font.name.sans-serif.x-gujr", "Shruti");
 pref("font.name.monospace.x-gujr", "Code2000");
-pref("font.name-list.serif.x-gujr", "Shruti, Code2000, Arial Unicode MS"); 
+pref("font.name-list.serif.x-gujr", "Shruti, Code2000, Arial Unicode MS");
 pref("font.name-list.monospace.x-gujr", "Code2000, Shruti, Arial Unicode MS");
 
 pref("font.name.serif.x-guru", "Raavi");
 pref("font.name.sans-serif.x-guru", "Code2000");
 pref("font.name.monospace.x-guru", "Code2000");
-pref("font.name-list.serif.x-guru", "Raavi, Saab, Code2000, Arial Unicode MS"); 
+pref("font.name-list.serif.x-guru", "Raavi, Saab, Code2000, Arial Unicode MS");
 pref("font.name-list.monospace.x-guru", "Code2000, Raavi, Saab, Arial Unicode MS");
 
 pref("font.name.serif.x-khmr", "PhnomPenh OT");
@@ -1745,6 +1787,39 @@ pref("gfx.font_rendering.cleartype.use_for_downloadable_fonts", true);
 // use cleartype rendering for all fonts always (win xp only)
 pref("gfx.font_rendering.cleartype.always_use_for_content", false);
 
+// ClearType tuning parameters for directwrite/d2d.
+//
+// Allows overriding of underlying registry values in:
+//   HKCU/Software/Microsoft/Avalon.Graphics/<display> (contrast and level)
+//   HKLM/Software/Microsoft/Avalon.Graphics/<display> (gamma, pixel structure)
+// and selection of the ClearType/antialiasing mode.
+//
+// A value of -1 implies use the default value, otherwise value ranges 
+// follow registry settings:
+//   gamma [1000, 2200]  default: based on screen, typically 2200 (== 2.2)
+//   enhanced contrast [0, 1000] default: 50
+//   cleartype level [0, 100] default: 100
+//   pixel structure [0, 2] default: 0 (flat/RGB/BGR)
+//   rendering mode [0, 5] default: 0
+//     0 = use default for font & size;
+//     1 = aliased;
+//     2 = GDI Classic;
+//     3 = GDI Natural Widths;
+//     4 = Natural;
+//     5 = Natural Symmetric
+//
+// See:
+//   http://msdn.microsoft.com/en-us/library/aa970267.aspx
+//   http://msdn.microsoft.com/en-us/library/dd368190%28v=VS.85%29.aspx
+// Note: DirectWrite uses the "Enhanced Contrast Level" value rather than the 
+// "Text Contrast Level" value
+
+pref("gfx.font_rendering.cleartype_params.gamma", -1);
+pref("gfx.font_rendering.cleartype_params.enhanced_contrast", -1);
+pref("gfx.font_rendering.cleartype_params.cleartype_level", -1);
+pref("gfx.font_rendering.cleartype_params.pixel_structure", -1);
+pref("gfx.font_rendering.cleartype_params.rendering_mode", -1);
+
 pref("ui.key.menuAccessKeyFocuses", true);
 
 // override double-click word selection behavior.
@@ -1809,6 +1884,9 @@ pref("ui.panel.default_level_parent", false);
 #endif
 
 pref("mousewheel.system_scroll_override_on_root_content.enabled", true);
+
+// High resolution scrolling with supported mouse drivers on Vista or later.
+pref("mousewheel.enable_pixel_scrolling", true);
 
 // If your mouse drive sends WM_*SCROLL messages when you turn your mouse wheel,
 // set this to true.  Then, gecko processes them as mouse wheel messages.
@@ -2254,7 +2332,12 @@ pref("print.print_extra_margin", 90); // twips (90 twips is an eigth of an inch)
 // See bug 404131, topmost <panel> element wins to Dashboard on MacOSX.
 pref("ui.panel.default_level_parent", false);
 
+pref("ui.plugin.cancel_composition_at_input_source_changed", false);
+
 pref("mousewheel.system_scroll_override_on_root_content.enabled", false);
+
+// Macbook touchpad two finger pixel scrolling
+pref("mousewheel.enable_pixel_scrolling", true);
 
 # XP_MACOSX
 #endif
@@ -3138,7 +3221,7 @@ pref("layers.prefer-d3d9", false);
 pref("geo.enabled", true);
 
 // Enable/Disable the orientation API for content
-pref("accelerometer.enabled", true);
+pref("device.motion.enabled", true);
 
 // Enable/Disable HTML5 parser
 pref("html5.parser.enable", true);

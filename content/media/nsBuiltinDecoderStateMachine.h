@@ -118,7 +118,7 @@ not yet time to display the next frame.
 #include "nsBuiltinDecoderReader.h"
 #include "nsAudioAvailableEventManager.h"
 #include "nsHTMLMediaElement.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/ReentrantMonitor.h"
 
 /*
   The playback state machine class. This manages the decoding in the
@@ -140,7 +140,7 @@ not yet time to display the next frame.
 class nsBuiltinDecoderStateMachine : public nsDecoderStateMachine
 {
 public:
-  typedef mozilla::Monitor Monitor;
+  typedef mozilla::ReentrantMonitor ReentrantMonitor;
   typedef mozilla::TimeStamp TimeStamp;
   typedef mozilla::TimeDuration TimeDuration;
 
@@ -151,13 +151,14 @@ public:
   virtual nsresult Init(nsDecoderStateMachine* aCloneDonor);
   State GetState()
   { 
-    mDecoder->GetMonitor().AssertCurrentThreadIn();
+    mDecoder->GetReentrantMonitor().AssertCurrentThreadIn();
     return mState; 
   }
   virtual void SetVolume(double aVolume);
   virtual void Shutdown();
   virtual PRInt64 GetDuration();
   virtual void SetDuration(PRInt64 aDuration);
+  void SetEndTime(PRInt64 aEndTime);
   virtual PRBool OnDecodeThread() const {
     return IsCurrentThread(mDecodeThread);
   }
@@ -183,14 +184,14 @@ public:
   // This is called on the state machine thread and audio thread.
   // The decoder monitor must be obtained before calling this.
   PRBool HasAudio() const {
-    mDecoder->GetMonitor().AssertCurrentThreadIn();
+    mDecoder->GetReentrantMonitor().AssertCurrentThreadIn();
     return mInfo.mHasAudio;
   }
 
   // This is called on the state machine thread and audio thread.
   // The decoder monitor must be obtained before calling this.
   PRBool HasVideo() const {
-    mDecoder->GetMonitor().AssertCurrentThreadIn();
+    mDecoder->GetReentrantMonitor().AssertCurrentThreadIn();
     return mInfo.mHasVideo;
   }
 
@@ -199,14 +200,14 @@ public:
 
   // Must be called with the decode monitor held.
   PRBool IsBuffering() const {
-    mDecoder->GetMonitor().AssertCurrentThreadIn();
+    mDecoder->GetReentrantMonitor().AssertCurrentThreadIn();
 
     return mState == nsBuiltinDecoderStateMachine::DECODER_STATE_BUFFERING;
   }
 
   // Must be called with the decode monitor held.
   PRBool IsSeeking() const {
-    mDecoder->GetMonitor().AssertCurrentThreadIn();
+    mDecoder->GetReentrantMonitor().AssertCurrentThreadIn();
 
     return mState == nsBuiltinDecoderStateMachine::DECODER_STATE_SEEKING;
   }
@@ -243,8 +244,13 @@ public:
   }
 
   PRInt64 GetEndMediaTime() const {
-    mDecoder->GetMonitor().AssertCurrentThreadIn();
+    mDecoder->GetReentrantMonitor().AssertCurrentThreadIn();
     return mEndTime;
+  }
+
+  PRBool GetSeekable() {
+    mDecoder->GetReentrantMonitor().AssertCurrentThreadIn();
+    return mSeekable;
   }
 
   // Sets the current frame buffer length for the MozAudioAvailable event.
@@ -253,23 +259,23 @@ public:
 
 protected:
 
-  // Returns PR_TRUE if we'v got less than aAudioMs ms of decoded and playable
-  // data. The decoder monitor must be held.
-  PRBool HasLowDecodedData(PRInt64 aAudioMs) const;
+  // Returns PR_TRUE if we've got less than aAudioUsecs microseconds of decoded
+  // and playable data. The decoder monitor must be held.
+  PRBool HasLowDecodedData(PRInt64 aAudioUsecs) const;
 
   // Returns PR_TRUE if we're running low on data which is not yet decoded.
   // The decoder monitor must be held.
   PRBool HasLowUndecodedData() const;
 
-  // Returns the number of milliseconds of undecoded data available for
+  // Returns the number of microseconds of undecoded data available for
   // decoding. The decoder monitor must be held.
   PRInt64 GetUndecodedData() const;
 
-  // Returns the number of unplayed ms of audio we've got decoded and/or
+  // Returns the number of unplayed usecs of audio we've got decoded and/or
   // pushed to the hardware waiting to play. This is how much audio we can
   // play without having to run the audio decoder. The decoder monitor
   // must be held.
-  PRInt64 AudioDecodedMs() const;
+  PRInt64 AudioDecodedUsecs() const;
 
   // Returns PR_TRUE when there's decoded audio waiting to play.
   // The decoder monitor must be held.
@@ -278,13 +284,14 @@ protected:
   // Returns PR_TRUE if we recently exited "quick buffering" mode.
   PRBool JustExitedQuickBuffering();
 
-  // Waits on the decoder Monitor for aMs. If the decoder monitor is awoken
-  // by a Notify() call, we'll continue waiting, unless we've moved into
-  // shutdown state. This enables us to ensure that we wait for a specified
-  // time, and that the myriad of Notify()s we do an the decoder monitor
-  // don't cause the audio thread to be starved. The decoder monitor must
-  // be locked.
-  void Wait(PRInt64 aMs);
+  // Waits on the decoder ReentrantMonitor for aUsecs microseconds. If the decoder
+  // monitor is awoken by a Notify() call, we'll continue waiting, unless
+  // we've moved into shutdown state. This enables us to ensure that we
+  // wait for a specified time, and that the myriad of Notify()s we do on
+  // the decoder monitor don't cause the audio thread to be starved. aUsecs
+  // values of less than 1 millisecond are rounded up to 1 millisecond
+  // (see bug 651023). The decoder monitor must be held.
+  void Wait(PRInt64 aUsecs);
 
   // Dispatches an asynchronous event to update the media element's ready state.
   void UpdateReadyState();
@@ -302,11 +309,6 @@ protected:
   // monitor must be held with exactly one lock count. Called on the state
   // machine thread.
   VideoData* FindStartTime();
-
-  // Finds the end time of the last frame of data in the file, storing the value
-  // in mEndTime if successful. The decoder must be held with exactly one lock
-  // count. Called on the state machine thread.
-  void FindEndTime();
 
   // Update only the state machine's current playback position (and duration,
   // if unknown).  Does not update the playback position on the decoder or
@@ -334,7 +336,8 @@ protected:
   // hardware. This ensures that the playback position advances smoothly, and
   // guarantees that we don't try to allocate an impossibly large chunk of
   // memory in order to play back silence. Called on the audio thread.
-  PRUint32 PlaySilence(PRUint32 aSamples, PRUint32 aChannels,
+  PRUint32 PlaySilence(PRUint32 aSamples,
+                       PRUint32 aChannels,
                        PRUint64 aSampleOffset);
 
   // Pops an audio chunk from the front of the audio queue, and pushes its
@@ -388,24 +391,24 @@ protected:
   // not start at 0. Note this is different to the value returned
   // by GetCurrentTime(), which is in the range [0,duration].
   PRInt64 GetMediaTime() const {
-    mDecoder->GetMonitor().AssertCurrentThreadIn();
+    mDecoder->GetReentrantMonitor().AssertCurrentThreadIn();
     return mStartTime + mCurrentFrameTime;
   }
 
-  // Returns an upper bound on the number of milliseconds of audio that is
-  // decoded and playable. This is the sum of the number of ms of audio which
-  // is decoded and in the reader's audio queue, and the ms of unplayed audio
+  // Returns an upper bound on the number of microseconds of audio that is
+  // decoded and playable. This is the sum of the number of usecs of audio which
+  // is decoded and in the reader's audio queue, and the usecs of unplayed audio
   // which has been pushed to the audio hardware for playback. Note that after
   // calling this, the audio hardware may play some of the audio pushed to
   // hardware, so this can only be used as a upper bound. The decoder monitor
   // must be held when calling this. Called on the decoder thread.
   PRInt64 GetDecodedAudioDuration();
 
-  // Monitor on mAudioStream. This monitor must be held in order to delete
-  // or use the audio stream. This stops us destroying the audio stream
-  // while it's being used on another thread (typically when it's being
-  // written to on the audio thread).
-  Monitor mAudioMonitor;
+  // ReentrantMonitor on mAudioStream. This monitor must be held in
+  // order to delete or use the audio stream. This stops us destroying
+  // the audio stream while it's being used on another thread
+  // (typically when it's being written to on the audio thread).
+  ReentrantMonitor mAudioReentrantMonitor;
 
   // The size of the decoded YCbCr frame.
   // Accessed on state machine thread.
@@ -430,32 +433,32 @@ protected:
   // playback position is therefore |Now() - mPlayStartTime +
   // mPlayDuration|, which must be adjusted by mStartTime if used with media
   // timestamps.  Accessed only via the state machine thread.
-  TimeDuration mPlayDuration;
+  PRInt64 mPlayDuration;
 
   // Time that buffering started. Used for buffering timeout and only
   // accessed on the state machine thread. This is null while we're not
   // buffering.
   TimeStamp mBufferingStart;
 
-  // Start time of the media, in milliseconds. This is the presentation
+  // Start time of the media, in microseconds. This is the presentation
   // time of the first sample decoded from the media, and is used to calculate
   // duration and as a bounds for seeking. Accessed on state machine and
   // main thread. Access controlled by decoder monitor.
   PRInt64 mStartTime;
 
-  // Time of the last page in the media, in milliseconds. This is the
+  // Time of the last page in the media, in microseconds. This is the
   // end time of the last sample in the media. Accessed on state
   // machine and main thread. Access controlled by decoder monitor.
   PRInt64 mEndTime;
 
-  // Position to seek to in milliseconds when the seek state transition occurs.
+  // Position to seek to in microseconds when the seek state transition occurs.
   // The decoder monitor lock must be obtained before reading or writing
   // this value. Accessed on main and state machine thread.
   PRInt64 mSeekTime;
 
-  // The audio stream resource. Used on the state machine, audio, and main
-  // threads. You must hold the mAudioMonitor, and must NOT hold the decoder
-  // monitor when using the audio stream!
+  // The audio stream resource. Used on the state machine, audio, and
+  // main threads. You must hold the mAudioReentrantMonitor, and must
+  // NOT hold the decoder monitor when using the audio stream!
   nsRefPtr<nsAudioStream> mAudioStream;
 
   // The reader, don't call its methods with the decoder monitor held.
@@ -463,24 +466,25 @@ protected:
   // in the play state machine's destructor.
   nsAutoPtr<nsBuiltinDecoderReader> mReader;
 
-  // The time of the current frame in milliseconds. This is referenced from
+  // The time of the current frame in microseconds. This is referenced from
   // 0 which is the initial playback position. Set by the state machine
   // thread, and read-only from the main thread to get the current
   // time value. Synchronised via decoder monitor.
   PRInt64 mCurrentFrameTime;
 
-  // The presentation time of the first audio sample that was played. We can
-  // add this to the audio stream position to determine the current audio time.
-  // Accessed on audio and state machine thread. Synchronized by decoder monitor.
+  // The presentation time of the first audio sample that was played in
+  // microseconds. We can add this to the audio stream position to determine
+  // the current audio time. Accessed on audio and state machine thread.
+  // Synchronized by decoder monitor.
   PRInt64 mAudioStartTime;
 
   // The end time of the last audio sample that's been pushed onto the audio
-  // hardware. This will approximately be the end time of the audio stream,
-  // unless another sample is pushed to the hardware.
+  // hardware in microseconds. This will approximately be the end time of the
+  // audio stream, unless another sample is pushed to the hardware.
   PRInt64 mAudioEndTime;
 
-  // The presentation end time of the last video frame which has been displayed.
-  // Accessed from the state machine thread.
+  // The presentation end time of the last video frame which has been displayed
+  // in microseconds. Accessed from the state machine thread.
   PRInt64 mVideoFrameEndTime;
   
   // Volume of playback. 0.0 = muted. 1.0 = full volume. Read/Written

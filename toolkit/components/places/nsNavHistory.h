@@ -281,6 +281,7 @@ public:
   void GetAgeInDaysString(PRInt32 aInt, const PRUnichar *aName,
                           nsACString& aResult);
   void GetMonthName(PRInt32 aIndex, nsACString& aResult);
+  void GetMonthYear(PRInt32 aMonth, PRInt32 aYear, nsACString& aResult);
 
   // Returns whether history is enabled or not.
   PRBool IsHistoryDisabled() {
@@ -293,21 +294,17 @@ public:
   static const PRInt32 kGetInfoIndex_Title;
   static const PRInt32 kGetInfoIndex_RevHost;
   static const PRInt32 kGetInfoIndex_VisitCount;
+  static const PRInt32 kGetInfoIndex_VisitDate;
+  static const PRInt32 kGetInfoIndex_FaviconURL;
+  static const PRInt32 kGetInfoIndex_SessionId;
   static const PRInt32 kGetInfoIndex_ItemId;
   static const PRInt32 kGetInfoIndex_ItemDateAdded;
   static const PRInt32 kGetInfoIndex_ItemLastModified;
-  static const PRInt32 kGetInfoIndex_ItemTags;
   static const PRInt32 kGetInfoIndex_ItemParentId;
+  static const PRInt32 kGetInfoIndex_ItemTags;
+  static const PRInt32 kGetInfoIndex_Frecency;
 
   PRInt64 GetTagsFolder();
-
-  // Constants for the columns returned by the above statement
-  // (in addition to the ones above).
-  static const PRInt32 kGetInfoIndex_VisitDate;
-  static const PRInt32 kGetInfoIndex_FaviconURL;
-
-  // used in execute queries to get session ID info (only for visits)
-  static const PRInt32 kGetInfoIndex_SessionId;
 
   // this actually executes a query and gives you results, it is used by
   // nsNavHistoryQueryResultNode
@@ -334,6 +331,9 @@ public:
   nsresult BookmarkIdToResultNode(PRInt64 aBookmarkId,
                                   nsNavHistoryQueryOptions* aOptions,
                                   nsNavHistoryResultNode** aResult);
+  nsresult URIToResultNode(nsIURI* aURI,
+                           nsNavHistoryQueryOptions* aOptions,
+                           nsNavHistoryResultNode** aResult);
 
   // used by other places components to send history notifications (for example,
   // when the favicon has changed)
@@ -644,6 +644,7 @@ protected:
   nsCOMPtr<mozIStorageStatement> mDBVisitToURLResult; // kGetInfoIndex_* results
   nsCOMPtr<mozIStorageStatement> mDBVisitToVisitResult; // kGetInfoIndex_* results
   nsCOMPtr<mozIStorageStatement> mDBBookmarkToUrlResult; // kGetInfoIndex_* results
+  nsCOMPtr<mozIStorageStatement> mDBUrlToUrlResult; // kGetInfoIndex_* results
   nsCOMPtr<mozIStorageStatement> mDBUpdateFrecency;
   nsCOMPtr<mozIStorageStatement> mDBUpdateHiddenOnFrecency;
   nsCOMPtr<mozIStorageStatement> mDBGetPlaceVisitStats;

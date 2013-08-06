@@ -45,6 +45,7 @@
 #include "gfxPlatform.h"
 #include "ReadbackLayer.h"
 #include "gfxUtils.h"
+#include "mozilla/Util.h"
 
 using namespace mozilla::layers;
 
@@ -213,10 +214,6 @@ LayerManager::CreateOptimalSurface(const gfxIntSize &aSize,
 void
 LayerManager::Mutated(Layer* aLayer)
 {
-  NS_ABORT_IF_FALSE(!aLayer->GetTileSourceRect() ||
-                    (LAYERS_BASIC == GetBackendType() &&
-                     Layer::TYPE_IMAGE == aLayer->GetType()),
-                    "Tiling not supported for this manager/layer type");
 }
 #endif  // DEBUG
 
@@ -290,8 +287,8 @@ Layer::SnapTransform(const gfx3DMatrix& aTransform,
     }
     // compute translation factors that will move aSnapRect to the snapped rect
     // given those scale factors
-    snappedMatrix.x0 = topLeft.x - aSnapRect.pos.x*snappedMatrix.xx;
-    snappedMatrix.y0 = topLeft.y - aSnapRect.pos.y*snappedMatrix.yy;
+    snappedMatrix.x0 = topLeft.x - aSnapRect.X()*snappedMatrix.xx;
+    snappedMatrix.y0 = topLeft.y - aSnapRect.Y()*snappedMatrix.yy;
     result = gfx3DMatrix::From2D(snappedMatrix);
     if (aResidualTransform && !snappedMatrix.IsSingular()) {
       // set aResidualTransform so that aResidual * snappedMatrix == matrix2D.
@@ -308,44 +305,60 @@ Layer::SnapTransform(const gfx3DMatrix& aTransform,
 }
 
 nsIntRect 
-Layer::CalculateScissorRect(bool aIntermediate,
-                            const nsIntRect& aVisibleRect,
-                            const nsIntRect& aParentScissor,
-                            const gfxMatrix& aTransform)
+Layer::CalculateScissorRect(const nsIntRect& aCurrentScissorRect,
+                            const gfxMatrix* aWorldTransform)
 {
-  nsIntRect scissorRect(aVisibleRect);
+  ContainerLayer* container = GetParent();
+  NS_ASSERTION(container, "This can't be called on the root!");
+
+  // Establish initial clip rect: it's either the one passed in, or
+  // if the parent has an intermediate surface, it's the extents of that surface.
+  nsIntRect currentClip;
+  if (container->UseIntermediateSurface()) {
+    currentClip.SizeTo(container->GetIntermediateSurfaceRect().Size());
+  } else {
+    currentClip = aCurrentScissorRect;
+  }
 
   const nsIntRect *clipRect = GetEffectiveClipRect();
+  if (!clipRect)
+    return currentClip;
 
-  if (!aIntermediate && !clipRect) {
-    return aParentScissor;
+  if (clipRect->IsEmpty()) {
+    // We might have a non-translation transform in the container so we can't
+    // use the code path below.
+    return nsIntRect(currentClip.TopLeft(), nsIntSize(0, 0));
   }
 
-  if (clipRect) {
-    if (clipRect->IsEmpty()) {
-      return *clipRect;
+  nsIntRect scissor = *clipRect;
+  if (!container->UseIntermediateSurface()) {
+    gfxMatrix matrix;
+    DebugOnly<bool> is2D = container->GetEffectiveTransform().Is2D(&matrix);
+    // See DefaultComputeEffectiveTransforms below
+    NS_ASSERTION(is2D && matrix.PreservesAxisAlignedRectangles(),
+                 "Non preserves axis aligned transform with clipped child should have forced intermediate surface");
+    gfxRect r(scissor.x, scissor.y, scissor.width, scissor.height);
+    gfxRect trScissor = matrix.TransformBounds(r);
+    trScissor.Round();
+    if (!gfxUtils::GfxRectToIntRect(trScissor, &scissor)) {
+      return nsIntRect(currentClip.TopLeft(), nsIntSize(0, 0));
     }
-    scissorRect = *clipRect;
-    if (!aIntermediate) {
-      gfxRect r(scissorRect.x, scissorRect.y, scissorRect.width, scissorRect.height);
-      gfxRect trScissor = aTransform.TransformBounds(r);
-      trScissor.Round();
-      if (!gfxUtils::GfxRectToIntRect(trScissor, &scissorRect)) {
-        scissorRect = aVisibleRect;
-      }
-    }
-  }
-    
-  if (aIntermediate) {
-    scissorRect.MoveBy(- aVisibleRect.TopLeft());
-  } else if (clipRect) {
-    scissorRect.IntersectRect(scissorRect, aParentScissor);
-  }
 
-  NS_ASSERTION(scissorRect.x >= 0 && scissorRect.y >= 0,
-               "Attempting to scissor out of bounds!");
-
-  return scissorRect;
+    // Find the nearest ancestor with an intermediate surface
+    do {
+      container = container->GetParent();
+    } while (container && !container->UseIntermediateSurface());
+  }
+  if (container) {
+    scissor.MoveBy(-container->GetIntermediateSurfaceRect().TopLeft());
+  } else if (aWorldTransform) {
+    gfxRect r(scissor.x, scissor.y, scissor.width, scissor.height);
+    gfxRect trScissor = aWorldTransform->TransformBounds(r);
+    trScissor.Round();
+    if (!gfxUtils::GfxRectToIntRect(trScissor, &scissor))
+      return nsIntRect(currentClip.TopLeft(), nsIntSize(0, 0));
+  }
+  return currentClip.Intersect(scissor);
 }
 
 const gfx3DMatrix&
@@ -400,12 +413,16 @@ ContainerLayer::DefaultComputeEffectiveTransforms(const gfx3DMatrix& aTransformT
     useIntermediateSurface = PR_FALSE;
     gfxMatrix contTransform;
     if (!mEffectiveTransform.Is2D(&contTransform) ||
+#ifdef MOZ_GFX_OPTIMIZE_MOBILE
         !contTransform.PreservesAxisAlignedRectangles()) {
+#else
+        contTransform.HasNonIntegerTranslation()) {
+#endif
       for (Layer* child = GetFirstChild(); child; child = child->GetNextSibling()) {
         const nsIntRect *clipRect = child->GetEffectiveClipRect();
         /* We can't (easily) forward our transform to children with a non-empty clip
-         * rect since it would need to be adjusted for the transform.
-         * TODO: This is easily solvable for translation/scaling transforms.
+         * rect since it would need to be adjusted for the transform. See
+         * the calculations performed by CalculateScissorRect above.
          */
         if (clipRect && !clipRect->IsEmpty() && !child->GetVisibleRegion().IsEmpty()) {
           useIntermediateSurface = PR_TRUE;

@@ -47,11 +47,9 @@ XPIDL_MODULE	= dom_events
 GRE_MODULE	= 1
 
 SDK_XPIDLSRCS =                                 \
-	nsIDOMDocumentEvent.idl			\
 	nsIDOMEvent.idl				\
 	nsIDOMEventTarget.idl			\
 	nsIDOMEventListener.idl			\
-	nsIDOM3DocumentEvent.idl		\
 	nsIDOM3EventTarget.idl			\
 	nsIDOMEventGroup.idl			\
 	nsIDOMMouseEvent.idl			\
@@ -82,12 +80,16 @@ XPIDLSRCS =					\
 	nsIDOMSimpleGestureEvent.idl		\
 	nsIDOMNSMouseEvent.idl			\
 	nsIDOMMozTouchEvent.idl			\
-	nsIDOMOrientationEvent.idl              \
+	nsIDOMDeviceOrientationEvent.idl\
+	nsIDOMDeviceMotionEvent.idl		\
 	nsIDOMScrollAreaEvent.idl		\
 	nsIDOMTransitionEvent.idl		\
 	nsIDOMPopStateEvent.idl			\
 	nsIDOMCloseEvent.idl			\
 	nsIDOMEventException.idl		\
+	nsIDOMTouchEvent.idl			\
+	nsIDOMHashChangeEvent.idl		\
+	nsIDOMCustomEvent.idl			\
 	$(NULL)
 
 ifdef MOZ_CSS_ANIMATIONS

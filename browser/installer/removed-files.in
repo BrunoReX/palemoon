@@ -77,6 +77,9 @@ components/xmlextras.xpt
 components/xpcom.xpt
 components/xpti.dat
 components/xptitemp.dat
+components/nsMicrosummaryService.js
+D3DCompiler_42.dll
+d3dx9_42.dll
 defaults/pref/all.js
 defaults/pref/bug259708.js
 defaults/pref/bug307259.js
@@ -875,7 +878,6 @@ xpicleanup@BIN_SUFFIX@
   components/nsLoginInfo.js
   components/nsLoginManager.js
   components/nsLoginManagerPrompter.js
-  components/nsMicrosummaryService.js
   components/nsPlacesAutoComplete.js
   components/nsPlacesDBFlush.js
   components/nsPlacesExpiration.js
@@ -1277,21 +1279,13 @@ xpicleanup@BIN_SUFFIX@
     mozcrt19.dll
   #endif
 #endif
-#ifdef MOZ_ENABLE_LIBXUL
-  @DLL_PREFIX@xpcom_core@DLL_SUFFIX@
-  components/@DLL_PREFIX@jar50@DLL_SUFFIX@
-  #ifdef XP_WIN
-    components/xpinstal.dll
-  #else
-    components/@DLL_PREFIX@jsd@DLL_SUFFIX@
-    components/@DLL_PREFIX@xpinstall@DLL_SUFFIX@
-  #endif
+@DLL_PREFIX@xpcom_core@DLL_SUFFIX@
+components/@DLL_PREFIX@jar50@DLL_SUFFIX@
+#ifdef XP_WIN
+  components/xpinstal.dll
 #else
-  #ifdef XP_MACOSX
-    XUL
-  #else
-    @DLL_PREFIX@xul@DLL_SUFFIX@
-  #endif
+  components/@DLL_PREFIX@jsd@DLL_SUFFIX@
+  components/@DLL_PREFIX@xpinstall@DLL_SUFFIX@
 #endif
 #ifndef MOZ_UPDATER
   components/nsUpdateService.js

@@ -103,6 +103,7 @@ clobber-zip:
 	  $(STAGEDIST)/chrome/$(AB_CD).manifest \
 	  $(STAGEDIST)/defaults/preferences/mobile-l10n.js
 	$(RM) -r $(STAGEDIST)/dictionaries \
+	  $(STAGEDIST)/hyphenation \
 	  $(STAGEDIST)/defaults/profile \
 	  $(STAGEDIST)/chrome/$(AB_CD)
 
@@ -110,6 +111,7 @@ libs-%:
 	$(NSINSTALL) -D $(DIST)/install
 	@$(MAKE) -C ../../toolkit/locales libs-$* BOTH_MANIFESTS=1
 	@$(MAKE) -C ../../services/sync/locales AB_CD=$* XPI_NAME=locale-$* BOTH_MANIFESTS=1
+	@$(MAKE) -C ../../intl/locales AB_CD=$* XPI_NAME=locale-$* BOTH_MANIFESTS=1
 	@$(MAKE) -B bookmarks.json AB_CD=$*
 	@$(MAKE) -B searchplugins AB_CD=$* XPI_NAME=locale-$*
 	@$(MAKE) libs AB_CD=$* XPI_NAME=locale-$* PREF_DIR=defaults/preferences BOTH_MANIFESTS=1
@@ -162,20 +164,6 @@ endif
 ifdef MOZ_CRASHREPORTER
 libs:: crashreporter-override.ini
 	$(SYSINSTALL) $(IFLAGS1) $^ $(FINAL_TARGET)
-endif
-
-ifdef WINCE_WINDOWS_MOBILE
-ifdef LOCALE_MERGEDIR
-SETUP_INI := $(firstword $(wildcard $(LOCALE_MERGEDIR)/installer/setup.ini) \
-       $(wildcard $(LOCALE_SRCDIR)/installer/setup.ini) \
-       $(srcdir)/en-US/installer/setup.ini )
-else
-SETUP_INI := $(addprefix $(LOCALE_SRCDIR)/,installer/setup.ini)
-endif
-libs:: $(SETUP_INI)
-	cat $< | \
-	  sed -e "s/%MOZ_APP_DISPLAYNAME%/$(MOZ_APP_DISPLAYNAME)/" > \
-	  $(FINAL_TARGET)/setup.ini
 endif
 
 # When we unpack fennec on MacOS X the platform.ini and application.ini are in slightly

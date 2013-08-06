@@ -37,10 +37,7 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-#include "nsIDeviceContext.h"
 #include "mozilla/ModuleUtils.h"
-#include "nsXPCOMCID.h"
-#include "nsServiceManagerUtils.h"
 
 #include "RasterImage.h"
 
@@ -121,12 +118,6 @@ static const mozilla::Module::CategoryEntry kImageCategories[] = {
 static nsresult
 imglib_Initialize()
 {
-  // Hack: We need the gfx module to be initialized because we use gfxPlatform
-  // in imgFrame. Request something from the gfx module to ensure that
-  // everything's set up for us.
-  nsCOMPtr<nsIDeviceContext> devctx = 
-    do_CreateInstance("@mozilla.org/gfx/devicecontext;1");
-
   imgLoader::InitCache();
   return NS_OK;
 }

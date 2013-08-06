@@ -101,6 +101,7 @@ nsXPConnect::nsXPConnect()
         mDefaultSecurityManager(nsnull),
         mDefaultSecurityManagerFlags(0),
         mShuttingDown(JS_FALSE),
+        mNeedGCBeforeCC(JS_TRUE),
         mCycleCollectionContext(nsnull)
 {
     mRuntime = XPCJSRuntime::newXPCJSRuntime(this);
@@ -339,6 +340,12 @@ nsXPConnect::GetInfoForName(const char * name, nsIInterfaceInfo** info)
     return FindInfo(NameTester, name, mInterfaceInfoManager, info);
 }
 
+bool
+nsXPConnect::NeedCollect()
+{
+    return !!mNeedGCBeforeCC;
+}
+
 void
 nsXPConnect::Collect()
 {
@@ -385,6 +392,8 @@ nsXPConnect::Collect()
     // To improve debugging, if DEBUG_CC is defined all JS objects are
     // traversed.
 
+    mNeedGCBeforeCC = JS_FALSE;
+
     XPCCallContext ccx(NATIVE_CALLER);
     if(!ccx.IsValid())
         return;
@@ -398,13 +407,14 @@ nsXPConnect::Collect()
     // cycle collection. So to compensate for JS_BeginRequest in
     // XPCCallContext::Init we disable the conservative scanner if that call
     // has started the request on this thread.
-    JS_ASSERT(cx->thread->data.requestDepth >= 1);
-    JS_ASSERT(!cx->thread->data.conservativeGC.requestThreshold);
-    if(cx->thread->data.requestDepth == 1)
-        cx->thread->data.conservativeGC.requestThreshold = 1;
+    js::ThreadData &threadData = cx->thread()->data;
+    JS_ASSERT(threadData.requestDepth >= 1);
+    JS_ASSERT(!threadData.conservativeGC.requestThreshold);
+    if(threadData.requestDepth == 1)
+        threadData.conservativeGC.requestThreshold = 1;
     JS_GC(cx);
-    if(cx->thread->data.requestDepth == 1)
-        cx->thread->data.conservativeGC.requestThreshold = 0;
+    if(threadData.requestDepth == 1)
+        threadData.conservativeGC.requestThreshold = 0;
 }
 
 NS_IMETHODIMP
@@ -575,9 +585,35 @@ xpc_GCThingIsGrayCCThing(void *thing)
     return ADD_TO_CC(kind) && xpc_IsGrayGCThing(thing);
 }
 
+/*
+ * The GC and CC are run independently. Consequently, the following sequence of
+ * events can occur:
+ * 1. GC runs and marks an object gray.
+ * 2. Some JS code runs that creates a pointer from a JS root to the gray
+ *    object. If we re-ran a GC at this point, the object would now be black.
+ * 3. Now we run the CC. It may think it can collect the gray object, even
+ *    though it's reachable from the JS heap.
+ *
+ * To prevent this badness, we unmark the gray bit of an object when it is
+ * accessed by callers outside XPConnect. This would cause the object to go
+ * black in step 2 above. This must be done on everything reachable from the
+ * object being returned. The following code takes care of the recursive
+ * re-coloring.
+ */
 static void
 UnmarkGrayChildren(JSTracer *trc, void *thing, uint32 kind)
 {
+    int stackDummy;
+    if (!JS_CHECK_STACK_SIZE(trc->context->stackLimit, &stackDummy)) {
+        /*
+         * If we run out of stack, we take a more drastic measure: require that
+         * we GC again before the next CC.
+         */
+        nsXPConnect* xpc = nsXPConnect::GetXPConnect();
+        xpc->EnsureGCBeforeCC();
+        return;
+    }
+
     // If this thing is not a CC-kind or already non-gray then we're done.
     if(!ADD_TO_CC(kind) || !xpc_IsGrayGCThing(thing))
         return;
@@ -734,8 +770,7 @@ nsXPConnect::Traverse(void *p, nsCycleCollectionTraversalCallback &cb)
 #endif
     {
         // Normal codepath (matches non-DEBUG_CC codepath).
-        NS_ASSERTION(xpc_IsGrayGCThing(p), "Tried to traverse a non-gray object.");
-        type = markJSObject ? GCMarked : GCUnmarked;
+        type = !markJSObject && xpc_IsGrayGCThing(p) ? GCUnmarked : GCMarked;
     }
 
     if (cb.WantDebugInfo()) {
@@ -1039,17 +1074,12 @@ xpc_CreateGlobalObject(JSContext *cx, JSClass *clasp,
     NS_ABORT_IF_FALSE(NS_IsMainThread(), "using a principal off the main thread?");
     NS_ABORT_IF_FALSE(principal, "bad key");
 
-    nsCOMPtr<nsIURI> uri;
-    nsresult rv = principal->GetURI(getter_AddRefs(uri));
-    if(NS_FAILED(rv))
-        return UnexpectedFailure(rv);
-
     XPCCompartmentMap& map = nsXPConnect::GetRuntimeInstance()->GetCompartmentMap();
-    xpc::PtrAndPrincipalHashKey key(ptr, uri);
+    xpc::PtrAndPrincipalHashKey key(ptr, principal);
     if(!map.Get(&key, compartment))
     {
         xpc::PtrAndPrincipalHashKey *priv_key =
-            new xpc::PtrAndPrincipalHashKey(ptr, uri);
+            new xpc::PtrAndPrincipalHashKey(ptr, principal);
         xpc::CompartmentPrivate *priv =
             new xpc::CompartmentPrivate(priv_key, wantXrays, NS_IsMainThread());
         if(!CreateNewCompartment(cx, clasp, principal, priv,
@@ -2045,9 +2075,6 @@ NS_IMETHODIMP
 nsXPConnect::CreateSandbox(JSContext *cx, nsIPrincipal *principal,
                            nsIXPConnectJSObjectHolder **_retval)
 {
-#ifdef XPCONNECT_STANDALONE
-    return NS_ERROR_NOT_AVAILABLE;
-#else /* XPCONNECT_STANDALONE */
     XPCCallContext ccx(NATIVE_CALLER, cx);
     if(!ccx.IsValid())
         return UnexpectedFailure(NS_ERROR_FAILURE);
@@ -2069,7 +2096,6 @@ nsXPConnect::CreateSandbox(JSContext *cx, nsIPrincipal *principal,
     }
 
     return rv;
-#endif /* XPCONNECT_STANDALONE */
 }
 
 NS_IMETHODIMP
@@ -2077,9 +2103,6 @@ nsXPConnect::EvalInSandboxObject(const nsAString& source, JSContext *cx,
                                  nsIXPConnectJSObjectHolder *sandbox,
                                  PRBool returnStringOnly, jsval *rval)
 {
-#ifdef XPCONNECT_STANDALONE
-    return NS_ERROR_NOT_AVAILABLE;
-#else /* XPCONNECT_STANDALONE */
     if (!sandbox)
         return NS_ERROR_INVALID_ARG;
 
@@ -2090,7 +2113,6 @@ nsXPConnect::EvalInSandboxObject(const nsAString& source, JSContext *cx,
     return xpc_EvalInSandbox(cx, obj, source,
                              NS_ConvertUTF16toUTF8(source).get(), 1,
                              JSVERSION_DEFAULT, returnStringOnly, rval);
-#endif /* XPCONNECT_STANDALONE */
 }
 
 /* void GetXPCWrappedNativeJSClassInfo(out JSEqualityOp equality); */
@@ -2443,7 +2465,6 @@ NS_IMETHODIMP
 nsXPConnect::GetBackstagePass(nsIXPCScriptable **bsp)
 {
     if(!mBackstagePass) {
-#ifndef XPCONNECT_STANDALONE
         nsCOMPtr<nsIPrincipal> sysprin;
         nsCOMPtr<nsIScriptSecurityManager> secman =
             do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID);
@@ -2453,9 +2474,6 @@ nsXPConnect::GetBackstagePass(nsIXPCScriptable **bsp)
             return NS_ERROR_NOT_AVAILABLE;
 
         mBackstagePass = new BackstagePass(sysprin);
-#else
-        mBackstagePass = new BackstagePass();
-#endif
         if(!mBackstagePass)
             return NS_ERROR_OUT_OF_MEMORY;
     }
@@ -2631,7 +2649,7 @@ nsXPConnect::Push(JSContext * cx)
              bool runningJS = false;
              for (PRUint32 i = 0; i < stack->Length(); ++i) {
                  JSContext *cx = (*stack)[i].cx;
-                 if (cx && cx->getCurrentSegment()) {
+                 if (cx && !cx->stack.empty()) {
                      runningJS = true;
                      break;
                  }

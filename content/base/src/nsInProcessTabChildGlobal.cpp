@@ -68,8 +68,8 @@ bool SendSyncMessageToParent(void* aCallbackData,
     async->Run();
   }
   if (tabChild->mChromeMessageManager) {
-    tabChild->mChromeMessageManager->ReceiveMessage(owner, aMessage, PR_TRUE,
-                                                    aJSON, nsnull, aJSONRetVal);
+    nsRefPtr<nsFrameMessageManager> mm = tabChild->mChromeMessageManager;
+    mm->ReceiveMessage(owner, aMessage, PR_TRUE, aJSON, nsnull, aJSONRetVal);
   }
   return true;
 }
@@ -85,9 +85,9 @@ public:
   {
     mTabChild->mASyncMessages.RemoveElement(this);
     if (mTabChild->mChromeMessageManager) {
-      mTabChild->mChromeMessageManager->ReceiveMessage(mTabChild->mOwner, mMessage,
-                                                       PR_FALSE,
-                                                       mJSON, nsnull, nsnull);
+      nsRefPtr<nsFrameMessageManager> mm = mTabChild->mChromeMessageManager;
+      mm->ReceiveMessage(mTabChild->mOwner, mMessage, PR_FALSE,
+                         mJSON, nsnull, nsnull);
     }
     return NS_OK;
   }
@@ -129,7 +129,10 @@ nsInProcessTabChildGlobal::~nsInProcessTabChildGlobal()
 nsresult
 nsInProcessTabChildGlobal::Init()
 {
-  nsresult rv = InitTabChildGlobal();
+#ifdef DEBUG
+  nsresult rv =
+#endif
+  InitTabChildGlobal();
   NS_WARN_IF_FALSE(NS_SUCCEEDED(rv),
                    "Couldn't initialize nsInProcessTabChildGlobal");
   mMessageManager = new nsFrameMessageManager(PR_FALSE,
@@ -296,6 +299,7 @@ nsInProcessTabChildGlobal::InitTabChildGlobal()
 
   JS_SetOptions(cx, JS_GetOptions(cx) | JSOPTION_JIT | JSOPTION_ANONFUNFIX | JSOPTION_PRIVATE_IS_NSISUPPORTS);
   JS_SetVersion(cx, JSVERSION_LATEST);
+  JS_SetErrorReporter(cx, ContentScriptErrorReporter);
 
   xpc_LocalizeContext(cx);
 
@@ -325,9 +329,28 @@ nsInProcessTabChildGlobal::InitTabChildGlobal()
   return NS_OK;
 }
 
+class nsAsyncScriptLoad : public nsRunnable
+{
+public:
+  nsAsyncScriptLoad(nsInProcessTabChildGlobal* aTabChild, const nsAString& aURL)
+  : mTabChild(aTabChild), mURL(aURL) {}
+
+  NS_IMETHOD Run()
+  {
+    mTabChild->LoadFrameScript(mURL);
+    return NS_OK;
+  }
+  nsRefPtr<nsInProcessTabChildGlobal> mTabChild;
+  nsString mURL;
+};
+
 void
 nsInProcessTabChildGlobal::LoadFrameScript(const nsAString& aURL)
 {
+  if (!nsContentUtils::IsSafeToRunScript()) {
+    nsContentUtils::AddScriptRunner(new nsAsyncScriptLoad(this, aURL));
+    return;
+  }
   if (!mInitialized) {
     mInitialized = PR_TRUE;
     Init();

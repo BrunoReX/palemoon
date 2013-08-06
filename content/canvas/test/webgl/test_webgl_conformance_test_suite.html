@@ -234,7 +234,7 @@ function start() {
   Reporter.prototype.finishedTestSuite = function() {
       for (var i = 0; i < testsExpectedToFail.length; ++i)
         if (testsSuccessful.indexOf(testsExpectedToFail[i]) != -1)
-          ok(false, 'Test expected to fail, but passed: ' + testsExpectedToFail[i]);
+          todo(true, 'Test expected to fail, but passed: ' + testsExpectedToFail[i]);
       statusTextNode.textContent = 'Finished';
       SimpleTest.finish();
   }

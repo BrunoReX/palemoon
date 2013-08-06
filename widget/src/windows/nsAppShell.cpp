@@ -38,6 +38,7 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/ipc/RPCChannel.h"
 #include "nsAppShell.h"
 #include "nsToolkit.h"
 #include "nsThreadUtils.h"
@@ -51,22 +52,6 @@
 
 const PRUnichar* kAppShellEventId = L"nsAppShell:EventID";
 const PRUnichar* kTaskbarButtonEventId = L"TaskbarButtonCreated";
-
-#ifdef WINCE
-BOOL WaitMessage(VOID)
-{
-  BOOL retval = TRUE;
-  
-  HANDLE hThread = GetCurrentThread();
-  DWORD waitRes = MsgWaitForMultipleObjectsEx(1, &hThread, INFINITE, QS_ALLEVENTS, 0);
-  if((DWORD)-1 == waitRes)
-  {
-    retval = FALSE;
-  }
-  
-  return retval;
-}
-#endif
 
 static UINT sMsgId;
 
@@ -322,6 +307,9 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
     CollectNewLoadedModules();
   }
 #endif
+
+  // Notify ipc we are spinning a (possibly nested) gecko event loop.
+  mozilla::ipc::RPCChannel::NotifyGeckoEventDispatch();
 
   PRBool gotMessage = PR_FALSE;
 

@@ -70,7 +70,6 @@
 using namespace mozilla::dom;
 
 static NS_DEFINE_CID(kTextEditorCID, NS_TEXTEDITOR_CID);
-static NS_DEFINE_CID(kFrameSelectionCID, NS_FRAMESELECTION_CID);
 
 static nsINativeKeyBindings *sNativeInputBindings = nsnull;
 static nsINativeKeyBindings *sNativeTextAreaBindings = nsnull;
@@ -82,11 +81,13 @@ struct SelectionState {
 
 class RestoreSelectionState : public nsRunnable {
 public:
-  RestoreSelectionState(nsTextControlFrame *aFrame, PRInt32 aStart, PRInt32 aEnd)
+  RestoreSelectionState(nsTextEditorState *aState, nsTextControlFrame *aFrame,
+                        PRInt32 aStart, PRInt32 aEnd)
     : mFrame(aFrame),
       mWeakFrame(aFrame),
       mStart(aStart),
-      mEnd(aEnd)
+      mEnd(aEnd),
+      mTextEditorState(aState)
   {
   }
 
@@ -96,6 +97,7 @@ public:
       // need to block script to avoid nested PrepareEditor calls (bug 642800).
       nsAutoScriptBlocker scriptBlocker;
       mFrame->SetSelectionRange(mStart, mEnd);
+      mTextEditorState->HideSelectionIfBlurred();
     }
     return NS_OK;
   }
@@ -105,6 +107,7 @@ private:
   nsWeakFrame mWeakFrame;
   PRInt32 mStart;
   PRInt32 mEnd;
+  nsTextEditorState* mTextEditorState;
 };
 
 /*static*/
@@ -214,7 +217,7 @@ public:
   NS_IMETHOD CheckVisibility(nsIDOMNode *node, PRInt16 startOffset, PRInt16 EndOffset, PRBool *_retval);
 
 private:
-  nsCOMPtr<nsFrameSelection> mFrameSelection;
+  nsRefPtr<nsFrameSelection> mFrameSelection;
   nsCOMPtr<nsIContent>       mLimiter;
   nsIScrollableFrame        *mScrollFrame;
   nsWeakPtr mPresShellWeak;
@@ -1086,10 +1089,7 @@ nsTextEditorState::BindToFrame(nsTextControlFrame* aFrame)
   NS_ENSURE_TRUE(shell, NS_ERROR_FAILURE);
 
   // Create selection
-  nsresult rv;
-  nsCOMPtr<nsFrameSelection> frameSel;
-  frameSel = do_CreateInstance(kFrameSelectionCID, &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsRefPtr<nsFrameSelection> frameSel = new nsFrameSelection();
 
   // Create a SelectionController
   mSelCon = new nsTextInputSelectionImpl(frameSel, shell, rootNode);
@@ -1127,7 +1127,7 @@ nsTextEditorState::BindToFrame(nsTextControlFrame* aFrame)
 
     // Set the correct direction on the newly created root node
     PRUint32 flags;
-    rv = mEditor->GetFlags(&flags);
+    nsresult rv = mEditor->GetFlags(&flags);
     NS_ENSURE_SUCCESS(rv, rv);
     if (flags & nsIPlaintextEditor::eEditorRightToLeft) {
       rootNode->SetAttr(kNameSpaceID_None, nsGkAtoms::dir, NS_LITERAL_STRING("rtl"), PR_FALSE);
@@ -1385,7 +1385,7 @@ nsTextEditorState::PrepareEditor(const nsAString *aValue)
 
   // Restore our selection after being bound to a new frame
   if (mSelState) {
-    nsContentUtils::AddScriptRunner(new RestoreSelectionState(mBoundFrame, mSelState->mStart, mSelState->mEnd));
+    nsContentUtils::AddScriptRunner(new RestoreSelectionState(this, mBoundFrame, mSelState->mStart, mSelState->mEnd));
     mSelState = nsnull;
   }
 
@@ -2009,6 +2009,16 @@ nsTextEditorState::SetPlaceholderClass(PRBool aVisible,
 
   placeholderDiv->SetAttr(kNameSpaceID_None, nsGkAtoms::_class,
                           classValue, aNotify);
+}
+
+void
+nsTextEditorState::HideSelectionIfBlurred()
+{
+  NS_ABORT_IF_FALSE(mSelCon, "Should have a selection controller if we have a frame!");
+  nsCOMPtr<nsIContent> content = do_QueryInterface(mTextCtrlElement);
+  if (!nsContentUtils::IsFocusedContent(content)) {
+    mSelCon->SetDisplaySelection(nsISelectionController::SELECTION_HIDDEN);
+  }
 }
 
 NS_IMPL_ISUPPORTS1(nsAnonDivObserver, nsIMutationObserver)

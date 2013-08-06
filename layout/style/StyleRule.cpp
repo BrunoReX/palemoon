@@ -51,13 +51,11 @@
 #include "mozilla/css/Loader.h"
 #include "nsIURL.h"
 #include "nsIDocument.h"
-#include "nsIDeviceContext.h"
 #include "nsIAtom.h"
 #include "nsCRT.h"
 #include "nsString.h"
 #include "nsStyleConsts.h"
 #include "nsStyleUtil.h"
-#include "nsIFontMetrics.h"
 #include "nsIDOMCSSStyleSheet.h"
 #include "nsICSSStyleRuleDOMWrapper.h"
 #include "nsIDOMCSSStyleDeclaration.h"
@@ -955,10 +953,7 @@ public:
   void DropReference(void);
   virtual css::Declaration* GetCSSDeclaration(PRBool aAllocate);
   virtual nsresult SetCSSDeclaration(css::Declaration* aDecl);
-  virtual nsresult GetCSSParsingEnvironment(nsIURI** aSheetURI,
-                                            nsIURI** aBaseURI,
-                                            nsIPrincipal** aSheetPrincipal,
-                                            css::Loader** aCSSLoader);
+  virtual void GetCSSParsingEnvironment(CSSParsingEnvironment& aCSSParseEnv);
   virtual nsIDocument* DocToUpdate();
 
   // Override |AddRef| and |Release| for being a member of
@@ -1057,19 +1052,10 @@ DOMCSSDeclarationImpl::GetCSSDeclaration(PRBool aAllocate)
   }
 }
 
-/*
- * This is a utility function.  It will only fail if it can't get a
- * parser.  This means it can return NS_OK without aURI or aCSSLoader
- * being initialized.
- */
-nsresult
-DOMCSSDeclarationImpl::GetCSSParsingEnvironment(nsIURI** aSheetURI,
-                                                nsIURI** aBaseURI,
-                                                nsIPrincipal** aSheetPrincipal,
-                                                css::Loader** aCSSLoader)
+void
+DOMCSSDeclarationImpl::GetCSSParsingEnvironment(CSSParsingEnvironment& aCSSParseEnv)
 {
-  return GetCSSParsingEnvironmentForRule(mRule, aSheetURI, aBaseURI,
-                                         aSheetPrincipal, aCSSLoader);
+  GetCSSParsingEnvironmentForRule(mRule, aCSSParseEnv);
 }
 
 NS_IMETHODIMP
@@ -1082,7 +1068,8 @@ DOMCSSDeclarationImpl::GetParentRule(nsIDOMCSSRule **aParent)
     return NS_OK;
   }
 
-  return mRule->GetDOMRule(aParent);
+  NS_IF_ADDREF(*aParent = mRule->GetDOMRule());
+  return NS_OK;
 }
 
 nsresult
@@ -1183,9 +1170,7 @@ DOMCSSStyleRule::GetParentStyleSheet(nsIDOMCSSStyleSheet** aSheet)
     *aSheet = nsnull;
     return NS_OK;
   }
-  nsRefPtr<nsCSSStyleSheet> sheet = Rule()->GetParentStyleSheet();
-  sheet.forget(aSheet);
-  return NS_OK;
+  return Rule()->GetParentStyleSheet(aSheet);
 }
 
 NS_IMETHODIMP
@@ -1195,12 +1180,7 @@ DOMCSSStyleRule::GetParentRule(nsIDOMCSSRule** aParentRule)
     *aParentRule = nsnull;
     return NS_OK;
   }
-  GroupRule* rule = Rule()->GetParentRule();
-  if (!rule) {
-    *aParentRule = nsnull;
-    return NS_OK;
-  }
-  return rule->GetDOMRule(aParentRule);
+  return Rule()->GetParentRule(aParentRule);
 }
 
 NS_IMETHODIMP
@@ -1320,9 +1300,8 @@ NS_INTERFACE_MAP_BEGIN(StyleRule)
     return NS_OK;
   }
   else
-  NS_INTERFACE_MAP_ENTRY(nsICSSRule)
   NS_INTERFACE_MAP_ENTRY(nsIStyleRule)
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsICSSRule)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIStyleRule)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_ADDREF_INHERITED(StyleRule, Rule)
@@ -1350,20 +1329,19 @@ StyleRule::RuleMatched()
 /* virtual */ PRInt32
 StyleRule::GetType() const
 {
-  return nsICSSRule::STYLE_RULE;
+  return Rule::STYLE_RULE;
 }
 
-/* virtual */ already_AddRefed<nsICSSRule>
+/* virtual */ already_AddRefed<Rule>
 StyleRule::Clone() const
 {
-  nsCOMPtr<nsICSSRule> clone = new StyleRule(*this);
+  nsRefPtr<Rule> clone = new StyleRule(*this);
   return clone.forget();
 }
 
-nsIDOMCSSRule*
-StyleRule::GetDOMRuleWeak(nsresult *aResult)
+/* virtual */ nsIDOMCSSRule*
+StyleRule::GetDOMRule()
 {
-  *aResult = NS_OK;
   if (!mSheet) {
     // inline style rules aren't supposed to have a DOM rule object, only
     // a declaration.
@@ -1371,10 +1349,6 @@ StyleRule::GetDOMRuleWeak(nsresult *aResult)
   }
   if (!mDOMRule) {
     mDOMRule = new DOMCSSStyleRule(this);
-    if (!mDOMRule) {
-      *aResult = NS_ERROR_OUT_OF_MEMORY;
-      return nsnull;
-    }
     NS_ADDREF(mDOMRule);
   }
   return mDOMRule;

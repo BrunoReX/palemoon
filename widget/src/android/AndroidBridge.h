@@ -49,6 +49,7 @@
 
 #include "nsIMutableArray.h"
 #include "nsIMIMEInfo.h"
+#include "nsColor.h"
 
 // Some debug #defines
 // #define ANDROID_DEBUG_EVENTS
@@ -57,6 +58,22 @@
 class nsWindow;
 
 namespace mozilla {
+
+// The order and number of the members in this structure must correspond
+// to the attrsAppearance array in GeckoAppShell.getSystemColors()
+typedef struct AndroidSystemColors {
+    nscolor textColorPrimary;
+    nscolor textColorPrimaryInverse;
+    nscolor textColorSecondary;
+    nscolor textColorSecondaryInverse;
+    nscolor textColorTertiary;
+    nscolor textColorTertiaryInverse;
+    nscolor textColorHighlight;
+    nscolor colorForeground;
+    nscolor colorBackground;
+    nscolor panelColorForeground;
+    nscolor panelColorBackground;
+} AndroidSystemColors;
 
 class AndroidBridge
 {
@@ -113,7 +130,7 @@ public:
 
     void AcknowledgeEventSync();
 
-    void EnableAccelerometer(bool aEnable);
+    void EnableDeviceMotion(bool aEnable);
 
     void EnableLocation(bool aEnable);
 
@@ -189,6 +206,8 @@ public:
 
     void SetSelectedLocale(const nsAString&);
 
+    void GetSystemColors(AndroidSystemColors *aColors);
+
     struct AutoLocalJNIFrame {
         AutoLocalJNIFrame(int nEntries = 128) : mEntries(nEntries) {
             // Make sure there is enough space to store a local ref to the
@@ -226,6 +245,15 @@ public:
 
     void ScanMedia(const nsAString& aFile, const nsACString& aMimeType);
 
+    // These next four functions are for native Bitmap access in Android 2.2+
+    bool HasNativeBitmapAccess();
+
+    bool ValidateBitmap(jobject bitmap, int width, int height);
+
+    void *LockBitmap(jobject bitmap);
+
+    void UnlockBitmap(jobject bitmap);
+
 protected:
     static AndroidBridge *sBridge;
 
@@ -247,12 +275,15 @@ protected:
 
     void EnsureJNIThread();
 
+    bool mOpenedBitmapLibrary;
+    bool mHasNativeBitmapAccess;
+
     // other things
     jmethodID jNotifyIME;
     jmethodID jNotifyIMEEnabled;
     jmethodID jNotifyIMEChange;
     jmethodID jAcknowledgeEventSync;
-    jmethodID jEnableAccelerometer;
+    jmethodID jEnableDeviceMotion;
     jmethodID jEnableLocation;
     jmethodID jReturnIMEQueryResult;
     jmethodID jNotifyAppShellReady;
@@ -281,6 +312,7 @@ protected:
     jmethodID jIsNetworkLinkKnown;
     jmethodID jSetSelectedLocale;
     jmethodID jScanMedia;
+    jmethodID jGetSystemColors;
 
     // stuff we need for CallEglCreateWindowSurface
     jclass jEGLSurfaceImplClass;
@@ -289,6 +321,11 @@ protected:
     jclass jEGLDisplayImplClass;
     jclass jEGLContextClass;
     jclass jEGL10Class;
+
+    // calls we've dlopened from libjnigraphics.so
+    int (* AndroidBitmap_getInfo)(JNIEnv *env, jobject bitmap, void *info);
+    int (* AndroidBitmap_lockPixels)(JNIEnv *env, jobject bitmap, void **buffer);
+    int (* AndroidBitmap_unlockPixels)(JNIEnv *env, jobject bitmap);
 };
 
 }

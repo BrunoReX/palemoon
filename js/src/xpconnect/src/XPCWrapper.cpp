@@ -104,7 +104,6 @@ XrayWrapperConstructor(JSContext *cx, uintN argc, jsval *vp)
   *vp = OBJECT_TO_JSVAL(obj);
   return JS_WrapValue(cx, vp);
 }
-
 // static
 PRBool
 AttachNewConstructorObject(XPCCallContext &ccx, JSObject *aGlobalObject)
@@ -112,15 +111,13 @@ AttachNewConstructorObject(XPCCallContext &ccx, JSObject *aGlobalObject)
   JSObject *xpcnativewrapper =
     JS_DefineFunction(ccx, aGlobalObject, "XPCNativeWrapper",
                       XrayWrapperConstructor, 1,
-                      JSPROP_READONLY | JSPROP_PERMANENT | JSFUN_STUB_GSOPS);
+                      JSPROP_READONLY | JSPROP_PERMANENT | JSFUN_STUB_GSOPS | JSFUN_CONSTRUCTOR);
   if (!xpcnativewrapper) {
     return PR_FALSE;
   }
-
   return JS_DefineFunction(ccx, xpcnativewrapper, "unwrap", UnwrapNW, 1,
                            JSPROP_READONLY | JSPROP_PERMANENT) != nsnull;
 }
-
 }
 
 namespace XPCWrapper {

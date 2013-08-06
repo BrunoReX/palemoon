@@ -230,6 +230,14 @@ nsHttpPipeline::GetConnectionInfo(nsHttpConnectionInfo **result)
     mConnection->GetConnectionInfo(result);
 }
 
+nsresult
+nsHttpPipeline::TakeTransport(nsISocketTransport  **aTransport,
+                              nsIAsyncInputStream **aInputStream,
+                              nsIAsyncOutputStream **aOutputStream)
+{
+    return mConnection->TakeTransport(aTransport, aInputStream, aOutputStream);
+}
+
 void
 nsHttpPipeline::GetSecurityInfo(nsISupports **result)
 {
@@ -256,6 +264,11 @@ nsHttpPipeline::PushBack(const char *data, PRUint32 length)
     
     NS_ASSERTION(PR_GetCurrentThread() == gSocketThread, "wrong thread");
     NS_ASSERTION(mPushBackLen == 0, "push back buffer already has data!");
+
+    // If we have no chance for a pipeline (e.g. due to an Upgrade)
+    // then push this data down to original connection
+    if (!mConnection->IsPersistent())
+        return mConnection->PushBack(data, length);
 
     // PushBack is called recursively from WriteSegments
 
@@ -350,16 +363,20 @@ nsHttpPipeline::SetConnection(nsAHttpConnection *conn)
 }
 
 void
-nsHttpPipeline::GetSecurityCallbacks(nsIInterfaceRequestor **result)
+nsHttpPipeline::GetSecurityCallbacks(nsIInterfaceRequestor **result,
+                                     nsIEventTarget        **target)
 {
     NS_ASSERTION(PR_GetCurrentThread() == gSocketThread, "wrong thread");
 
     // return security callbacks from first request
     nsAHttpTransaction *trans = Request(0);
     if (trans)
-        trans->GetSecurityCallbacks(result);
-    else
+        trans->GetSecurityCallbacks(result, target);
+    else {
         *result = nsnull;
+        if (target)
+            *target = nsnull;
+    }
 }
 
 void

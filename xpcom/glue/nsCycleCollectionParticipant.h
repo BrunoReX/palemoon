@@ -148,7 +148,7 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsCycleCollectionParticipant,
 #define IMETHOD_VISIBILITY NS_COM_GLUE
 
 typedef void
-(* TraceCallback)(PRUint32 langID, void *p, void *closure);
+(* TraceCallback)(PRUint32 langID, void *p, const char *name, void *closure);
 
 class NS_NO_VTABLE nsScriptObjectTracer : public nsCycleCollectionParticipant
 {
@@ -400,6 +400,15 @@ public:
                                                      _name "[i]");             \
     }
 
+#define NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSTARRAY_OF_NSCOMPTR(_field)         \
+    {                                                                          \
+      PRUint32 i, length = tmp->_field.Length();                               \
+      for (i = 0; i < length; ++i) {                                           \
+        NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, #_field "[i]");                 \
+        cb.NoteXPCOMChild(tmp->_field[i].get());                               \
+      }                                                                        \
+    }
+
 #define NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSTARRAY_MEMBER(_field,              \
                                                           _element_class)      \
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSTARRAY(tmp->_field, _element_class,    \
@@ -427,6 +436,20 @@ public:
                  "not the nsISupports pointer we expect");                     \
     _class *tmp = Downcast(s);
 
+#define NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(_class, _base_class)    \
+  void                                                                         \
+  NS_CYCLE_COLLECTION_CLASSNAME(_class)::Trace(void *p,                        \
+                                               TraceCallback aCallback,        \
+                                               void *aClosure)                 \
+  {                                                                            \
+    nsISupports *s = static_cast<nsISupports*>(p);                             \
+    NS_ASSERTION(CheckForRightISupports(s),                                    \
+                 "not the nsISupports pointer we expect");                     \
+    _class *tmp = static_cast<_class*>(Downcast(s));                           \
+    NS_CYCLE_COLLECTION_CLASSNAME(_base_class)::Trace(s,                       \
+                                                      aCallback,               \
+                                                      aClosure);
+
 #define NS_IMPL_CYCLE_COLLECTION_TRACE_NATIVE_BEGIN(_class)                    \
   void                                                                         \
   NS_CYCLE_COLLECTION_CLASSNAME(_class)::Trace(void *p,                        \
@@ -435,19 +458,19 @@ public:
   {                                                                            \
     _class *tmp = static_cast<_class*>(p);
 
-#define NS_IMPL_CYCLE_COLLECTION_TRACE_CALLBACK(_langID, _object)              \
+#define NS_IMPL_CYCLE_COLLECTION_TRACE_CALLBACK(_langID, _object, _name)       \
   if (_object)                                                                 \
-    aCallback(_langID, _object, aClosure);
+    aCallback(_langID, _object, _name, aClosure);
 
 #define NS_IMPL_CYCLE_COLLECTION_TRACE_MEMBER_CALLBACK(_langID, _field)        \
-  NS_IMPL_CYCLE_COLLECTION_TRACE_CALLBACK(_langID, tmp->_field)
+  NS_IMPL_CYCLE_COLLECTION_TRACE_CALLBACK(_langID, tmp->_field, #_field)
 
-#define NS_IMPL_CYCLE_COLLECTION_TRACE_JS_CALLBACK(_object)                    \
+#define NS_IMPL_CYCLE_COLLECTION_TRACE_JS_CALLBACK(_object, _name)             \
   NS_IMPL_CYCLE_COLLECTION_TRACE_CALLBACK(nsIProgrammingLanguage::JAVASCRIPT,  \
-                                          _object)
+                                          _object, _name)
 
 #define NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(_field)              \
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_CALLBACK(tmp->_field)
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_CALLBACK(tmp->_field, #_field)
 
 // NB: The (void)tmp; hack in the TRACE_END macro exists to support
 // implementations that don't need to do anything in their Trace method.

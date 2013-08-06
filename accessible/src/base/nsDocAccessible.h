@@ -93,7 +93,6 @@ public:
 
   // nsIAccessible
   NS_IMETHOD GetName(nsAString& aName);
-  NS_IMETHOD GetDescription(nsAString& aDescription);
   NS_IMETHOD GetAttributes(nsIPersistentProperties **aAttributes);
   NS_IMETHOD GetFocusedChild(nsIAccessible **aFocusedChild);
   NS_IMETHOD TakeFocus(void);
@@ -114,9 +113,10 @@ public:
   virtual nsIDocument* GetDocumentNode() const { return mDocument; }
 
   // nsAccessible
+  virtual void Description(nsString& aDescription);
   virtual PRUint32 NativeRole();
-  virtual nsresult GetStateInternal(PRUint32 *aState, PRUint32 *aExtraState);
-  virtual nsresult GetARIAState(PRUint32 *aState, PRUint32 *aExtraState);
+  virtual PRUint64 NativeState();
+  virtual void ApplyARIAState(PRUint64* aState);
 
   virtual void SetRoleMapEntry(nsRoleMapEntry* aRoleMapEntry);
 
@@ -501,7 +501,7 @@ protected:
    */
   PRPackedBool mIsLoaded;
 
-    static PRUint32 gLastFocusedAccessiblesState;
+  static PRUint64 gLastFocusedAccessiblesState;
 
   nsTArray<nsRefPtr<nsDocAccessible> > mChildDocuments;
 
@@ -551,5 +551,12 @@ protected:
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsDocAccessible,
                               NS_DOCACCESSIBLE_IMPL_CID)
+
+inline nsDocAccessible*
+nsAccessible::AsDoc()
+{
+  return mFlags & eDocAccessible ?
+    static_cast<nsDocAccessible*>(this) : nsnull;
+}
 
 #endif

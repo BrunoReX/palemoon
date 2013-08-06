@@ -2,11 +2,9 @@
 let Cc = Components.classes;
 let Ci = Components.interfaces;
 
-dump("!! remote browser loaded\n")
+dump("!! remote browser loaded\n");
 
 let WebProgressListener = {
-  _lastLocation: null,
-
   init: function() {
     let flags = Ci.nsIWebProgress.NOTIFY_LOCATION |
                 Ci.nsIWebProgress.NOTIFY_SECURITY |
@@ -51,10 +49,6 @@ let WebProgressListener = {
     };
 
     sendAsyncMessage("Content:LocationChange", json);
-
-    // Keep track of hash changes
-    this.hashChanged = (location == this._lastLocation);
-    this._lastLocation = location;
 
     // When a new page is loaded fire a message for the first paint
     addEventListener("MozAfterPaint", function(aEvent) {
@@ -216,15 +210,6 @@ let DOMEvents =  {
           windowId: util.outerWindowID,
           persisted: aEvent.persisted
         };
-
-        // Clear onload focus to prevent the VKB to be shown unexpectingly
-        // but only if the location has really changed and not only the
-        // fragment identifier
-        let contentWindowID = content.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils).currentInnerWindowID;
-        if (!WebProgressListener.hashChanged && contentWindowID == util.currentInnerWindowID) {
-          let focusManager = Cc["@mozilla.org/focus-manager;1"].getService(Ci.nsIFocusManager);
-          focusManager.clearFocus(content);
-        }
 
         sendAsyncMessage(aEvent.type, json);
         break;
@@ -403,18 +388,10 @@ let ContentScroll =  {
         if (content != doc.defaultView) // We are only interested in root scroll pane changes
           return;
 
-        // Adjust width and height from the incoming event properties so that we
-        // ignore changes to width and height contributed by growth in page
-        // quadrants other than x > 0 && y > 0.
-        let scrollOffset = this.getScrollOffset(content);
-        let x = aEvent.x + scrollOffset.x;
-        let y = aEvent.y + scrollOffset.y;
-        let width = aEvent.width + (x < 0 ? x : 0);
-        let height = aEvent.height + (y < 0 ? y : 0);
-
         sendAsyncMessage("MozScrolledAreaChanged", {
-          width: width,
-          height: height
+          width: aEvent.width,
+          height: aEvent.height,
+          left: aEvent.x
         });
 
         break;
@@ -457,3 +434,80 @@ let ContentActive =  {
 };
 
 ContentActive.init();
+
+/**
+ * Helper class for IndexedDB, child part. Listens using
+ * the observer service for events regarding IndexedDB
+ * prompts, and sends messages to the parent to actually
+ * show the prompts.
+ */
+let IndexedDB = {
+  _permissionsPrompt: "indexedDB-permissions-prompt",
+  _permissionsResponse: "indexedDB-permissions-response",
+
+  _quotaPrompt: "indexedDB-quota-prompt",
+  _quotaResponse: "indexedDB-quota-response",
+  _quotaCancel: "indexedDB-quota-cancel",
+
+  waitingObservers: [],
+
+  init: function IndexedDBPromptHelper_init() {
+    let os = Services.obs;
+    os.addObserver(this, this._permissionsPrompt, false);
+    os.addObserver(this, this._quotaPrompt, false);
+    os.addObserver(this, this._quotaCancel, false);
+    addMessageListener("IndexedDB:Response", this);
+  },
+
+  observe: function IndexedDBPromptHelper_observe(aSubject, aTopic, aData) {
+    if (aTopic != this._permissionsPrompt && aTopic != this._quotaPrompt && aTopic != this._quotaCancel) {
+      throw new Error("Unexpected topic!");
+    }
+
+    let requestor = aSubject.QueryInterface(Ci.nsIInterfaceRequestor);
+    let observer = requestor.getInterface(Ci.nsIObserver);
+
+    let contentWindow = requestor.getInterface(Ci.nsIDOMWindow);
+    let contentDocument = contentWindow.document;
+
+    if (aTopic == this._quotaCancel) {
+      observer.observe(null, this._quotaResponse, Ci.nsIPermissionManager.UNKNOWN_ACTION);
+      return;
+    }
+
+    // Remote to parent
+    sendAsyncMessage("IndexedDB:Prompt", {
+      topic: aTopic,
+      host: contentDocument.documentURIObject.asciiHost,
+      location: contentDocument.location.toString(),
+      data: aData,
+      observerId: this.addWaitingObserver(observer),
+    });
+  },
+
+  receiveMessage: function(aMessage) {
+    let payload = aMessage.json;
+    switch (aMessage.name) {
+      case "IndexedDB:Response":
+        let observer = this.getAndRemoveWaitingObserver(payload.observerId);
+        observer.observe(null, payload.responseTopic, payload.permission);
+    }
+  },
+
+  addWaitingObserver: function(aObserver) {
+    let observerId = 0;
+    while (observerId in this.waitingObservers)
+      observerId++;
+    this.waitingObservers[observerId] = aObserver;
+    return observerId;
+  },
+
+  getAndRemoveWaitingObserver: function(aObserverId) {
+    let observer = this.waitingObservers[aObserverId];
+    delete this.waitingObservers[aObserverId];
+    return observer;
+  },
+};
+
+IndexedDB.init();
+

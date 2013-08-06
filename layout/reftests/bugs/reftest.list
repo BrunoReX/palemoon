@@ -331,7 +331,7 @@ fails-if(Android) == 302379.html 302379-ref.html
 == 309914-1.xul 309914-1-ref.xul
 == 311366-unknown-inline-1.html 311366-unknown-inline-1-ref.html
 == 311366-unknown-block-1.html 311366-unknown-block-1-ref.html
-fails-if(!prefs.getBoolPref("html5.parser.enable")) == 311366-unknown-block-3.html 311366-unknown-block-3-ref.html
+== 311366-unknown-block-3.html 311366-unknown-block-3-ref.html
 == 311366-unknown-block-2.html 311366-unknown-block-2-ref.html
 == 311366-unknown-inline-2.html 311366-unknown-inline-2-ref.html
 == 311822-1.html 311822-1-ref-a.html
@@ -675,7 +675,7 @@ fails-if(Android) != 376532-3.html 376532-3-ref.html
 == 379178-html.html 379178-html-ref.html
 == 379178-svg.svg 379178-svg-ref.svg
 == 379316-1.html 379316-1-ref.html
-fails-if(Android) random-if(cocoaWidget) == 379316-2.html 379316-2-ref.html # bug 379786
+fails-if(Android) random-if(cocoaWidget) fails-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == 379316-2.html 379316-2-ref.html # bug 379786
 == 379328-1.html 379328-1-ref.html
 == 379349-1a.xhtml 379349-1-ref.xhtml
 == 379349-1b.xhtml 379349-1-ref.xhtml
@@ -967,6 +967,7 @@ skip-if(cocoaWidget) == 413292-1.html 413292-1-ref.html # disabling due to failu
 == 413840-bullet-first-line.html 413840-bullet-first-line-ref.html
 == 413982.html 413982-ref.html
 == 414123.xhtml 414123-ref.xhtml
+== 414638.html 414638-ref.html
 == 414851-1.html 414851-1-ref.html
 == 416106-1.xhtml 416106-1-ref.xhtml
 == 416752-1.html 416752-1-ref.html
@@ -1563,6 +1564,7 @@ fails-if(Android) fails-if(cocoaWidget) == 586683-1.html 586683-1-ref.html
 == 589615-1a.xhtml 589615-1-ref.html
 == 589615-1b.html 589615-1-ref.html
 == 589672-1.html 589672-1-ref.html
+!= 589682-1.html 589682-1-notref.html
 skip-if(!browserIsRemote) == 593243-1.html 593243-1-ref.html # bug 593168
 skip-if(!browserIsRemote) == 593243-2.html 593243-2-ref.html # bug 593168
 == 593544-1.html 593544-1-ref.html
@@ -1628,4 +1630,11 @@ HTTP(..) == 635639-1.html 635639-1-ref.html
 HTTP(..) == 635639-2.html 635639-2-ref.html
 == 641770-1.html 641770-1-ref.html
 == 641856-1.html 641856-1-ref.html
+== 645491-1.html 645491-1-ref.html
 fails-if(layersGPUAccelerated&&cocoaWidget) == 650228-1.html 650228-1-ref.html # Quartz alpha blending doesn't match GL alpha blending
+== 653930-1.html 653930-1-ref.html
+HTTP(..) == 654057-1.html 654057-1-ref.html
+fails-if(layersGPUAccelerated&&cocoaWidget) == 654950-1.html 654950-1-ref.html # Quartz alpha blending doesn't match GL alpha blending
+== 652775-1.html 652775-1-ref.html
+== 658952.html 658952-ref.html
+== 670442-1.html 670442-1-ref.html

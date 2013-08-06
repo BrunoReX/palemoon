@@ -114,6 +114,19 @@ struct DCFromContext {
     PRBool needsRelease;
 };
 
+// ClearType parameters set by running ClearType tuner
+struct ClearTypeParameterInfo {
+    ClearTypeParameterInfo() :
+        gamma(-1), pixelStructure(-1), clearTypeLevel(-1), enhancedContrast(-1)
+    { }
+
+    nsString    displayName;  // typically just 'DISPLAY1'
+    PRInt32     gamma;
+    PRInt32     pixelStructure;
+    PRInt32     clearTypeLevel;
+    PRInt32     enhancedContrast;
+};
+
 class THEBES_API gfxWindowsPlatform : public gfxPlatform {
 public:
     gfxWindowsPlatform();
@@ -236,13 +249,17 @@ public:
 
     static void GetDLLVersion(const PRUnichar *aDLLPath, nsAString& aVersion);
 
-    static void GetFontCacheSize(nsAString& aSize);
+    // returns ClearType tuning information for each display
+    static void GetCleartypeParams(nsTArray<ClearTypeParameterInfo>& aParams);
 
     virtual void FontsPrefsChanged(nsIPrefBranch *aPrefBranch, const char *aPref);
+
+    void SetupClearTypeParams(nsIPrefBranch *aPrefBranch);
 
 #ifdef CAIRO_HAS_DWRITE_FONT
     IDWriteFactory *GetDWriteFactory() { return mDWriteFactory; }
     inline PRBool DWriteEnabled() { return mUseDirectWrite; }
+    inline DWRITE_MEASURING_MODE DWriteMeasuringMode() { return mMeasuringMode; }
 #else
     inline PRBool DWriteEnabled() { return PR_FALSE; }
 #endif
@@ -272,6 +289,7 @@ private:
 
 #ifdef CAIRO_HAS_DWRITE_FONT
     nsRefPtr<IDWriteFactory> mDWriteFactory;
+    DWRITE_MEASURING_MODE mMeasuringMode;
 #endif
 #ifdef CAIRO_HAS_D2D_SURFACE
     cairo_device_t *mD2DDevice;

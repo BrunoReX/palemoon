@@ -224,6 +224,9 @@ SessionStoreService.prototype = {
 
   // number of tabs to restore concurrently, pref controlled.
   _maxConcurrentTabRestores: null,
+  
+  // whether to restore hidden tabs or not, pref controlled.
+  _restoreHiddenTabs: null,
 
   // The state from the previous session (after restoring pinned tabs)
   _lastSessionState: null,
@@ -280,6 +283,10 @@ SessionStoreService.prototype = {
     this._maxConcurrentTabRestores =
       this._prefBranch.getIntPref("sessionstore.max_concurrent_tabs");
     this._prefBranch.addObserver("sessionstore.max_concurrent_tabs", this, true);
+
+    this._restoreHiddenTabs =
+      this._prefBranch.getBoolPref("sessionstore.restore_hidden_tabs");
+    this._prefBranch.addObserver("sessionstore.restore_hidden_tabs", this, true);
 
     // Make sure gRestoreTabsProgressListener has a reference to sessionstore
     // so that it can make calls back in
@@ -597,6 +604,10 @@ SessionStoreService.prototype = {
       case "sessionstore.max_concurrent_tabs":
         this._maxConcurrentTabRestores =
           this._prefBranch.getIntPref("sessionstore.max_concurrent_tabs");
+        break;
+      case "sessionstore.restore_hidden_tabs":
+        this._restoreHiddenTabs =
+          this._prefBranch.getBoolPref("sessionstore.restore_hidden_tabs");
         break;
       }
       break;
@@ -1078,6 +1089,10 @@ SessionStoreService.prototype = {
       this._tabsToRestore.hidden.splice(this._tabsToRestore.hidden.indexOf(aTab));
       // Just put it at the end of the list of visible tabs;
       this._tabsToRestore.visible.push(aTab);
+
+      // let's kick off tab restoration again to ensure this tab gets restored
+      // with "restore_hidden_tabs" == false (now that it has become visible)
+      this.restoreNextTab();
     }
 
     // Default delay of 2 seconds gives enough time to catch multiple TabShow
@@ -1329,8 +1344,6 @@ SessionStoreService.prototype = {
     if (aWindow.__SSi && this._windows[aWindow.__SSi].extData &&
         this._windows[aWindow.__SSi].extData[aKey])
       delete this._windows[aWindow.__SSi].extData[aKey];
-    else
-      throw (Components.returnCode = Cr.NS_ERROR_INVALID_ARG);
   },
 
   getTabValue: function sss_getTabValue(aTab, aKey) {
@@ -1377,8 +1390,6 @@ SessionStoreService.prototype = {
 
     if (deleteFrom && deleteFrom[aKey])
       delete deleteFrom[aKey];
-    else
-      throw (Components.returnCode = Cr.NS_ERROR_INVALID_ARG);
   },
 
   persistTabAttribute: function sss_persistTabAttribute(aName) {
@@ -1786,8 +1797,9 @@ SessionStoreService.prototype = {
       entry.docIdentifier = aEntry.docIdentifier;
     }
 
-    if (aEntry.stateData) {
-      entry.stateData = aEntry.stateData;
+    if (aEntry.stateData != null) {
+      entry.structuredCloneState = aEntry.stateData.getDataAsBase64();
+      entry.structuredCloneVersion = aEntry.stateData.formatVersion;
     }
 
     if (!(aEntry instanceof Ci.nsISHContainer)) {
@@ -2860,22 +2872,29 @@ SessionStoreService.prototype = {
     if (activeIndex >= tabData.entries.length)
       activeIndex = tabData.entries.length - 1;
 
-    // Reset currentURI.
+    // Reset currentURI.  This creates a new session history entry with a new
+    // doc identifier, so we need to explicitly save and restore the old doc
+    // identifier (corresponding to the SHEntry at activeIndex) below.
     browser.webNavigation.setCurrentURI(this._getURIFromString("about:blank"));
 
     // Attach data that will be restored on "load" event, after tab is restored.
     if (activeIndex > -1) {
+      let curSHEntry = browser.webNavigation.sessionHistory.
+                       getEntryAtIndex(activeIndex, false).
+                       QueryInterface(Ci.nsISHEntry);
+
       // restore those aspects of the currently active documents which are not
       // preserved in the plain history entries (mainly scroll state and text data)
       browser.__SS_restore_data = tabData.entries[activeIndex] || {};
       browser.__SS_restore_pageStyle = tabData.pageStyle || "";
       browser.__SS_restore_tab = aTab;
+      browser.__SS_restore_docIdentifier = curSHEntry.docIdentifier;
 
       didStartLoad = true;
       try {
         // In order to work around certain issues in session history, we need to
         // force session history to update its internal index and call reload
-        // instead of gotoIndex. c.f. bug 597315
+        // instead of gotoIndex. See bug 597315.
         browser.webNavigation.sessionHistory.getEntryAtIndex(activeIndex, true);
         browser.webNavigation.sessionHistory.
           QueryInterface(Ci.nsISHistory_2_0_BRANCH).reloadCurrentEntry();
@@ -2936,7 +2955,7 @@ SessionStoreService.prototype = {
     if (this._tabsToRestore.visible.length) {
       nextTabArray = this._tabsToRestore.visible;
     }
-    else if (this._tabsToRestore.hidden.length) {
+    else if (this._restoreHiddenTabs && this._tabsToRestore.hidden.length) {
       nextTabArray = this._tabsToRestore.hidden;
     }
 
@@ -2996,8 +3015,13 @@ SessionStoreService.prototype = {
     if (aEntry.docshellID)
       shEntry.docshellID = aEntry.docshellID;
 
-    if (aEntry.stateData) {
-      shEntry.stateData = aEntry.stateData;
+    if (aEntry.structuredCloneState && aEntry.structuredCloneVersion) {
+      shEntry.stateData =
+        Cc["@mozilla.org/docshell/structured-clone-container;1"].
+        createInstance(Ci.nsIStructuredCloneContainer);
+
+      shEntry.stateData.initFromBase64(aEntry.structuredCloneState,
+                                       aEntry.structuredCloneVersion);
     }
 
     if (aEntry.scroll) {
@@ -3168,12 +3192,19 @@ SessionStoreService.prototype = {
       aBrowser.markupDocumentViewer.authorStyleDisabled = selectedPageStyle == "_nostyle";
     }
 
+    if (aBrowser.__SS_restore_docIdentifier) {
+      let sh = aBrowser.webNavigation.sessionHistory;
+      sh.getEntryAtIndex(sh.index, false).QueryInterface(Ci.nsISHEntry).
+         docIdentifier = aBrowser.__SS_restore_docIdentifier;
+    }
+
     // notify the tabbrowser that this document has been completely restored
     this._sendTabRestoredNotification(aBrowser.__SS_restore_tab);
 
     delete aBrowser.__SS_restore_data;
     delete aBrowser.__SS_restore_pageStyle;
     delete aBrowser.__SS_restore_tab;
+    delete aBrowser.__SS_restore_docIdentifier;
   },
 
   /**
@@ -3954,7 +3985,8 @@ SessionStoreService.prototype = {
     this._removeTabsProgressListener(window);
 
     if (previousState == TAB_STATE_RESTORING) {
-      this._tabsRestoringCount--;
+      if (this._tabsRestoringCount)
+        this._tabsRestoringCount--;
     }
     else if (previousState == TAB_STATE_NEEDS_RESTORE) {
       // Make sure the session history listener is removed. This is normally

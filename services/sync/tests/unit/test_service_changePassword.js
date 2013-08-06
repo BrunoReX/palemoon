@@ -38,18 +38,19 @@ function run_test() {
     do_check_eq(requestBody, "ILoveJane83");
 
     _("Make sure the password has been persisted in the login manager.");
-    let logins = Weave.Svc.Login.findLogins({}, PWDMGR_HOST, null,
+    let logins = Services.logins.findLogins({}, PWDMGR_HOST, null,
                                             PWDMGR_PASSWORD_REALM);
     do_check_eq(logins[0].password, "ILoveJane83");
 
     _("A non-ASCII password is UTF-8 encoded.");
-    res = Weave.Service.changePassword("moneyislike$\u20ac\xa5\u5143");
+    const moneyPassword = "moneyislike$£¥";
+    res = Weave.Service.changePassword(moneyPassword);
     do_check_true(res);
-    do_check_eq(Weave.Service.password, "moneyislike$\u20ac\xa5\u5143");
-    do_check_eq(requestBody, Utils.encodeUTF8("moneyislike$\u20ac\xa5\u5143"));
+    do_check_eq(Weave.Service.password, moneyPassword);
+    do_check_eq(requestBody, Utils.encodeUTF8(moneyPassword));
 
     _("changePassword() returns false for a server error, the password won't change.");
-    Weave.Svc.Login.removeAllLogins();
+    Services.logins.removeAllLogins();
     Weave.Service.username = "janedoe";
     Weave.Service.password = "ilovejohn";
     res = Weave.Service.changePassword("ILoveJohn86");
@@ -58,7 +59,7 @@ function run_test() {
 
   } finally {
     Weave.Svc.Prefs.resetBranch("");
-    Weave.Svc.Login.removeAllLogins();
+    Services.logins.removeAllLogins();
     if (server) {
       server.stop(do_test_finished);
     }

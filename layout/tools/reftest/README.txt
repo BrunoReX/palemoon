@@ -106,6 +106,13 @@ must be one of the following:
                          fast on a 32-bit system but inordinately slow on a
                          64-bit system).
 
+      require-or(cond1&&cond2&&...,fallback)
+          Require some particular setup be performed or environmental
+          condition(s) made true (eg setting debug mode) before the test
+          is run. If any condition is unknown, unimplemented, or fails,
+          revert to the fallback failure-type.
+          Example: require-or(debugMode,skip)
+
       asserts(count)
           Loading the test and reference is known to assert exactly
           count times.
@@ -396,6 +403,7 @@ so 60/zoom is an integer.
 
 Printing Tests
 ==============
+
 Now that the patch for bug 374050 has landed
 (https://bugzilla.mozilla.org/show_bug.cgi?id=374050), it is possible to
 create reftests that run in a paginated context.
@@ -421,3 +429,22 @@ doesn't use exactly the same codepath as real print preview/print. In
 particular, scripting and frames are likely to cause problems; it is untested,
 though.  That said, it should be sufficient for testing layout issues related
 to pagination.
+
+Plugin and IPC Process Crash Tests
+==================================
+
+If you are running a test that causes an out-of-process plugin or IPC process
+under Electrolysis to crash as part of a reftest, this will cause process
+crash minidump files to be left in the profile directory.  The test
+infrastructure that runs the reftests will notice these minidump files and
+dump out information from them, and these additional error messages in the logs
+can end up erroneously being associated with other errors from the reftest run.
+They are also confusing, since the appearance of "PROCESS-CRASH" messages in
+the test run output can seem like a real problem, when in fact it is the
+expected behavior.
+
+To indicate to the reftest framework that a test is expecting a plugin or
+IPC process crash, have the test include "reftest-expect-process-crash" as
+one of the root element's classes by the time the test has finished.  This will
+cause any minidump files that are generated while running the test to be removed
+and they won't cause any error messages in the test run output.

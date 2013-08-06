@@ -49,8 +49,11 @@
 #include "nsIDOMDocument.h"
 #include "nsCOMPtr.h"
 #include "nsEvent.h"
+#include "nsIURI.h"
 
 #define DOM_WINDOW_DESTROYED_TOPIC "dom-window-destroyed"
+#define DOM_WINDOW_FROZEN_TOPIC "dom-window-frozen"
+#define DOM_WINDOW_THAWED_TOPIC "dom-window-thawed"
 
 class nsIPrincipal;
 
@@ -77,8 +80,8 @@ class nsIArray;
 class nsPIWindowRoot;
 
 #define NS_PIDOMWINDOW_IID \
-{ 0x8d8be7db, 0xffaa, 0x4962, \
-  { 0xa7, 0x27, 0xb7, 0x0f, 0xc9, 0xfa, 0xd3, 0x0e } }
+{ 0x176e69ce, 0x25d3, 0x4f2a, \
+  { 0x9d, 0x99, 0x81, 0xa3, 0x9a, 0xfd, 0xe2, 0xf0 } }
 
 class nsPIDOMWindow : public nsIDOMWindowInternal
 {
@@ -441,6 +444,11 @@ public:
     MaybeUpdateTouchState();
   }
 
+  PRBool HasTouchEventListeners()
+  {
+    return mMayHaveTouchEventListener;
+  }
+
   /**
    * Call this to check whether some node (this window, its document,
    * or content in that document) has a MozAudioAvailable event listener.
@@ -537,7 +545,8 @@ public:
    * Instructs this window to asynchronously dispatch a hashchange event.  This
    * method must be called on an inner window.
    */
-  virtual nsresult DispatchAsyncHashchange() = 0;
+  virtual nsresult DispatchAsyncHashchange(nsIURI *aOldURI,
+                                           nsIURI *aNewURI) = 0;
 
   /**
    * Instructs this window to synchronously dispatch a popState event.

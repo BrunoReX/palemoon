@@ -54,14 +54,10 @@
 #include "xpcIJSModuleLoader.h"
 #include "nsClassHashtable.h"
 #include "nsDataHashtable.h"
-#ifndef XPCONNECT_STANDALONE
 #include "nsIPrincipal.h"
-#endif
-#ifdef MOZ_ENABLE_LIBXUL
 #include "mozilla/scache/StartupCache.h"
 
 using namespace mozilla::scache;
-#endif
 
 #include "xpcIJSGetFactory.h"
 
@@ -133,19 +129,15 @@ class mozJSComponentLoader : public mozilla::ModuleLoader,
                                char **location,
                                jsval *exception);
 
-#ifdef MOZ_ENABLE_LIBXUL
     nsresult ReadScript(StartupCache *cache, nsIURI *uri, 
                         JSContext *cx, JSObject **scriptObj);
     nsresult WriteScript(StartupCache *cache, JSObject *scriptObj,
                          nsIFile *component, nsIURI *uri, JSContext *cx);
-#endif
 
     nsCOMPtr<nsIComponentManager> mCompMgr;
     nsCOMPtr<nsIJSRuntimeService> mRuntimeService;
     nsCOMPtr<nsIThreadJSContextStack> mContextStack;
-#ifndef XPCONNECT_STANDALONE
     nsCOMPtr<nsIPrincipal> mSystemPrincipal;
-#endif
     JSRuntime *mRuntime;
     JSContext *mContext;
 

@@ -45,7 +45,7 @@ browser.jar:
   skin/classic/browser/Secure-background.gif
   skin/classic/browser/Toolbar.png
   skin/classic/browser/toolbarbutton-dropmarker.png
-  skin/classic/browser/urlbar-favicon-glow.png
+  skin/classic/browser/urlbar-arrow.png
   skin/classic/browser/urlbar-popup-blocked.png
   skin/classic/browser/feeds/subscribe.css                  (feeds/subscribe.css)
   skin/classic/browser/feeds/subscribe-ui.css               (feeds/subscribe-ui.css)
@@ -63,7 +63,6 @@ browser.jar:
 * skin/classic/browser/places/places.css                    (places/places.css)
 * skin/classic/browser/places/organizer.css                 (places/organizer.css)
   skin/classic/browser/places/query.png                     (places/query.png)
-  skin/classic/browser/places/livemarkItem.png              (places/livemarkItem.png)
   skin/classic/browser/places/bookmarksMenu.png             (places/bookmarksMenu.png)
   skin/classic/browser/places/bookmarksToolbar.png          (places/bookmarksToolbar.png)
   skin/classic/browser/places/history.png                   (places/history.png)
@@ -98,6 +97,7 @@ browser.jar:
   skin/classic/browser/preferences/saveFile.png             (preferences/saveFile.png)
 * skin/classic/browser/preferences/preferences.css          (preferences/preferences.css)
   skin/classic/browser/preferences/applications.css         (preferences/applications.css)
+  skin/classic/browser/preferences/aboutPermissions.css     (preferences/aboutPermissions.css)
   skin/classic/browser/tabbrowser/alltabs-box-bkgnd-icon.png             (tabbrowser/alltabs-box-bkgnd-icon.png)
   skin/classic/browser/tabbrowser/newtab.png                             (tabbrowser/newtab.png)
   skin/classic/browser/tabbrowser/connecting.png                         (tabbrowser/connecting.png)
@@ -130,6 +130,7 @@ browser.jar:
   skin/classic/browser/sync-bg.png
   skin/classic/browser/sync-desktopIcon.png
   skin/classic/browser/sync-mobileIcon.png
+  skin/classic/browser/sync-notification-24.png
   skin/classic/browser/syncSetup.css
   skin/classic/browser/syncCommon.css
   skin/classic/browser/syncQuota.css

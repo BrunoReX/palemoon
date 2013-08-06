@@ -17,6 +17,7 @@
 %define touch_action_minwidth 21.17mozmm
 %define touch_normal 6.77mozmm
 
+%define margin_context_popup 3.39mozmm
 %define margin_large 2.54mozmm
 %define margin_xxxnormal 1.69mozmm
 %define margin_xnormal 1.06mozmm
@@ -84,6 +85,9 @@
 
 %define appmenu_portrait_height 21.17mozmm
 %define appmenu_button_height  10.48mozmm
+
+%define tablet_panel_controls  40mozmm
+%define tablet_panel_minwidth  124mozmm
 %else
 %define font_xlarge 48px
 %define font_xnormal 26px
@@ -101,6 +105,7 @@
 %define touch_action_minwidth 200px
 %define touch_normal 64px
 
+%define margin_context_popup 32px
 %define margin_large 24px
 %define margin_xxxnormal 16px
 %define margin_xnormal 10px
@@ -168,6 +173,9 @@
 
 %define appmenu_portrait_height 200px
 %define appmenu_button_height 99px
+
+%define tablet_panel_controls  270px
+%define tablet_panel_minwidth  1024px
 %endif
 
 %ifdef MOZ_PLATFORM_MAEMO

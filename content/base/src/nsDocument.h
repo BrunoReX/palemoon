@@ -52,12 +52,9 @@
 #include "nsTArray.h"
 #include "nsHashSets.h"
 #include "nsIDOMXMLDocument.h"
-#include "nsIDOMDocumentView.h"
 #include "nsIDOMDocumentXBL.h"
 #include "nsIDOMNSDocument.h"
 #include "nsIDOMNSDocumentStyle.h"
-#include "nsIDOMDocumentRange.h"
-#include "nsIDOMDocumentTraversal.h"
 #include "nsStubDocumentObserver.h"
 #include "nsIDOM3EventTarget.h"
 #include "nsIDOMNSEventTarget.h"
@@ -72,8 +69,6 @@
 #include "nsIParser.h"
 #include "nsBindingManager.h"
 #include "nsINodeInfo.h"
-#include "nsIDOMDocumentEvent.h"
-#include "nsIDOM3DocumentEvent.h"
 #include "nsHashtable.h"
 #include "nsInterfaceHashtable.h"
 #include "nsIBoxObject.h"
@@ -109,6 +104,7 @@
 #include "nsIChannelEventSink.h"
 #include "imgIRequest.h"
 #include "nsIDOMDOMImplementation.h"
+#include "nsIDOMTouchEvent.h"
 
 #define XML_DECLARATION_BITS_DECLARATION_EXISTS   (1 << 0)
 #define XML_DECLARATION_BITS_ENCODING_EXISTS      (1 << 1)
@@ -166,16 +162,12 @@ public:
 
   void SetInvalidName();
   PRBool IsInvalidName();
-  void AddNameElement(Element* aElement);
+  void AddNameElement(nsIDocument* aDocument, Element* aElement);
   void RemoveNameElement(Element* aElement);
-  PRBool HasNameContentList() {
-    return mNameContentList != nsnull;
-  }
   PRBool IsEmpty();
   nsBaseContentList* GetNameContentList() {
     return mNameContentList;
   }
-  nsresult CreateNameContentList();
 
   /**
    * Returns the element if we know the element associated with this
@@ -258,9 +250,7 @@ private:
   // empty if there are no elementswith this ID.
   // The elements are stored as weak pointers.
   nsSmallVoidArray mIdContentList;
-  // NAME_NOT_VALID if this id cannot be used as a 'name'.  Otherwise
-  // stores Elements.
-  nsBaseContentList *mNameContentList;
+  nsRefPtr<nsBaseContentList> mNameContentList;
   nsRefPtr<nsContentList> mDocAllList;
   nsAutoPtr<nsTHashtable<ChangeCallbackEntry> > mChangeCallbacks;
   nsRefPtr<Element> mImageElement;
@@ -501,12 +491,7 @@ protected:
 class nsDocument : public nsIDocument,
                    public nsIDOMXMLDocument, // inherits nsIDOMDocument
                    public nsIDOMNSDocument,
-                   public nsIDOMDocumentEvent,
-                   public nsIDOM3DocumentEvent,
                    public nsIDOMNSDocumentStyle,
-                   public nsIDOMDocumentView,
-                   public nsIDOMDocumentRange,
-                   public nsIDOMDocumentTraversal,
                    public nsIDOMDocumentXBL,
                    public nsSupportsWeakReference,
                    public nsIDOMEventTarget,
@@ -515,7 +500,8 @@ class nsDocument : public nsIDocument,
                    public nsIScriptObjectPrincipal,
                    public nsIRadioGroupContainer_MOZILLA_2_0_BRANCH,
                    public nsIApplicationCacheContainer,
-                   public nsStubMutationObserver
+                   public nsStubMutationObserver,
+                   public nsIDOMDocumentTouch
 {
 public:
   typedef mozilla::dom::Element Element;
@@ -808,26 +794,11 @@ public:
   // nsIDOMNSDocument
   NS_DECL_NSIDOMNSDOCUMENT
 
-  // nsIDOMDocumentEvent
-  NS_DECL_NSIDOMDOCUMENTEVENT
-
-  // nsIDOM3DocumentEvent
-  NS_DECL_NSIDOM3DOCUMENTEVENT
-
   // nsIDOMDocumentStyle
   NS_DECL_NSIDOMDOCUMENTSTYLE
 
   // nsIDOMNSDocumentStyle
   NS_DECL_NSIDOMNSDOCUMENTSTYLE
-
-  // nsIDOMDocumentView
-  NS_DECL_NSIDOMDOCUMENTVIEW
-
-  // nsIDOMDocumentRange
-  NS_DECL_NSIDOMDOCUMENTRANGE
-
-  // nsIDOMDocumentTraversal
-  NS_DECL_NSIDOMDOCUMENTTRAVERSAL
 
   // nsIDOMDocumentXBL
   NS_DECL_NSIDOMDOCUMENTXBL
@@ -846,6 +817,9 @@ public:
 
   // nsIApplicationCacheContainer
   NS_DECL_NSIAPPLICATIONCACHECONTAINER
+
+  // nsIDOMDocumentTouch
+  NS_DECL_NSIDOMDOCUMENTTOUCH
 
   virtual nsresult Init();
   
@@ -985,7 +959,7 @@ public:
   virtual NS_HIDDEN_(nsresult) RemoveImage(imgIRequest* aImage);
   virtual NS_HIDDEN_(nsresult) SetImageLockingState(PRBool aLocked);
 
-  virtual nsresult GetMozCurrentStateObject(nsIVariant** aResult);
+  virtual nsresult GetStateObject(nsIVariant** aResult);
 
 protected:
   friend class nsNodeUtils;
@@ -1268,10 +1242,6 @@ protected:
   NS_NODE_OFFSET_AND_INTERFACE_TABLE_BEGIN(_class)                            \
   NS_INTERFACE_TABLE_ENTRY_AMBIGUOUS(_class, nsIDOMDocument, nsDocument)      \
   NS_INTERFACE_TABLE_ENTRY_AMBIGUOUS(_class, nsIDOMNSDocument, nsDocument)    \
-  NS_INTERFACE_TABLE_ENTRY_AMBIGUOUS(_class, nsIDOMDocumentEvent, nsDocument) \
-  NS_INTERFACE_TABLE_ENTRY_AMBIGUOUS(_class, nsIDOMDocumentView, nsDocument)  \
-  NS_INTERFACE_TABLE_ENTRY_AMBIGUOUS(_class, nsIDOMDocumentTraversal,         \
-                                     nsDocument)                              \
   NS_INTERFACE_TABLE_ENTRY_AMBIGUOUS(_class, nsIDOMEventTarget, nsDocument)   \
   NS_INTERFACE_TABLE_ENTRY_AMBIGUOUS(_class, nsIDOMNode, nsDocument)
 

@@ -231,12 +231,8 @@ ContainerRender(Container* aContainer,
       continue;
     }
 
-    nsIntRect scissorRect = 
-      layerToRender->GetLayer()->CalculateScissorRect(needsFramebuffer,
-                                                      visibleRect,
-                                                      cachedScissor,
-                                                      contTransform);
-
+    nsIntRect scissorRect = layerToRender->GetLayer()->
+        CalculateScissorRect(cachedScissor, &aManager->GetWorldTransform());
     if (scissorRect.IsEmpty()) {
       continue;
     }

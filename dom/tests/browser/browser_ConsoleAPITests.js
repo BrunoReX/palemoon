@@ -21,6 +21,8 @@
  * Contributor(s):
  *  David Dahl <ddahl@mozilla.com>
  *  Rob Campbell <rcampbell@mozilla.com>
+ *  Mihai Sucan <mihai.sucan@gmail.com>
+ *  Panos Astithas <past@mozilla.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -38,7 +40,7 @@
 
 const TEST_URI = "http://example.com/browser/dom/tests/browser/test-console-api.html";
 
-var gWindow;
+var gWindow, gLevel, gArgs;
 
 function test() {
   waitForExplicitFinish();
@@ -64,8 +66,6 @@ function test() {
   }, false);
 }
 
-var gWindow;
-
 function testConsoleData(aMessageObject) {
   let messageWindow = getWindowByWindowId(aMessageObject.ID);
   is(messageWindow, gWindow, "found correct window by window ID");
@@ -73,18 +73,81 @@ function testConsoleData(aMessageObject) {
   is(aMessageObject.level, gLevel, "expected level received");
   ok(aMessageObject.arguments, "we have arguments");
   is(aMessageObject.arguments.length, gArgs.length, "arguments.length matches");
-  gArgs.forEach(function (a, i) {
-    is(aMessageObject.arguments[i], a, "correct arg " + i);
-  });
+
+  if (gLevel == "trace") {
+    is(aMessageObject.arguments.toSource(), gArgs.toSource(),
+       "stack trace is correct");
+
+    // Now test the location information in console.log()
+    startLocationTest();
+  }
+  else {
+    gArgs.forEach(function (a, i) {
+      is(aMessageObject.arguments[i], a, "correct arg " + i);
+    });
+  }
 
   if (aMessageObject.level == "error") {
-    // Test finished
-    ConsoleObserver.destroy();
-    finish();
+    // Now test console.trace()
+    startTraceTest();
   }
 }
 
-var gLevel, gArgs;
+function testLocationData(aMessageObject) {
+  let messageWindow = getWindowByWindowId(aMessageObject.ID);
+  is(messageWindow, gWindow, "found correct window by window ID");
+
+  is(aMessageObject.level, gLevel, "expected level received");
+  ok(aMessageObject.arguments, "we have arguments");
+
+  is(aMessageObject.filename, gArgs[0].filename, "filename matches");
+  is(aMessageObject.lineNumber, gArgs[0].lineNumber, "lineNumber matches");
+  is(aMessageObject.functionName, gArgs[0].functionName, "functionName matches");
+  is(aMessageObject.arguments.length, gArgs[0].arguments.length, "arguments.length matches");
+  gArgs[0].arguments.forEach(function (a, i) {
+    is(aMessageObject.arguments[i], a, "correct arg " + i);
+  });
+
+  // Test finished
+  ConsoleObserver.destroy();
+  finish();
+}
+
+function startTraceTest() {
+  gLevel = "trace";
+  gArgs = [
+    {filename: TEST_URI, lineNumber: 6, functionName: null, language: 2},
+    {filename: TEST_URI, lineNumber: 11, functionName: "foobar585956b", language: 2},
+    {filename: TEST_URI, lineNumber: 15, functionName: "foobar585956a", language: 2},
+    {filename: TEST_URI, lineNumber: 1, functionName: "onclick", language: 2}
+  ];
+
+  let button = gWindow.document.getElementById("test-trace");
+  ok(button, "found #test-trace button");
+  EventUtils.synthesizeMouse(button, 2, 2, {}, gWindow);
+}
+
+function startLocationTest() {
+  // Reset the observer function to cope with the fabricated test data.
+  ConsoleObserver.observe = function CO_observe(aSubject, aTopic, aData) {
+    try {
+      testLocationData(aSubject.wrappedJSObject);
+    } catch (ex) {
+      // XXX Exceptions in this function currently aren't reported, because of
+      // some XPConnect weirdness, so report them manually
+      ok(false, "Exception thrown in CO_observe: " + ex);
+    }
+  };
+  gLevel = "log";
+  gArgs = [
+    {filename: TEST_URI, lineNumber: 19, functionName: "foobar646025", arguments: ["omg", "o", "d"]}
+  ];
+
+  let button = gWindow.document.getElementById("test-location");
+  ok(button, "found #test-location button");
+  EventUtils.synthesizeMouse(button, 2, 2, {}, gWindow);
+}
+
 function expect(level) {
   gLevel = level;
   gArgs = Array.slice(arguments, 1);
@@ -114,6 +177,7 @@ function consoleAPISanityTest() {
   ok(win.console.info, "console.info is here");
   ok(win.console.warn, "console.warn is here");
   ok(win.console.error, "console.error is here");
+  ok(win.console.trace, "console.trace is here");
 }
 
 var ConsoleObserver = {

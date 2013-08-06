@@ -38,6 +38,7 @@ function test() {
       if (!callback)
         callback = finish;
 
+      assertOneSingleGroupItem();
       callback();
     });
   }
@@ -111,7 +112,7 @@ function test() {
     // some callback waiting to be fired after gBrowser.loadOneTab(). After
     // that the browser is in a state where loadURI() will create a new entry
     // in the session history (that is vital for back/forward functionality).
-    afterAllTabsLoaded(function () SimpleTest.executeSoon(continueTest));
+    afterAllTabsLoaded(function () executeSoon(continueTest));
   }
 
   // ----------
@@ -123,7 +124,7 @@ function test() {
     let cw = getContentWindow();
     let box = new cw.Rect(20, 20, 250, 200);
     let groupItem = new cw.GroupItem([], {bounds: box, immediately: true});
-    cw.GroupItems.setActiveGroupItem(groupItem);
+    cw.UI.setActive(groupItem);
 
     gBrowser.selectedTab = gBrowser.loadOneTab('http://mochi.test:8888/#3', {inBackground: true});
     gBrowser.loadOneTab('http://mochi.test:8888/#4', {inBackground: true});
@@ -190,7 +191,7 @@ function enterAndLeavePrivateBrowsing(callback) {
       pb.privateBrowsingEnabled = false;
     else {
       Services.obs.removeObserver(pbObserver, "private-browsing-transition-complete");
-      afterAllTabsLoaded(callback);
+      afterAllTabsLoaded(function () executeSoon(callback));
     }
   }
 

@@ -71,10 +71,10 @@ EXPORTS		= \
 		nsCSSValue.h \
 		nsDOMCSSAttrDeclaration.h \
 		nsDOMCSSDeclaration.h \
+		nsDOMMediaQueryList.h \
 		nsICSSDeclaration.h \
 		nsICSSLoaderObserver.h \
 		nsICSSPseudoComparator.h \
-		nsICSSRule.h \
 		nsICSSRuleList.h \
 		nsICSSStyleRuleDOMWrapper.h \
 		nsIStyleRule.h \
@@ -102,6 +102,7 @@ EXPORTS_mozilla/css = \
 		ImportRule.h \
 		Loader.h \
 		NameSpaceRule.h \
+		Rule.h \
 		StyleRule.h \
 		$(NULL)
 
@@ -127,6 +128,7 @@ CPPSRCS		= \
 		nsDOMCSSRGBColor.cpp \
 		nsDOMCSSRect.cpp \
 		nsDOMCSSValueList.cpp \
+		nsDOMMediaQueryList.cpp \
 		nsFontFaceLoader.cpp \
 		nsHTMLCSSStyleSheet.cpp \
 		nsHTMLStyleSheet.cpp \
@@ -181,3 +183,7 @@ install:: $(_FILES)
 	$(SYSINSTALL) $(IFLAGS1) $^ $(DESTDIR)$(mozappdir)/res
 
 DEFINES += -D_IMPL_NS_LAYOUT
+
+# Pale Moon: Kill LTCG/SSE2 (PGO bug)
+# CXXFLAGS := $(CXXFLAGS:-O2=-O1)
+# CXXFLAGS := $(filter-out $(CXXFLAGS),%SSE2 %SSE)

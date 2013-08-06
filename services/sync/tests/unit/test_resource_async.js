@@ -21,9 +21,7 @@ function server_open(metadata, response) {
 function server_protected(metadata, response) {
   let body;
 
-  // no btoa() in xpcshell.  it's guest:guest
-  if (metadata.hasHeader("Authorization") &&
-      metadata.getHeader("Authorization") == "Basic Z3Vlc3Q6Z3Vlc3Q=") {
+  if (basic_auth_matches(metadata, "guest", "guest")) {
     body = "This path exists and is protected";
     response.setStatusLine(metadata.httpVersion, 200, "OK, authorized");
     response.setHeader("WWW-Authenticate", 'Basic realm="secret"', false);
@@ -156,7 +154,7 @@ function run_test() {
     "/quota-error": server_quota_error
   });
 
-  Utils.prefs.setIntPref("network.numRetries", 1); // speed up test
+  Svc.Prefs.set("network.numRetries", 1); // speed up test
 
   let did401 = false;
   Observers.add("weave:resource:status:401", function() did401 = true);
@@ -635,7 +633,7 @@ function run_test() {
     let res14 = new AsyncResource("http://localhost:8080/json");
     res14._onProgress = function(rec) {
       // Provoke an XPC exception without a Javascript wrapper.
-      Svc.IO.newURI("::::::::", null, null);
+      Services.io.newURI("::::::::", null, null);
     };
     let warnings = [];
     res14._log.warn = function(msg) { warnings.push(msg) };

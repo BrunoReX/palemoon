@@ -39,6 +39,7 @@
 
 #include "nsHyperTextAccessible.h"
 
+#include "States.h"
 #include "nsAccessibilityAtoms.h"
 #include "nsAccessibilityService.h"
 #include "nsAccUtils.h"
@@ -46,18 +47,15 @@
 
 #include "nsIClipboard.h"
 #include "nsContentCID.h"
-#include "nsIDOMAbstractView.h"
 #include "nsIDOMCharacterData.h"
 #include "nsIDOMDocument.h"
 #include "nsPIDOMWindow.h"        
-#include "nsIDOMDocumentView.h"
 #include "nsIDOMRange.h"
 #include "nsIDOMNSRange.h"
 #include "nsIDOMWindowInternal.h"
 #include "nsIDOMXULDocument.h"
 #include "nsIEditingSession.h"
 #include "nsIEditor.h"
-#include "nsIFontMetrics.h"
 #include "nsIFrame.h"
 #include "nsFrameSelection.h"
 #include "nsILineIterator.h"
@@ -173,14 +171,10 @@ nsHyperTextAccessible::NativeRole()
   return nsIAccessibleRole::ROLE_TEXT_CONTAINER; // In ATK this works
 }
 
-nsresult
-nsHyperTextAccessible::GetStateInternal(PRUint32 *aState, PRUint32 *aExtraState)
+PRUint64
+nsHyperTextAccessible::NativeState()
 {
-  nsresult rv = nsAccessibleWrap::GetStateInternal(aState, aExtraState);
-  NS_ENSURE_A11Y_SUCCESS(rv, rv);
-
-  if (!aExtraState)
-    return NS_OK;
+  PRUint64 states = nsAccessibleWrap::NativeState();
 
   nsCOMPtr<nsIEditor> editor;
   GetAssociatedEditor(getter_AddRefs(editor));
@@ -188,17 +182,17 @@ nsHyperTextAccessible::GetStateInternal(PRUint32 *aState, PRUint32 *aExtraState)
     PRUint32 flags;
     editor->GetFlags(&flags);
     if (0 == (flags & nsIPlaintextEditor::eEditorReadonlyMask)) {
-      *aExtraState |= nsIAccessibleStates::EXT_STATE_EDITABLE;
+      states |= states::EDITABLE;
     }
   } else if (mContent->Tag() == nsAccessibilityAtoms::article) {
     // We want <article> to behave like a document in terms of readonly state.
-    *aState |= nsIAccessibleStates::STATE_READONLY;
+    states |= states::READONLY;
   }
 
   if (GetChildCount() > 0)
-    *aExtraState |= nsIAccessibleStates::EXT_STATE_SELECTABLE_TEXT;
+    states |= states::SELECTABLE_TEXT;
 
-  return NS_OK;
+  return states;
 }
 
 // Substring must be entirely within the same text node
@@ -314,7 +308,7 @@ nsHyperTextAccessible::GetPosAndText(PRInt32& aStartOffset, PRInt32& aEndOffset,
     *aEndFrame = nsnull;
   }
   if (aBoundsRect) {
-    aBoundsRect->Empty();
+    aBoundsRect->SetEmpty();
   }
   if (aStartAcc)
     *aStartAcc = nsnull;
@@ -922,7 +916,7 @@ nsresult nsHyperTextAccessible::GetTextHelper(EGetTextType aType, nsAccessibleTe
       NS_ENSURE_SUCCESS(rv, rv);
 
       nsCOMPtr<nsISelectionPrivate> privateSelection(do_QueryInterface(domSel));
-      nsCOMPtr<nsFrameSelection> frameSelection;
+      nsRefPtr<nsFrameSelection> frameSelection;
       rv = privateSelection->GetFrameSelection(getter_AddRefs(frameSelection));
       NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1020,7 +1014,7 @@ nsresult nsHyperTextAccessible::GetTextHelper(EGetTextType aType, nsAccessibleTe
   }
 
   if (aType == eGetBefore) {
-    endOffset = aOffset;
+    finalEndOffset = aOffset;
   }
   else {
     // Start moving forward from the start so that we don't get 
@@ -1686,7 +1680,7 @@ PRInt32 nsHyperTextAccessible::GetCaretLineNumber()
                 getter_AddRefs(domSel));
   nsCOMPtr<nsISelectionPrivate> privateSelection(do_QueryInterface(domSel));
   NS_ENSURE_TRUE(privateSelection, -1);
-  nsCOMPtr<nsFrameSelection> frameSelection;
+  nsRefPtr<nsFrameSelection> frameSelection;
   privateSelection->GetFrameSelection(getter_AddRefs(frameSelection));
   NS_ENSURE_TRUE(frameSelection, -1);
 

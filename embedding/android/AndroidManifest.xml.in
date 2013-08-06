@@ -21,14 +21,11 @@
 
     <application android:label="@MOZ_APP_DISPLAYNAME@"
 		 android:icon="@drawable/icon"
+#if MOZILLA_OFFICIAL
+		 android:debuggable="false">
+#else
 		 android:debuggable="true">
-
-        <!-- for network link status -->
-        <receiver android:name="org.mozilla.gecko.GeckoConnectivityReceiver">
-            <intent-filter>
-                <action android:name="android.net.conn.CONNECTIVITY_CHANGE" />
-            </intent-filter>
-        </receiver>
+#endif
 
         <activity android:name="App"
                   android:label="@MOZ_APP_DISPLAYNAME@"
@@ -55,6 +52,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="file" />
                 <data android:scheme="http" />
                 <data android:scheme="https" />
                 <data android:mimeType="text/html"/>

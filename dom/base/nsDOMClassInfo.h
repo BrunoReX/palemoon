@@ -72,7 +72,7 @@ class nsIDOMSVGTransformList;
 class nsIDOMWindow;
 class nsIForm;
 class nsIHTMLDocument;
-class nsIPluginInstance;
+class nsNPAPIPluginInstance;
 class nsSVGTransformList;
 
 struct nsDOMClassInfoData;
@@ -98,7 +98,8 @@ struct nsDOMClassInfoData
   PRUint32 mScriptableFlags : 31; // flags must not use more than 31 bits!
   PRUint32 mHasClassInterface : 1;
   PRUint32 mInterfacesBitmap;
-  PRBool mChromeOnly;
+  PRPackedBool mChromeOnly;
+  PRPackedBool mDisabled;
 #ifdef NS_DEBUG
   PRUint32 mDebugID;
 #endif
@@ -201,8 +202,7 @@ protected:
 
   static inline PRBool IsReadonlyReplaceable(jsid id)
   {
-    return (id == sTop_id          ||
-            id == sParent_id       ||
+    return (id == sParent_id       ||
             id == sScrollbars_id   ||
             id == sContent_id      ||
             id == sMenubar_id      ||
@@ -245,7 +245,6 @@ protected:
   static PRBool sDisableGlobalScopePollutionSupport;
 
 public:
-  static jsid sTop_id;
   static jsid sParent_id;
   static jsid sScrollbars_id;
   static jsid sLocation_id;
@@ -359,6 +358,18 @@ public:
   static jsid sKeyPath_id;
   static jsid sAutoIncrement_id;
   static jsid sUnique_id;
+  
+  static jsid sOntouchstart_id;
+  static jsid sOntouchend_id;
+  static jsid sOntouchmove_id;
+  static jsid sOntouchenter_id;
+  static jsid sOntouchleave_id;
+  static jsid sOntouchcancel_id;
+  static jsid sOnbeforeprint_id;
+  static jsid sOnafterprint_id;
+
+  static jsid sOndevicemotion_id;
+  static jsid sOndeviceorientation_id;
 
 protected:
   static JSPropertyOp sXPCNativeWrapperGetPropertyOp;
@@ -888,6 +899,43 @@ public:
 };
 
 
+// DOMStringMap helper for .dataset property on elements.
+
+class nsDOMStringMapSH : public nsDOMGenericSH
+{
+public:
+  nsDOMStringMapSH(nsDOMClassInfoData* aData) : nsDOMGenericSH(aData)
+  {
+  }
+
+  virtual ~nsDOMStringMapSH()
+  {
+  }
+
+public:
+  NS_IMETHOD NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
+                        JSObject *obj, jsid id, PRUint32 flags,
+                        JSObject **objp, PRBool *_retval);
+  NS_IMETHOD Enumerate(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
+                       JSObject *obj, PRBool *_retval);
+  NS_IMETHOD PreCreate(nsISupports *nativeObj, JSContext *cx,
+                       JSObject *globalObj, JSObject **parentObj);
+  NS_IMETHOD DelProperty(nsIXPConnectWrappedNative *wrapper,
+                         JSContext *cx, JSObject *obj, jsid id,
+                         jsval *vp, PRBool *_retval);
+  NS_IMETHOD GetProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
+                         JSObject *obj, jsid id, jsval *vp, PRBool *_retval);
+  NS_IMETHOD SetProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
+                         JSObject *obj, jsid id, jsval *vp, PRBool *_retval);
+
+  bool JSIDToProp(const jsid& aId, nsAString& aResult);
+
+  static nsIClassInfo *doCreate(nsDOMClassInfoData* aData)
+  {
+    return new nsDOMStringMapSH(aData);
+  }
+};
+
 
 // Document helper, for document.location and document.on*
 
@@ -1085,10 +1133,10 @@ protected:
 
   static nsresult GetPluginInstanceIfSafe(nsIXPConnectWrappedNative *aWrapper,
                                           JSObject *obj,
-                                          nsIPluginInstance **aResult);
+                                          nsNPAPIPluginInstance **aResult);
 
   static nsresult GetPluginJSObject(JSContext *cx, JSObject *obj,
-                                    nsIPluginInstance *plugin_inst,
+                                    nsNPAPIPluginInstance *plugin_inst,
                                     JSObject **plugin_obj,
                                     JSObject **plugin_proto);
 
@@ -1504,6 +1552,26 @@ public:
   }
 };
 
+class nsDOMTouchListSH : public nsArraySH
+{
+protected:
+  nsDOMTouchListSH(nsDOMClassInfoData* aData) : nsArraySH(aData)
+  {
+  }
+
+  virtual ~nsDOMTouchListSH()
+  {
+  }
+
+  virtual nsISupports* GetItemAt(nsISupports *aNative, PRUint32 aIndex,
+                                 nsWrapperCache **aCache, nsresult *aResult);
+
+public:
+  static nsIClassInfo* doCreate(nsDOMClassInfoData* aData)
+  {
+    return new nsDOMTouchListSH(aData);
+  }
+};
 
 #ifdef MOZ_XUL
 // TreeColumns helper

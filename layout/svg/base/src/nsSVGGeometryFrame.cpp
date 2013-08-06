@@ -35,6 +35,7 @@
  * ***** END LICENSE BLOCK ***** */
 
 #include "nsPresContext.h"
+#include "nsSVGPathElement.h"
 #include "nsSVGUtils.h"
 #include "nsSVGGeometryFrame.h"
 #include "nsSVGPaintServerFrame.h"
@@ -52,9 +53,8 @@ nsSVGGeometryFrame::Init(nsIContent* aContent,
                          nsIFrame* aParent,
                          nsIFrame* aPrevInFlow)
 {
-  AddStateBits((aParent->GetStateBits() &
-                (NS_STATE_SVG_NONDISPLAY_CHILD | NS_STATE_SVG_CLIPPATH_CHILD)) |
-               NS_STATE_SVG_PROPAGATE_TRANSFORM);
+  AddStateBits(aParent->GetStateBits() &
+               (NS_STATE_SVG_NONDISPLAY_CHILD | NS_STATE_SVG_CLIPPATH_CHILD));
   nsresult rv = nsSVGGeometryFrameBase::Init(aContent, aParent, aPrevInFlow);
   return rv;
 }
@@ -117,13 +117,22 @@ nsSVGGeometryFrame::GetStrokeDashArray(gfxFloat **aDashes, PRUint32 *aCount)
     nsPresContext *presContext = PresContext();
     gfxFloat totalLength = 0.0f;
 
+    gfxFloat pathScale = 1.0;
+
+    if (mContent->Tag() == nsGkAtoms::path) {
+      pathScale = static_cast<nsSVGPathElement*>(mContent)->GetScale();
+      if (pathScale <= 0) {
+        return NS_OK;
+      }
+    }
+
     dashes = new gfxFloat[count];
     if (dashes) {
       for (PRUint32 i = 0; i < count; i++) {
         dashes[i] =
           nsSVGUtils::CoordToFloat(presContext,
                                    ctx,
-                                   dasharray[i]);
+                                   dasharray[i]) * pathScale;
         if (dashes[i] < 0.0f) {
           delete [] dashes;
           return NS_OK;

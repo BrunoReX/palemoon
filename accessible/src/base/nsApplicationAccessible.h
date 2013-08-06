@@ -92,9 +92,7 @@ public:
   NS_IMETHOD GetPreviousSibling(nsIAccessible **aPreviousSibling);
   NS_IMETHOD GetName(nsAString &aName);
   NS_IMETHOD GetValue(nsAString &aValue);
-  NS_IMETHOD GetDescription(nsAString &aDescription);
   NS_IMETHOD GetKeyboardShortcut(nsAString &aKeyboardShortcut);
-  NS_IMETHOD GetState(PRUint32 *aState , PRUint32 *aExtraState );
   NS_IMETHOD GetAttributes(nsIPersistentProperties **aAttributes);
   NS_IMETHOD GroupPosition(PRInt32 *aGroupLevel, PRInt32 *aSimilarItemsInGroup,
                            PRInt32 *aPositionInGroup);
@@ -123,9 +121,11 @@ public:
   virtual bool IsPrimaryForNode() const;
 
   // nsAccessible
-  virtual nsresult GetARIAState(PRUint32 *aState, PRUint32 *aExtraState);
+  virtual void ApplyARIAState(PRUint64* aState);
+  virtual void Description(nsString& aDescription);
   virtual PRUint32 NativeRole();
-  virtual nsresult GetStateInternal(PRUint32 *aState, PRUint32 *aExtraState);
+  virtual PRUint64 State();
+  virtual PRUint64 NativeState();
   virtual nsAccessible* GetChildAtPoint(PRInt32 aX, PRInt32 aY,
                                         EWhichChildAtPoint aWhichChild);
 

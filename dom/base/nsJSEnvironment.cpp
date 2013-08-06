@@ -88,6 +88,7 @@
 #include "xpcpublic.h"
 
 #include "jsdbgapi.h"           // for JS_ClearWatchPointsForObject
+#include "jswrapper.h"
 #include "jsxdrapi.h"
 #include "nsIArray.h"
 #include "nsIObjectInputStream.h"
@@ -116,6 +117,8 @@
 
 #include "mozilla/FunctionTimer.h"
 
+using namespace mozilla;
+
 const size_t gStackSize = 8192;
 
 #ifdef PR_LOGGING
@@ -123,11 +126,9 @@ static PRLogModuleInfo* gJSDiagnostics;
 #endif
 
 // Thank you Microsoft!
-#ifndef WINCE
 #ifdef CompareString
 #undef CompareString
 #endif
-#endif // WINCE
 
 // The amount of time we wait between a request to GC (due to leaving
 // a page) and doing the actual GC.
@@ -1881,13 +1882,15 @@ nsJSContext::CallEventHandler(nsISupports* aTarget, void *aScope, void *aHandler
 
     jsval funval = OBJECT_TO_JSVAL(funobj);
     JSAutoEnterCompartment ac;
-    if (!ac.enter(mContext, funobj) || !JS_WrapObject(mContext, &target)) {
+    js::ForceFrame ff(mContext, funobj);
+    if (!ac.enter(mContext, funobj) || !ff.enter() ||
+        !JS_WrapObject(mContext, &target)) {
       sSecurityManager->PopContextPrincipal(mContext);
       return NS_ERROR_FAILURE;
     }
 
-    js::LazilyConstructed<nsAutoPoolRelease> poolRelease;
-    js::LazilyConstructed<js::AutoArrayRooter> tvr;
+    Maybe<nsAutoPoolRelease> poolRelease;
+    Maybe<js::AutoArrayRooter> tvr;
 
     // Use |target| as the scope for wrapping the arguments, since aScope is
     // the safe scope in many cases, which isn't very useful.  Wrapping aTarget
@@ -2176,10 +2179,19 @@ nsJSContext::GetGlobalObject()
     return nsnull;
   }
 
-  OBJ_TO_INNER_OBJECT(mContext, global);
-  if (!global) {
-    return nsnull;
+  if (mGlobalObjectRef)
+    return mGlobalObjectRef;
+
+#ifdef DEBUG
+  {
+    JSObject *inner = global;
+    OBJ_TO_INNER_OBJECT(mContext, inner);
+
+    // If this assertion hits then it means that we have a window object as
+    // our global, but we never called CreateOuterObject.
+    NS_ASSERTION(inner == global, "Shouldn't be able to innerize here");
   }
+#endif
 
   JSClass *c = JS_GET_CLASS(mContext, global);
 
@@ -2205,11 +2217,7 @@ nsJSContext::GetGlobalObject()
 
   // This'll return a pointer to something we're about to release, but
   // that's ok, the JS object will hold it alive long enough.
-  nsCOMPtr<nsPIDOMWindow> pwin(do_QueryInterface(sgo));
-  if (!pwin)
-    return sgo;
-
-  return static_cast<nsGlobalWindow *>(pwin->GetOuterWindow());
+  return sgo;
 }
 
 void *
@@ -2375,8 +2383,8 @@ nsJSContext::SetProperty(void *aTarget, const char *aPropName, nsISupports *aArg
 
   JSAutoRequest ar(mContext);
 
-  js::LazilyConstructed<nsAutoPoolRelease> poolRelease;
-  js::LazilyConstructed<js::AutoArrayRooter> tvr;
+  Maybe<nsAutoPoolRelease> poolRelease;
+  Maybe<js::AutoArrayRooter> tvr;
 
   nsresult rv;
   rv = ConvertSupportsTojsvals(aArgs, GetNativeGlobal(), &argc,
@@ -2416,8 +2424,8 @@ nsJSContext::ConvertSupportsTojsvals(nsISupports *aArgs,
                                      void *aScope,
                                      PRUint32 *aArgc,
                                      jsval **aArgv,
-                                     js::LazilyConstructed<nsAutoPoolRelease> &aPoolRelease,
-                                     js::LazilyConstructed<js::AutoArrayRooter> &aRooter)
+                                     Maybe<nsAutoPoolRelease> &aPoolRelease,
+                                     Maybe<js::AutoArrayRooter> &aRooter)
 {
   nsresult rv = NS_OK;
 
@@ -3647,14 +3655,6 @@ SetMemoryMaxPrefChangedCallback(const char* aPrefName, void* aClosure)
 }
 
 static int
-SetMemoryGCFrequencyPrefChangedCallback(const char* aPrefName, void* aClosure)
-{
-  PRInt32 triggerFactor = nsContentUtils::GetIntPref(aPrefName, 300);
-  JS_SetGCParameter(nsJSRuntime::sRuntime, JSGC_TRIGGER_FACTOR, triggerFactor);
-  return 0;
-}
-
-static int
 SetMemoryGCModePrefChangedCallback(const char* aPrefName, void* aClosure)
 {
   PRBool enableCompartmentGC = nsContentUtils::GetBoolPref(aPrefName);
@@ -3795,12 +3795,6 @@ nsJSRuntime::Init()
                                        nsnull);
   SetMemoryMaxPrefChangedCallback("javascript.options.mem.max",
                                   nsnull);
-
-  nsContentUtils::RegisterPrefCallback("javascript.options.mem.gc_frequency",
-                                       SetMemoryGCFrequencyPrefChangedCallback,
-                                       nsnull);
-  SetMemoryGCFrequencyPrefChangedCallback("javascript.options.mem.gc_frequency",
-                                          nsnull);
 
   nsContentUtils::RegisterPrefCallback("javascript.options.mem.gc_per_compartment",
                                        SetMemoryGCModePrefChangedCallback,
@@ -3995,7 +3989,8 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(nsJSArgArray)
     for (end = argv + tmp->mArgc; argv < end; ++argv) {
       if (JSVAL_IS_GCTHING(*argv))
         NS_IMPL_CYCLE_COLLECTION_TRACE_CALLBACK(JAVASCRIPT,
-                                                JSVAL_TO_GCTHING(*argv))
+                                                JSVAL_TO_GCTHING(*argv),
+                                                "mArgv[i]")
     }
   }
 NS_IMPL_CYCLE_COLLECTION_TRACE_END

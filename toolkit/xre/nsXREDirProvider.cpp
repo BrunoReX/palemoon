@@ -259,10 +259,10 @@ nsXREDirProvider::GetFile(const char* aProperty, PRBool* aPersistent,
     rv = GetUserAppDataDirectory((nsILocalFile**)(nsIFile**) getter_AddRefs(file));
   }
   else if (!strcmp(aProperty, XRE_UPDATE_ROOT_DIR)) {
-#if defined(XP_WIN) && !defined(WINCE)
+#if defined(XP_WIN)
     rv = GetUpdateRootDir(getter_AddRefs(file));
 #else
-    // Only supported on Windows other than WINCE, so just immediately fail.
+    // Only supported on Windows, so just immediately fail.
     return NS_ERROR_FAILURE;
 #endif
   }
@@ -300,9 +300,6 @@ nsXREDirProvider::GetFile(const char* aProperty, PRBool* aPersistent,
     rv = XRE_GetBinaryPath(gArgv[0], getter_AddRefs(lf));
     if (NS_SUCCEEDED(rv))
       file = lf;
-  }
-  else if (!strcmp(aProperty, "resource:app")) {
-    rv = GetAppDir()->Clone(getter_AddRefs(file));
   }
 
   else if (!strcmp(aProperty, NS_APP_PROFILE_DIR_STARTUP) && mProfileDir) {
@@ -824,24 +821,6 @@ GetShellFolderPath(int folder, nsAString& _retval)
 
   nsresult rv = NS_OK;
 
-#if defined(WINCE) && !defined(WINCE_WINDOWS_MOBILE)
-  if (folder == CSIDL_APPDATA || folder == CSIDL_LOCAL_APPDATA)
-    folder = CSIDL_PROFILE;
-
-  BOOL ok = SHGetSpecialFolderPath(NULL, buf, folder, true);
-  if (!ok) {
-    _retval.SetLength(0);
-    return NS_ERROR_FAILURE;
-  }
-
-  buf[bufLength - 1] = L'\0';
-  _retval.SetLength(wcslen(buf));
-
-  // sometimes CSIDL_PROFILE shows up without a root slash
-  if (folder == CSIDL_PROFILE && buf[0] != '\\') {
-    _retval.Insert('\\', 0);
-  }
-#else
   LPITEMIDLIST pItemIDList = NULL;
 
   if (SUCCEEDED(SHGetSpecialFolderLocation(NULL, folder, &pItemIDList)) &&
@@ -856,12 +835,10 @@ GetShellFolderPath(int folder, nsAString& _retval)
   }
 
   CoTaskMemFree(pItemIDList);
-#endif
 
   return rv;
 }
 
-#ifndef WINCE
 /**
  * Provides a fallback for getting the path to APPDATA or LOCALAPPDATA by
  * querying the registry when the call to SHGetSpecialFolderLocation or
@@ -913,7 +890,6 @@ GetRegWindowsAppDataFolder(PRBool aLocal, nsAString& _retval)
 
   return NS_OK;
 }
-#endif
 
 nsresult
 nsXREDirProvider::GetUpdateRootDir(nsIFile* *aResult)
@@ -932,9 +908,6 @@ nsXREDirProvider::GetUpdateRootDir(nsIFile* *aResult)
   PRUint32 bufLength = longPath.GetMutableData(&buf, MAXPATHLEN);
   NS_ENSURE_TRUE(bufLength >= MAXPATHLEN, NS_ERROR_OUT_OF_MEMORY);
 
-#ifdef WINCE
-  longPath.Assign(appPath);
-#else
   DWORD len = GetLongPathNameW(appPath.get(), buf, bufLength);
 
   // Failing GetLongPathName() is not fatal.
@@ -942,7 +915,7 @@ nsXREDirProvider::GetUpdateRootDir(nsIFile* *aResult)
     longPath.Assign(appPath);
   else
     longPath.SetLength(len);
-#endif
+
   // Use <UserLocalDataDir>\updates\<relative path to app dir from
   // Program Files> if app dir is under Program Files to avoid the
   // folder virtualization mess on Windows Vista
@@ -1049,20 +1022,15 @@ nsXREDirProvider::GetUserDataDirectoryHome(nsILocalFile** aFile, PRBool aLocal)
   nsString path;
   if (aLocal) {
     rv = GetShellFolderPath(CSIDL_LOCAL_APPDATA, path);
-#ifndef WINCE
     if (NS_FAILED(rv))
       rv = GetRegWindowsAppDataFolder(aLocal, path);
-#endif
   }
   if (!aLocal || NS_FAILED(rv)) {
     rv = GetShellFolderPath(CSIDL_APPDATA, path);
-#ifndef WINCE
     if (NS_FAILED(rv)) {
       if (!aLocal)
         rv = GetRegWindowsAppDataFolder(aLocal, path);
     }
-#endif
-
   }
   NS_ENSURE_SUCCESS(rv, rv);
 

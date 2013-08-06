@@ -63,7 +63,6 @@
 #include "nsIDocumentViewer.h"
 #include "nsIEventListenerManager.h"
 #include "nsIFactory.h"
-#include "nsFrameSelection.h"
 #include "nsIFrameUtil.h"
 #include "nsIFragmentContentSink.h"
 #include "nsHTMLStyleSheet.h"
@@ -94,9 +93,9 @@
 #include "nsStyleSheetService.h"
 #include "nsXULPopupManager.h"
 #include "nsFocusManager.h"
-#include "nsIContentUtils.h"
 #include "ThirdPartyUtil.h"
 #include "mozilla/Services.h"
+#include "nsStructuredCloneContainer.h"
 
 #include "nsIEventListenerService.h"
 #include "nsIFrameMessageManager.h"
@@ -112,6 +111,7 @@
 #include "nsChannelPolicy.h"
 #include "nsWebSocket.h"
 #include "nsDOMWorker.h"
+#include "nsEventSource.h"
 
 // view stuff
 #include "nsViewsCID.h"
@@ -291,7 +291,7 @@ static void Shutdown();
     defined(_WINDOWS)   || \
     defined(machintosh) || \
     defined(android)
-#include "nsAccelerometerSystem.h"
+#include "nsDeviceMotionSystem.h"
 #endif
 #include "nsCSPService.h"
 
@@ -309,9 +309,8 @@ NS_GENERIC_AGGREGATED_CONSTRUCTOR_INIT(nsXPathEvaluator, Init)
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(txNodeSetAdaptor, Init)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsDOMSerializer)
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsXMLHttpRequest, Init)
+NS_GENERIC_FACTORY_CONSTRUCTOR(nsEventSource)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsWebSocket)
-NS_GENERIC_FACTORY_CONSTRUCTOR(nsWSProtocolHandler)
-NS_GENERIC_FACTORY_CONSTRUCTOR(nsWSSProtocolHandler)
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsDOMFileReader, Init)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsFormData)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsFileDataProtocolHandler)
@@ -325,7 +324,7 @@ NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(IndexedDatabaseManager,
     defined(_WINDOWS)   || \
     defined(machintosh) || \
     defined(android)
-NS_GENERIC_FACTORY_CONSTRUCTOR(nsAccelerometerSystem)
+NS_GENERIC_FACTORY_CONSTRUCTOR(nsDeviceMotionSystem)
 #endif
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(ThirdPartyUtil, Init)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsWorkerFactory)
@@ -449,7 +448,6 @@ nsresult NS_NewCanvasRenderingContextWebGL(nsIDOMWebGLRenderingContext** aResult
 
 nsresult NS_CreateFrameTraversal(nsIFrameTraversal** aResult);
 
-nsresult NS_NewSelection(nsFrameSelection** aResult);
 nsresult NS_NewDomSelection(nsISelection** aResult);
 nsresult NS_NewDocumentViewer(nsIDocumentViewer** aResult);
 nsresult NS_NewRange(nsIDOMRange** aResult);
@@ -527,7 +525,6 @@ MAKE_CTOR(CreateSVGDocument,              nsIDocument,                 NS_NewSVG
 #endif
 MAKE_CTOR(CreateImageDocument,            nsIDocument,                 NS_NewImageDocument)
 MAKE_CTOR(CreateDOMSelection,             nsISelection,                NS_NewDomSelection)
-MAKE_CTOR(CreateSelection,                nsFrameSelection,            NS_NewSelection)
 MAKE_CTOR(CreateRange,                    nsIDOMRange,                 NS_NewRange)
 MAKE_CTOR(CreateRangeUtils,               nsIRangeUtils,               NS_NewRangeUtils)
 MAKE_CTOR(CreateContentIterator,          nsIContentIterator,          NS_NewContentIterator)
@@ -579,9 +576,6 @@ MAKE_CTOR(CreatePluginDocument,           nsIDocument,                 NS_NewPlu
 MAKE_CTOR(CreateVideoDocument,            nsIDocument,                 NS_NewVideoDocument)
 #endif
 MAKE_CTOR(CreateFocusManager,             nsIFocusManager,      NS_NewFocusManager)
-
-NS_GENERIC_FACTORY_CONSTRUCTOR(nsIContentUtils)
-NS_GENERIC_FACTORY_CONSTRUCTOR(nsIContentUtils2)
 
 MAKE_CTOR(CreateCanvasRenderingContext2D, nsIDOMCanvasRenderingContext2D, NS_NewCanvasRenderingContext2D)
 MAKE_CTOR(CreateCanvasRenderingContextWebGL, nsIDOMWebGLRenderingContext, NS_NewCanvasRenderingContextWebGL)
@@ -727,6 +721,7 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(nsSecurityNameSet)
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsSystemPrincipal,
     nsScriptSecurityManager::SystemPrincipalSingletonConstructor)
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsNullPrincipal, Init)
+NS_GENERIC_FACTORY_CONSTRUCTOR(nsStructuredCloneContainer)
 
 static nsresult
 Construct_nsIScriptSecurityManager(nsISupports *aOuter, REFNSIID aIID, 
@@ -779,7 +774,6 @@ NS_DEFINE_NAMED_CID(NS_SVGDOCUMENT_CID);
 #endif
 NS_DEFINE_NAMED_CID(NS_IMAGEDOCUMENT_CID);
 NS_DEFINE_NAMED_CID(NS_DOMSELECTION_CID);
-NS_DEFINE_NAMED_CID(NS_FRAMESELECTION_CID);
 NS_DEFINE_NAMED_CID(NS_RANGE_CID);
 NS_DEFINE_NAMED_CID(NS_RANGEUTILS_CID);
 NS_DEFINE_NAMED_CID(NS_CONTENTITERATOR_CID);
@@ -847,9 +841,8 @@ NS_DEFINE_NAMED_CID(NS_FILEREADER_CID);
 NS_DEFINE_NAMED_CID(NS_FORMDATA_CID);
 NS_DEFINE_NAMED_CID(NS_FILEDATAPROTOCOLHANDLER_CID);
 NS_DEFINE_NAMED_CID(NS_XMLHTTPREQUEST_CID);
+NS_DEFINE_NAMED_CID(NS_EVENTSOURCE_CID);
 NS_DEFINE_NAMED_CID(NS_WEBSOCKET_CID);
-NS_DEFINE_NAMED_CID(NS_WSPROTOCOLHANDLER_CID);
-NS_DEFINE_NAMED_CID(NS_WSSPROTOCOLHANDLER_CID);
 NS_DEFINE_NAMED_CID(NS_DOMPARSER_CID);
 NS_DEFINE_NAMED_CID(NS_DOMSTORAGE_CID);
 NS_DEFINE_NAMED_CID(NS_DOMSTORAGE2_CID);
@@ -868,8 +861,6 @@ NS_DEFINE_NAMED_CID(NS_TEXTSERVICESDOCUMENT_CID);
 NS_DEFINE_NAMED_CID(NS_GEOLOCATION_SERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_GEOLOCATION_CID);
 NS_DEFINE_NAMED_CID(NS_FOCUSMANAGER_CID);
-NS_DEFINE_NAMED_CID(NS_ICONTENTUTILS_CID);
-NS_DEFINE_NAMED_CID(NS_ICONTENTUTILS2_CID);
 NS_DEFINE_NAMED_CID(CSPSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_EVENTLISTENERSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_GLOBALMESSAGEMANAGER_CID);
@@ -883,12 +874,13 @@ NS_DEFINE_NAMED_CID(NS_NULLPRINCIPAL_CID);
 NS_DEFINE_NAMED_CID(NS_SECURITYNAMESET_CID);
 NS_DEFINE_NAMED_CID(THIRDPARTYUTIL_CID);
 NS_DEFINE_NAMED_CID(NS_WORKERFACTORY_CID);
+NS_DEFINE_NAMED_CID(NS_STRUCTUREDCLONECONTAINER_CID);
 
 #if defined(XP_UNIX)    || \
     defined(_WINDOWS)   || \
     defined(machintosh) || \
     defined(android)
-NS_DEFINE_NAMED_CID(NS_ACCELEROMETER_CID);
+NS_DEFINE_NAMED_CID(NS_DEVICE_MOTION_CID);
 #endif
 #if defined(ANDROID) || defined(MOZ_PLATFORM_MAEMO)
 NS_DEFINE_NAMED_CID(NS_HAPTICFEEDBACK_CID);
@@ -930,7 +922,6 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
 #endif
   { &kNS_IMAGEDOCUMENT_CID, false, NULL, CreateImageDocument },
   { &kNS_DOMSELECTION_CID, false, NULL, CreateDOMSelection },
-  { &kNS_FRAMESELECTION_CID, false, NULL, CreateSelection },
   { &kNS_RANGE_CID, false, NULL, CreateRange },
   { &kNS_RANGEUTILS_CID, false, NULL, CreateRangeUtils },
   { &kNS_CONTENTITERATOR_CID, false, NULL, CreateContentIterator },
@@ -998,9 +989,8 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
   { &kNS_FORMDATA_CID, false, NULL, nsFormDataConstructor },
   { &kNS_FILEDATAPROTOCOLHANDLER_CID, false, NULL, nsFileDataProtocolHandlerConstructor },
   { &kNS_XMLHTTPREQUEST_CID, false, NULL, nsXMLHttpRequestConstructor },
+  { &kNS_EVENTSOURCE_CID, false, NULL, nsEventSourceConstructor },
   { &kNS_WEBSOCKET_CID, false, NULL, nsWebSocketConstructor },
-  { &kNS_WSPROTOCOLHANDLER_CID, false, NULL, nsWSProtocolHandlerConstructor },
-  { &kNS_WSSPROTOCOLHANDLER_CID, false, NULL, nsWSSProtocolHandlerConstructor },
   { &kNS_DOMPARSER_CID, false, NULL, nsDOMParserConstructor },
   { &kNS_DOMSTORAGE_CID, false, NULL, NS_NewDOMStorage },
   { &kNS_DOMSTORAGE2_CID, false, NULL, NS_NewDOMStorage2 },
@@ -1019,8 +1009,6 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
   { &kNS_GEOLOCATION_SERVICE_CID, false, NULL, nsGeolocationServiceConstructor },
   { &kNS_GEOLOCATION_CID, false, NULL, nsGeolocationConstructor },
   { &kNS_FOCUSMANAGER_CID, false, NULL, CreateFocusManager },
-  { &kNS_ICONTENTUTILS_CID, false, NULL, nsIContentUtilsConstructor },
-  { &kNS_ICONTENTUTILS2_CID, false, NULL, nsIContentUtils2Constructor },
   { &kCSPSERVICE_CID, false, NULL, CSPServiceConstructor },
   { &kNS_EVENTLISTENERSERVICE_CID, false, NULL, CreateEventListenerService },
   { &kNS_GLOBALMESSAGEMANAGER_CID, false, NULL, CreateGlobalMessageManager },
@@ -1036,13 +1024,14 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
     defined(_WINDOWS)   || \
     defined(machintosh) || \
     defined(android)
-  { &kNS_ACCELEROMETER_CID, false, NULL, nsAccelerometerSystemConstructor },
+  { &kNS_DEVICE_MOTION_CID, false, NULL, nsDeviceMotionSystemConstructor },
 #endif
 #if defined(ANDROID) || defined(MOZ_PLATFORM_MAEMO)
   { &kNS_HAPTICFEEDBACK_CID, false, NULL, nsHapticFeedbackConstructor },
 #endif
   { &kTHIRDPARTYUTIL_CID, false, NULL, ThirdPartyUtilConstructor },
   { &kNS_WORKERFACTORY_CID, false, NULL, nsWorkerFactoryConstructor },
+  { &kNS_STRUCTUREDCLONECONTAINER_CID, false, NULL, nsStructuredCloneContainerConstructor },
   { NULL }
 };
 
@@ -1143,9 +1132,8 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
   { NS_FORMDATA_CONTRACTID, &kNS_FORMDATA_CID },
   { NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX FILEDATA_SCHEME, &kNS_FILEDATAPROTOCOLHANDLER_CID },
   { NS_XMLHTTPREQUEST_CONTRACTID, &kNS_XMLHTTPREQUEST_CID },
+  { NS_EVENTSOURCE_CONTRACTID, &kNS_EVENTSOURCE_CID },
   { NS_WEBSOCKET_CONTRACTID, &kNS_WEBSOCKET_CID },
-  { NS_WSPROTOCOLHANDLER_CONTRACTID, &kNS_WSPROTOCOLHANDLER_CID },
-  { NS_WSSPROTOCOLHANDLER_CONTRACTID, &kNS_WSSPROTOCOLHANDLER_CID },
   { NS_DOMPARSER_CONTRACTID, &kNS_DOMPARSER_CID },
   { "@mozilla.org/dom/storage;1", &kNS_DOMSTORAGE_CID },
   { "@mozilla.org/dom/storage;2", &kNS_DOMSTORAGE2_CID },
@@ -1164,8 +1152,6 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
   { "@mozilla.org/geolocation/service;1", &kNS_GEOLOCATION_SERVICE_CID },
   { "@mozilla.org/geolocation;1", &kNS_GEOLOCATION_CID },
   { "@mozilla.org/focus-manager;1", &kNS_FOCUSMANAGER_CID },
-  { "@mozilla.org/content/contentutils;1", &kNS_ICONTENTUTILS_CID },
-  { "@mozilla.org/content/contentutils2;1", &kNS_ICONTENTUTILS2_CID },
   { CSPSERVICE_CONTRACTID, &kCSPSERVICE_CID },
   { NS_EVENTLISTENERSERVICE_CONTRACTID, &kNS_EVENTLISTENERSERVICE_CID },
   { NS_GLOBALMESSAGEMANAGER_CONTRACTID, &kNS_GLOBALMESSAGEMANAGER_CID },
@@ -1182,13 +1168,14 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
     defined(_WINDOWS)   || \
     defined(machintosh) || \
     defined(android)
-  { NS_ACCELEROMETER_CONTRACTID, &kNS_ACCELEROMETER_CID },
+  { NS_DEVICE_MOTION_CONTRACTID, &kNS_DEVICE_MOTION_CID },
 #endif
 #if defined(ANDROID) || defined(MOZ_PLATFORM_MAEMO)
   { "@mozilla.org/widget/hapticfeedback;1", &kNS_HAPTICFEEDBACK_CID },
 #endif
   { THIRDPARTYUTIL_CONTRACTID, &kTHIRDPARTYUTIL_CID },
   { NS_WORKERFACTORY_CONTRACTID, &kNS_WORKERFACTORY_CID },
+  { NS_STRUCTUREDCLONECONTAINER_CONTRACTID, &kNS_STRUCTUREDCLONECONTAINER_CID },
   { NULL }
 };
 

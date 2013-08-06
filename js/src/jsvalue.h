@@ -89,24 +89,19 @@
 
 /* To avoid a circular dependency, pull in the necessary pieces of jsnum.h. */
 
-#include <math.h>
-#if defined(XP_WIN) || defined(XP_OS2)
-#include <float.h>
-#endif
-#ifdef SOLARIS
-#include <ieeefp.h>
-#endif
+#define JSDOUBLE_SIGNBIT (((uint64) 1) << 63)
+#define JSDOUBLE_EXPMASK (((uint64) 0x7ff) << 52)
+#define JSDOUBLE_MANTMASK ((((uint64) 1) << 52) - 1)
 
-static inline int
+static JS_ALWAYS_INLINE JSBool
 JSDOUBLE_IS_NEGZERO(jsdouble d)
 {
-#ifdef WIN32
-    return (d == 0 && (_fpclass(d) & _FPCLASS_NZ));
-#elif defined(SOLARIS)
-    return (d == 0 && copysign(1, d) < 0);
-#else
-    return (d == 0 && signbit(d));
-#endif
+    union {
+        jsdouble d;
+        uint64 bits;
+    } x;
+    x.d = d;
+    return x.bits == JSDOUBLE_SIGNBIT;
 }
 
 static inline bool
@@ -254,7 +249,7 @@ static JS_ALWAYS_INLINE JSBool
 JSVAL_SAME_TYPE_IMPL(jsval_layout lhs, jsval_layout rhs)
 {
     uint64 lbits = lhs.asBits, rbits = rhs.asBits;
-    return (lbits <= JSVAL_TAG_MAX_DOUBLE && rbits <= JSVAL_TAG_MAX_DOUBLE) ||
+    return (lbits <= JSVAL_SHIFTED_TAG_MAX_DOUBLE && rbits <= JSVAL_SHIFTED_TAG_MAX_DOUBLE) ||
            (((lbits ^ rbits) & 0xFFFF800000000000LL) == 0);
 }
 
@@ -376,8 +371,18 @@ class Value
     }
 
     JS_ALWAYS_INLINE
+    void setString(const JS::Anchor<JSString *> &str) {
+        setString(str.get());
+    }
+
+    JS_ALWAYS_INLINE
     void setObject(JSObject &obj) {
         data = OBJECT_TO_JSVAL_IMPL(&obj);
+    }
+
+    JS_ALWAYS_INLINE
+    void setObject(const JS::Anchor<JSObject *> &obj) {
+        setObject(*obj.get());
     }
 
     JS_ALWAYS_INLINE

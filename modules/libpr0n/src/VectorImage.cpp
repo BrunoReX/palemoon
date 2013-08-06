@@ -60,7 +60,6 @@ using namespace mozilla::dom;
 namespace mozilla {
 namespace imagelib {
 
-#ifdef MOZ_ENABLE_LIBXUL
 // Helper-class: SVGRootRenderingObserver
 class SVGRootRenderingObserver : public nsSVGRenderingObserver {
 public:
@@ -124,7 +123,6 @@ protected:
   nsRefPtr<SVGDocumentWrapper> mDocWrapper;
   VectorImage* mVectorImage;   // Raw pointer because it owns me.
 };
-#endif // MOZ_ENABLE_LIBXUL
 
 // Helper-class: SVGDrawingCallback
 class SVGDrawingCallback : public gfxDrawingCallback {
@@ -575,6 +573,9 @@ VectorImage::Draw(gfxContext* aContext,
 nsIFrame*
 VectorImage::GetRootLayoutFrame()
 {
+  if (mError)
+    return nsnull;
+
   return mSVGDocumentWrapper->GetRootLayoutFrame();
 }
 
@@ -669,10 +670,8 @@ VectorImage::OnStopRequest(nsIRequest* aRequest, nsISupports* aCtxt,
   mIsFullyLoaded = PR_TRUE;
   mHaveAnimations = mSVGDocumentWrapper->IsAnimated();
 
-#ifdef MOZ_ENABLE_LIBXUL
   // Start listening to our image for rendering updates
   mRenderingObserver = new SVGRootRenderingObserver(mSVGDocumentWrapper, this);
-#endif // MOZ_ENABLE_LIBXUL
 
   // Tell *our* observers that we're done loading
   nsCOMPtr<imgIDecoderObserver> observer = do_QueryReferent(mObserver);
@@ -701,6 +700,9 @@ VectorImage::OnDataAvailable(nsIRequest* aRequest, nsISupports* aCtxt,
                              nsIInputStream* aInStr, PRUint32 aSourceOffset,
                              PRUint32 aCount)
 {
+  if (mError)
+    return NS_ERROR_FAILURE;
+
   return mSVGDocumentWrapper->OnDataAvailable(aRequest, aCtxt, aInStr,
                                               aSourceOffset, aCount);
 }
@@ -711,9 +713,17 @@ VectorImage::OnDataAvailable(nsIRequest* aRequest, nsISupports* aCtxt,
 void
 VectorImage::InvalidateObserver()
 {
-  nsCOMPtr<imgIContainerObserver> observer(do_QueryReferent(mObserver));
-  if (observer) {
-    observer->FrameChanged(this, &nsIntRect::GetMaxSizedIntRect());
+  if (!mObserver)
+    return;
+
+  nsCOMPtr<imgIContainerObserver> containerObs(do_QueryReferent(mObserver));
+  if (containerObs) {
+    containerObs->FrameChanged(this, &nsIntRect::GetMaxSizedIntRect());
+  }
+
+  nsCOMPtr<imgIDecoderObserver> decoderObs(do_QueryReferent(mObserver));
+  if (decoderObs) {
+    decoderObs->OnStopFrame(nsnull, imgIContainer::FRAME_CURRENT);
   }
 }
 

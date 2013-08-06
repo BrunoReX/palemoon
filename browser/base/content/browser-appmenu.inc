@@ -54,14 +54,14 @@
                  label="&tabCmd.label;"
                  command="cmd_newNavigatorTab">
           <menupopup>
-            <menuitem id="appmenu_newNavigator"
-                      label="&newNavigatorCmd.label;"
-                      command="cmd_newNavigator"
-                      key="key_newNavigator"/>
             <menuitem id="appmenu_newTab_popup"
                       label="&tabCmd.label;"
                       command="cmd_newNavigatorTab"
                       key="key_newNavigatorTab"/>
+            <menuitem id="appmenu_newNavigator"
+                      label="&newNavigatorCmd.label;"
+                      command="cmd_newNavigator"
+                      key="key_newNavigator"/>
             <menuseparator/>
             <menuitem id="appmenu_openFile"
                       label="&openFileCmd.label;"
@@ -187,6 +187,11 @@
                     type="checkbox"
                     command="Tools:Inspect"
                     key="key_inspect"/>
+          <menuitem id="appmenu_scratchpad"
+                    hidden="true"
+                    label="&scratchpad.label;"
+                    key="key_scratchpad"
+                    command="Tools:Scratchpad"/>
           <menuitem id="appmenu_pageSource"
                     label="&viewPageSourceCmd.label;"
                     command="View:PageSource"
@@ -196,6 +201,10 @@
                     label="&errorConsoleCmd.label;"
                     key="key_errorConsole"
                     oncommand="toJavaScriptConsole();"/>
+          <menuseparator id="appmenu_devToolsEndSeparator"/>
+          <menuitem id="appmenu_getMoreDevtools"
+                    label="&getMoreDevtoolsCmd.label;"
+                    oncommand="openUILinkIn('https://addons.mozilla.org/firefox/collections/mozilla/webdeveloper/', 'tab');"/>
           <menuseparator/>
 #define ID_PREFIX appmenu_developer_
 #define OMIT_ACCESSKEYS

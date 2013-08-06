@@ -137,7 +137,7 @@ public:
                               nsNativeWidget   aNativeParent,
                               const nsIntRect  &aRect,
                               EVENT_CALLBACK   aHandleEventFunction,
-                              nsIDeviceContext *aContext,
+                              nsDeviceContext *aContext,
                               nsIAppShell      *aAppShell,
                               nsIToolkit       *aToolkit,
                               nsWidgetInitData *aInitData);
@@ -241,7 +241,7 @@ public:
                                          gint             aX,
                                          gint             aY,
                                          guint            aTime,
-                                         void            *aData);
+                                         gpointer         aData);
     void               OnDragLeaveEvent(GtkWidget *      aWidget,
                                         GdkDragContext   *aDragContext,
                                         guint            aTime,
@@ -251,7 +251,7 @@ public:
                                        gint             aX,
                                        gint             aY,
                                        guint            aTime,
-                                       gpointer         *aData);
+                                       gpointer         aData);
     void               OnDragDataReceivedEvent(GtkWidget       *aWidget,
                                                GdkDragContext  *aDragContext,
                                                gint             aX,

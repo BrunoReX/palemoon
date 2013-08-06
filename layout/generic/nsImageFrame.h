@@ -42,18 +42,12 @@
 #define nsImageFrame_h___
 
 #include "nsSplittableFrame.h"
-#include "nsString.h"
-#include "nsAString.h"
-#include "nsIImageFrame.h"
 #include "nsIIOService.h"
 #include "nsIObserver.h"
 
-#include "imgIRequest.h"
 #include "nsStubImageDecoderObserver.h"
 #include "imgIDecoderObserver.h"
 
-#include "Layers.h"
-#include "ImageLayers.h"
 #include "nsDisplayList.h"
 #include "imgIContainer.h"
 
@@ -69,8 +63,13 @@ class nsPresContext;
 class nsImageFrame;
 class nsTransform2D;
 
-using namespace mozilla;
-using namespace mozilla::layers;
+namespace mozilla {
+namespace layers {
+  class ImageContainer;
+  class ImageLayer;
+  class LayerManager;
+}
+}
 
 class nsImageListener : public nsStubImageDecoderObserver
 {
@@ -100,12 +99,17 @@ private:
 
 #define ImageFrameSuper nsSplittableFrame
 
-class nsImageFrame : public ImageFrameSuper, public nsIImageFrame {
+class nsImageFrame : public ImageFrameSuper {
 public:
+  typedef mozilla::layers::ImageContainer ImageContainer;
+  typedef mozilla::layers::ImageLayer ImageLayer;
+  typedef mozilla::layers::LayerManager LayerManager;
+
   NS_DECL_FRAMEARENA_HELPERS
 
   nsImageFrame(nsStyleContext* aContext);
 
+  NS_DECL_QUERYFRAME_TARGET(nsImageFrame)
   NS_DECL_QUERYFRAME
 
   virtual void DestroyFrom(nsIFrame* aDestructRoot);
@@ -115,8 +119,8 @@ public:
   NS_IMETHOD BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                               const nsRect&           aDirtyRect,
                               const nsDisplayListSet& aLists);
-  virtual nscoord GetMinWidth(nsIRenderingContext *aRenderingContext);
-  virtual nscoord GetPrefWidth(nsIRenderingContext *aRenderingContext);
+  virtual nscoord GetMinWidth(nsRenderingContext *aRenderingContext);
+  virtual nscoord GetPrefWidth(nsRenderingContext *aRenderingContext);
   virtual IntrinsicSize GetIntrinsicSize();
   virtual nsSize GetIntrinsicRatio();
   NS_IMETHOD Reflow(nsPresContext*          aPresContext,
@@ -154,9 +158,7 @@ public:
 
   virtual PRIntn GetSkipSides() const;
 
-  NS_IMETHOD GetImageMap(nsPresContext *aPresContext, nsIImageMap **aImageMap);
-
-  NS_IMETHOD GetIntrinsicImageSize(nsSize& aSize);
+  nsresult GetIntrinsicImageSize(nsSize& aSize);
 
   static void ReleaseGlobals() {
     if (gIconLoad) {
@@ -174,7 +176,7 @@ public:
   static PRBool ShouldCreateImageFrameFor(nsIContent* aContent,
                                           nsStyleContext* aStyleContext);
   
-  void DisplayAltFeedback(nsIRenderingContext& aRenderingContext,
+  void DisplayAltFeedback(nsRenderingContext& aRenderingContext,
                           const nsRect&        aDirtyRect,
                           imgIRequest*         aRequest,
                           nsPoint              aPt);
@@ -183,7 +185,7 @@ public:
 
   nsImageMap* GetImageMap(nsPresContext* aPresContext);
 
-  virtual void AddInlineMinWidth(nsIRenderingContext *aRenderingContext,
+  virtual void AddInlineMinWidth(nsRenderingContext *aRenderingContext,
                                  InlineMinWidthData *aData);
 
   nsRefPtr<ImageContainer> GetContainer(LayerManager* aManager,
@@ -194,7 +196,7 @@ protected:
 
   void EnsureIntrinsicSizeAndRatio(nsPresContext* aPresContext);
 
-  virtual nsSize ComputeSize(nsIRenderingContext *aRenderingContext,
+  virtual nsSize ComputeSize(nsRenderingContext *aRenderingContext,
                              nsSize aCBSize, nscoord aAvailableWidth,
                              nsSize aMargin, nsSize aBorder, nsSize aPadding,
                              PRBool aShrinkWrap);
@@ -219,14 +221,14 @@ protected:
                         PRInt32              aLength,
                         nscoord              aMaxWidth,
                         PRUint32&            aMaxFit,
-                        nsIRenderingContext& aContext);
+                        nsRenderingContext& aContext);
 
   void DisplayAltText(nsPresContext*      aPresContext,
-                      nsIRenderingContext& aRenderingContext,
+                      nsRenderingContext& aRenderingContext,
                       const nsString&      aAltText,
                       const nsRect&        aRect);
 
-  void PaintImage(nsIRenderingContext& aRenderingContext, nsPoint aPt,
+  void PaintImage(nsRenderingContext& aRenderingContext, nsPoint aPt,
                   const nsRect& aDirtyRect, imgIContainer* aImage,
                   PRUint32 aFlags);
 
@@ -384,6 +386,10 @@ public:
  */
 class nsDisplayImage : public nsDisplayItem {
 public:
+  typedef mozilla::layers::ImageContainer ImageContainer;
+  typedef mozilla::layers::ImageLayer ImageLayer;
+  typedef mozilla::layers::LayerManager LayerManager;
+
   nsDisplayImage(nsDisplayListBuilder* aBuilder, nsImageFrame* aFrame,
                  imgIContainer* aImage)
     : nsDisplayItem(aBuilder, aFrame), mImage(aImage) {
@@ -393,7 +399,7 @@ public:
     MOZ_COUNT_DTOR(nsDisplayImage);
   }
   virtual void Paint(nsDisplayListBuilder* aBuilder,
-                     nsIRenderingContext* aCtx);
+                     nsRenderingContext* aCtx);
   nsCOMPtr<imgIContainer> GetImage();
  
   /**

@@ -49,7 +49,6 @@
 #include "nsIBrowserDOMWindow.h"
 #include "nsIComponentManager.h"
 #include "nsIContent.h"
-#include "nsIContentUtils.h"
 #include "mozilla/dom/Element.h"
 #include "nsIDocument.h"
 #include "nsIDOMDocument.h"
@@ -161,6 +160,10 @@
 #include "nsIWebBrowserChrome3.h"
 #include "nsITabChild.h"
 #include "nsIStrictTransportSecurityService.h"
+#include "nsStructuredCloneContainer.h"
+#include "nsIStructuredCloneContainer.h"
+#include "nsIFaviconService.h"
+#include "mozIAsyncFavicons.h"
 
 // Editor-related
 #include "nsIEditingSession.h"
@@ -201,7 +204,7 @@
 #include "nsIGlobalHistory3.h"
 
 #ifdef DEBUG_DOCSHELL_FOCUS
-#include "nsIEventStateManager.h"
+#include "nsEventStateManager.h"
 #endif
 
 #include "nsIFrame.h"
@@ -215,6 +218,7 @@
 #endif
 
 #include "nsPluginError.h"
+#include "nsContentUtils.h"
 
 static NS_DEFINE_CID(kDOMScriptObjectFactoryCID,
                      NS_DOM_SCRIPT_OBJECT_FACTORY_CID);
@@ -860,6 +864,7 @@ NS_INTERFACE_MAP_BEGIN(nsDocShell)
     NS_INTERFACE_MAP_ENTRY(nsILoadContext)
     NS_INTERFACE_MAP_ENTRY(nsIWebShellServices)
     NS_INTERFACE_MAP_ENTRY(nsILinkHandler)
+    NS_INTERFACE_MAP_ENTRY(nsILinkHandler_5_0)
     NS_INTERFACE_MAP_ENTRY(nsIClipboardCommands)
 NS_INTERFACE_MAP_END_INHERITING(nsDocLoader)
 
@@ -1387,6 +1392,11 @@ nsDocShell::LoadURI(nsIURI * aURI,
             // Set it back to false
             inheritOwner = PR_FALSE;
         }
+    }
+
+    if (aLoadFlags & LOAD_FLAGS_DISALLOW_INHERIT_OWNER) {
+        inheritOwner = PR_FALSE;
+        owner = do_CreateInstance("@mozilla.org/nullprincipal;1");
     }
 
     PRUint32 flags = 0;
@@ -6494,11 +6504,9 @@ nsDocShell::CreateAboutBlankContentViewer(nsIPrincipal* aPrincipal,
   // too, of course.
   mFiredUnloadEvent = PR_FALSE;
 
-  nsCOMPtr<nsIContentUtils> cutils = do_GetService("@mozilla.org/content/contentutils;1");
-  if (!cutils)
-      return NS_ERROR_FAILURE;
+  nsCOMPtr<nsIDocumentLoaderFactory> docFactory =
+      nsContentUtils::FindInternalContentViewer("text/html");
 
-  nsCOMPtr<nsIDocumentLoaderFactory> docFactory = cutils->FindInternalContentViewer("text/html");
   if (docFactory) {
     // generate (about:blank) document to load
     docFactory->CreateBlankDocument(mLoadGroup, aPrincipal,
@@ -7293,7 +7301,7 @@ nsDocShell::RestoreFromHistory()
     // cached viewer size (skipping the resize if they are equal).
 
     if (newRootView) {
-        if (!newBounds.IsEmpty() && newBounds != oldBounds) {
+        if (!newBounds.IsEmpty() && !newBounds.IsEqualEdges(oldBounds)) {
 #ifdef DEBUG_PAGE_CACHE
             printf("resize widget(%d, %d, %d, %d)\n", newBounds.x,
                    newBounds.y, newBounds.width, newBounds.height);
@@ -7523,13 +7531,8 @@ nsDocShell::NewContentViewerObj(const char *aContentType,
 {
     nsCOMPtr<nsIChannel> aOpenedChannel = do_QueryInterface(request);
 
-    nsCOMPtr<nsIContentUtils> cutils = do_GetService("@mozilla.org/content/contentutils;1");
-    if (!cutils) {
-        return NS_ERROR_FAILURE;
-    }
-
     nsCOMPtr<nsIDocumentLoaderFactory> docLoaderFactory =
-        cutils->FindInternalContentViewer(aContentType);
+        nsContentUtils::FindInternalContentViewer(aContentType);
     if (!docLoaderFactory) {
         return NS_ERROR_FAILURE;
     }
@@ -7754,21 +7757,21 @@ nsDocShell::SetupNewViewer(nsIContentViewer * aNewViewer)
 nsresult
 nsDocShell::SetDocCurrentStateObj(nsISHEntry *shEntry)
 {
-    nsresult rv;
-
     nsCOMPtr<nsIDocument> document = do_GetInterface(GetAsSupports(this));
     NS_ENSURE_TRUE(document, NS_ERROR_FAILURE);
 
-    nsAutoString stateData;
+    nsCOMPtr<nsIStructuredCloneContainer> scContainer;
     if (shEntry) {
-        rv = shEntry->GetStateData(stateData);
+        nsresult rv = shEntry->GetStateData(getter_AddRefs(scContainer));
         NS_ENSURE_SUCCESS(rv, rv);
 
-        // if shEntry is null, we just set the pending state object to the
-        // empty string.
+        // If shEntry is null, just set the document's state object to null.
     }
 
-    document->SetCurrentStateObject(stateData);
+    // It's OK for scContainer too be null here; that just means there's no
+    // state data associated with this history entry.
+    document->SetStateObject(scContainer);
+
     return NS_OK;
 }
 
@@ -8022,8 +8025,19 @@ nsDocShell::InternalLoad(nsIURI * aURI,
             NS_SUCCEEDED(URIInheritsSecurityContext(aURI, &inherits)) &&
             inherits) {
 
-            // Don't allow loads that would inherit our security context
-            // if this document came from an unsafe channel.
+            owner = GetInheritedPrincipal(PR_TRUE);
+        }
+    }
+
+    // Don't allow loads that would inherit our security context
+    // if this document came from an unsafe channel.
+    {
+        PRBool willInherit;
+        // This condition needs to match the one in DoChannelLoad.
+        // Except we reverse the rv check to be safe in case
+        // URIInheritsSecurityContext fails here and succeeds there.
+        rv = URIInheritsSecurityContext(aURI, &willInherit);
+        if (NS_FAILED(rv) || willInherit || IsAboutBlank(aURI)) {
             nsCOMPtr<nsIDocShellTreeItem> treeItem = this;
             do {
                 nsCOMPtr<nsIDocShell> itemDocShell =
@@ -8039,11 +8053,9 @@ nsDocShell::InternalLoad(nsIURI * aURI,
                 treeItem->GetSameTypeParent(getter_AddRefs(parent));
                 parent.swap(treeItem);
             } while (treeItem);
-
-            owner = GetInheritedPrincipal(PR_TRUE);
         }
     }
-
+    
     //
     // Resolve the window target before going any further...
     // If the load has been targeted to another DocShell, then transfer the
@@ -8219,33 +8231,6 @@ nsDocShell::InternalLoad(nsIURI * aURI,
     mAllowKeywordFixup =
       (aFlags & INTERNAL_LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP) != 0;
     mURIResultedInDocument = PR_FALSE;  // reset the clock...
-   
-    //
-    // First:
-    // Check to see if the new URI is an anchor in the existing document.
-    // Skip this check if we're doing some sort of abnormal load, if the
-    // new load is a non-history load and has postdata, or if we're doing
-    // a history load and the page identifiers of mOSHE and aSHEntry
-    // don't match.
-    //
-    PRBool allowScroll = PR_TRUE;
-    if (!aSHEntry) {
-        allowScroll = (aPostData == nsnull);
-    } else if (mOSHE) {
-        PRUint32 ourPageIdent;
-        mOSHE->GetPageIdentifier(&ourPageIdent);
-        PRUint32 otherPageIdent;
-        aSHEntry->GetPageIdentifier(&otherPageIdent);
-        allowScroll = (ourPageIdent == otherPageIdent);
-#ifdef DEBUG
-        if (allowScroll) {
-            nsCOMPtr<nsIInputStream> currentPostData;
-            mOSHE->GetPostData(getter_AddRefs(currentPostData));
-            NS_ASSERTION(currentPostData == aPostData,
-                         "Different POST data for entries for the same page?");
-        }
-#endif
-    }
 
     if (aLoadType == LOAD_NORMAL ||
         aLoadType == LOAD_STOP_CONTENT ||
@@ -8253,40 +8238,79 @@ nsDocShell::InternalLoad(nsIURI * aURI,
         aLoadType == LOAD_HISTORY ||
         aLoadType == LOAD_LINK) {
 
-        PRBool wasAnchor = PR_FALSE;
-        PRBool doHashchange = PR_FALSE;
+        // Split mCurrentURI and aURI on the '#' character.  Make sure we read
+        // the return values of SplitURIAtHash; it might fail because
+        // mCurrentURI is null, for instance, and we don't want to allow a
+        // short-circuited navigation in that case.
+        nsCAutoString curBeforeHash, curHash, newBeforeHash, newHash;
+        nsresult splitRv1, splitRv2;
+        splitRv1 = nsContentUtils::SplitURIAtHash(mCurrentURI, curBeforeHash, curHash);
+        splitRv2 = nsContentUtils::SplitURIAtHash(aURI, newBeforeHash, newHash);
 
-        // Get the position of the scrollers.
-        nscoord cx = 0, cy = 0;
-        GetCurScrollPos(ScrollOrientation_X, &cx);
-        GetCurScrollPos(ScrollOrientation_Y, &cy);
+        PRBool sameExceptHashes = NS_SUCCEEDED(splitRv1) &&
+                                  NS_SUCCEEDED(splitRv2) &&
+                                  curBeforeHash.Equals(newBeforeHash);
 
-        if (allowScroll) {
-            NS_ENSURE_SUCCESS(ScrollIfAnchor(aURI, &wasAnchor, aLoadType,
-                                             &doHashchange),
-                              NS_ERROR_FAILURE);
-        }
-
-        // If this is a history load, aSHEntry will have document identifier X
-        // if it was created as a result of a History.pushState() from a
-        // SHEntry with doc ident X, or if it was created by changing the hash
-        // of the URI corresponding to a SHEntry with doc ident X.
         PRBool sameDocIdent = PR_FALSE;
         if (mOSHE && aSHEntry) {
-          PRUint64 ourDocIdent, otherDocIdent;
-          mOSHE->GetDocIdentifier(&ourDocIdent);
-          aSHEntry->GetDocIdentifier(&otherDocIdent);
-          sameDocIdent = (ourDocIdent == otherDocIdent);
+            // We're doing a history load.
+
+            PRUint64 ourDocIdent, otherDocIdent;
+            mOSHE->GetDocIdentifier(&ourDocIdent);
+            aSHEntry->GetDocIdentifier(&otherDocIdent);
+            sameDocIdent = (ourDocIdent == otherDocIdent);
+
+#ifdef DEBUG
+            if (sameDocIdent) {
+                nsCOMPtr<nsIInputStream> currentPostData;
+                mOSHE->GetPostData(getter_AddRefs(currentPostData));
+                NS_ASSERTION(currentPostData == aPostData,
+                             "Different POST data for entries for the same page?");
+            }
+#endif
         }
 
-        // Do a short-circuited load if the new URI differs from the current
-        // URI only in the hash, or if the two entries belong to the same
-        // document and don't point to the same object.
+        // A short-circuited load happens when we navigate between two SHEntries
+        // for the same document.  We do a short-circuited load under two
+        // circumstances.  Either
         //
-        // (If we didn't check that the SHEntries are different objects,
-        // history.go(0) would short-circuit instead of triggering a true
-        // load, and we wouldn't dispatch an onload event to the page.)
-        if (wasAnchor || (sameDocIdent && (mOSHE != aSHEntry))) {
+        //  a) we're navigating between two different SHEntries which have the
+        //     same document identifiers, or
+        //
+        //  b) we're navigating to a new shentry whose URI differs from the
+        //     current URI only in its hash, the new hash is non-empty, and
+        //     we're not doing a POST.
+        //
+        // The restriction tha the SHEntries in (a) must be different ensures
+        // that history.go(0) and the like trigger full refreshes, rather than
+        // short-circuited loads.
+        PRBool doShortCircuitedLoad = (sameDocIdent && mOSHE != aSHEntry) ||
+                                      (!aSHEntry && aPostData == nsnull &&
+                                       sameExceptHashes && !newHash.IsEmpty());
+
+        // Fire a hashchange event if we're doing a short-circuited load and the
+        // URIs differ only in their hashes.
+        PRBool doHashchange = doShortCircuitedLoad &&
+                              sameExceptHashes &&
+                              !curHash.Equals(newHash);
+
+        if (doShortCircuitedLoad) {
+            // Save the current URI; we need it if we fire a hashchange later.
+            nsCOMPtr<nsIURI> oldURI = mCurrentURI;
+
+            // Save the position of the scrollers.
+            nscoord cx = 0, cy = 0;
+            GetCurScrollPos(ScrollOrientation_X, &cx);
+            GetCurScrollPos(ScrollOrientation_Y, &cy);
+
+            // We scroll whenever we're not doing a history load.  Note that
+            // sometimes we might scroll even if we don't fire a hashchange
+            // event!  See bug 653741.
+            if (!aSHEntry) {
+                rv = ScrollToAnchor(curHash, newHash, aLoadType);
+                NS_ENSURE_SUCCESS(rv, rv);
+            }
+
             mLoadType = aLoadType;
             mURIResultedInDocument = PR_TRUE;
 
@@ -8311,7 +8335,7 @@ nsDocShell::InternalLoad(nsIURI * aURI,
             OnNewURI(aURI, nsnull, owner, mLoadType, PR_TRUE, PR_TRUE, PR_TRUE);
 
             nsCOMPtr<nsIInputStream> postData;
-            PRUint32 pageIdent = PR_UINT32_MAX;
+            PRUint64 docIdent = PRUint64(-1);
             nsCOMPtr<nsISupports> cacheKey;
 
             if (mOSHE) {
@@ -8325,19 +8349,8 @@ nsDocShell::InternalLoad(nsIURI * aURI,
                 // wouldn't want here.
                 if (aLoadType & LOAD_CMD_NORMAL) {
                     mOSHE->GetPostData(getter_AddRefs(postData));
-                    mOSHE->GetPageIdentifier(&pageIdent);
+                    mOSHE->GetDocIdentifier(&docIdent);
                     mOSHE->GetCacheKey(getter_AddRefs(cacheKey));
-                }
-
-                if (mLSHE && wasAnchor) {
-                    // If it's an anchor load, set mLSHE's doc identifier to
-                    // mOSHE's doc identifier -- These are the same documents,
-                    // as far as HTML5 is concerned.
-                    PRUint64 docIdent;
-                    rv = mOSHE->GetDocIdentifier(&docIdent);
-                    if (NS_SUCCEEDED(rv)) {
-                        mLSHE->SetDocIdentifier(docIdent);
-                    }
                 }
             }
 
@@ -8358,10 +8371,10 @@ nsDocShell::InternalLoad(nsIURI * aURI,
                 if (cacheKey)
                     mOSHE->SetCacheKey(cacheKey);
 
-                // Propagate our page ident to the new mOSHE so that
-                // we'll know it just differed by a scroll on the page.
-                if (pageIdent != PR_UINT32_MAX)
-                    mOSHE->SetPageIdentifier(pageIdent);
+                // Propagate our document identifier to the new mOSHE so that
+                // we'll know it's related by an anchor navigation or pushState.
+                if (docIdent != PRUint64(-1))
+                    mOSHE->SetDocIdentifier(docIdent);
             }
 
             /* restore previous position of scroller(s), if we're moving
@@ -8429,8 +8442,11 @@ nsDocShell::InternalLoad(nsIURI * aURI,
                   window->DispatchSyncPopState();
                 }
 
-                if (doHashchange)
-                  window->DispatchAsyncHashchange();
+                if (doHashchange) {
+                  // Make sure to use oldURI here, not mCurrentURI, because by
+                  // now, mCurrentURI has changed!
+                  window->DispatchAsyncHashchange(oldURI, aURI);
+                }
             }
 
             return NS_OK;
@@ -8846,6 +8862,8 @@ nsDocShell::DoURILoad(nsIURI * aURI,
     PRBool inherit;
     // We expect URIInheritsSecurityContext to return success for an
     // about:blank URI, so don't call IsAboutBlank() if this call fails.
+    // This condition needs to match the one in InternalLoad where
+    // we're checking for things that will use the owner.
     rv = URIInheritsSecurityContext(aURI, &inherit);
     if (NS_SUCCEEDED(rv) && (inherit || IsAboutBlank(aURI))) {
         channel->SetOwner(aOwner);
@@ -9056,20 +9074,9 @@ nsresult nsDocShell::DoChannelLoad(nsIChannel * aChannel,
 }
 
 nsresult
-nsDocShell::ScrollIfAnchor(nsIURI * aURI, PRBool * aWasAnchor,
-                           PRUint32 aLoadType, PRBool * aDoHashchange)
+nsDocShell::ScrollToAnchor(nsACString & aCurHash, nsACString & aNewHash,
+                           PRUint32 aLoadType)
 {
-    NS_ASSERTION(aURI, "null uri arg");
-    NS_ASSERTION(aWasAnchor, "null anchor arg");
-    NS_PRECONDITION(aDoHashchange, "null hashchange arg");
-
-    if (!aURI || !aWasAnchor) {
-        return NS_ERROR_FAILURE;
-    }
-
-    *aWasAnchor = PR_FALSE;
-    *aDoHashchange = PR_FALSE;
-
     if (!mCurrentURI) {
         return NS_OK;
     }
@@ -9079,116 +9086,32 @@ nsDocShell::ScrollIfAnchor(nsIURI * aURI, PRBool * aWasAnchor,
     if (NS_FAILED(rv) || !shell) {
         // If we failed to get the shell, or if there is no shell,
         // nothing left to do here.
-        
         return rv;
-    }
-
-    // NOTE: we assume URIs are absolute for comparison purposes
-
-    nsCAutoString currentSpec;
-    NS_ENSURE_SUCCESS(mCurrentURI->GetSpec(currentSpec),
-                      NS_ERROR_FAILURE);
-
-    nsCAutoString newSpec;
-    NS_ENSURE_SUCCESS(aURI->GetSpec(newSpec), NS_ERROR_FAILURE);
-
-    // Search for hash marks in the current URI and the new URI and
-    // take a copy of everything to the left of the hash for
-    // comparison.
-
-    const char kHash = '#';
-
-    // Split the new URI into a left and right part
-    // (assume we're parsing it out right)
-    nsACString::const_iterator urlStart, urlEnd, refStart, refEnd;
-    newSpec.BeginReading(urlStart);
-    newSpec.EndReading(refEnd);
-    
-    PRInt32 hashNew = newSpec.FindChar(kHash);
-    if (hashNew == 0) {
-        return NS_OK;           // Strange URI
-    }
-
-    if (hashNew > 0) {
-        // found it
-        urlEnd = urlStart;
-        urlEnd.advance(hashNew);
-        
-        refStart = urlEnd;
-        ++refStart;             // advanced past '#'
-        
-    }
-    else {
-        // no hash at all
-        urlEnd = refStart = refEnd;
-    }
-    const nsACString& sNewLeft = Substring(urlStart, urlEnd);
-    const nsACString& sNewRef =  Substring(refStart, refEnd);
-                                          
-    // Split the current URI in a left and right part
-    nsACString::const_iterator currentLeftStart, currentLeftEnd,
-                               currentRefStart, currentRefEnd;
-    currentSpec.BeginReading(currentLeftStart);
-    currentSpec.EndReading(currentRefEnd);
-
-    PRInt32 hashCurrent = currentSpec.FindChar(kHash);
-    if (hashCurrent == 0) {
-        return NS_OK;           // Strange URI 
-    }
-
-    if (hashCurrent > 0) {
-        currentLeftEnd = currentLeftStart;
-        currentLeftEnd.advance(hashCurrent);
-
-        currentRefStart = currentLeftEnd;
-        ++currentRefStart; // advance past '#'
-    }
-    else {
-        // no hash at all in currentSpec
-        currentLeftEnd = currentRefStart = currentRefEnd;
     }
 
     // If we have no new anchor, we do not want to scroll, unless there is a
     // current anchor and we are doing a history load.  So return if we have no
     // new anchor, and there is no current anchor or the load is not a history
     // load.
-    NS_ASSERTION(hashNew != 0 && hashCurrent != 0,
-                 "What happened to the early returns above?");
-    if (hashNew == kNotFound &&
-        (hashCurrent == kNotFound || aLoadType != LOAD_HISTORY)) {
+    if ((aCurHash.IsEmpty() || aLoadType != LOAD_HISTORY) &&
+        aNewHash.IsEmpty()) {
         return NS_OK;
     }
 
-    // Compare the URIs.
-    //
-    // NOTE: this is a case sensitive comparison because some parts of the
-    // URI are case sensitive, and some are not. i.e. the domain name
-    // is case insensitive but the the paths are not.
-    //
-    // This means that comparing "http://www.ABC.com/" to "http://www.abc.com/"
-    // will fail this test.
-
-    if (!Substring(currentLeftStart, currentLeftEnd).Equals(sNewLeft)) {
-        return NS_OK;           // URIs not the same
-    }
-
-    // Now we know we are dealing with an anchor
-    *aWasAnchor = PR_TRUE;
-
-    // We should fire a hashchange event once we're done here if the two hashes
-    // are different.
-    *aDoHashchange = !Substring(currentRefStart, currentRefEnd).Equals(sNewRef);
+    // Take the '#' off aNewHash to get the ref name.  (aNewHash might be empty,
+    // but that's fine.)
+    nsDependentCSubstring newHashName(aNewHash, 1);
 
     // Both the new and current URIs refer to the same page. We can now
     // browse to the hash stored in the new URI.
 
-    if (!sNewRef.IsEmpty()) {
+    if (!newHashName.IsEmpty()) {
         // anchor is there, but if it's a load from history,
         // we don't have any anchor jumping to do
         PRBool scroll = aLoadType != LOAD_HISTORY &&
                         aLoadType != LOAD_RELOAD_NORMAL;
 
-        char *str = ToNewCString(sNewRef);
+        char *str = ToNewCString(newHashName);
         if (!str) {
             return NS_ERROR_OUT_OF_MEMORY;
         }
@@ -9230,7 +9153,7 @@ nsDocShell::ScrollIfAnchor(nsIURI * aURI, PRBool * aWasAnchor,
             nsXPIDLString uStr;
 
             rv = textToSubURI->UnEscapeAndConvert(PromiseFlatCString(aCharset).get(),
-                                                  PromiseFlatCString(sNewRef).get(),
+                                                  PromiseFlatCString(newHashName).get(),
                                                   getter_Copies(uStr));
             NS_ENSURE_SUCCESS(rv, rv);
 
@@ -9519,65 +9442,42 @@ nsDocShell::SetReferrerURI(nsIURI * aURI)
 // nsDocShell: Session History
 //*****************************************************************************
 
-nsresult
-nsDocShell::StringifyJSValVariant(JSContext *aCx, nsIVariant *aData,
-                                  nsAString &aResult)
+namespace
 {
-    nsresult rv;
-    aResult.Truncate();
+    // Callback used in nsDocShell::AddState.  When we change URIs with
+    // push/replaceState, we use this callback to ensure that Places associates
+    // a favicon with the new URI.
+    class nsAddStateFaviconCallback : public nsIFaviconDataCallback
+    {
+    public:
+        NS_DECL_ISUPPORTS
 
-    // First, try to extract a jsval from the variant |aData|.  This works only
-    // if the variant implements GetAsJSVal.
-    jsval jsData;
-    rv = aData->GetAsJSVal(&jsData);
-    NS_ENSURE_SUCCESS(rv, NS_ERROR_UNEXPECTED);
-
-    nsCOMPtr<nsIJSContextStack> contextStack;
-    JSContext *cx = aCx;
-    if (!cx) {
-        // Now get the JSContext associated with the current document.
-        // First get the current document.
-        nsCOMPtr<nsIDocument> document = do_GetInterface(GetAsSupports(this));
-        NS_ENSURE_TRUE(document, NS_ERROR_FAILURE);
-
-        // Get the JSContext from the document, like we do in
-        // nsContentUtils::GetContextFromDocument().
-        nsIScriptGlobalObject *sgo = document->GetScopeObject();
-        NS_ENSURE_TRUE(sgo, NS_ERROR_FAILURE);
-
-        nsIScriptContext *scx = sgo->GetContext();
-        NS_ENSURE_TRUE(scx, NS_ERROR_FAILURE);
-
-        cx = (JSContext *)scx->GetNativeContext();
-
-        // If our json call triggers a JS-to-C++ call, we want that call to use
-        // aCx as the context.  So we push aCx onto the context stack.
-        contextStack =
-            do_GetService("@mozilla.org/js/xpc/ContextStack;1", &rv);
-        NS_ENSURE_SUCCESS(rv, rv);
-
-        contextStack->Push(cx);
-    }
-
-    nsCOMPtr<nsIJSON> json = do_GetService("@mozilla.org/dom/json;1");
-    if(json) {
-        // Do the encoding
-        rv = json->EncodeFromJSVal(&jsData, cx, aResult);
-    }
-    else {
-        rv = NS_ERROR_FAILURE;
-    }
-
-    if (contextStack) {
-        if (NS_FAILED(rv)) {
-            JS_ClearPendingException(cx);
+        nsAddStateFaviconCallback(nsIURI *aNewURI)
+          : mNewURI(aNewURI)
+        {
         }
 
-        contextStack->Pop(&cx);
-    }
+        NS_IMETHODIMP
+        OnFaviconDataAvailable(nsIURI *aFaviconURI, PRUint32 aDataLen,
+                               const PRUint8 *aData, const nsACString &aMimeType)
+        {
+            NS_ASSERTION(aDataLen == 0,
+                         "We weren't expecting the callback to deliver data.");
+            nsCOMPtr<mozIAsyncFavicons> favSvc =
+                do_GetService("@mozilla.org/browser/favicon-service;1");
+            NS_ENSURE_STATE(favSvc);
 
-    return rv;
-}
+            return favSvc->SetAndFetchFaviconForPage(mNewURI, aFaviconURI,
+                                                     PR_FALSE, nsnull);
+        }
+
+    private:
+        nsCOMPtr<nsIURI> mNewURI;
+    };
+
+    NS_IMPL_ISUPPORTS1(nsAddStateFaviconCallback, nsIFaviconDataCallback)
+
+} // anonymous namespace
 
 NS_IMETHODIMP
 nsDocShell::AddState(nsIVariant *aData, const nsAString& aTitle,
@@ -9586,7 +9486,7 @@ nsDocShell::AddState(nsIVariant *aData, const nsAString& aTitle,
     // Implements History.pushState and History.replaceState
 
     // Here's what we do, roughly in the order specified by HTML5:
-    // 1. Serialize aData to JSON.
+    // 1. Serialize aData using structured clone.
     // 2. If the third argument is present,
     //     a. Resolve the url, relative to the first script's base URL
     //     b. If (a) fails, raise a SECURITY_ERR
@@ -9620,13 +9520,16 @@ nsDocShell::AddState(nsIVariant *aData, const nsAString& aTitle,
 
     nsresult rv;
 
-    // Step 1: Clone aData by getting its JSON representation.
-    //
-    // StringifyJSValVariant might cause arbitrary JS to run, and this code
-    // might navigate the page we're on, potentially to a different origin! (bug
+    nsCOMPtr<nsIDocument> document = do_GetInterface(GetAsSupports(this));
+    NS_ENSURE_TRUE(document, NS_ERROR_FAILURE);
+
+    // Step 1: Serialize aData using structured clone.
+    nsCOMPtr<nsIStructuredCloneContainer> scContainer;
+
+    // scContainer->Init might cause arbitrary JS to run, and this code might
+    // navigate the page we're on, potentially to a different origin! (bug
     // 634834)  To protect against this, we abort if our principal changes due
-    // to the stringify call.
-    nsString dataStr;
+    // to the InitFromVariant() call.
     {
         nsCOMPtr<nsIDocument> origDocument =
             do_GetInterface(GetAsSupports(this));
@@ -9634,7 +9537,18 @@ nsDocShell::AddState(nsIVariant *aData, const nsAString& aTitle,
             return NS_ERROR_DOM_SECURITY_ERR;
         nsCOMPtr<nsIPrincipal> origPrincipal = origDocument->NodePrincipal();
 
-        rv = StringifyJSValVariant(aCx, aData, dataStr);
+        scContainer = new nsStructuredCloneContainer();
+        JSContext *cx = aCx;
+        if (!cx) {
+            cx = nsContentUtils::GetContextFromDocument(document);
+        }
+        rv = scContainer->InitFromVariant(aData, cx);
+
+        // If we're running in the document's context and the structured clone
+        // failed, clear the context's pending exception.  See bug 637116.
+        if (NS_FAILED(rv) && !aCx) {
+            JS_ClearPendingException(aCx);
+        }
         NS_ENSURE_SUCCESS(rv, rv);
 
         nsCOMPtr<nsIDocument> newDocument =
@@ -9649,7 +9563,7 @@ nsDocShell::AddState(nsIVariant *aData, const nsAString& aTitle,
     }
 
     // Check that the state object isn't too long.
-    // Default max length: 640k chars.
+    // Default max length: 640k bytes.
     PRInt32 maxStateObjSize = 0xA0000;
     if (mPrefs) {
         mPrefs->GetIntPref("browser.history.maxStateObjectSize",
@@ -9658,11 +9572,13 @@ nsDocShell::AddState(nsIVariant *aData, const nsAString& aTitle,
     if (maxStateObjSize < 0) {
         maxStateObjSize = 0;
     }
-    NS_ENSURE_TRUE(dataStr.Length() <= (PRUint32)maxStateObjSize,
-                   NS_ERROR_ILLEGAL_VALUE);
 
-    nsCOMPtr<nsIDocument> document = do_GetInterface(GetAsSupports(this));
-    NS_ENSURE_TRUE(document, NS_ERROR_FAILURE);
+    PRUint64 scSize;
+    rv = scContainer->GetSerializedNBytes(&scSize);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    NS_ENSURE_TRUE(scSize <= (PRUint32)maxStateObjSize,
+                   NS_ERROR_ILLEGAL_VALUE);
 
     // Step 2: Resolve aURL
     PRBool equalURIs = PR_TRUE;
@@ -9788,6 +9704,11 @@ nsDocShell::AddState(nsIVariant *aData, const nsAString& aTitle,
         NS_ENSURE_SUCCESS(newSHEntry->SetDocIdentifier(ourDocIdent),
                           NS_ERROR_FAILURE);
 
+        // Set the new SHEntry's title (bug 655273).
+        nsString title;
+        mOSHE->GetTitle(getter_Copies(title));
+        newSHEntry->SetTitle(title);
+
         // AddToSessionHistory may not modify mOSHE.  In case it doesn't,
         // we'll just set mOSHE here.
         mOSHE = newSHEntry;
@@ -9799,7 +9720,7 @@ nsDocShell::AddState(nsIVariant *aData, const nsAString& aTitle,
 
     // Step 4: Modify new/original session history entry and clear its POST
     // data, if there is any.
-    newSHEntry->SetStateData(dataStr);
+    newSHEntry->SetStateData(scContainer);
     newSHEntry->SetPostData(nsnull);
 
     // Step 5: If aReplace is false, indicating that we're doing a pushState
@@ -9833,11 +9754,33 @@ nsDocShell::AddState(nsIVariant *aData, const nsAString& aTitle,
         document->SetDocumentURI(newURI);
 
         AddURIVisit(newURI, oldURI, oldURI, 0);
+
+        // AddURIVisit doesn't set the title for the new URI in global history,
+        // so do that here.
+        if (mUseGlobalHistory) {
+            nsCOMPtr<IHistory> history = services::GetHistoryService();
+            if (history) {
+                history->SetURITitle(newURI, mTitle);
+            }
+            else if (mGlobalHistory) {
+                mGlobalHistory->SetPageTitle(newURI, mTitle);
+            }
+        }
+
+        // Inform the favicon service that our old favicon applies to this new
+        // URI.
+        nsCOMPtr<mozIAsyncFavicons> favSvc =
+            do_GetService("@mozilla.org/browser/favicon-service;1");
+        if (favSvc) {
+            nsCOMPtr<nsIFaviconDataCallback> callback =
+                new nsAddStateFaviconCallback(newURI);
+            favSvc->GetFaviconURLForPage(oldURI, callback);
+        }
     }
     else {
         FireDummyOnLocationChange();
     }
-    document->SetCurrentStateObject(dataStr);
+    document->SetStateObject(scContainer);
 
     return NS_OK;
 }
@@ -11437,17 +11380,21 @@ public:
   OnLinkClickEvent(nsDocShell* aHandler, nsIContent* aContent,
                    nsIURI* aURI,
                    const PRUnichar* aTargetSpec,
-                   nsIInputStream* aPostDataStream = 0, 
-                   nsIInputStream* aHeadersDataStream = 0);
+                   nsIInputStream* aPostDataStream, 
+                   nsIInputStream* aHeadersDataStream,
+                   PRBool aIsTrusted);
 
   NS_IMETHOD Run() {
     nsCOMPtr<nsPIDOMWindow> window(do_QueryInterface(mHandler->mScriptGlobal));
     nsAutoPopupStatePusher popupStatePusher(window, mPopupState);
 
-    mHandler->OnLinkClickSync(mContent, mURI,
-                              mTargetSpec.get(), mPostDataStream,
-                              mHeadersDataStream,
-                              nsnull, nsnull);
+    nsCxPusher pusher;
+    if (mIsTrusted || pusher.Push(mContent)) {
+      mHandler->OnLinkClickSync(mContent, mURI,
+                                mTargetSpec.get(), mPostDataStream,
+                                mHeadersDataStream,
+                                nsnull, nsnull);
+    }
     return NS_OK;
   }
 
@@ -11459,6 +11406,7 @@ private:
   nsCOMPtr<nsIInputStream> mHeadersDataStream;
   nsCOMPtr<nsIContent>     mContent;
   PopupControlState        mPopupState;
+  PRBool                   mIsTrusted;
 };
 
 OnLinkClickEvent::OnLinkClickEvent(nsDocShell* aHandler,
@@ -11466,13 +11414,15 @@ OnLinkClickEvent::OnLinkClickEvent(nsDocShell* aHandler,
                                    nsIURI* aURI,
                                    const PRUnichar* aTargetSpec,
                                    nsIInputStream* aPostDataStream,
-                                   nsIInputStream* aHeadersDataStream)
+                                   nsIInputStream* aHeadersDataStream,
+                                   PRBool aIsTrusted)
   : mHandler(aHandler)
   , mURI(aURI)
   , mTargetSpec(aTargetSpec)
   , mPostDataStream(aPostDataStream)
   , mHeadersDataStream(aHeadersDataStream)
   , mContent(aContent)
+  , mIsTrusted(aIsTrusted)
 {
   nsCOMPtr<nsPIDOMWindow> window(do_QueryInterface(mHandler->mScriptGlobal));
 
@@ -11487,6 +11437,18 @@ nsDocShell::OnLinkClick(nsIContent* aContent,
                         const PRUnichar* aTargetSpec,
                         nsIInputStream* aPostDataStream,
                         nsIInputStream* aHeadersDataStream)
+{
+  return OnLinkClick(aContent, aURI, aTargetSpec,
+                     aPostDataStream, aHeadersDataStream, PR_TRUE);
+}
+
+NS_IMETHODIMP
+nsDocShell::OnLinkClick(nsIContent* aContent,
+                        nsIURI* aURI,
+                        const PRUnichar* aTargetSpec,
+                        nsIInputStream* aPostDataStream,
+                        nsIInputStream* aHeadersDataStream,
+                        PRBool aIsTrusted)
 {
   NS_ASSERTION(NS_IsMainThread(), "wrong thread");
 
@@ -11514,7 +11476,7 @@ nsDocShell::OnLinkClick(nsIContent* aContent,
 
   nsCOMPtr<nsIRunnable> ev =
       new OnLinkClickEvent(this, aContent, aURI, target.get(),
-                           aPostDataStream, aHeadersDataStream);
+                           aPostDataStream, aHeadersDataStream, aIsTrusted);
   return NS_DispatchToCurrentThread(ev);
 }
 

@@ -43,10 +43,10 @@
 
 #include "sqlite3.h"
 
-#include "mozilla/Monitor.h"
+#include "mozilla/ReentrantMonitor.h"
 
-using mozilla::Monitor;
-using mozilla::MonitorAutoEnter;
+using mozilla::ReentrantMonitor;
+using mozilla::ReentrantMonitorAutoEnter;
 
 /**
  * Verify that mozIStorageAsyncStatement's life-cycle never triggers a mutex on
@@ -140,7 +140,7 @@ class ThreadWedger : public nsRunnable
 {
 public:
   ThreadWedger(nsIEventTarget *aTarget)
-  : mMonitor("thread wedger")
+  : mReentrantMonitor("thread wedger")
   , unwedged(false)
   {
     aTarget->Dispatch(this, aTarget->NS_DISPATCH_NORMAL);
@@ -148,7 +148,7 @@ public:
 
   NS_IMETHOD Run()
   {
-    MonitorAutoEnter automon(mMonitor);
+    ReentrantMonitorAutoEnter automon(mReentrantMonitor);
 
     if (!unwedged)
       automon.Wait();
@@ -158,45 +158,18 @@ public:
 
   void unwedge()
   {
-    MonitorAutoEnter automon(mMonitor);
+    ReentrantMonitorAutoEnter automon(mReentrantMonitor);
     unwedged = true;
     automon.Notify();
   }
 
 private:
-  Monitor mMonitor;
+  ReentrantMonitor mReentrantMonitor;
   bool unwedged;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 //// Async Helpers
-
-/**
- * Execute an async statement, blocking the main thread until we get the
- * callback completion notification.
- */
-void
-blocking_async_execute(mozIStorageBaseStatement *stmt)
-{
-  nsRefPtr<AsyncStatementSpinner> spinner(new AsyncStatementSpinner());
-
-  nsCOMPtr<mozIStoragePendingStatement> pendy;
-  (void)stmt->ExecuteAsync(spinner, getter_AddRefs(pendy));
-  spinner->SpinUntilCompleted();
-}
-
-/**
- * Invoke AsyncClose on the given connection, blocking the main thread until we
- * get the completion notification.
- */
-void
-blocking_async_close(mozIStorageConnection *db)
-{
-  nsRefPtr<AsyncStatementSpinner> spinner(new AsyncStatementSpinner());
-
-  db->AsyncClose(spinner);
-  spinner->SpinUntilCompleted();
-}
 
 /**
  * A horrible hack to figure out what the connection's async thread is.  By

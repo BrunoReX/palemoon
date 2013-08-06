@@ -50,11 +50,9 @@ static PRBool gDisableOptimize = PR_FALSE;
 
 #include "cairo.h"
 
-#if defined(XP_WIN) || defined(WINCE)
-#include "gfxWindowsPlatform.h"
-#endif
+#if defined(XP_WIN)
 
-#if defined(XP_WIN) && !defined(WINCE)
+#include "gfxWindowsPlatform.h"
 
 /* Whether to use the windows surface; only for desktop win32 */
 #define USE_WIN_SURFACE 1
@@ -112,14 +110,7 @@ static PRBool AllowedImageSize(PRInt32 aWidth, PRInt32 aHeight)
 // optimized platform-specific surfaces.
 static PRBool ShouldUseImageSurfaces()
 {
-#if defined(WINCE)
-  // There is no test on windows mobile to check for Gui resources.
-  // Allocate, until we run out of memory.
-  gfxWindowsPlatform::RenderMode rmode = gfxWindowsPlatform::GetPlatform()->GetRenderMode();
-  return rmode != gfxWindowsPlatform::RENDER_DDRAW &&
-      rmode != gfxWindowsPlatform::RENDER_DDRAW_GL;
-
-#elif defined(USE_WIN_SURFACE)
+#if defined(USE_WIN_SURFACE)
   static const DWORD kGDIObjectsHighWaterMark = 7000;
 
   if (gfxWindowsPlatform::GetPlatform()->GetRenderMode() ==
@@ -764,7 +755,7 @@ void imgFrame::SetBlendMethod(PRInt32 aBlendMethod)
 
 PRBool imgFrame::ImageComplete() const
 {
-  return mDecoded == nsIntRect(mOffset, mSize);
+  return mDecoded.IsEqualInterior(nsIntRect(mOffset, mSize));
 }
 
 // A hint from the image decoders that this image has no alpha, even

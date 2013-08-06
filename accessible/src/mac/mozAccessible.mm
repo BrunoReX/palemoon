@@ -238,7 +238,7 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
   if ([attribute isEqualToString:NSAccessibilityRoleDescriptionAttribute])
     return NSAccessibilityRoleDescription([self role], nil);
 #endif
-  if ([attribute isEqualToString:kInstanceDescriptionAttribute])
+  if ([attribute isEqualToString: (NSString*) kInstanceDescriptionAttribute])
     return [self customDescription];
   if ([attribute isEqualToString:NSAccessibilityFocusedAttribute])
     return [NSNumber numberWithBool:[self isFocused]];
@@ -246,7 +246,7 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
     return [self size];
   if ([attribute isEqualToString:NSAccessibilityWindowAttribute])
     return [self window];
-  if ([attribute isEqualToString:kTopLevelUIElementAttribute])
+  if ([attribute isEqualToString: (NSString*) kTopLevelUIElementAttribute])
     return [self window];
   if ([attribute isEqualToString:NSAccessibilityTitleAttribute] || 
       [attribute isEqualToString:NSAccessibilityTitleUIElementAttribute])
@@ -471,7 +471,7 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
   NS_ASSERTION(nsAccUtils::IsTextInterfaceSupportCorrect(mGeckoAccessible),
                "Does not support nsIAccessibleText when it should");
 #endif
-  return AXRoles[mRole];
+  return (NSString*) AXRoles[mRole];
 }
 
 - (NSString*)subrole
@@ -518,8 +518,11 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
 
+  if (mGeckoAccessible->IsDefunct())
+    return nil;
+
   nsAutoString desc;
-  mGeckoAccessible->GetDescription (desc);
+  mGeckoAccessible->Description(desc);
   return desc.IsEmpty() ? nil : [NSString stringWithCharacters:desc.BeginReading() length:desc.Length()];
 
   NS_OBJC_END_TRY_ABORT_BLOCK_NIL;
@@ -548,16 +551,12 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
 
 - (BOOL)isFocused
 {
-  PRUint32 state = 0;
-  mGeckoAccessible->GetState (&state, nsnull);
-  return (state & nsIAccessibleStates::STATE_FOCUSED) != 0;
+  return (mGeckoAccessible->State() & states::FOCUSED) != 0;
 }
 
 - (BOOL)canBeFocused
 {
-  PRUint32 state = 0;
-  mGeckoAccessible->GetState (&state, nsnull);
-  return (state & nsIAccessibleStates::STATE_FOCUSABLE) != 0;
+  return mGeckoAccessible->State() & states::FOCUSABLE;
 }
 
 - (BOOL)focus
@@ -568,9 +567,7 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
 
 - (BOOL)isEnabled
 {
-  PRUint32 state = 0;
-  mGeckoAccessible->GetState (&state, nsnull);
-  return (state & nsIAccessibleStates::STATE_UNAVAILABLE) == 0;
+  return (mGeckoAccessible->State() & states::UNAVAILABLE) == 0;
 }
 
 // The root accessible calls this when the focused node was

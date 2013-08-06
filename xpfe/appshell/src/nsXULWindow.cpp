@@ -1,7 +1,6 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:set ts=2 sw=2 sts=2 ci et: */
-/*
- * ***** BEGIN LICENSE BLOCK *****
+/* ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *
  * The contents of this file are subject to the Mozilla Public License Version
@@ -59,7 +58,6 @@
 #include "nsIDocument.h"
 #include "nsIDOMBarProp.h"
 #include "nsIDOMDocument.h"
-#include "nsIDOMDocumentEvent.h"
 #include "nsIDOMXULDocument.h"
 #include "nsIDOMElement.h"
 #include "nsIPrivateDOMEvent.h"
@@ -84,15 +82,12 @@
 #include "nsIScriptSecurityManager.h"
 #include "nsIWindowWatcher.h"
 #include "nsIURI.h"
-#include "nsIDOMDocumentView.h"
-#include "nsIDOMViewCSS.h"
 #include "nsIDOMCSSStyleDeclaration.h"
 #include "nsITimelineService.h"
 #include "nsAppShellCID.h"
 #include "nsReadableUtils.h"
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
-#include "nsIContentUtils.h"
 
 #include "nsWebShellWindow.h" // get rid of this one, too...
 
@@ -276,18 +271,17 @@ NS_IMETHODIMP nsXULWindow::SetZLevel(PRUint32 aLevel)
   nsCOMPtr<nsIContentViewer> cv;
   mDocShell->GetContentViewer(getter_AddRefs(cv));
   if (cv) {
-    nsCOMPtr<nsIDOMDocumentEvent> docEvent(
-      do_QueryInterface(cv->GetDocument()));
-    if (docEvent) {
+    nsCOMPtr<nsIDOMDocument> domDoc = do_QueryInterface(cv->GetDocument());
+    if (domDoc) {
       nsCOMPtr<nsIDOMEvent> event;
-      docEvent->CreateEvent(NS_LITERAL_STRING("Events"), getter_AddRefs(event));
+      domDoc->CreateEvent(NS_LITERAL_STRING("Events"), getter_AddRefs(event));
       if (event) {
         event->InitEvent(NS_LITERAL_STRING("windowZLevel"), PR_TRUE, PR_FALSE);
 
         nsCOMPtr<nsIPrivateDOMEvent> privateEvent(do_QueryInterface(event));
         privateEvent->SetTrusted(PR_TRUE);
 
-        nsCOMPtr<nsIDOMEventTarget> targ(do_QueryInterface(docEvent));
+        nsCOMPtr<nsIDOMEventTarget> targ = do_QueryInterface(domDoc);
         if (targ) {
           PRBool defaultActionEnabled;
           targ->DispatchEvent(event, &defaultActionEnabled);
@@ -1392,10 +1386,8 @@ void nsXULWindow::SyncAttributesToWidget()
 
   // "chromemargin" attribute
   nsIntMargin margins;
-  nsCOMPtr<nsIContentUtils> cutils =
-    do_GetService("@mozilla.org/content/contentutils;1");
   rv = windowElement->GetAttribute(NS_LITERAL_STRING("chromemargin"), attr);
-  if (NS_SUCCEEDED(rv) && cutils && cutils->ParseIntMarginValue(attr, margins)) {
+  if (NS_SUCCEEDED(rv) && nsContentUtils::ParseIntMarginValue(attr, margins)) {
     mWindow->SetNonClientMargins(margins);
   }
 

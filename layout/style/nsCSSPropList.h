@@ -307,6 +307,7 @@ CSS_PROP_OUTLINE(
     _moz_outline_radius_topLeft,
     CSS_PROP_DOMPROP_PREFIXED(OutlineRadiusTopleft),
     CSS_PROPERTY_PARSE_FUNCTION |
+        CSS_PROPERTY_VALUE_NONNEGATIVE |
         CSS_PROPERTY_STORES_CALC,
     0,
     nsnull,
@@ -317,6 +318,7 @@ CSS_PROP_OUTLINE(
     _moz_outline_radius_topRight,
     CSS_PROP_DOMPROP_PREFIXED(OutlineRadiusTopright),
     CSS_PROPERTY_PARSE_FUNCTION |
+        CSS_PROPERTY_VALUE_NONNEGATIVE |
         CSS_PROPERTY_STORES_CALC,
     0,
     nsnull,
@@ -327,6 +329,7 @@ CSS_PROP_OUTLINE(
     _moz_outline_radius_bottomRight,
     CSS_PROP_DOMPROP_PREFIXED(OutlineRadiusBottomright),
     CSS_PROPERTY_PARSE_FUNCTION |
+        CSS_PROPERTY_VALUE_NONNEGATIVE |
         CSS_PROPERTY_STORES_CALC,
     0,
     nsnull,
@@ -337,6 +340,7 @@ CSS_PROP_OUTLINE(
     _moz_outline_radius_bottomLeft,
     CSS_PROP_DOMPROP_PREFIXED(OutlineRadiusBottomleft),
     CSS_PROPERTY_PARSE_FUNCTION |
+        CSS_PROPERTY_VALUE_NONNEGATIVE |
         CSS_PROPERTY_STORES_CALC,
     0,
     nsnull,
@@ -456,14 +460,6 @@ CSS_PROP_DISPLAY(
     CSS_PROP_NO_OFFSET,
     eStyleAnimType_None)
 #endif
-CSS_PROP_BACKENDONLY(
-    azimuth,
-    azimuth,
-    Azimuth,
-    CSS_PROPERTY_PARSE_VALUE |
-        CSS_PROPERTY_VALUE_PARSER_FUNCTION,
-    0,
-    kAzimuthKTable)
 CSS_PROP_SHORTHAND(
     background,
     background,
@@ -566,6 +562,7 @@ CSS_PROP_BACKGROUND(
     CSS_PROPERTY_PARSE_FUNCTION |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
         CSS_PROPERTY_VALUE_LIST_USES_COMMAS |
+        CSS_PROPERTY_VALUE_NONNEGATIVE |
         CSS_PROPERTY_STORES_CALC,
     0,
     kBackgroundSizeKTable,
@@ -1000,7 +997,8 @@ CSS_PROP_TABLEBORDER(
     border-spacing,
     border_spacing,
     BorderSpacing,
-    CSS_PROPERTY_PARSE_FUNCTION,
+    CSS_PROPERTY_PARSE_FUNCTION |
+        CSS_PROPERTY_VALUE_NONNEGATIVE,
     0,
     nsnull,
     CSS_PROP_NO_OFFSET,
@@ -1131,6 +1129,7 @@ CSS_PROP_BORDER(
     BorderTopLeftRadius,
     CSS_PROPERTY_PARSE_FUNCTION |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER |
+        CSS_PROPERTY_VALUE_NONNEGATIVE |
         CSS_PROPERTY_STORES_CALC,
     0,
     nsnull,
@@ -1142,6 +1141,7 @@ CSS_PROP_BORDER(
     BorderTopRightRadius,
     CSS_PROPERTY_PARSE_FUNCTION |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER |
+        CSS_PROPERTY_VALUE_NONNEGATIVE |
         CSS_PROPERTY_STORES_CALC,
     0,
     nsnull,
@@ -1153,6 +1153,7 @@ CSS_PROP_BORDER(
     BorderBottomRightRadius,
     CSS_PROPERTY_PARSE_FUNCTION |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER |
+        CSS_PROPERTY_VALUE_NONNEGATIVE |
         CSS_PROPERTY_STORES_CALC,
     0,
     nsnull,
@@ -1164,6 +1165,7 @@ CSS_PROP_BORDER(
     BorderBottomLeftRadius,
     CSS_PROPERTY_PARSE_FUNCTION |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER |
+        CSS_PROPERTY_VALUE_NONNEGATIVE |
         CSS_PROPERTY_STORES_CALC,
     0,
     nsnull,
@@ -1187,6 +1189,7 @@ CSS_PROP_BORDER(
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER |
         CSS_PROPERTY_VALUE_LIST_USES_COMMAS |
         CSS_PROPERTY_IGNORED_WHEN_COLORS_DISABLED,
+        // NOTE: some components must be nonnegative
     0,
     kBoxShadowTypeKTable,
     offsetof(nsStyleBorder, mBoxShadow),
@@ -1245,7 +1248,7 @@ CSS_PROP_COLUMN(
     CSS_PROPERTY_PARSE_VALUE |
         // Need to reject 0 in addition to negatives.  If we accept 0, we
         // need to change NS_STYLE_COLUMN_COUNT_AUTO to something else.
-        CSS_PROPERTY_VALUE_POSITIVE_NONZERO,
+        CSS_PROPERTY_VALUE_AT_LEAST_ONE,
     VARIANT_AHI,
     nsnull,
     offsetof(nsStyleColumn, mColumnCount),
@@ -1332,25 +1335,6 @@ CSS_PROP_CONTENT(
     nsnull,
     CSS_PROP_NO_OFFSET,
     eStyleAnimType_None) // XXX bug 137285
-CSS_PROP_SHORTHAND(
-    cue,
-    cue,
-    Cue,
-    CSS_PROPERTY_PARSE_FUNCTION)
-CSS_PROP_BACKENDONLY(
-    cue-after,
-    cue_after,
-    CueAfter,
-    CSS_PROPERTY_PARSE_VALUE,
-    VARIANT_HUO,
-    nsnull)
-CSS_PROP_BACKENDONLY(
-    cue-before,
-    cue_before,
-    CueBefore,
-    CSS_PROPERTY_PARSE_VALUE,
-    VARIANT_HUO,
-    nsnull)
 CSS_PROP_USERINTERFACE(
     cursor,
     cursor,
@@ -1381,13 +1365,6 @@ CSS_PROP_DISPLAY(
     kDisplayKTable,
     offsetof(nsStyleDisplay, mDisplay),
     eStyleAnimType_EnumU8)
-CSS_PROP_BACKENDONLY(
-    elevation,
-    elevation,
-    Elevation,
-    CSS_PROPERTY_PARSE_VALUE,
-    VARIANT_HK | VARIANT_ANGLE,
-    kElevationKTable)
 CSS_PROP_TABLEBORDER(
     empty-cells,
     empty_cells,
@@ -1470,6 +1447,7 @@ CSS_PROP_FONT(
     font_size_adjust,
     FontSizeAdjust,
     CSS_PROPERTY_PARSE_VALUE |
+        CSS_PROPERTY_VALUE_NONNEGATIVE |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE,
     VARIANT_HON | VARIANT_SYSFONT,
     nsnull,
@@ -1512,6 +1490,7 @@ CSS_PROP_FONT(
     CSS_PROPERTY_PARSE_VALUE |
         CSS_PROPERTY_VALUE_PARSER_FUNCTION |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE,
+        // NOTE: This property has range restrictions on interpolation!
     0,
     kFontWeightKTable,
     offsetof(nsStyleFont, mFont.weight),
@@ -1834,12 +1813,21 @@ CSS_PROP_DISPLAY(
     nsnull,
     offsetof(nsStyleDisplay, mOpacity),
     eStyleAnimType_float) // XXX bug 3935
+CSS_PROP_DISPLAY(
+    -moz-orient,
+    orient,
+    CSS_PROP_DOMPROP_PREFIXED(Orient),
+    CSS_PROPERTY_PARSE_VALUE,
+    VARIANT_HK,
+    kOrientKTable,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_None)
 CSS_PROP_BACKENDONLY(
     orphans,
     orphans,
     Orphans,
     CSS_PROPERTY_PARSE_VALUE |
-        CSS_PROPERTY_VALUE_POSITIVE_NONZERO,
+        CSS_PROPERTY_VALUE_AT_LEAST_ONE,
     VARIANT_HI,
     nsnull)
 CSS_PROP_SHORTHAND(
@@ -2091,39 +2079,6 @@ CSS_PROP_BACKENDONLY(
     CSS_PROPERTY_PARSE_VALUE,
     VARIANT_HK,
     kPageBreakInsideKTable)
-CSS_PROP_SHORTHAND(
-    pause,
-    pause,
-    Pause,
-    CSS_PROPERTY_PARSE_FUNCTION)
-CSS_PROP_BACKENDONLY(
-    pause-after,
-    pause_after,
-    PauseAfter,
-    CSS_PROPERTY_PARSE_VALUE,
-    VARIANT_HTP,
-    nsnull)
-CSS_PROP_BACKENDONLY(
-    pause-before,
-    pause_before,
-    PauseBefore,
-    CSS_PROPERTY_PARSE_VALUE,
-    VARIANT_HTP,
-    nsnull)
-CSS_PROP_BACKENDONLY(
-    pitch,
-    pitch,
-    Pitch,
-    CSS_PROPERTY_PARSE_VALUE,
-    VARIANT_HKF,
-    kPitchKTable)
-CSS_PROP_BACKENDONLY(
-    pitch-range,
-    pitch_range,
-    PitchRange,
-    CSS_PROPERTY_PARSE_VALUE,
-    VARIANT_HN,
-    nsnull)
 CSS_PROP_VISIBILITY(
     pointer-events,
     pointer_events,
@@ -2160,13 +2115,6 @@ CSS_PROP_DISPLAY(
     kResizeKTable,
     CSS_PROP_NO_OFFSET,
     eStyleAnimType_None)
-CSS_PROP_BACKENDONLY(
-    richness,
-    richness,
-    Richness,
-    CSS_PROPERTY_PARSE_VALUE,
-    VARIANT_HN,
-    nsnull)
 CSS_PROP_POSITION(
     right,
     right,
@@ -2184,48 +2132,6 @@ CSS_PROP_BACKENDONLY(
     CSS_PROPERTY_PARSE_FUNCTION,
     0,
     kPageSizeKTable)
-CSS_PROP_BACKENDONLY(
-    speak,
-    speak,
-    Speak,
-    CSS_PROPERTY_PARSE_VALUE,
-    VARIANT_HK,
-    kSpeakKTable)
-CSS_PROP_BACKENDONLY(
-    speak-header,
-    speak_header,
-    SpeakHeader,
-    CSS_PROPERTY_PARSE_VALUE,
-    VARIANT_HK,
-    kSpeakHeaderKTable)
-CSS_PROP_BACKENDONLY(
-    speak-numeral,
-    speak_numeral,
-    SpeakNumeral,
-    CSS_PROPERTY_PARSE_VALUE,
-    VARIANT_HK,
-    kSpeakNumeralKTable)
-CSS_PROP_BACKENDONLY(
-    speak-punctuation,
-    speak_punctuation,
-    SpeakPunctuation,
-    CSS_PROPERTY_PARSE_VALUE,
-    VARIANT_HK,
-    kSpeakPunctuationKTable)
-CSS_PROP_BACKENDONLY(
-    speech-rate,
-    speech_rate,
-    SpeechRate,
-    CSS_PROPERTY_PARSE_VALUE,
-    VARIANT_HN | VARIANT_KEYWORD,
-    kSpeechRateKTable)
-CSS_PROP_BACKENDONLY(
-    stress,
-    stress,
-    Stress,
-    CSS_PROPERTY_PARSE_VALUE,
-    VARIANT_HN,
-    nsnull)
 CSS_PROP_TABLE(
     table-layout,
     table_layout,
@@ -2246,17 +2152,53 @@ CSS_PROP_TEXT(
     kTextAlignKTable,
     CSS_PROP_NO_OFFSET,
     eStyleAnimType_None)
-CSS_PROP_TEXTRESET(
+CSS_PROP_SHORTHAND(
     text-decoration,
     text_decoration,
     TextDecoration,
+    CSS_PROPERTY_PARSE_FUNCTION)
+CSS_PROP_TEXTRESET(
+    -moz-text-blink,
+    text_blink,
+    CSS_PROP_DOMPROP_PREFIXED(TextBlink),
+    CSS_PROPERTY_PARSE_VALUE |
+        CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE,
+    VARIANT_HK,
+    kTextBlinkKTable,
+    offsetof(nsStyleTextReset, mTextBlink),
+    eStyleAnimType_EnumU8)
+CSS_PROP_TEXTRESET(
+    -moz-text-decoration-color,
+    text_decoration_color,
+    CSS_PROP_DOMPROP_PREFIXED(TextDecorationColor),
+    CSS_PROPERTY_PARSE_VALUE |
+        CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
+        CSS_PROPERTY_IGNORED_WHEN_COLORS_DISABLED,
+    VARIANT_HCK,
+    kBorderColorKTable,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_Custom)
+CSS_PROP_TEXTRESET(
+    -moz-text-decoration-line,
+    text_decoration_line,
+    CSS_PROP_DOMPROP_PREFIXED(TextDecorationLine),
     CSS_PROPERTY_PARSE_VALUE |
         CSS_PROPERTY_VALUE_PARSER_FUNCTION |
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE,
     0,
-    kTextDecorationKTable,
-    offsetof(nsStyleTextReset, mTextDecoration),
+    kTextDecorationLineKTable,
+    offsetof(nsStyleTextReset, mTextDecorationLine),
     eStyleAnimType_EnumU8)
+CSS_PROP_TEXTRESET(
+    -moz-text-decoration-style,
+    text_decoration_style,
+    CSS_PROP_DOMPROP_PREFIXED(TextDecorationStyle),
+    CSS_PROPERTY_PARSE_VALUE |
+        CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE,
+    VARIANT_HK,
+    kTextDecorationStyleKTable,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_Custom)
 CSS_PROP_TEXT(
     text-indent,
     text_indent,
@@ -2275,6 +2217,7 @@ CSS_PROP_TEXT(
         CSS_PROPERTY_APPLIES_TO_FIRST_LETTER_AND_FIRST_LINE |
         CSS_PROPERTY_VALUE_LIST_USES_COMMAS |
         CSS_PROPERTY_IGNORED_WHEN_COLORS_DISABLED,
+        // NOTE: some components must be nonnegative
     0,
     nsnull,
     offsetof(nsStyleText, mTextShadow),
@@ -2431,21 +2374,6 @@ CSS_PROP_VISIBILITY(
     kVisibilityKTable,
     offsetof(nsStyleVisibility, mVisible),
     eStyleAnimType_EnumU8)  // reflow for collapse
-CSS_PROP_BACKENDONLY(
-    voice-family,
-    voice_family,
-    VoiceFamily,
-    CSS_PROPERTY_PARSE_VALUE |
-        CSS_PROPERTY_VALUE_PARSER_FUNCTION,
-    0,
-    nsnull)
-CSS_PROP_BACKENDONLY(
-    volume,
-    volume,
-    Volume,
-    CSS_PROPERTY_PARSE_VALUE,
-    VARIANT_HPN | VARIANT_KEYWORD,
-    kVolumeKTable)
 CSS_PROP_TEXT(
     white-space,
     white_space,
@@ -2460,7 +2388,7 @@ CSS_PROP_BACKENDONLY(
     widows,
     Widows,
     CSS_PROPERTY_PARSE_VALUE |
-        CSS_PROPERTY_VALUE_POSITIVE_NONZERO,
+        CSS_PROPERTY_VALUE_AT_LEAST_ONE,
     VARIANT_HI,
     nsnull)
 CSS_PROP_POSITION(
@@ -2500,6 +2428,15 @@ CSS_PROP_TEXT(
     CSS_PROPERTY_PARSE_VALUE,
     VARIANT_HK,
     kWordwrapKTable,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_None)
+CSS_PROP_TEXT(
+    -moz-hyphens,
+    hyphens,
+    CSS_PROP_DOMPROP_PREFIXED(Hyphens),
+    CSS_PROPERTY_PARSE_VALUE,
+    VARIANT_HK,
+    kHyphensKTable,
     CSS_PROP_NO_OFFSET,
     eStyleAnimType_None)
 CSS_PROP_POSITION(
@@ -2562,7 +2499,7 @@ CSS_PROP_XUL(
     box_ordinal_group,
     CSS_PROP_DOMPROP_PREFIXED(BoxOrdinalGroup),
     CSS_PROPERTY_PARSE_VALUE |
-        CSS_PROPERTY_VALUE_POSITIVE_NONZERO,
+        CSS_PROPERTY_VALUE_AT_LEAST_ONE,
     VARIANT_HI,
     nsnull,
     CSS_PROP_NO_OFFSET,
@@ -2583,6 +2520,9 @@ CSS_PROP_FONT(
     -moz-script-level,
     script_level,
     ScriptLevel,
+    // REVIEW: no range restriction?
+    // NOTE: CSSParserImpl::ParseSingleValueProperty only accepts this
+    // property when mUnsafeRulesEnabled is set.
     CSS_PROPERTY_PARSE_VALUE,
     // script-level can take Integer or Number values, but only Integer
     // ("relative") values can be specified in a style sheet.
@@ -2594,7 +2534,8 @@ CSS_PROP_FONT(
     -moz-script-size-multiplier,
     script_size_multiplier,
     ScriptSizeMultiplier,
-    CSS_PROPERTY_PARSE_VALUE,
+    // REVIEW: no range restriction?
+    CSS_PROPERTY_PARSE_INACCESSIBLE,
     0,
     nsnull,
     CSS_PROP_NO_OFFSET,
@@ -2603,7 +2544,8 @@ CSS_PROP_FONT(
     -moz-script-min-size,
     script_min_size,
     ScriptMinSize,
-    CSS_PROPERTY_PARSE_VALUE,
+    // REVIEW: no range restriction?
+    CSS_PROPERTY_PARSE_INACCESSIBLE,
     0,
     nsnull,
     CSS_PROP_NO_OFFSET,
@@ -2811,6 +2753,7 @@ CSS_PROP_SVG(
     StrokeDasharray,
     CSS_PROPERTY_PARSE_FUNCTION |
         CSS_PROPERTY_VALUE_LIST_USES_COMMAS,
+        // NOTE: Internal values have range restrictions.
     0,
     nsnull,
     CSS_PROP_NO_OFFSET, /* property stored in 2 separate members */

@@ -46,7 +46,6 @@
 #include "nsNetUtil.h"
 #include "nsWWJSUtils.h"
 #include "plstr.h"
-#include "nsIContentUtils.h"
 
 #include "nsIBaseWindow.h"
 #include "nsIDocShell.h"
@@ -84,7 +83,6 @@
 #include "nsIWindowProvider.h"
 #include "nsIMutableArray.h"
 #include "nsISupportsArray.h"
-#include "nsIDeviceContext.h"
 #include "nsIDOMStorageObsolete.h"
 #include "nsIDOMStorage.h"
 #include "nsPIDOMStorage.h"
@@ -513,9 +511,7 @@ nsWindowWatcher::OpenWindowJSInternal(nsIDOMWindow *aParent,
   NS_ENSURE_ARG_POINTER(_retval);
   *_retval = 0;
 
-  nsCOMPtr<nsIContentUtils> utils =
-    do_GetService("@mozilla.org/content/contentutils;1");
-  if (utils && !utils->IsSafeToRunScript()) {
+  if (!nsContentUtils::IsSafeToRunScript()) {
     return NS_ERROR_FAILURE;
   }
 
@@ -551,7 +547,15 @@ nsWindowWatcher::OpenWindowJSInternal(nsIDOMWindow *aParent,
 
   // no extant window? make a new one.
 
-  nsCOMPtr<nsIDOMChromeWindow> chromeParent(do_QueryInterface(aParent));
+  // If no parent, consider it chrome.
+  PRBool hasChromeParent = PR_TRUE;
+  if (aParent) {
+    // Check if the parent document has chrome privileges.
+    nsCOMPtr<nsIDOMDocument> domdoc;
+    aParent->GetDocument(getter_AddRefs(domdoc));
+    nsCOMPtr<nsIDocument> doc = do_QueryInterface(domdoc);
+    hasChromeParent = doc && nsContentUtils::IsChromeDoc(doc);
+  }
 
   // Make sure we call CalculateChromeFlags() *before* we push the
   // callee context onto the context stack so that
@@ -559,7 +563,7 @@ nsWindowWatcher::OpenWindowJSInternal(nsIDOMWindow *aParent,
   // security checks.
   chromeFlags = CalculateChromeFlags(features.get(), featuresSpecified,
                                      aDialog, uriToLoadIsChrome,
-                                     !aParent || chromeParent);
+                                     hasChromeParent);
 
   // If we're not called through our JS version of the API, and we got
   // our internal modal option, treat the window we're opening as a
@@ -594,7 +598,7 @@ nsWindowWatcher::OpenWindowJSInternal(nsIDOMWindow *aParent,
 
   JSContext *cx = GetJSContextFromWindow(aParent);
 
-  if (isCallerChrome && !chromeParent && cx) {
+  if (isCallerChrome && !hasChromeParent && cx) {
     // open() is called from chrome on a non-chrome window, push
     // the context of the callee onto the context stack to
     // prevent the caller's priveleges from leaking into code
@@ -670,7 +674,7 @@ nsWindowWatcher::OpenWindowJSInternal(nsIDOMWindow *aParent,
     // isn't a chrome window.  Otherwise we can end up in a bizarre situation
     // where we can't shut down because an invisible window is open.  If
     // someone tries to do this, throw.
-    if (!chromeParent && (chromeFlags & nsIWebBrowserChrome::CHROME_MODAL)) {
+    if (!hasChromeParent && (chromeFlags & nsIWebBrowserChrome::CHROME_MODAL)) {
       PRBool parentVisible = PR_TRUE;
       nsCOMPtr<nsIBaseWindow> parentWindow(do_GetInterface(parentTreeOwner));
       nsCOMPtr<nsIWidget> parentWidget;

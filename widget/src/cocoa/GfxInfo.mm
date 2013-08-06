@@ -44,7 +44,7 @@
 #include "mozilla/FunctionTimer.h"
 #include "nsToolkit.h"
 
-#if defined(MOZ_CRASHREPORTER) && defined(MOZ_ENABLE_LIBXUL)
+#if defined(MOZ_CRASHREPORTER)
 #include "nsExceptionHandler.h"
 #include "nsICrashReporter.h"
 #define NS_CRASHREPORTER_CONTRACTID "@mozilla.org/toolkit/crash-reporter;1"
@@ -114,6 +114,13 @@ GfxInfo::GetDWriteVersion(nsAString & aDwriteVersion)
   return NS_ERROR_FAILURE;
 }
 
+/* readonly attribute DOMString cleartypeParameters; */
+NS_IMETHODIMP
+GfxInfo::GetCleartypeParameters(nsAString & aCleartypeParams)
+{
+  return NS_ERROR_FAILURE;
+}
+
 /* readonly attribute DOMString adapterDescription; */
 NS_IMETHODIMP
 GfxInfo::GetAdapterDescription(nsAString & aAdapterDescription)
@@ -173,7 +180,7 @@ GfxInfo::GetAdapterDeviceID(PRUint32 *aAdapterDeviceID)
 void
 GfxInfo::AddCrashReportAnnotations()
 {
-#if defined(MOZ_CRASHREPORTER) && defined(MOZ_ENABLE_LIBXUL)
+#if defined(MOZ_CRASHREPORTER)
   CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("AdapterRendererIDs"),
                                      NS_LossyConvertUTF16toASCII(mRendererIDsString));
 

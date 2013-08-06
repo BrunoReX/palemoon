@@ -36,10 +36,9 @@
 @BINPATH@/update.locale
 @BINPATH@/updater.ini
 @BINPATH@/dictionaries/*
+@BINPATH@/hyphenation/*
 #ifdef XP_WIN32
-#ifndef WINCE
 @BINPATH@/uninstall/helper.exe
-#endif
 #endif
 
 [xpcom]
@@ -59,12 +58,11 @@
 #endif
 #ifdef XP_MACOSX
 @BINPATH@/@MOZ_CHILD_PROCESS_NAME@.app/
+@BINPATH@/@DLL_PREFIX@plugin_child_interpose@DLL_SUFFIX@
 #else
 @BINPATH@/@MOZ_CHILD_PROCESS_NAME@
 #endif
-#ifdef WINCE
-@BINPATH@/mozce_shunt.dll
-#elifdef XP_WIN32
+#ifdef XP_WIN32
 #ifndef MOZ_MEMORY
 #if _MSC_VER == 1400
 @BINPATH@/Microsoft.VC80.CRT.manifest
@@ -164,7 +162,6 @@
 @BINPATH@/components/dom_stylesheets.xpt
 @BINPATH@/components/dom_threads.xpt
 @BINPATH@/components/dom_traversal.xpt
-@BINPATH@/components/dom_views.xpt
 @BINPATH@/components/dom_xbl.xpt
 @BINPATH@/components/dom_xpath.xpt
 @BINPATH@/components/dom_xul.xpt
@@ -200,9 +197,7 @@
 @BINPATH@/components/layout_xul.xpt
 @BINPATH@/components/locale.xpt
 @BINPATH@/components/lwbrk.xpt
-#ifndef WINCE
 @BINPATH@/components/migration.xpt
-#endif
 @BINPATH@/components/mimetype.xpt
 @BINPATH@/components/mozfind.xpt
 @BINPATH@/components/necko_about.xpt
@@ -231,9 +226,6 @@
 @BINPATH@/components/satchel.xpt
 @BINPATH@/components/saxparser.xpt
 @BINPATH@/components/sessionstore.xpt
-#ifdef MOZ_SERVICES_SYNC
-@BINPATH@/components/services-crypto.xpt
-#endif
 @BINPATH@/components/services-crypto-component.xpt
 @BINPATH@/components/shellservice.xpt
 @BINPATH@/components/shistory.xpt
@@ -252,7 +244,6 @@
 @BINPATH@/components/urlformatter.xpt
 @BINPATH@/components/webBrowser_core.xpt
 @BINPATH@/components/webbrowserpersist.xpt
-@BINPATH@/components/webshell_idls.xpt
 @BINPATH@/components/widget.xpt
 #ifdef XP_MACOSX
 @BINPATH@/components/widget_cocoa.xpt
@@ -288,7 +279,6 @@
 @BINPATH@/components/nsBrowserGlue.js
 @BINPATH@/components/nsSetDefaultBrowser.manifest
 @BINPATH@/components/nsSetDefaultBrowser.js
-@BINPATH@/components/nsMicrosummaryService.js
 @BINPATH@/components/BrowserPlaces.manifest
 @BINPATH@/components/nsPrivateBrowsingService.manifest
 @BINPATH@/components/nsPrivateBrowsingService.js
@@ -389,6 +379,8 @@
 @BINPATH@/components/SyncComponents.manifest
 @BINPATH@/components/Weave.js
 #endif
+@BINPATH@/components/TelemetryPing.js
+@BINPATH@/components/TelemetryPing.manifest
 
 ; Modules
 @BINPATH@/modules/*
@@ -397,6 +389,7 @@
 @BINPATH@/components/nsSafebrowsingApplication.manifest
 @BINPATH@/components/nsSafebrowsingApplication.js
 @BINPATH@/components/nsURLClassifier.manifest
+@BINPATH@/components/nsUrlClassifierHashCompleter.js
 @BINPATH@/components/nsUrlClassifierListManager.js
 @BINPATH@/components/nsUrlClassifierLib.js
 @BINPATH@/components/url-classifier.xpt
@@ -423,6 +416,7 @@
 #ifdef SHIP_FEEDBACK
 @BINPATH@/distribution/extensions/testpilot@labs.mozilla.com.xpi
 #endif
+@BINPATH@/extensions/statusbar@palemoon.org.xpi
 @BINPATH@/chrome/toolkit@JAREXT@
 @BINPATH@/chrome/toolkit.manifest
 #ifdef XP_UNIX
@@ -561,26 +555,6 @@ bin/libfreebl_32int64_3.so
 ;
 #ifdef MOZ_ENABLE_GNOMEVFS
 bin/components/@DLL_PREFIX@nkgnomevfs@DLL_SUFFIX@
-#endif
-@BINPATH@/extensions/statusbar@palemoon.org.xpi
-
-; [ActiveX]
-#ifdef WINCE
-#ifndef MOZ_NO_ACTIVEX_SUPPORT
-@BINPATH@/components/nsAxSecurityPolicy.js
-@BINPATH@/@PREF_DIR@/activex.js
-@BINPATH@/plugins/npmozax.dll
-@BINPATH@/plugins/nsIMozAxPlugin.xpt
-#endif
-#endif
-
-; [FastStart]
-#ifdef WINCE
-#ifdef MOZ_FASTSTART
-@BINPATH@/firefoxfaststart.exe
-@BINPATH@/components/FastStartup.manifest
-@BINPATH@/components/FastStartup.js
-#endif
 #endif
 
 ; [OS/2]

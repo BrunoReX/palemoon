@@ -56,7 +56,6 @@
 #ifdef MOZ_SVG
 #include "nsGkAtoms.h"
 #endif // MOZ_SVG
-#include "nsIEventStateManager.h"
 #include "nsPIDOMWindow.h"
 #include "nsIPrivateDOMEvent.h"
 #include "nsIJSEventListener.h"
@@ -504,11 +503,19 @@ nsEventListenerManager::AddEventListener(nsIDOMEventListener *aListener,
                                    kAllMutationBits :
                                    MutationBitForEventType(aType));
     }
-  } else if (aTypeAtom == nsGkAtoms::onMozOrientation) {
+  } else if (aTypeAtom == nsGkAtoms::ondeviceorientation ||
+             aTypeAtom == nsGkAtoms::ondevicemotion) {
     nsPIDOMWindow* window = GetInnerWindowForTarget();
     if (window)
       window->SetHasOrientationEventListener();
-  } else if (aType >= NS_MOZTOUCH_DOWN && aType <= NS_MOZTOUCH_UP) {
+  } else if ((aType >= NS_MOZTOUCH_DOWN && aType <= NS_MOZTOUCH_UP) ||
+             (aTypeAtom == nsGkAtoms::ontouchstart ||
+              aTypeAtom == nsGkAtoms::ontouchend ||
+              aTypeAtom == nsGkAtoms::ontouchmove ||
+              aTypeAtom == nsGkAtoms::ontouchenter ||
+              aTypeAtom == nsGkAtoms::ontouchleave ||
+              aTypeAtom == nsGkAtoms::ontouchcancel)) {
+    mMayHaveTouchEventListener = PR_TRUE;
     nsPIDOMWindow* window = GetInnerWindowForTarget();
     if (window)
       window->SetHasTouchEventListeners();
@@ -697,8 +704,6 @@ nsEventListenerManager::AddScriptEventListener(nsISupports *aObject,
     return NS_ERROR_FAILURE;
   }
 
-  nsresult rv;
-
   nsCOMPtr<nsINode> node(do_QueryInterface(aObject));
 
   nsCOMPtr<nsIDocument> doc;
@@ -734,6 +739,7 @@ nsEventListenerManager::AddScriptEventListener(nsISupports *aObject,
     return NS_OK;
   }
 
+  nsresult rv = NS_OK;
   // return early preventing the event listener from being added
   // 'doc' is fetched above
   if (doc) {
@@ -903,7 +909,7 @@ nsEventListenerManager::RegisterScriptEventListener(nsIScriptContext *aContext,
     if (sAddListenerID == JSID_VOID) {
       JSAutoRequest ar(cx);
       sAddListenerID =
-        INTERNED_STRING_TO_JSID(::JS_InternString(cx, "addEventListener"));
+        INTERNED_STRING_TO_JSID(cx, ::JS_InternString(cx, "addEventListener"));
     }
 
     if (aContext->GetScriptTypeID() == nsIProgrammingLanguage::JAVASCRIPT) {

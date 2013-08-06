@@ -4,20 +4,17 @@ Cu.import("resource://services-sync/service.js");
 Cu.import("resource://services-sync/status.js");
 Cu.import("resource://services-sync/util.js");
 
-function login_handler(request, response) {
-  // btoa('johndoe:ilovejane') == am9obmRvZTppbG92ZWphbmU=
-  // btoa('janedoe:ilovejohn') == amFuZWRvZTppbG92ZWpvaG4=
-  let body;
-  let header = request.getHeader("Authorization");
-  if (header == "Basic am9obmRvZTppbG92ZWphbmU="
-      || header == "Basic amFuZWRvZTppbG92ZWpvaG4=") {
-    body = "{}";
-    response.setStatusLine(request.httpVersion, 200, "OK");
-  } else {
-    body = "Unauthorized";
-    response.setStatusLine(request.httpVersion, 401, "Unauthorized");
-  }
-  response.bodyOutputStream.write(body, body.length);
+function login_handling(handler) {
+  return function (request, response) {
+    if (basic_auth_matches(request, "johndoe", "ilovejane") ||
+        basic_auth_matches(request, "janedoe", "ilovejohn")) {
+      handler(request, response);
+    } else {
+      let body = "Unauthorized";
+      response.setStatusLine(request.httpVersion, 401, "Unauthorized");
+      response.bodyOutputStream.write(body, body.length);
+    }
+  };
 }
 
 function run_test() {
@@ -26,28 +23,35 @@ function run_test() {
 
   try {
     _("The right bits are set when we're offline.");
-    Svc.IO.offline = true;
+    Services.io.offline = true;
     do_check_eq(Service._ignorableErrorCount, 0);
     do_check_false(!!Service.login());
     do_check_eq(Status.login, LOGIN_FAILED_NETWORK_ERROR);
     do_check_eq(Service._ignorableErrorCount, 0);
-    Svc.IO.offline = false;
+    Services.io.offline = false;
   } finally {
     Svc.Prefs.resetBranch("");
   }
  
+  let janeHelper = track_collections_helper();
+  let janeU      = janeHelper.with_updated_collection;
+  let janeColls  = janeHelper.collections;
+  let johnHelper = track_collections_helper();
+  let johnU      = johnHelper.with_updated_collection;
+  let johnColls  = johnHelper.collections;
+
   do_test_pending();
   let server = httpd_setup({
-    "/1.1/johndoe/info/collections": login_handler,
-    "/1.1/janedoe/info/collections": login_handler,
+    "/1.1/johndoe/info/collections": login_handling(johnHelper.handler),
+    "/1.1/janedoe/info/collections": login_handling(janeHelper.handler),
       
     // We need these handlers because we test login, and login
     // is where keys are generated or fetched.
     // TODO: have Jane fetch her keys, not generate them...
-    "/1.1/johndoe/storage/crypto/keys": new ServerWBO().handler(),
-    "/1.1/johndoe/storage/meta/global": new ServerWBO().handler(),
-    "/1.1/janedoe/storage/crypto/keys": new ServerWBO().handler(),
-    "/1.1/janedoe/storage/meta/global": new ServerWBO().handler()
+    "/1.1/johndoe/storage/crypto/keys": johnU("crypto", new ServerWBO("keys").handler()),
+    "/1.1/johndoe/storage/meta/global": johnU("meta",   new ServerWBO("global").handler()),
+    "/1.1/janedoe/storage/crypto/keys": janeU("crypto", new ServerWBO("keys").handler()),
+    "/1.1/janedoe/storage/meta/global": janeU("meta",   new ServerWBO("global").handler())
   });
 
   try {
@@ -172,7 +176,7 @@ function run_test() {
     
     _("We're ready to sync if locked.");
     Service.enabled = true;
-    Svc.IO.offline = false;
+    Services.io.offline = false;
     Service._checkSyncStatus();
     do_check_true(scheduleCalled);
     

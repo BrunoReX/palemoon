@@ -43,15 +43,12 @@
 #include "nsAccessNode.h"
 
 #include "nsIDocument.h"
-#include "nsIDOMAbstractView.h"
 #include "nsIDOM3Node.h"
 #include "nsIDOMDocument.h"
-#include "nsIDOMDocumentView.h"
 #include "nsIDOMHTMLDocument.h"
 #include "nsIDOMHTMLElement.h"
 #include "nsIDOMNodeList.h"
 #include "nsIDOMRange.h"
-#include "nsIDOMViewCSS.h"
 #include "nsIDOMWindowInternal.h"
 #include "nsIDOMXULElement.h"
 #include "nsIDocShell.h"
@@ -60,7 +57,7 @@
 #include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "nsIScrollableFrame.h"
-#include "nsIEventStateManager.h"
+#include "nsEventStateManager.h"
 #include "nsISelection2.h"
 #include "nsISelectionController.h"
 #include "nsPIDOMWindow.h"
@@ -206,7 +203,7 @@ nsCoreUtils::GetAccessKeyFor(nsIContent *aContent)
 
   // Accesskeys are registered by @accesskey attribute only. At first check
   // whether it is presented on the given element to avoid the slow
-  // nsIEventStateManager::GetRegisteredAccessKey() method.
+  // nsEventStateManager::GetRegisteredAccessKey() method.
   if (!aContent->HasAttr(kNameSpaceID_None, nsAccessibilityAtoms::accesskey))
     return 0;
 
@@ -222,13 +219,11 @@ nsCoreUtils::GetAccessKeyFor(nsIContent *aContent)
   if (!presContext)
     return 0;
 
-  nsIEventStateManager *esm = presContext->EventStateManager();
+  nsEventStateManager *esm = presContext->EventStateManager();
   if (!esm)
     return 0;
 
-  PRUint32 key = 0;
-  esm->GetRegisteredAccessKey(aContent, &key);
-  return key;
+  return esm->GetRegisteredAccessKey(aContent);
 }
 
 nsIContent *
@@ -427,13 +422,12 @@ nsCoreUtils::GetScreenCoordsForWindow(nsINode *aNode)
   nsCOMPtr<nsIDocShellTreeItem> rootTreeItem;
   treeItem->GetRootTreeItem(getter_AddRefs(rootTreeItem));
   nsCOMPtr<nsIDOMDocument> domDoc = do_GetInterface(rootTreeItem);
-  nsCOMPtr<nsIDOMDocumentView> docView(do_QueryInterface(domDoc));
-  if (!docView)
+  if (!domDoc)
     return coords;
 
-  nsCOMPtr<nsIDOMAbstractView> abstractView;
-  docView->GetDefaultView(getter_AddRefs(abstractView));
-  nsCOMPtr<nsIDOMWindowInternal> windowInter(do_QueryInterface(abstractView));
+  nsCOMPtr<nsIDOMWindow> window;
+  domDoc->GetDefaultView(getter_AddRefs(window));
+  nsCOMPtr<nsIDOMWindowInternal> windowInter(do_QueryInterface(window));
   if (!windowInter)
     return coords;
 
@@ -499,12 +493,10 @@ nsCoreUtils::IsErrorPage(nsIDocument *aDocument)
   nsCAutoString path;
   uri->GetPath(path);
 
-  nsCAutoString::const_iterator start, end;
-  path.BeginReading(start);
-  path.EndReading(end);
-
   NS_NAMED_LITERAL_CSTRING(neterror, "neterror");
-  return FindInReadable(neterror, start, end);
+  NS_NAMED_LITERAL_CSTRING(certerror, "certerror");
+
+  return StringBeginsWith(path, neterror) || StringBeginsWith(path, certerror);
 }
 
 PRBool
@@ -599,14 +591,14 @@ nsCoreUtils::GetComputedStyleDeclaration(const nsAString& aPseudoElt,
   if (!document)
     return nsnull;
 
-  nsCOMPtr<nsIDOMViewCSS> viewCSS(do_QueryInterface(document->GetWindow()));
-  if (!viewCSS)
+  nsCOMPtr<nsIDOMWindow> window = do_QueryInterface(document->GetWindow());
+  if (!window)
     return nsnull;
 
-  nsIDOMCSSStyleDeclaration* cssDecl = nsnull;
+  nsCOMPtr<nsIDOMCSSStyleDeclaration> cssDecl;
   nsCOMPtr<nsIDOMElement> domElement(do_QueryInterface(content));
-  viewCSS->GetComputedStyle(domElement, aPseudoElt, &cssDecl);
-  return cssDecl;
+  window->GetComputedStyle(domElement, aPseudoElt, getter_AddRefs(cssDecl));
+  return cssDecl.forget();
 }
 
 already_AddRefed<nsIBoxObject>
@@ -759,47 +751,6 @@ nsCoreUtils::IsColumnHidden(nsITreeColumn *aColumn)
   nsCOMPtr<nsIContent> content = do_QueryInterface(element);
   return content->AttrValueIs(kNameSpaceID_None, nsAccessibilityAtoms::hidden,
                               nsAccessibilityAtoms::_true, eCaseMatters);
-}
-
-void
-nsCoreUtils::GeneratePopupTree(nsIContent *aContent, PRBool aIsAnon)
-{
-  // Set menugenerated="true" on the menupopup node to generate the sub-menu
-  // items if they have not been generated.
-
-  nsCOMPtr<nsIDOMNodeList> list;
-  if (aIsAnon) {    
-    nsIDocument* document = aContent->GetCurrentDoc();
-    if (document)
-      document->GetXBLChildNodesFor(aContent, getter_AddRefs(list));
-
-  } else {
-    list = aContent->GetChildNodesList();
-  }
-
-  PRUint32 length = 0;
-  if (!list || NS_FAILED(list->GetLength(&length)))
-    return;
-
-  for (PRUint32 idx = 0; idx < length; idx++) {
-    nsCOMPtr<nsIDOMNode> childNode;
-    list->Item(idx, getter_AddRefs(childNode));
-    nsCOMPtr<nsIContent> child(do_QueryInterface(childNode));
-
-    PRBool isPopup = child->NodeInfo()->Equals(nsAccessibilityAtoms::menupopup,
-                                               kNameSpaceID_XUL) ||
-                     child->NodeInfo()->Equals(nsAccessibilityAtoms::panel,
-                                               kNameSpaceID_XUL);
-    if (isPopup && !child->AttrValueIs(kNameSpaceID_None,
-                                       nsAccessibilityAtoms::menugenerated,
-                                       nsAccessibilityAtoms::_true,
-                                       eCaseMatters)) {
-
-      child->SetAttr(kNameSpaceID_None, nsAccessibilityAtoms::menugenerated,
-                     NS_LITERAL_STRING("true"), PR_TRUE);
-      return;
-    }
-  }
 }
 
 

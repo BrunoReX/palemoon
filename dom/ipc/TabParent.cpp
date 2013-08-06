@@ -525,7 +525,7 @@ TabParent::RecvGetIMEEnabled(PRUint32* aValue)
 }
 
 bool
-TabParent::RecvSetInputMode(const PRUint32& aValue, const nsString& aType, const nsString& aAction)
+TabParent::RecvSetInputMode(const PRUint32& aValue, const nsString& aType, const nsString& aAction, const PRUint32& aReason)
 {
   // mIMETabParent (which is actually static) tracks which if any TabParent has IMEFocus
   // When the input mode is set to anything but IME_STATUS_NONE, mIMETabParent should be set to this
@@ -538,6 +538,7 @@ TabParent::RecvSetInputMode(const PRUint32& aValue, const nsString& aType, const
   context.mStatus = aValue;
   context.mHTMLInputType.Assign(aType);
   context.mActionHint.Assign(aAction);
+  context.mReason = aReason;
   widget->SetInputMode(context);
 
   nsCOMPtr<nsIObserverService> observerService = mozilla::services::GetObserverService();
@@ -586,7 +587,8 @@ TabParent::ReceiveMessage(const nsString& aMessage,
 {
   nsRefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
   if (frameLoader && frameLoader->GetFrameMessageManager()) {
-    nsFrameMessageManager* manager = frameLoader->GetFrameMessageManager();
+    nsRefPtr<nsFrameMessageManager> manager =
+      frameLoader->GetFrameMessageManager();
     JSContext* ctx = manager->GetJSContext();
     JSAutoRequest ar(ctx);
     PRUint32 len = 0; //TODO: obtain a real value in bug 572685

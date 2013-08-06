@@ -58,9 +58,6 @@
 /******************************************************************************
  *  nsDiskCacheInputStream
  *****************************************************************************/
-#ifdef XP_MAC
-#pragma mark nsDiskCacheInputStream
-#endif
 class nsDiskCacheInputStream : public nsIInputStream {
 
 public:
@@ -193,10 +190,6 @@ nsDiskCacheInputStream::IsNonBlocking(PRBool * nonBlocking)
 /******************************************************************************
  *  nsDiskCacheOutputStream
  *****************************************************************************/
-#ifdef XP_MAC
-#pragma mark -
-#pragma mark nsDiskCacheOutputStream
-#endif
 class nsDiskCacheOutputStream : public nsIOutputStream
                               , public nsIDiskCacheStreamInternal
 {
@@ -305,11 +298,6 @@ nsDiskCacheOutputStream::IsNonBlocking(PRBool * nonBlocking)
 /******************************************************************************
  *  nsDiskCacheStreamIO
  *****************************************************************************/
-#ifdef XP_MAC
-#pragma mark -
-#pragma mark nsDiskCacheStreamIO
-#endif
-
 NS_IMPL_THREADSAFE_ISUPPORTS0(nsDiskCacheStreamIO)
 
 // we pick 16k as the max buffer size because that is the threshold above which
@@ -662,8 +650,12 @@ nsDiskCacheStreamIO::UpdateFileSize()
     
     nsDiskCacheRecord * record = &mBinding->mRecord;
     const PRUint32      oldSizeK  = record->DataFileSize();
-    const PRUint32      newSizeK  = (mStreamEnd + 0x03FF) >> 10;
-    
+    PRUint32            newSizeK  = (mStreamEnd + 0x03FF) >> 10;
+
+    // make sure the size won't overflow (bug #651100)
+    if (newSizeK > kMaxDataSizeK)
+        newSizeK = kMaxDataSizeK;
+
     if (newSizeK == oldSizeK)  return;
     
     record->SetDataFileSize(newSizeK);

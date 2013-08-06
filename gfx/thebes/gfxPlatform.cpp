@@ -92,6 +92,7 @@
 #include "nsIGfxInfo.h"
 
 gfxPlatform *gPlatform = nsnull;
+static bool gEverInitialized = false;
 
 // These two may point to the same profile
 static qcms_profile *gCMSOutputProfile = nsnull;
@@ -149,8 +150,6 @@ SRGBOverrideObserver::Observe(nsISupports *aSubject,
 
 #define GFX_DOWNLOADABLE_FONTS_ENABLED "gfx.downloadable_fonts.enabled"
 #define GFX_DOWNLOADABLE_FONTS_SANITIZE "gfx.downloadable_fonts.sanitize"
-#define GFX_DOWNLOADABLE_FONTS_SANITIZE_PRESERVE_OTL \
-            "gfx.downloadable_fonts.sanitize.preserve_otl_tables"
 
 #define GFX_PREF_HARFBUZZ_SCRIPTS "gfx.font_rendering.harfbuzz.scripts"
 #define HARFBUZZ_SCRIPTS_DEFAULT  gfxUnicodeProperties::SHAPING_DEFAULT
@@ -225,19 +224,24 @@ gfxPlatform::gfxPlatform()
     mUseHarfBuzzScripts = UNINITIALIZED_VALUE;
     mAllowDownloadableFonts = UNINITIALIZED_VALUE;
     mDownloadableFontsSanitize = UNINITIALIZED_VALUE;
-    mSanitizePreserveOTLTables = UNINITIALIZED_VALUE;
 }
 
 gfxPlatform*
 gfxPlatform::GetPlatform()
 {
+    if (!gPlatform) {
+        Init();
+    }
     return gPlatform;
 }
 
-nsresult
+void
 gfxPlatform::Init()
 {
-    NS_ASSERTION(!gPlatform, "Already started???");
+    if (gEverInitialized) {
+        NS_RUNTIMEABORT("Already started???");
+    }
+    gEverInitialized = true;
 
     gfxAtoms::RegisterAtoms();
 
@@ -272,18 +276,16 @@ gfxPlatform::Init()
     gPlatform = new gfxOS2Platform;
 #elif defined(ANDROID)
     gPlatform = new gfxAndroidPlatform;
+#else
+    #error "No gfxPlatform implementation available"
 #endif
-    if (!gPlatform)
-        return NS_ERROR_OUT_OF_MEMORY;
 
     nsresult rv;
 
 #if defined(XP_MACOSX) || defined(XP_WIN) || defined(ANDROID) // temporary, until this is implemented on others
     rv = gfxPlatformFontList::Init();
     if (NS_FAILED(rv)) {
-        NS_ERROR("Could not initialize gfxPlatformFontList");
-        Shutdown();
-        return rv;
+        NS_RUNTIMEABORT("Could not initialize gfxPlatformFontList");
     }
 #endif
 
@@ -291,30 +293,22 @@ gfxPlatform::Init()
         gPlatform->CreateOffscreenSurface(gfxIntSize(1,1),
                                           gfxASurface::CONTENT_COLOR_ALPHA);
     if (!gPlatform->mScreenReferenceSurface) {
-        NS_ERROR("Could not initialize mScreenReferenceSurface");
-        Shutdown();
-        return NS_ERROR_OUT_OF_MEMORY;
+        NS_RUNTIMEABORT("Could not initialize mScreenReferenceSurface");
     }
 
     rv = gfxFontCache::Init();
     if (NS_FAILED(rv)) {
-        NS_ERROR("Could not initialize gfxFontCache");
-        Shutdown();
-        return rv;
+        NS_RUNTIMEABORT("Could not initialize gfxFontCache");
     }
 
     rv = gfxTextRunWordCache::Init();
     if (NS_FAILED(rv)) {
-        NS_ERROR("Could not initialize gfxTextRunWordCache");
-        Shutdown();
-        return rv;
+        NS_RUNTIMEABORT("Could not initialize gfxTextRunWordCache");
     }
 
     rv = gfxTextRunCache::Init();
     if (NS_FAILED(rv)) {
-        NS_ERROR("Could not initialize gfxTextRunCache");
-        Shutdown();
-        return rv;
+        NS_RUNTIMEABORT("Could not initialize gfxTextRunCache");
     }
 
     /* Pref migration hook. */
@@ -331,7 +325,10 @@ gfxPlatform::Init()
         prefs->AddObserver("gfx.font_rendering.", fontPrefObserver, PR_FALSE);
     }
 
-    return NS_OK;
+    // Force registration of the gfx component, thus arranging for
+    // ::Shutdown to be called.
+    nsCOMPtr<nsISupports> forceReg
+        = do_CreateInstance("@mozilla.org/gfx/init;1");
 }
 
 void
@@ -456,17 +453,6 @@ gfxPlatform::SanitizeDownloadedFonts()
     }
 
     return mDownloadableFontsSanitize;
-}
-
-PRBool
-gfxPlatform::PreserveOTLTablesWhenSanitizing()
-{
-    if (mSanitizePreserveOTLTables == UNINITIALIZED_VALUE) {
-        mSanitizePreserveOTLTables =
-            GetBoolPref(GFX_DOWNLOADABLE_FONTS_SANITIZE_PRESERVE_OTL, PR_FALSE);
-    }
-
-    return mSanitizePreserveOTLTables;
 }
 
 PRBool
@@ -1265,8 +1251,6 @@ gfxPlatform::FontsPrefsChanged(nsIPrefBranch *aPrefBranch, const char *aPref)
         mAllowDownloadableFonts = UNINITIALIZED_VALUE;
     } else if (!strcmp(GFX_DOWNLOADABLE_FONTS_SANITIZE, aPref)) {
         mDownloadableFontsSanitize = UNINITIALIZED_VALUE;
-    } else if (!strcmp(GFX_DOWNLOADABLE_FONTS_SANITIZE_PRESERVE_OTL, aPref)) {
-        mSanitizePreserveOTLTables = UNINITIALIZED_VALUE;
     } else if (!strcmp(GFX_PREF_HARFBUZZ_SCRIPTS, aPref)) {
         mUseHarfBuzzScripts = UNINITIALIZED_VALUE;
         gfxTextRunWordCache::Flush();

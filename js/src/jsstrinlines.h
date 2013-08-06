@@ -332,7 +332,6 @@ JSFixedString::new_(JSContext *cx, const jschar *chars, size_t length)
         return NULL;
     str->init(chars, length);
 
-    cx->runtime->stringMemoryUsed += length * 2;
 #ifdef DEBUG
     JSRuntime *rt = cx->runtime;
     JS_RUNTIME_METER(rt, liveStrings);
@@ -345,7 +344,7 @@ JSFixedString::new_(JSContext *cx, const jschar *chars, size_t length)
 }
 
 JS_ALWAYS_INLINE JSAtom *
-JSFixedString::morphInternedStringIntoAtom()
+JSFixedString::morphAtomizedStringIntoAtom()
 {
     JS_ASSERT((d.lengthAndFlags & FLAGS_MASK) == JS_BIT(2));
     JS_STATIC_ASSERT(NON_STATIC_ATOM == JS_BIT(3));
@@ -391,15 +390,16 @@ JSShortString::initAtOffsetInBuffer(const jschar *chars, size_t length)
 }
 
 JS_ALWAYS_INLINE void
-JSExternalString::init(const jschar *chars, size_t length, intN type)
+JSExternalString::init(const jschar *chars, size_t length, intN type, void *closure)
 {
     d.lengthAndFlags = buildLengthAndFlags(length, FIXED_FLAGS);
     d.u1.chars = chars;
-    d.s.u2.externalStringType = type;
+    d.s.u2.externalType = type;
+    d.s.u3.externalClosure = closure;
 }
 
 JS_ALWAYS_INLINE JSExternalString *
-JSExternalString::new_(JSContext *cx, const jschar *chars, size_t length, intN type)
+JSExternalString::new_(JSContext *cx, const jschar *chars, size_t length, intN type, void *closure)
 {
     JS_ASSERT(uintN(type) < JSExternalString::TYPE_LIMIT);
     JS_ASSERT(chars[length] == 0);
@@ -407,7 +407,7 @@ JSExternalString::new_(JSContext *cx, const jschar *chars, size_t length, intN t
     JSExternalString *str = (JSExternalString *)js_NewGCExternalString(cx, type);
     if (!str)
         return NULL;
-    str->init(chars, length, type);
+    str->init(chars, length, type, closure);
     cx->runtime->updateMallocCounter((length + 1) * sizeof(jschar));
     return str;
 }
@@ -529,7 +529,6 @@ inline void
 JSFlatString::finalize(JSRuntime *rt)
 {
     JS_ASSERT(!isShort());
-    rt->stringMemoryUsed -= length() * 2;
 
     /*
      * This check depends on the fact that 'chars' is only initialized to the
@@ -550,24 +549,24 @@ inline void
 JSAtom::finalize(JSRuntime *rt)
 {
     JS_ASSERT(isAtom());
-    if (arena()->header()->thingKind == js::gc::FINALIZE_STRING)
+    if (arenaHeader()->getThingKind() == js::gc::FINALIZE_STRING)
         asFlat().finalize(rt);
     else
-        JS_ASSERT(arena()->header()->thingKind == js::gc::FINALIZE_SHORT_STRING);
+        JS_ASSERT(arenaHeader()->getThingKind() == js::gc::FINALIZE_SHORT_STRING);
 }
 
 inline void
 JSExternalString::finalize(JSContext *cx)
 {
     JS_RUNTIME_UNMETER(cx->runtime, liveStrings);
-    if (JSStringFinalizeOp finalizer = str_finalizers[externalStringType()])
+    if (JSStringFinalizeOp finalizer = str_finalizers[externalType()])
         finalizer(cx, this);
 }
 
 inline void
 JSExternalString::finalize()
 {
-    JSStringFinalizeOp finalizer = str_finalizers[externalStringType()];
+    JSStringFinalizeOp finalizer = str_finalizers[externalType()];
     if (finalizer) {
         /*
          * Assume that the finalizer for the permanently interned

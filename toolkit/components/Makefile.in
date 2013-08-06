@@ -72,6 +72,7 @@ PARALLEL_DIRS += \
   viewconfig \
   viewsource \
   webapps \
+  telemetry \
   $(NULL)
 
 ifdef BUILD_CTYPES
@@ -118,10 +119,6 @@ endif
 
 ifdef MOZ_URL_CLASSIFIER
 PARALLEL_DIRS += url-classifier
-endif
-
-ifdef MOZ_FASTSTART
-PARALLEL_DIRS += faststart
 endif
 
 DIRS += \

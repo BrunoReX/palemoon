@@ -55,6 +55,8 @@ const PREF_CHECK_UPDATE_SECURITY = "extensions.checkUpdateSecurity";
 const PREF_AUTOUPDATE_DEFAULT = "extensions.update.autoUpdateDefault";
 const PREF_GETADDONS_CACHE_ENABLED = "extensions.getAddons.cache.enabled";
 const PREF_GETADDONS_CACHE_ID_ENABLED = "extensions.%ID%.getAddons.cache.enabled";
+const PREF_UI_TYPE_HIDDEN = "extensions.ui.%TYPE%.hidden";
+const PREF_UI_LASTCATEGORY = "extensions.ui.lastCategory";
 
 const BRANCH_REGEXP = /^([^\.]+\.[0-9]+[a-z]*).*/gi;
 
@@ -105,15 +107,34 @@ __defineGetter__("gIsInitializing", function() gPendingInitializations > 0);
 
 function initialize() {
   document.removeEventListener("load", initialize, true);
+  gViewController.initialize();
   gCategories.initialize();
   gHeader.initialize();
-  gViewController.initialize();
   gEventManager.initialize();
   Services.obs.addObserver(sendEMPong, "EM-ping", false);
   Services.obs.notifyObservers(window, "EM-loaded", "");
-  // Send this after the above notifications to give observers of them a chance
-  // to initialize us to a different view.
-  gViewController.updateState(window.history.state);
+
+  // If the initial view has already been selected (by a call to loadView from
+  // the above notifications) then bail out now
+  if (gViewController.initialViewSelected)
+    return;
+
+  // If there is a history state to restore then use that
+  if (window.history.state) {
+    gViewController.updateState(window.history.state);
+    return;
+  }
+
+  // Default to the last selected category
+  var view = gCategories.node.value;
+
+  // Allow passing in a view through the window arguments
+  if ("arguments" in window && window.arguments.length > 0 &&
+      "view" in window.arguments[0]) {
+    view = window.arguments[0].view;
+  }
+
+  gViewController.loadInitialView(view);
 }
 
 function notifyInitialized() {
@@ -145,6 +166,7 @@ function loadView(aViewId) {
   if (!gViewController.initialViewSelected) {
     // The caller opened the window and immediately loaded the view so it
     // should be the initial history entry
+
     gViewController.loadInitialView(aViewId);
   } else {
     gViewController.loadView(aViewId);
@@ -156,6 +178,12 @@ function loadView(aViewId) {
  * back/forward controls to work within the manager
  */
 var HTML5History = {
+  get index() {
+    return window.QueryInterface(Ci.nsIInterfaceRequestor)
+                 .getInterface(Ci.nsIWebNavigation)
+                 .sessionHistory.index;
+  },
+
   get canGoBack() {
     return window.QueryInterface(Ci.nsIInterfaceRequestor)
                  .getInterface(Ci.nsIWebNavigation)
@@ -208,6 +236,10 @@ var HTML5History = {
 var FakeHistory = {
   pos: 0,
   states: [null],
+
+  get index() {
+    return this.pos;
+  },
 
   get canGoBack() {
     return this.pos > 0;
@@ -473,6 +505,7 @@ var gViewController = {
   viewObjects: {},
   viewChangeCallback: null,
   initialViewSelected: false,
+  lastHistoryIndex: -1,
 
   initialize: function() {
     this.viewPort = document.getElementById("view-port");
@@ -515,29 +548,24 @@ var gViewController = {
   },
 
   updateState: function(state) {
-    // If this is a navigation to a previous state then load that state
-    if (state) {
+    try {
       this.loadViewInternal(state.view, state.previousView, state);
-      return;
+      this.lastHistoryIndex = gHistory.index;
     }
-
-    // If the initial view has already been selected (by a call to loadView) then
-    // bail out now
-    if (this.initialViewSelected)
-      return;
-
-    // Otherwise load the default view
-    var view = VIEW_DEFAULT;
-    if (gCategories.node.selectedItem &&
-        gCategories.node.selectedItem.id != "category-search")
-      view = gCategories.node.selectedItem.value;
-
-    if ("arguments" in window && window.arguments.length > 0) {
-      if ("view" in window.arguments[0])
-        view = window.arguments[0].view;
+    catch (e) {
+      // The attempt to load the view failed, try moving further along history
+      if (this.lastHistoryIndex > gHistory.index) {
+        if (gHistory.canGoBack)
+          gHistory.back();
+        else
+          gViewController.replaceView(VIEW_DEFAULT);
+      } else {
+        if (gHistory.canGoForward)
+          gHistory.forward();
+        else
+          gViewController.replaceView(VIEW_DEFAULT);
+      }
     }
-
-    this.loadInitialView(view);
   },
 
   parseViewId: function(aViewId) {
@@ -551,14 +579,25 @@ var gViewController = {
   },
 
   loadView: function(aViewId) {
-    if (aViewId == this.currentViewId)
-      return;
+    var isRefresh = false;
+    if (aViewId == this.currentViewId) {
+      if (this.isLoading)
+        return;
+      if (!("refresh" in this.currentViewObj))
+        return;
+      if (!this.currentViewObj.canRefresh())
+        return;
+      isRefresh = true;
+    }
 
     var state = {
       view: aViewId,
       previousView: this.currentViewId
     };
-    gHistory.pushState(state);
+    if (!isRefresh) {
+      gHistory.pushState(state);
+      this.lastHistoryIndex = gHistory.index;
+    }
     this.loadViewInternal(aViewId, this.currentViewId, state);
   },
 
@@ -598,7 +637,7 @@ var gViewController = {
     if (!viewObj.node)
       throw new Error("Root node doesn't exist for '" + view.type + "' view");
 
-    if (this.currentViewObj) {
+    if (this.currentViewObj && aViewId != aPreviousView) {
       try {
         let canHide = this.currentViewObj.hide();
         if (canHide === false)
@@ -617,7 +656,11 @@ var gViewController = {
 
     this.viewPort.selectedPanel = this.currentViewObj.node;
     this.viewPort.selectedPanel.setAttribute("loading", "true");
-    this.currentViewObj.show(view.param, ++this.currentViewRequest, aState);
+
+    if (aViewId == aPreviousView)
+      this.currentViewObj.refresh(view.param, ++this.currentViewRequest, aState);
+    else
+      this.currentViewObj.show(view.param, ++this.currentViewRequest, aState);
   },
 
   // Moves back in the document history and removes the current history entry
@@ -685,6 +728,13 @@ var gViewController = {
       isEnabled: function() true,
       doCommand: function() {
         Services.prefs.clearUserPref(PREF_CHECK_UPDATE_SECURITY);
+      }
+    },
+
+    cmd_pluginCheck: {
+      isEnabled: function() true,
+      doCommand: function() {
+        openURL(Services.urlFormatter.formatURLPref("plugins.update.url"));
       }
     },
 
@@ -1278,7 +1328,7 @@ function sortElements(aElements, aSortBy, aAscending) {
     if (aObj.hasAttribute(aKey))
       return aObj.getAttribute(aKey);
 
-    addon = aObj.mAddon || aObj.mInstall;
+    var addon = aObj.mAddon || aObj.mInstall;
     if (!addon)
       return null;
 
@@ -1398,13 +1448,26 @@ function doPendingUninstalls(aListBox) {
 var gCategories = {
   node: null,
   _search: null,
-  _maybeHidden: null,
 
   initialize: function() {
     this.node = document.getElementById("categories");
     this._search = this.get("addons://search/");
 
-    this.maybeHideSearch();
+    var types = AddonManager.addonTypes;
+    for (var type in types)
+      this.onTypeAdded(types[type]);
+
+    AddonManager.addTypeListener(this);
+
+    try {
+      this.node.value = Services.prefs.getCharPref(PREF_UI_LASTCATEGORY);
+    } catch (e) { }
+
+    // If there was no last view or no existing category matched the last view
+    // then the list will default to selecting the search category and we never
+    // want to show that as the first view so switch to the default category
+    if (this.node.selectedItem == this._search)
+      this.node.value = VIEW_DEFAULT;
 
     var self = this;
     this.node.addEventListener("select", function() {
@@ -1425,20 +1488,88 @@ var gCategories = {
         gViewController.loadView(viewId);
       }
     }, false);
+  },
 
-    this._maybeHidden = ["addons://list/locale", "addons://list/searchengine"];
-    gPendingInitializations += this._maybeHidden.length;
-    this._maybeHidden.forEach(function(aId) {
-      var type = gViewController.parseViewId(aId).param;
-      getAddonsAndInstalls(type, function(aAddonsList, aInstallsList) {
+  shutdown: function() {
+    AddonManager.removeTypeListener(this);
+  },
+
+  _insertCategory: function(aId, aName, aView, aPriority, aStartHidden) {
+    // If this category already exists then don't re-add it
+    if (document.getElementById("category-" + aId))
+      return;
+
+    var category = document.createElement("richlistitem");
+    category.setAttribute("id", "category-" + aId);
+    category.setAttribute("value", aView);
+    category.setAttribute("class", "category");
+    category.setAttribute("name", aName);
+    category.setAttribute("tooltiptext", aName);
+    category.setAttribute("priority", aPriority);
+    category.setAttribute("hidden", aStartHidden);
+
+    var node = this.node.firstChild;
+    while (node = node.nextSibling) {
+      var nodePriority = parseInt(node.getAttribute("priority"));
+      // If the new type's priority is higher than this one then this is the
+      // insertion point
+      if (aPriority < nodePriority)
+        break;
+      // If the new type's priority is lower than this one then this is isn't
+      // the insertion point
+      if (aPriority > nodePriority)
+        continue;
+      // If the priorities are equal and the new type's name is earlier
+      // alphabetically then this is the insertion point
+      if (String.localeCompare(aName, node.getAttribute("name")) < 0)
+        break;
+    }
+
+    this.node.insertBefore(category, node);
+  },
+
+  _removeCategory: function(aId) {
+    var category = document.getElementById("category-" + aId);
+    if (!category)
+      return;
+
+    // If this category is currently selected then switch to the default view
+    if (this.node.selectedItem == category)
+      gViewController.replaceView(VIEW_DEFAULT);
+
+    this.node.removeChild(category);
+  },
+
+  onTypeAdded: function(aType) {
+    // Ignore types that we don't have a view object for
+    if (!(aType.viewType in gViewController.viewObjects))
+      return;
+
+    var aViewId = "addons://" + aType.viewType + "/" + aType.id;
+
+    var startHidden = false;
+    if (aType.flags & AddonManager.TYPE_UI_HIDE_EMPTY) {
+      var prefName = PREF_UI_TYPE_HIDDEN.replace("%TYPE%", aType.id);
+      try {
+        startHidden = Services.prefs.getBoolPref(prefName);
+      }
+      catch (e) {
+        // Default to hidden
+        startHidden = true;
+      }
+
+      var self = this;
+      gPendingInitializations++;
+      getAddonsAndInstalls(aType.id, function(aAddonsList, aInstallsList) {
         var hidden = (aAddonsList.length == 0 && aInstallsList.length == 0);
-        var item = self.get(aId);
+        var item = self.get(aViewId);
 
         // Don't load view that is becoming hidden
-        if (hidden && aId == gViewController.currentViewId)
+        if (hidden && aViewId == gViewController.currentViewId)
           gViewController.loadView(VIEW_DEFAULT);
 
         item.hidden = hidden;
+        Services.prefs.setBoolPref(prefName, hidden);
 
         if (aAddonsList.length > 0 || aInstallsList.length > 0) {
           notifyInitialized();
@@ -1463,8 +1594,9 @@ var gCategories = {
           },
 
           _maybeShowCategory: function(aAddon) {
-            if (type == aAddon.type) {
-              self.get(aId).hidden = false;
+            if (aType.id == aAddon.type) {
+              self.get(aViewId).hidden = false;
+              Services.prefs.setBoolPref(prefName, false);
               gEventManager.unregisterInstallListener(this);
             }
           }
@@ -1472,16 +1604,14 @@ var gCategories = {
 
         notifyInitialized();
       });
-    });
+    }
+
+    this._insertCategory(aType.id, aType.name, aViewId, aType.uiPriority,
+                         startHidden);
   },
 
-  shutdown: function() {
-    // Force persist of hidden state. See bug 15232
-    var self = this;
-    this._maybeHidden.forEach(function(aId) {
-      var item = self.get(aId);
-      item.setAttribute("hidden", !!item.hidden);
-    });
+  onTypeRemoved: function(aType) {
+    this._removeCategory(aType.id);
   },
 
   get selected() {
@@ -1494,6 +1624,8 @@ var gCategories = {
       aId = aPreviousView;
       view = gViewController.parseViewId(aPreviousView);
     }
+
+    Services.prefs.setCharPref(PREF_UI_LASTCATEGORY, aId);
 
     if (this.node.selectedItem &&
         this.node.selectedItem.value == aId) {
@@ -1514,8 +1646,6 @@ var gCategories = {
       this.node.selectedItem = item;
       this.node.suppressOnSelect = false;
       this.node.ensureElementIsVisible(item);
-      // When supressing onselect last-selected doesn't get updated
-      this.node.setAttribute("last-selected", item.id);
 
       this.maybeHideSearch();
     }
@@ -1655,7 +1785,7 @@ var gDiscoverView = {
                                               Ci.nsIWebProgress.NOTIFY_STATE_ALL);
 
       if (self.loaded)
-        self._loadURL(self.homepageURL.spec, notifyInitialized);
+        self._loadURL(self.homepageURL.spec, false, notifyInitialized);
       else
         notifyInitialized();
     }
@@ -1689,7 +1819,7 @@ var gDiscoverView = {
     });
   },
 
-  show: function(aParam, aRequest, aState) {
+  show: function(aParam, aRequest, aState, aIsRefresh) {
     gViewController.updateCommands();
 
     // If we're being told to load a specific URL then just do that
@@ -1698,9 +1828,11 @@ var gDiscoverView = {
       this._loadURL(aState.url);
     }
 
-    // If the view has loaded before and the error page is not visible then
-    // there is nothing else to do
-    if (this.loaded && this.node.selectedPanel != this._error) {
+    // If the view has loaded before and still at the homepage (if refreshing),
+    // and the error page is not visible then there is nothing else to do
+    if (this.loaded && this.node.selectedPanel != this._error &&
+        (!aIsRefresh || (this._browser.currentURI &&
+         this._browser.currentURI.spec == this._browser.homePage))) {
       gViewController.notifyViewChanged();
       return;
     }
@@ -1714,8 +1846,19 @@ var gDiscoverView = {
       return;
     }
 
-    this._loadURL(this.homepageURL.spec,
+    this._loadURL(this.homepageURL.spec, aIsRefresh,
                   gViewController.notifyViewChanged.bind(gViewController));
+  },
+  
+  canRefresh: function() {
+    if (this._browser.currentURI &&
+        this._browser.currentURI.spec == this._browser.homePage)
+      return false;
+    return true;
+  },
+
+  refresh: function(aParam, aRequest, aState) {
+    this.show(aParam, aRequest, aState, true);
   },
 
   hide: function() { },
@@ -1724,7 +1867,7 @@ var gDiscoverView = {
     this.node.selectedPanel = this._error;
   },
 
-  _loadURL: function(aURL, aCallback) {
+  _loadURL: function(aURL, aKeepHistory, aCallback) {
     if (this._browser.currentURI.spec == aURL) {
       if (aCallback)
         aCallback();
@@ -1734,8 +1877,11 @@ var gDiscoverView = {
     if (aCallback)
       this._loadListeners.push(aCallback);
 
-    this._browser.loadURIWithFlags(aURL,
-                                   Ci.nsIWebNavigation.LOAD_FLAGS_REPLACE_HISTORY);
+    var flags = 0;
+    if (!aKeepHistory)
+      flags |= Ci.nsIWebNavigation.LOAD_FLAGS_REPLACE_HISTORY;
+
+    this._browser.loadURIWithFlags(aURL, flags);
   },
 
   onLocationChange: function(aWebProgress, aRequest, aLocation) {
@@ -1759,6 +1905,7 @@ var gDiscoverView = {
         gHistory.replaceState(state);
       else
         gHistory.pushState(state);
+      gViewController.lastHistoryIndex = gHistory.index;
     }
 
     gViewController.updateCommands();
@@ -1913,11 +2060,11 @@ var gSearchView = {
     var elements = [];
 
     function createSearchResults(aObjsList, aIsInstall, aIsRemote) {
-      aObjsList.forEach(function(aObj) {
-        let score = 0;
-        if (aQuery.length > 0) {
+      aObjsList.forEach(function(aObj, aIndex) {
+        let score = aObjsList.length - aIndex;
+        if (!aIsRemote && aQuery.length > 0) {
           score = self.getMatchScore(aObj, aQuery);
-          if (score == 0 && !aIsRemote)
+          if (score == 0)
             return;
         }
 
@@ -2186,6 +2333,9 @@ var gListView = {
   },
 
   show: function(aType, aRequest) {
+    if (!(aType in AddonManager.addonTypes))
+      throw new Error("Attempting to show unknown type " + aType);
+
     this._type = aType;
     this.node.setAttribute("type", aType);
     this.showEmptyNotice(false);

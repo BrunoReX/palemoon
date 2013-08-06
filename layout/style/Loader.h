@@ -56,7 +56,6 @@ class nsICSSLoaderObserver;
 class nsCSSStyleSheet;
 class nsIContent;
 class nsIDocument;
-class nsIUnicharInputStream;
 class nsCSSParser;
 class nsMediaList;
 
@@ -167,7 +166,7 @@ public:
    *
    * @param aElement the element linking to the stylesheet.  This must not be
    *                 null and must implement nsIStyleSheetLinkingElement.
-   * @param aStream the character stream that holds the stylesheet data.
+   * @param aBuffer the stylesheet data
    * @param aLineNumber the line number at which the stylesheet data started.
    * @param aTitle the title of the sheet.
    * @param aMedia the media string for the sheet.
@@ -178,7 +177,7 @@ public:
    *        alternate sheet.
    */
   nsresult LoadInlineStyle(nsIContent* aElement,
-                           nsIUnicharInputStream* aStream,
+                           const nsAString& aBuffer,
                            PRUint32 aLineNumber,
                            const nsAString& aTitle,
                            const nsAString& aMedia,
@@ -315,7 +314,7 @@ public:
 
   /**
    * nsresult Loader::StopLoadingSheet(nsIURI* aURL), which notifies the
-   * nsICSSLoaderObserver with NS_BINDING_ABORTED, was removed in Bug 556446. 
+   * nsICSSLoaderObserver with NS_BINDING_ABORTED, was removed in Bug 556446.
    * It can be found in revision 2c44a32052ad.
    */
 
@@ -439,11 +438,11 @@ private:
   // sheet to complete on failure.
   nsresult LoadSheet(SheetLoadData* aLoadData, StyleSheetState aSheetState);
 
-  // Parse the stylesheet in aLoadData.  The sheet data comes from aStream.
+  // Parse the stylesheet in aLoadData.  The sheet data comes from aInput.
   // Set aCompleted to true if the parse finished, false otherwise (e.g. if the
   // sheet had an @import).  If aCompleted is true when this returns, then
-  // ParseSheet also called SheetComplete on aLoadData
-  nsresult ParseSheet(nsIUnicharInputStream* aStream,
+  // ParseSheet also called SheetComplete on aLoadData.
+  nsresult ParseSheet(const nsAString& aInput,
                       SheetLoadData* aLoadData,
                       PRBool& aCompleted);
 

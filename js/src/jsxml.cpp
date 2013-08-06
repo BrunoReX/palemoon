@@ -56,7 +56,7 @@
 #include "jscntxt.h"
 #include "jsfun.h"
 #include "jsgc.h"
-#include "jsinterp.h"
+#include "jsgcmark.h"
 #include "jslock.h"
 #include "jsnum.h"
 #include "jsobj.h"
@@ -71,10 +71,10 @@
 #include "jsvector.h"
 
 #include "jsatominlines.h"
-#include "jscntxtinlines.h"
-#include "jsinterpinlines.h"
 #include "jsobjinlines.h"
 #include "jsstrinlines.h"
+
+#include "vm/Stack-inl.h"
 
 #ifdef DEBUG
 #include <string.h>     /* for #ifdef DEBUG memset calls */
@@ -1744,7 +1744,7 @@ ParseXMLSource(JSContext *cx, JSString *src)
     filename = NULL;
     lineno = 1;
     if (!i.done()) {
-        JSStackFrame *fp = i.fp();
+        StackFrame *fp = i.fp();
         op = (JSOp) *i.pc();
         if (op == JSOP_TOXML || op == JSOP_TOXMLLIST) {
             filename = fp->script()->filename;
@@ -2872,7 +2872,7 @@ ToXMLName(JSContext *cx, jsval v, jsid *funidp)
             return NULL;
     }
 
-    atomizedName = js_AtomizeString(cx, name, 0);
+    atomizedName = js_AtomizeString(cx, name);
     if (!atomizedName)
         return NULL;
 
@@ -3495,26 +3495,6 @@ Insert(JSContext *cx, JSXML *xml, uint32 i, jsval v)
     } else {
         vxml->parent = xml;
         XMLARRAY_SET_MEMBER(&xml->xml_kids, i, vxml);
-    }
-    return JS_TRUE;
-}
-
-static JSBool
-IndexToId(JSContext *cx, uint32 index, jsid *idp)
-{
-    JSAtom *atom;
-    JSString *str;
-
-    if (index <= JSID_INT_MAX) {
-        *idp = INT_TO_JSID(index);
-    } else {
-        str = js_NumberToString(cx, (jsdouble) index);
-        if (!str)
-            return JS_FALSE;
-        atom = js_AtomizeString(cx, str, 0);
-        if (!atom)
-            return JS_FALSE;
-        *idp = ATOM_TO_JSID(atom);
     }
     return JS_TRUE;
 }
@@ -4696,16 +4676,7 @@ xml_finalize(JSContext *cx, JSObject *obj)
 static void
 xml_trace_vector(JSTracer *trc, JSXML **vec, uint32 len)
 {
-    uint32 i;
-    JSXML *xml;
-
-    for (i = 0; i < len; i++) {
-        xml = vec[i];
-        if (xml) {
-            JS_SET_TRACING_INDEX(trc, "xml_vector", i);
-            Mark(trc, xml);
-        }
-    }
+    MarkXMLRange(trc, len, vec, "xml_vector");
 }
 
 /*
@@ -5373,7 +5344,7 @@ ValueToId(JSContext *cx, jsval v, AutoIdRooter *idr)
         else if (!js_ValueToStringId(cx, Valueify(v), idr->addr()))
             return JS_FALSE;
     } else if (JSVAL_IS_STRING(v)) {
-        JSAtom *atom = js_AtomizeString(cx, JSVAL_TO_STRING(v), 0);
+        JSAtom *atom = js_AtomizeString(cx, JSVAL_TO_STRING(v));
         if (!atom)
             return JS_FALSE;
         *idr->addr() = ATOM_TO_JSID(atom);
@@ -7224,13 +7195,13 @@ js_InitXMLClasses(JSContext *cx, JSObject *obj)
     return js_InitXMLClass(cx, obj);
 }
 
-JSBool
-js_GetFunctionNamespace(JSContext *cx, Value *vp)
-{
-    JSObject *global = cx->hasfp() ? cx->fp()->scopeChain().getGlobal() : cx->globalObject;
+namespace js {
 
-    *vp = global->getReservedSlot(JSRESERVED_GLOBAL_FUNCTION_NS);
-    if (vp->isUndefined()) {
+bool
+GlobalObject::getFunctionNamespace(JSContext *cx, Value *vp)
+{
+    Value &v = getSlotRef(FUNCTION_NS);
+    if (v.isUndefined()) {
         JSRuntime *rt = cx->runtime;
         JSLinearString *prefix = rt->atomState.typeAtoms[JSTYPE_FUNCTION];
         JSLinearString *uri = rt->atomState.functionNamespaceURIAtom;
@@ -7247,13 +7218,14 @@ js_GetFunctionNamespace(JSContext *cx, Value *vp)
          */
         obj->clearProto();
 
-        vp->setObject(*obj);
-        if (!js_SetReservedSlot(cx, global, JSRESERVED_GLOBAL_FUNCTION_NS, *vp))
-            return false;
+        v.setObject(*obj);
     }
 
+    *vp = v;
     return true;
 }
+
+} // namespace js
 
 /*
  * Note the asymmetry between js_GetDefaultXMLNamespace and js_SetDefaultXML-
@@ -7314,8 +7286,7 @@ js_SetDefaultXMLNamespace(JSContext *cx, const Value &v)
     if (!ns)
         return JS_FALSE;
 
-    JSStackFrame *fp = js_GetTopStackFrame(cx);
-    JSObject &varobj = fp->varobj(cx);
+    JSObject &varobj = cx->stack.currentVarObj();
     if (!varobj.defineProperty(cx, JS_DEFAULT_XML_NAMESPACE_ID, ObjectValue(*ns),
                                PropertyStub, StrictPropertyStub, JSPROP_PERMANENT)) {
         return JS_FALSE;
@@ -7393,7 +7364,7 @@ js_ValueToXMLString(JSContext *cx, const Value &v)
 JSBool
 js_GetAnyName(JSContext *cx, jsid *idp)
 {
-    JSObject *global = cx->hasfp() ? cx->fp()->scopeChain().getGlobal() : cx->globalObject;
+    JSObject *global = cx->running() ? cx->fp()->scopeChain().getGlobal() : cx->globalObject;
     Value v = global->getReservedSlot(JSProto_AnyName);
     if (v.isUndefined()) {
         JSObject *obj = NewNonFunction<WithProto::Given>(cx, &js_AnyNameClass, NULL, global);
@@ -7634,7 +7605,7 @@ js_StepXMLListFilter(JSContext *cx, JSBool initialized)
     JSXMLFilter *filter;
 
     LeaveTrace(cx);
-    sp = Jsvalify(cx->regs->sp);
+    sp = Jsvalify(cx->regs().sp);
     if (!initialized) {
         /*
          * We haven't iterated yet, so initialize the filter based on the

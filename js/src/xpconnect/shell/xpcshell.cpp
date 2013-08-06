@@ -89,10 +89,8 @@
 #include <unistd.h>
 #endif
 
-#ifndef XPCONNECT_STANDALONE
 #include "nsIScriptSecurityManager.h"
 #include "nsIPrincipal.h"
-#endif
 
 // all this crap is needed to do the interactive shell stuff
 #include <stdlib.h>
@@ -1094,7 +1092,7 @@ ProcessFile(JSContext *cx, JSObject *obj, const char *filename, FILE *file,
             }
             bufp += strlen(bufp);
             lineno++;
-        } while (!JS_BufferIsCompilableUnit(cx, obj, buffer, strlen(buffer)));
+        } while (!JS_BufferIsCompilableUnit(cx, JS_FALSE, obj, buffer, strlen(buffer)));
 
         DoBeginRequest(cx);
         /* Clear any pending exception from previous failed compiles.  */
@@ -1152,7 +1150,7 @@ static int
 usage(void)
 {
     fprintf(gErrFile, "%s\n", JS_GetImplementationVersion());
-    fprintf(gErrFile, "usage: xpcshell [-g gredir] [-r manifest]... [-PsSwWxCij] [-v version] [-f scriptfile] [-e script] [scriptfile] [scriptarg...]\n");
+    fprintf(gErrFile, "usage: xpcshell [-g gredir] [-a appdir] [-r manifest]... [-PsSwWxCij] [-v version] [-f scriptfile] [-e script] [scriptfile] [scriptarg...]\n");
     return 2;
 }
 
@@ -1318,37 +1316,27 @@ ProcessArgs(JSContext *cx, JSObject *obj, char **argv, int argc)
 /***************************************************************************/
 
 class FullTrustSecMan
-#ifndef XPCONNECT_STANDALONE
   : public nsIScriptSecurityManager
-#else
-  : public nsIXPCSecurityManager
-#endif
 {
 public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIXPCSECURITYMANAGER
-#ifndef XPCONNECT_STANDALONE
   NS_DECL_NSISCRIPTSECURITYMANAGER
-#endif
 
   FullTrustSecMan();
   virtual ~FullTrustSecMan();
 
-#ifndef XPCONNECT_STANDALONE
   void SetSystemPrincipal(nsIPrincipal *aPrincipal) {
     mSystemPrincipal = aPrincipal;
   }
 
 private:
   nsCOMPtr<nsIPrincipal> mSystemPrincipal;
-#endif
 };
 
 NS_INTERFACE_MAP_BEGIN(FullTrustSecMan)
   NS_INTERFACE_MAP_ENTRY(nsIXPCSecurityManager)
-#ifndef XPCONNECT_STANDALONE
   NS_INTERFACE_MAP_ENTRY(nsIScriptSecurityManager)
-#endif
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIXPCSecurityManager)
 NS_INTERFACE_MAP_END
 
@@ -1357,9 +1345,7 @@ NS_IMPL_RELEASE(FullTrustSecMan)
 
 FullTrustSecMan::FullTrustSecMan()
 {
-#ifndef XPCONNECT_STANDALONE
   mSystemPrincipal = nsnull;
-#endif
 }
 
 FullTrustSecMan::~FullTrustSecMan()
@@ -1386,7 +1372,6 @@ FullTrustSecMan::CanGetService(JSContext * aJSContext, const nsCID & aCID)
     return NS_OK;
 }
 
-#ifndef XPCONNECT_STANDALONE
 /* void CanAccess (in PRUint32 aAction, in nsIXPCNativeCallContext aCallContext, in JSContextPtr aJSContext, in JSObjectPtr aJSObject, in nsISupports aObj, in nsIClassInfo aClassInfo, in jsval aName, inout voidPtr aPolicy); */
 NS_IMETHODIMP
 FullTrustSecMan::CanAccess(PRUint32 aAction,
@@ -1630,8 +1615,6 @@ FullTrustSecMan::GetCxSubjectPrincipalAndFrame(JSContext *cx, JSStackFrame **fp)
     return mSystemPrincipal;
 }
 
-#endif
-
 /***************************************************************************/
 
 // #define TEST_InitClassesWithNewWrappedGlobal
@@ -1770,6 +1753,12 @@ GetCurrentWorkingDirectory(nsAString& workingDirectory)
     return true;
 }
 
+static JSPrincipals *
+FindObjectPrincipals(JSContext *cx, JSObject *obj)
+{
+    return gJSPrincipals;
+}
+
 int
 main(int argc, char **argv, char **envp)
 {
@@ -1821,6 +1810,23 @@ main(int argc, char **argv, char **envp)
         argv += 2;
     }
 
+    if (argc > 1 && !strcmp(argv[1], "-a")) {
+        if (argc < 3)
+            return usage();
+
+        nsCOMPtr<nsILocalFile> dir;
+        rv = XRE_GetFileFromPath(argv[2], getter_AddRefs(dir));
+        if (NS_SUCCEEDED(rv)) {
+            appDir = do_QueryInterface(dir, &rv);
+        }
+        if (NS_FAILED(rv)) {
+            printf("Couldn't use given appdir.\n");
+            return 1;
+        }
+        argc -= 2;
+        argv += 2;
+    }
+
     while (argc > 1 && !strcmp(argv[1], "-r")) {
         if (argc < 3)
             return usage();
@@ -1865,9 +1871,7 @@ main(int argc, char **argv, char **envp)
             return 1;
         }
 
-#ifdef MOZ_ENABLE_LIBXUL
         xpc_LocalizeContext(cx);
-#endif
 
         nsCOMPtr<nsIXPConnect> xpc = do_GetService(nsIXPConnect::GetCID());
         if (!xpc) {
@@ -1880,7 +1884,6 @@ main(int argc, char **argv, char **envp)
         nsRefPtr<FullTrustSecMan> secman = new FullTrustSecMan();
         xpc->SetSecurityManagerForJSContext(cx, secman, 0xFFFF);
 
-#ifndef XPCONNECT_STANDALONE
         nsCOMPtr<nsIPrincipal> systemprincipal;
 
         // Fetch the system principal and store it away in a global, to use for
@@ -1906,7 +1909,11 @@ main(int argc, char **argv, char **envp)
                 fprintf(gErrFile, "+++ Failed to get ScriptSecurityManager service, running without principals");
             }
         }
-#endif
+
+        JSSecurityCallbacks *cb = JS_GetRuntimeSecurityCallbacks(rt);
+        NS_ASSERTION(cb, "We are assuming that nsScriptSecurityManager::Init() has been run");
+        NS_ASSERTION(!cb->findObjectPrincipals, "Your pigeon is in my hole!");
+        cb->findObjectPrincipals = FindObjectPrincipals;
 
 #ifdef TEST_TranslateThis
         nsCOMPtr<nsIXPCFunctionThisTranslator>

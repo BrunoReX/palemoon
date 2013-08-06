@@ -76,8 +76,6 @@
 #include "nsReadableUtils.h"
 
 #include "nsColor.h"
-#include "nsIRenderingContext.h"
-#include "nsIDeviceContext.h"
 #include "nsGfxCIID.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIDocShell.h"
@@ -174,11 +172,16 @@ static PRInt64 GetCanvasMemoryUsed(void *) {
     return gCanvasMemoryUsed;
 }
 
+// This is MR_OTHER because it's not always clear where in memory the pixels of
+// a canvas are stored.  Furthermore, this memory will be tracked by the
+// underlying surface implementations.  See bug 655638 for details.
 NS_MEMORY_REPORTER_IMPLEMENT(CanvasMemory,
-                             "content/canvas/2d_pixel_bytes",
-                             "Total memory used by 2D canvas (width * height * 4)",
-                             GetCanvasMemoryUsed,
-                             NULL)
+    "canvas-2d-pixel-bytes",
+    MR_OTHER,
+    "Memory used by 2D canvases. Each canvas requires (width * height * 4) "
+    "bytes.",
+    GetCanvasMemoryUsed,
+    NULL)
 
 static void
 CopyContext(gfxContext* dest, gfxContext* src)
@@ -470,6 +473,7 @@ protected:
     // Member vars
     PRInt32 mWidth, mHeight;
     PRPackedBool mValid;
+    PRPackedBool mZero;
     PRPackedBool mOpaque;
     PRPackedBool mResetLayer;
     PRPackedBool mIPC;
@@ -822,7 +826,7 @@ NS_NewCanvasRenderingContext2D(nsIDOMCanvasRenderingContext2D** aResult)
 }
 
 nsCanvasRenderingContext2D::nsCanvasRenderingContext2D()
-    : mValid(PR_FALSE), mOpaque(PR_FALSE), mResetLayer(PR_TRUE)
+    : mValid(PR_FALSE), mZero(PR_FALSE), mOpaque(PR_FALSE), mResetLayer(PR_TRUE)
     , mIPC(PR_FALSE)
     , mCanvasElement(nsnull)
     , mSaveCount(0), mIsEntireFrameInvalid(PR_FALSE)
@@ -1088,6 +1092,14 @@ nsCanvasRenderingContext2D::SetDimensions(PRInt32 width, PRInt32 height)
     // Check that the dimensions are sane
     gfxIntSize size(width, height);
     if (gfxASurface::CheckSurfaceSize(size, 0xffff)) {
+        // Zero sized surfaces have problems, so just use a 1 by 1.
+        if (height == 0 || width == 0) {
+            mZero = PR_TRUE;
+            height = 1;
+            width = 1;
+        } else {
+            mZero = PR_FALSE;
+        }
 
         gfxASurface::gfxImageFormat format = GetImageFormat();
 
@@ -1795,8 +1807,7 @@ nsCanvasRenderingContext2D::ShadowInitialize(const gfxRect& extents, gfxAlphaBox
     mThebes->SetMatrix(matrix);
     // outset by the blur radius so that blurs can leak onto the canvas even
     // when the shape is outside the clipping area
-    clipExtents.Outset(blurRadius.height, blurRadius.width,
-                       blurRadius.height, blurRadius.width);
+    clipExtents.Inflate(blurRadius.width, blurRadius.height);
     drawExtents = drawExtents.Intersect(clipExtents - CurrentState().shadowOffset);
 
     gfxContext* ctx = blur.Init(drawExtents, gfxIntSize(0,0), blurRadius, nsnull, nsnull);
@@ -1968,7 +1979,7 @@ nsCanvasRenderingContext2D::ClearRect(float x, float y, float w, float h)
 nsresult
 nsCanvasRenderingContext2D::DrawRect(const gfxRect& rect, Style style)
 {
-    if (!FloatValidate(rect.pos.x, rect.pos.y, rect.size.width, rect.size.height))
+    if (!FloatValidate(rect.X(), rect.Y(), rect.Width(), rect.Height()))
         return NS_OK;
 
     PathAutoSaveRestore pathSR(this);
@@ -2215,7 +2226,6 @@ CreateFontStyleRule(const nsAString& aFont,
     // Pass the CSS Loader object to the parser, to allow parser error reports
     // to include the outer window ID.
     nsCSSParser parser(document->CSSLoader());
-    NS_ENSURE_TRUE(parser, NS_ERROR_OUT_OF_MEMORY);
 
     nsresult rv = parser.ParseStyleAttribute(EmptyString(), docURL, baseURL,
                                              principal, getter_AddRefs(rule));
@@ -2774,7 +2784,7 @@ nsCanvasRenderingContext2D::DrawOrMeasureText(const nsAString& aRawText,
     processor.mPt.y += anchorY;
 
     // correct bounding box to get it to be the correct size/position
-    processor.mBoundingBox.size.width = totalWidth;
+    processor.mBoundingBox.width = totalWidth;
     processor.mBoundingBox.MoveBy(processor.mPt);
 
     processor.mPt.x *= processor.mAppUnitsPerDevPixel;
@@ -2800,7 +2810,7 @@ nsCanvasRenderingContext2D::DrawOrMeasureText(const nsAString& aRawText,
 
     if (doDrawShadow) {
         // for some reason the box is too tight, probably rounding error
-        processor.mBoundingBox.Outset(2.0);
+        processor.mBoundingBox.Inflate(2.0);
 
         // this is unnecessarily big is max-width scaling is involved, but it
         // will still produce correct output
@@ -3235,105 +3245,6 @@ nsCanvasRenderingContext2D::IsPointInPath(float x, float y, PRBool *retVal)
     return NS_OK;
 }
 
-#ifdef WINCE
-/* A simple bitblt for self copies that ensures that we don't overwrite any
- * area before we've read from it. */
-static void
-bitblt(gfxImageSurface *s, int src_x, int src_y, int width, int height,
-                int dest_x, int dest_y) {
-    unsigned char *data = s->Data();
-    int stride = s->Stride()/4;
-    int x, y;
-    unsigned int *dest = (unsigned int *)data;
-    unsigned int *src  = (unsigned int *)data;
-
-    int surface_width  = s->Width();
-    int surface_height = s->Height();
-
-    /* clip to the surface size */
-    if (src_x < 0) {
-        dest_x += -src_x;
-        width  -= -src_x;
-        src_x = 0;
-    }
-    if (src_y < 0) {
-        dest_y += -src_y;
-        height -= -src_y;
-        src_y = 0;
-    }
-    if (dest_x < 0) {
-        src_x += -dest_x;
-        width -= -dest_x;
-        dest_x = 0;
-    }
-    if (dest_y < 0) {
-        src_y  += -dest_y;
-        height -= -dest_y;
-        dest_y  = 0;
-    }
-
-    /*XXX: we might want to check for overflow? */
-    if (src_x + width > surface_width)
-        width = surface_width - src_x;
-    if (dest_x + width > surface_width)
-        width = surface_width - dest_x;
-    if (src_y + height > surface_height)
-        height = surface_height - src_y;
-    if (dest_y + height > surface_height)
-        height = surface_height - dest_y;
-
-    if (dest_x < src_x) {
-        if (dest_y < src_y) {
-            dest = dest + dest_y*stride + dest_x;
-            src  = src  +  src_y*stride + src_x;
-            /* copy right to left, top to bottom */
-            for (y=0; y<height; y++) {
-                for (x=0; x<width; x++) {
-                    *dest++ = *src++;
-                }
-                dest += stride - width;
-                src  += stride - width;
-            }
-        } else {
-            dest = dest + (dest_y+height-1)*stride + dest_x;
-            src  = src  + (src_y +height-1)*stride + src_x;
-            /* copy right to left, bottom to top */
-            for (y=0; y<height; y++) {
-                for (x=0; x<width; x++) {
-                    *dest++ = *src++;
-                }
-                dest += -stride - width;
-                src  += -stride - width;
-            }
-        }
-    } else {
-        if (dest_y < src_y) {
-            dest = dest + dest_y*stride + (dest_x+width-1);
-            src  = src  +  src_y*stride + (src_x +width-1);
-            /* copy left to right, top to bottom */
-            for (y=0; y<height; y++) {
-                for (x=0; x<width; x++) {
-                    *dest-- = *src--;
-                }
-                dest += stride + width;
-                src  += stride + width;
-            }
-        } else {
-            dest = dest + (dest_y+height-1)*stride + (dest_x+width-1);
-            src  = src  + (src_y +height-1)*stride + (src_x +width-1);
-            /* copy left to right, bottom to top */
-            for (y=0; y<height; y++) {
-                for (x=0; x<width; x++) {
-                    *dest-- = *src--;
-                }
-                dest += -stride + width;
-                src  += -stride + width;
-            }
-        }
-    }
-}
-#endif
-
 //
 // image
 //
@@ -3375,8 +3286,7 @@ nsCanvasRenderingContext2D::DrawImage(nsIDOMElement *imgElt, float a1,
             return res.mIsStillLoading ? NS_OK : NS_ERROR_NOT_AVAILABLE;
         }
 
-#ifndef WINCE
-        // On non-CE, force a copy if we're using drawImage with our destination
+        // Force a copy if we're using drawImage with our destination
         // as a source to work around some Cairo self-copy semantics issues.
         if (res.mSurface == mSurface) {
             sfeFlags |= nsLayoutUtils::SFE_WANT_NEW_SURFACE;
@@ -3384,7 +3294,6 @@ nsCanvasRenderingContext2D::DrawImage(nsIDOMElement *imgElt, float a1,
             if (!res.mSurface)
                 return NS_ERROR_NOT_AVAILABLE;
         }
-#endif
 
         imgsurf = res.mSurface.forget();
         imgSize = res.mSize;
@@ -3450,37 +3359,10 @@ nsCanvasRenderingContext2D::DrawImage(nsIDOMElement *imgElt, float a1,
 
     matrix.Translate(gfxPoint(sx, sy));
     matrix.Scale(sw/dw, sh/dh);
-#ifdef WINCE
-    /* cairo doesn't have consistent semantics for drawing a surface onto
-     * itself. Specifically, pixman will not preserve the contents when doing
-     * the copy. So to get the desired semantics a temporary copy would be needed.
-     * Instead we optimize opaque self copies here */
-    {
-        nsRefPtr<gfxASurface> csurf = mThebes->CurrentSurface();
-        if (csurf == imgsurf) {
-            if (imgsurf->GetType() == gfxASurface::SurfaceTypeImage) {
-                gfxImageSurface *surf = static_cast<gfxImageSurface*>(imgsurf.get());
-                gfxContext::GraphicsOperator op = mThebes->CurrentOperator();
-                PRBool opaque, unscaled;
-
-                opaque  = surf->Format() == gfxASurface::ImageFormatARGB32 &&
-                    (op == gfxContext::OPERATOR_SOURCE);
-                opaque |= surf->Format() == gfxASurface::ImageFormatRGB24  &&
-                    (op == gfxContext::OPERATOR_SOURCE || op == gfxContext::OPERATOR_OVER);
-
-                unscaled = sw == dw && sh == dh;
-
-                if (opaque && unscaled) {
-                    bitblt(surf, sx, sy, sw, sh, dx, dy);
-                    return NS_OK;
-                }
-            }
-        }
-    }
-#endif
 
     pattern = new gfxPattern(imgsurf);
     pattern->SetMatrix(matrix);
+    pattern->SetExtend(gfxPattern::EXTEND_PAD);
 
     if (CurrentState().imageSmoothingEnabled)
         pattern->SetFilter(gfxPattern::FILTER_GOOD);
@@ -3496,8 +3378,6 @@ nsCanvasRenderingContext2D::DrawImage(nsIDOMElement *imgElt, float a1,
         gfxContextMatrixAutoSaveRestore autoMatrixSR(mThebes);
 
         mThebes->Translate(gfxPoint(dx, dy));
-        mThebes->SetPattern(pattern);
-        DirtyAllStyles();
 
         gfxRect clip(0, 0, dw, dh);
 
@@ -3509,6 +3389,7 @@ nsCanvasRenderingContext2D::DrawImage(nsIDOMElement *imgElt, float a1,
 
             if (ctx) {
                 CopyContext(ctx, mThebes);
+                ctx->SetPattern(pattern);
                 ctx->SetOperator(gfxContext::OPERATOR_SOURCE);
                 ctx->Clip(clip);
                 ctx->Paint();
@@ -3516,6 +3397,9 @@ nsCanvasRenderingContext2D::DrawImage(nsIDOMElement *imgElt, float a1,
                 ShadowFinalize(blur);
             }
         }
+
+        mThebes->SetPattern(pattern);
+        DirtyAllStyles();
 
         PRBool doUseIntermediateSurface = NeedToUseIntermediateSurface();
         if (doUseIntermediateSurface) {
@@ -3662,7 +3546,6 @@ nsCanvasRenderingContext2D::DrawWindow(nsIDOMWindow* aWindow, float aX, float aY
     // Pass the CSS Loader object to the parser, to allow parser error reports
     // to include the outer window ID.
     nsCSSParser parser(elementDoc ? elementDoc->CSSLoader() : nsnull);
-    NS_ENSURE_TRUE(parser, NS_ERROR_OUT_OF_MEMORY);
     nsresult rv = parser.ParseColorString(PromiseFlatString(aBGColor),
                                           nsnull, 0, &bgColor);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -3865,26 +3748,28 @@ nsCanvasRenderingContext2D::GetImageData_explicit(PRInt32 x, PRInt32 y, PRUint32
     if (tmpctx->HasError())
         return NS_ERROR_FAILURE;
 
-    gfxRect srcRect(0, 0, mWidth, mHeight);
-    gfxRect destRect(x, y, w, h);
+    if (!mZero) {
+        gfxRect srcRect(0, 0, mWidth, mHeight);
+        gfxRect destRect(x, y, w, h);
 
-    bool finishedPainting = false;
-    // In the common case, we want to avoid the Rectangle call.
-    if (!srcRect.Contains(destRect)) {
-        // If the requested area is entirely outside the canvas, we're done.
-        gfxRect tmp = srcRect.Intersect(destRect);
-        finishedPainting = tmp.IsEmpty();
+        bool finishedPainting = false;
+        // In the common case, we want to avoid the Rectangle call.
+        if (!srcRect.Contains(destRect)) {
+            // If the requested area is entirely outside the canvas, we're done.
+            gfxRect tmp = srcRect.Intersect(destRect);
+            finishedPainting = tmp.IsEmpty();
 
-        // Set clipping region if necessary.
-        if (!finishedPainting) {
-            tmpctx->Rectangle(tmp);
+            // Set clipping region if necessary.
+            if (!finishedPainting) {
+                tmpctx->Rectangle(tmp);
+            }
         }
-    }
 
-    if (!finishedPainting) {
-        tmpctx->SetOperator(gfxContext::OPERATOR_SOURCE);
-        tmpctx->SetSource(mSurface, gfxPoint(-x, -y));
-        tmpctx->Paint();
+        if (!finishedPainting) {
+            tmpctx->SetOperator(gfxContext::OPERATOR_SOURCE);
+            tmpctx->SetSource(mSurface, gfxPoint(-x, -y));
+            tmpctx->Paint();
+        }
     }
 
     // make sure sUnpremultiplyTable has been created

@@ -86,8 +86,6 @@
     <div id="footer-wrapper">
       <span id="feedback" style="width: &aboutHome.footerWidth;" class="section-row" pref="app.feedbackURL" onclick="openLink(this);" role="button">&aboutHome.giveFeedback;</span><span id="support" style="width: &aboutHome.footerWidth;" class="section-row" pref="app.support.baseURL" onclick="openLink(this);" role="button">&aboutHome.getHelp;</span>
     </div>
-
-    <div id="promo" pref="app.promo.spark.baseURL" onclick="openLink(this);" role="button"><img src="chrome://branding/content/spark.png"/><span id="promo-label">&aboutHome.promoLabel;</span><span id="promo-button" class="section-row">&aboutHome.promoButton;</span></div>
   </div>
 
   <!-- l10n hack -->
@@ -100,6 +98,7 @@
   <script type="application/javascript;version=1.8"><![CDATA[
     let Ci = Components.interfaces, Cc = Components.classes, Cu = Components.utils;
     let gChromeWin = null;
+    Cu.import("resource://gre/modules/AddonManager.jsm");
 
     function openLink(aElement) {
       try {
@@ -126,7 +125,6 @@
     function init() {
       initTabs();
       initAddons();
-      initPromo();
     }
 
     function uninit() {
@@ -311,9 +309,10 @@
           list.removeChild(header.nextSibling);
 
         for (let i=0; i<aAddons.length; i++) {
+          let addon = aAddons[i];
           let outer = document.createElement("div");
           outer.setAttribute("role", "button");
-          outer.setAttribute("addonID", aAddons[i].id);
+          outer.setAttribute("addonID", addon.id);
 
           let addonName = aAddons[i].name;
           outer.addEventListener("click", function() {
@@ -322,19 +321,19 @@
 
           let img = document.createElement("img");
           img.className = "favicon";
-          img.setAttribute("src", aAddons[i].iconURL);
+          img.setAttribute("src", addon.iconURL);
           outer.appendChild(img);
 
           let inner = document.createElement("div");
           inner.className = "inner";
 
           let titlePart = document.createElement("span");
-          titlePart.textContent = aAddons[i].name;
+          titlePart.textContent = addon.name;
           titlePart.className = "title";
           inner.appendChild(titlePart);
 
           let versionPart = document.createElement("span");
-          versionPart.textContent = aAddons[i].version;
+          versionPart.textContent = addon.version;
           versionPart.className = "version";
           inner.appendChild(versionPart);
 
@@ -347,7 +346,21 @@
         let file = this._getFile();
         if (file.exists()) {
           let json = JSON.parse(this._readFile(file));
-          this._loadAddons(json.addons, json.addonCount, json.totalResults);
+
+          // Ignore addons already installed
+          let self = this;
+          let addonsCache = json.addons;
+          AddonManager.getAllAddons(function(aAddons) {
+            let addons = addonsCache.filter(function(addon) {
+              for (let i =0; i < aAddons.length; i++)
+                if (addon.id == aAddons[i].id)
+                  return false;
+
+              return true;
+            });
+
+            self._loadAddons(addons, addons.length, json.totalResults);
+          });
         } else {
           setTimeout(function() {
             let aus = Cc["@mozilla.org/browser/addon-update-service;1"].getService(Ci.nsITimerCallback);
@@ -369,12 +382,6 @@
 
     function uninitAddons() {
       getChromeWin().Services.obs.removeObserver(updateAddons, "recommended-addons-cache-updated");
-    }
-
-    function initPromo() {
-      let endDate = new Date(getChromeWin().Services.prefs.getCharPref("app.promo.spark.endDate"));
-      if (endDate > Date.now())
-        document.getElementById("promo").style.display = "block";
     }
   ]]></script>
 </body>

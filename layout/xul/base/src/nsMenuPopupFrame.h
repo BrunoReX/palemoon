@@ -234,7 +234,7 @@ public:
   // that menu, or null if no menu should be opened. Also, calling Enter will
   // reset the current incremental search string, calculated in
   // FindMenuWithShortcut.
-  nsMenuFrame* Enter();
+  nsMenuFrame* Enter(nsGUIEvent* aEvent);
 
   nsPopupType PopupType() const { return mPopupType; }
   PRBool IsMenu() { return mPopupType == ePopupTypeMenu; }
@@ -399,6 +399,10 @@ protected:
       ? mAnchorContent->GetPrimaryFrame()->GetStyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL
       : GetStyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL;
   }
+
+  // Create a popup view for this frame. The view is added a child of the root
+  // view, and is initially hidden.
+  nsresult CreatePopupViewForFrame();
 
   nsString     mIncrementalString;  // for incremental typing navigation
 

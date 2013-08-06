@@ -42,7 +42,6 @@
 
 #include "nsContainerFrame.h"
 #include "gfxPoint.h"
-#include "nsIDeviceContext.h"
 
 class nsString;
 class nsAbsoluteFrame;
@@ -55,8 +54,11 @@ class nsLineBox;
 
 // Some macros for container classes to do sanity checking on
 // width/height/x/y values computed during reflow.
+// NOTE: AppUnitsPerCSSPixel value hardwired here to remove the
+// dependency on nsDeviceContext.h.  It doesn't matter if it's a
+// little off.
 #ifdef DEBUG
-#define CRAZY_W (1000000*nsIDeviceContext::AppUnitsPerCSSPixel())
+#define CRAZY_W (1000000*60)
 #define CRAZY_H CRAZY_W
 
 #define CRAZY_WIDTH(_x) (((_x) < -CRAZY_W) || ((_x) > CRAZY_W))
@@ -70,23 +72,6 @@ class nsDisplayTextDecoration;
 class nsHTMLContainerFrame : public nsContainerFrame {
 public:
   NS_DECL_FRAMEARENA_HELPERS
-
-  /**
-   * Helper method to wrap views around frames. Used by containers
-   * under special circumstances (can be used by leaf frames as well)
-   */
-  static nsresult CreateViewForFrame(nsIFrame* aFrame,
-                                     PRBool aForce);
-
-  static nsresult ReparentFrameView(nsPresContext* aPresContext,
-                                    nsIFrame*       aChildFrame,
-                                    nsIFrame*       aOldParentFrame,
-                                    nsIFrame*       aNewParentFrame);
-
-  static nsresult ReparentFrameViewList(nsPresContext*     aPresContext,
-                                        const nsFrameList& aChildFrameList,
-                                        nsIFrame*          aOldParentFrame,
-                                        nsIFrame*          aNewParentFrame);
 
   /**
    * Helper method to create next-in-flows if necessary. If aFrame
@@ -144,16 +129,33 @@ protected:
    *                         in aDecoration is set. It is undefined otherwise.
    *  @param aStrikeColor  The color of strike-through if the appropriate bit 
    *                         in aDecoration is set. It is undefined otherwise.
-   *  NOTE: This function assigns NS_STYLE_TEXT_DECORATION_NONE to
+   *  @param aUnderStyle   The style of underline if the appropriate bit
+   *                         in aDecoration is set. It is undefined otherwise.
+   *                         The style is one of
+   *                         NS_STYLE_TEXT_DECORATION_STYLE_* consts.
+   *  @param aOverStyle    The style of overline if the appropriate bit
+   *                         in aDecoration is set. It is undefined otherwise.
+   *                         The style is one of
+   *                         NS_STYLE_TEXT_DECORATION_STYLE_* consts.
+   *  @param aStrikeStyle  The style of strike-through if the appropriate bit
+   *                         in aDecoration is set. It is undefined otherwise.
+   *                         The style is one of
+   *                         NS_STYLE_TEXT_DECORATION_STYLE_* consts.
+   *  NOTE: This function assigns NS_STYLE_TEXT_DECORATION_LINE_NONE to
    *        aDecorations for text-less frames.  See bug 20163 for
    *        details.
+   *  NOTE: The results of color and style for each lines were not initialized
+   *        if the line wasn't included in aDecorations.
    */
   void GetTextDecorations(nsPresContext* aPresContext, 
                           PRBool aIsBlock,
                           PRUint8& aDecorations, 
                           nscolor& aUnderColor, 
                           nscolor& aOverColor, 
-                          nscolor& aStrikeColor);
+                          nscolor& aStrikeColor,
+                          PRUint8& aUnderStyle,
+                          PRUint8& aOverStyle,
+                          PRUint8& aStrikeStyle);
 
   /** 
    * Function that does the actual drawing of the textdecoration. 
@@ -161,6 +163,8 @@ protected:
    *    @param aCtx               the Thebes graphics context to draw on
    *    @param aLine              the line, or nsnull if this is an inline frame
    *    @param aColor             the color of the text-decoration
+   *    @param aStyle             the style of the text-decoration, i.e., one of
+   *                                NS_STYLE_TEXT_DECORATION_STYLE_* consts.
    *    @param aAscent            ascent of the font from which the
    *                                text-decoration was derived. 
    *    @param aOffset            distance *above* baseline where the
@@ -168,15 +172,16 @@ protected:
    *                                i.e. negative offsets draws *below*
    *                                the baseline.
    *    @param aSize              the thickness of the line
-   *    @param aDecoration        which line will be painted
-   *                                i.e., NS_STYLE_TEXT_DECORATION_UNDERLINE or
-   *                                      NS_STYLE_TEXT_DECORATION_OVERLINE or
-   *                                      NS_STYLE_TEXT_DECORATION_LINE_THROUGH.
+   *    @param aDecoration        which line will be painted i.e.,
+   *                              NS_STYLE_TEXT_DECORATION_LINE_UNDERLINE or
+   *                              NS_STYLE_TEXT_DECORATION_LINE_OVERLINE or
+   *                              NS_STYLE_TEXT_DECORATION_LINE_LINE_THROUGH.
    */
   virtual void PaintTextDecorationLine(gfxContext* aCtx,
                                        const nsPoint& aPt,
                                        nsLineBox* aLine,
                                        nscolor aColor,
+                                       PRUint8 aStyle,
                                        gfxFloat aOffset,
                                        gfxFloat aAscent,
                                        gfxFloat aSize,

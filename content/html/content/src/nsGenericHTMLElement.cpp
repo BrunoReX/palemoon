@@ -86,7 +86,7 @@
 #include "nsString.h"
 #include "nsUnicharUtils.h"
 #include "nsGkAtoms.h"
-#include "nsIEventStateManager.h"
+#include "nsEventStateManager.h"
 #include "nsIDOMEvent.h"
 #include "nsIDOMNSEvent.h"
 #include "nsDOMCSSDeclaration.h"
@@ -102,6 +102,8 @@
 #include "nsContentCID.h"
 
 #include "nsIDOMText.h"
+
+#include "nsDOMStringMap.h"
 
 #include "nsIEditor.h"
 #include "nsIEditorIMESupport.h"
@@ -136,7 +138,7 @@ static nsHashtable sGEUS_ElementCounts;
 void GEUS_ElementCreated(nsINodeInfo *aNodeInfo)
 {
   nsAutoString name;
-  aNodeInfo->GetLocalName(name);
+  aNodeInfo->GetName(name);
 
   nsStringKey key(name);
 
@@ -302,7 +304,7 @@ nsGenericHTMLElement::DOMQueryInterface(nsIDOMHTMLElement *aElement,
   NS_INTERFACE_MAP_END
 
 // No closing bracket, because NS_INTERFACE_MAP_END does that for us.
-    
+
 nsresult
 nsGenericHTMLElement::CopyInnerTo(nsGenericElement* aDst) const
 {
@@ -315,8 +317,8 @@ nsGenericHTMLElement::CopyInnerTo(nsGenericElement* aDst) const
         value->Type() == nsAttrValue::eCSSStyleRule) {
       // We can't just set this as a string, because that will fail
       // to reparse the string into style data until the node is
-      // inserted into the document.  Clone the nsICSSRule instead.
-      nsCOMPtr<nsICSSRule> ruleClone = value->GetCSSStyleRuleValue()->Clone();
+      // inserted into the document.  Clone the Rule instead.
+      nsRefPtr<mozilla::css::Rule> ruleClone = value->GetCSSStyleRuleValue()->Clone();
       nsRefPtr<mozilla::css::StyleRule> styleRule = do_QueryObject(ruleClone);
       NS_ENSURE_TRUE(styleRule, NS_ERROR_UNEXPECTED);
 
@@ -334,12 +336,6 @@ nsGenericHTMLElement::CopyInnerTo(nsGenericElement* aDst) const
   }
 
   return NS_OK;
-}
-
-nsresult
-nsGenericHTMLElement::GetTagName(nsAString& aTagName)
-{
-  return GetNodeName(aTagName);
 }
 
 NS_IMETHODIMP
@@ -371,12 +367,28 @@ nsGenericHTMLElement::SetAttribute(const nsAString& aName,
 }
 
 nsresult
-nsGenericHTMLElement::GetNodeName(nsAString& aNodeName)
+nsGenericHTMLElement::GetDataset(nsIDOMDOMStringMap** aDataset)
 {
-  mNodeInfo->GetQualifiedName(aNodeName);
+  nsDOMSlots *slots = DOMSlots();
 
-  if (IsInHTMLDocument())
-    nsContentUtils::ASCIIToUpper(aNodeName);
+  if (!slots->mDataset) {
+    // mDataset is a weak reference so assignment will not AddRef.
+    // AddRef is called before assigning to out parameter.
+    slots->mDataset = new nsDOMStringMap(this);
+  }
+
+  NS_ADDREF(*aDataset = slots->mDataset);
+  return NS_OK;
+}
+
+nsresult
+nsGenericHTMLElement::ClearDataset()
+{
+  nsDOMSlots *slots = GetExistingDOMSlots();
+
+  NS_ASSERTION(slots && slots->mDataset,
+               "Slots should exist and dataset should not be null.");
+  slots->mDataset = nsnull;
 
   return NS_OK;
 }
@@ -719,15 +731,20 @@ nsGenericHTMLElement::SetInnerHTML(const nsAString& aInnerHTML)
 
   nsresult rv = NS_OK;
 
+  // Batch possible DOMSubtreeModified events.
+  mozAutoSubtreeModified subtree(doc, nsnull);
+
+  FireNodeRemovedForChildren();
+
   // This BeginUpdate/EndUpdate pair is important to make us reenable the
   // scriptloader before the last EndUpdate call.
   mozAutoDocUpdate updateBatch(doc, UPDATE_CONTENT_MODEL, PR_TRUE);
 
-  // Batch possible DOMSubtreeModified events.
-  mozAutoSubtreeModified subtree(doc, nsnull);
-
-  // Remove childnodes
-  nsContentUtils::SetNodeTextContent(this, EmptyString(), PR_FALSE);
+  // Remove childnodes.
+  // i is unsigned, so i >= is always true
+  for (PRUint32 i = GetChildCount(); i-- != 0; ) {
+    RemoveChildAt(i, PR_TRUE);
+  }
 
   nsCOMPtr<nsIDOMDocumentFragment> df;
 
@@ -759,12 +776,9 @@ nsGenericHTMLElement::SetInnerHTML(const nsAString& aInnerHTML)
 
     // HTML5 parser has notified, but not fired mutation events.
     // Fire mutation events. Optimize for the case when there are no listeners
-    nsPIDOMWindow* window = nsnull;
     PRInt32 newChildCount = GetChildCount();
-    if (newChildCount &&
-        (((window = doc->GetInnerWindow()) &&
-          window->HasMutationListeners(NS_EVENT_BITS_MUTATION_NODEINSERTED)) ||
-         !window)) {
+    if (newChildCount && nsContentUtils::
+          HasMutationListeners(doc, NS_EVENT_BITS_MUTATION_NODEINSERTED)) {
       nsCOMArray<nsIContent> childNodes;
       NS_ASSERTION(newChildCount - oldChildCount >= 0,
                    "What, some unexpected dom mutation has happened?");
@@ -1056,9 +1070,8 @@ nsGenericHTMLElement::CheckHandleEventForAnchorsPreconditions(nsEventChainVisito
   //Need to check if we hit an imagemap area and if so see if we're handling
   //the event on that map or on a link farther up the tree.  If we're on a
   //link farther up, do nothing.
-  nsCOMPtr<nsIContent> target;
-  aVisitor.mPresContext->EventStateManager()->
-    GetEventTargetContent(aVisitor.mEvent, getter_AddRefs(target));
+  nsCOMPtr<nsIContent> target = aVisitor.mPresContext->EventStateManager()->
+    GetEventTargetContent(aVisitor.mEvent);
 
   return !target || !IsArea(target) || IsArea(this);
 }
@@ -1106,15 +1119,9 @@ nsGenericHTMLElement::GetHrefURIForAnchors() const
 
   // We use the nsAttrValue's copy of the URI string to avoid copying.
   nsCOMPtr<nsIURI> uri;
-  GetURIAttr(nsGkAtoms::href, nsnull, PR_FALSE, getter_AddRefs(uri));
+  GetURIAttr(nsGkAtoms::href, nsnull, getter_AddRefs(uri));
 
   return uri.forget();
-}
-
-void
-nsGenericHTMLElement::GetHrefURIToMutate(nsIURI** aURI)
-{
-  GetURIAttr(nsGkAtoms::href, nsnull, PR_TRUE, aURI);
 }
 
 nsresult
@@ -1193,7 +1200,7 @@ nsGenericHTMLElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
   PRBool accessKey = aName == nsGkAtoms::accesskey && 
                      aNameSpaceID == kNameSpaceID_None;
 
-  PRInt32 change;
+  PRInt32 change = 0;
   if (contentEditable) {
     change = GetContentEditableValue() == eTrue ? -1 : 0;
     SetMayHaveContentEditableAttr();
@@ -1228,7 +1235,7 @@ nsGenericHTMLElement::UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttribute,
                                 PRBool aNotify)
 {
   PRBool contentEditable = PR_FALSE;
-  PRInt32 contentEditableChange;
+  PRInt32 contentEditableChange = 0;
 
   // Check for event handlers
   if (aNameSpaceID == kNameSpaceID_None) {
@@ -1252,6 +1259,12 @@ nsGenericHTMLElement::UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttribute,
       if (manager) {
         manager->RemoveScriptEventListener(aAttribute);
       }
+    }
+
+    // Remove dataset property if necessary.
+    nsDOMSlots *slots = GetExistingDOMSlots();
+    if (slots && slots->mDataset) {
+      slots->mDataset->RemoveProp(aAttribute);
     }
   }
 
@@ -2209,7 +2222,7 @@ nsresult
 nsGenericHTMLElement::GetURIAttr(nsIAtom* aAttr, nsIAtom* aBaseAttr, nsAString& aResult)
 {
   nsCOMPtr<nsIURI> uri;
-  PRBool hadAttr = GetURIAttr(aAttr, aBaseAttr, PR_FALSE, getter_AddRefs(uri));
+  PRBool hadAttr = GetURIAttr(aAttr, aBaseAttr, getter_AddRefs(uri));
   if (!hadAttr) {
     aResult.Truncate();
     return NS_OK;
@@ -2228,8 +2241,7 @@ nsGenericHTMLElement::GetURIAttr(nsIAtom* aAttr, nsIAtom* aBaseAttr, nsAString& 
 }
 
 PRBool
-nsGenericHTMLElement::GetURIAttr(nsIAtom* aAttr, nsIAtom* aBaseAttr,
-                                 PRBool aCloneIfCached, nsIURI** aURI) const
+nsGenericHTMLElement::GetURIAttr(nsIAtom* aAttr, nsIAtom* aBaseAttr, nsIURI** aURI) const
 {
   *aURI = nsnull;
 
@@ -2750,7 +2762,8 @@ nsGenericHTMLFormElement::CanBeDisabled() const
   return
     type != NS_FORM_LABEL &&
     type != NS_FORM_OBJECT &&
-    type != NS_FORM_OUTPUT;
+    type != NS_FORM_OUTPUT &&
+    type != NS_FORM_PROGRESS;
 }
 
 PRBool
@@ -3353,7 +3366,7 @@ nsGenericHTMLElement::RegUnRegAccessKey(PRBool aDoReg)
   nsPresContext *presContext = GetPresContext();
 
   if (presContext) {
-    nsIEventStateManager *esm = presContext->EventStateManager();
+    nsEventStateManager *esm = presContext->EventStateManager();
 
     // Register or unregister as appropriate.
     if (aDoReg) {

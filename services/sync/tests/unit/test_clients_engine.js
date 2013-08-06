@@ -7,9 +7,9 @@ Cu.import("resource://services-sync/engines/clients.js");
 Cu.import("resource://services-sync/service.js");
 
 const MORE_THAN_CLIENTS_TTL_REFRESH = 691200; // 8 days
-const LESS_THAN_CLIENTS_TTL_REFRESH = 86400; // 1 day
+const LESS_THAN_CLIENTS_TTL_REFRESH = 86400;  // 1 day
 
-function test_bad_hmac() {
+add_test(function test_bad_hmac() {
   _("Ensure that Clients engine deletes corrupt records.");
   let global = new ServerWBO('global',
                              {engines: {clients: {version: Clients.version,
@@ -41,7 +41,6 @@ function test_bad_hmac() {
   };
 
   let server = httpd_setup(handlers);
-  do_test_pending();
 
   try {
     let passphrase = "abcdeabcdeabcdeabcdeabcdea";
@@ -49,7 +48,7 @@ function test_bad_hmac() {
     Service.clusterURL = "http://localhost:8080/";
     Service.login("foo", "ilovejane", passphrase);
 
-    CollectionKeys.generateNewKeys();
+    generateNewKeys();
 
     _("First sync, client record is uploaded");
     do_check_eq(0, clientsColl.count());
@@ -63,7 +62,7 @@ function test_bad_hmac() {
     _("Change our keys and our client ID, reupload keys.");
     Clients.localID = Utils.makeGUID();
     Clients.resetClient();
-    CollectionKeys.generateNewKeys();
+    generateNewKeys();
     let serverKeys = CollectionKeys.asWBO("crypto", "keys");
     serverKeys.encrypt(Weave.Service.syncKeyBundle);
     do_check_true(serverKeys.upload(Weave.Service.cryptoKeysURL).success);
@@ -82,7 +81,7 @@ function test_bad_hmac() {
     Service.lastHMACEvent = 0;
     Clients.localID = Utils.makeGUID();
     Clients.resetClient();
-    CollectionKeys.generateNewKeys();
+    generateNewKeys();
     deleted = false;
     do_check_eq(1, clientsColl.count());
     Clients.sync();
@@ -102,7 +101,7 @@ function test_bad_hmac() {
     do_check_eq(0, clientsColl.count());
 
     // Create and upload keys.
-    CollectionKeys.generateNewKeys();
+    generateNewKeys();
     serverKeys = CollectionKeys.asWBO("crypto", "keys");
     serverKeys.encrypt(Weave.Service.syncKeyBundle);
     do_check_true(serverKeys.upload(Weave.Service.cryptoKeysURL).success);
@@ -112,7 +111,7 @@ function test_bad_hmac() {
     do_check_eq(1, clientsColl.count());
 
     // Generate and upload new keys, so the old client record is wrong.
-    CollectionKeys.generateNewKeys();
+    generateNewKeys();
     serverKeys = CollectionKeys.asWBO("crypto", "keys");
     serverKeys.encrypt(Weave.Service.syncKeyBundle);
     do_check_true(serverKeys.upload(Weave.Service.cryptoKeysURL).success);
@@ -122,7 +121,7 @@ function test_bad_hmac() {
     // the bad client record.
     Clients.localID = Utils.makeGUID();
     Clients.resetClient();
-    CollectionKeys.generateNewKeys();
+    generateNewKeys();
     let oldKey = CollectionKeys.keyForCollection();
 
     do_check_false(deleted);
@@ -133,15 +132,15 @@ function test_bad_hmac() {
     do_check_false(oldKey.equals(newKey));
 
   } finally {
-    server.stop(do_test_finished);
     Svc.Prefs.resetBranch("");
     Records.clearCache();
+    server.stop(run_next_test);
   }
-}
+});
 
-function test_properties() {
+add_test(function test_properties() {
+  _("Test lastRecordUpload property");
   try {
-    _("Test lastRecordUpload property");
     do_check_eq(Svc.Prefs.get("clients.lastRecordUpload"), undefined);
     do_check_eq(Clients.lastRecordUpload, 0);
 
@@ -150,15 +149,16 @@ function test_properties() {
     do_check_eq(Clients.lastRecordUpload, Math.floor(now / 1000));
   } finally {
     Svc.Prefs.resetBranch("");
+    run_next_test();
   }
-}
+});
 
-function test_sync() {
+add_test(function test_sync() {
   _("Ensure that Clients engine uploads a new client record once a week.");
   Svc.Prefs.set("clusterURL", "http://localhost:8080/");
   Svc.Prefs.set("username", "foo");
 
-  CollectionKeys.generateNewKeys();
+  generateNewKeys();
 
   let global = new ServerWBO('global',
                              {engines: {clients: {version: Clients.version,
@@ -171,8 +171,6 @@ function test_sync() {
   });
   server.registerPathHandler(
     "/1.1/foo/storage/clients/" + Clients.localID, clientwbo.handler());
-
-  do_test_pending();
 
   try {
 
@@ -203,17 +201,14 @@ function test_sync() {
     do_check_eq(Clients.lastRecordUpload, yesterday);
 
   } finally {
-    server.stop(do_test_finished);
     Svc.Prefs.resetBranch("");
     Records.clearCache();
+    server.stop(run_next_test);
   }
-}
-
+});
 
 function run_test() {
   initTestLogging("Trace");
   Log4Moz.repository.getLogger("Engine.Clients").level = Log4Moz.Level.Trace;
-  test_bad_hmac();
-  test_properties();
-  test_sync();
+  run_next_test();
 }

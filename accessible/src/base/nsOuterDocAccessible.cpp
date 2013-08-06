@@ -38,6 +38,7 @@
 
 #include "nsOuterDocAccessible.h"
 
+#include "States.h"
 #include "nsAccUtils.h"
 #include "nsDocAccessible.h"
 
@@ -66,14 +67,10 @@ nsOuterDocAccessible::NativeRole()
   return nsIAccessibleRole::ROLE_INTERNAL_FRAME;
 }
 
-nsresult
-nsOuterDocAccessible::GetStateInternal(PRUint32 *aState, PRUint32 *aExtraState)
+PRUint64
+nsOuterDocAccessible::NativeState()
 {
-  nsresult rv = nsAccessible::GetStateInternal(aState, aExtraState);
-  NS_ENSURE_A11Y_SUCCESS(rv, rv);
-
-  *aState &= ~nsIAccessibleStates::STATE_FOCUSABLE;
-  return NS_OK;
+  return nsAccessible::NativeState() & ~states::FOCUSABLE;
 }
 
 nsAccessible*
@@ -216,8 +213,8 @@ nsOuterDocAccessible::RemoveChild(nsAccessible *aAccessible)
     return PR_FALSE;
   }
 
-  NS_LOG_ACCDOCDESTROY("remove document from outerdoc",
-                       child->GetDocumentNode())
+  NS_LOG_ACCDOCDESTROY_FOR("remove document from outerdoc",
+                           child->GetDocumentNode(), child)
   NS_LOG_ACCDOCDESTROY_ACCADDRESS("outerdoc", this)
 
   PRBool wasRemoved = nsAccessible::RemoveChild(child);

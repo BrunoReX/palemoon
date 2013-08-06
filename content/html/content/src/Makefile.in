@@ -94,6 +94,7 @@ CPPSRCS		= \
 		nsHTMLOutputElement.cpp \
 		nsHTMLParagraphElement.cpp \
 		nsHTMLPreElement.cpp \
+		nsHTMLProgressElement.cpp \
 		nsHTMLScriptElement.cpp \
 		nsHTMLSelectElement.cpp \
 		nsHTMLSharedElement.cpp \
@@ -111,6 +112,7 @@ CPPSRCS		= \
 		nsDOMValidityState.cpp \
 		nsIConstraintValidation.cpp \
 		nsRadioVisitor.cpp \
+		nsDOMStringMap.cpp \
 		$(NULL)
 
 ifdef MOZ_MEDIA

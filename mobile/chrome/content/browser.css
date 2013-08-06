@@ -230,6 +230,11 @@ dialog {
   -moz-binding: url("chrome://browser/content/bindings/dialog.xml#dialog");
 }
 
+/* Do not allow these to inherit from the toolkit binding */
+dialog.content-dialog {
+  -moz-binding: none;
+}
+
 pageaction {
   -moz-binding: url("chrome://browser/content/bindings/pageaction.xml#pageaction");
 }

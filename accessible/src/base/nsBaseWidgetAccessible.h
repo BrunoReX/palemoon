@@ -99,7 +99,7 @@ public:
   virtual void Shutdown();
 
   // nsAccessible
-  virtual nsresult GetStateInternal(PRUint32 *aState, PRUint32 *aExtraState);
+  virtual PRUint64 NativeState();
 
   // HyperLinkAccessible
   virtual already_AddRefed<nsIURI> GetAnchorURI(PRUint32 aAnchorIndex);
@@ -108,14 +108,10 @@ protected:
   // nsAccessible
   virtual void BindToParent(nsAccessible* aParent, PRUint32 aIndexInParent);
 
-  // nsLinkableAccessible
-
   /**
-   * Return an accessible for cached action node.
+   * Parent accessible that provides an action for this linkable accessible.
    */
-  nsAccessible *GetActionAccessible() const;
-
-  nsCOMPtr<nsIContent> mActionContent;
+  nsAccessible* mActionAcc;
   PRPackedBool mIsLink;
   PRPackedBool mIsOnclick;
 };

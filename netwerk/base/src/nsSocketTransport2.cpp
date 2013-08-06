@@ -943,14 +943,12 @@ nsSocketTransport::ResolveHost()
     if (mConnectionFlags & nsSocketTransport::BYPASS_CACHE)
         dnsFlags = nsIDNSService::RESOLVE_BYPASS_CACHE;
 
+    SendStatus(STATUS_RESOLVING);
     rv = dns->AsyncResolve(SocketHost(), dnsFlags, this, nsnull,
                            getter_AddRefs(mDNSRequest));
     if (NS_SUCCEEDED(rv)) {
         SOCKET_LOG(("  advancing to STATE_RESOLVING\n"));
         mState = STATE_RESOLVING;
-        // only report that we are resolving if we are still resolving...
-        if (mResolving)
-            SendStatus(STATUS_RESOLVING);
     }
     return rv;
 }
@@ -1439,6 +1437,9 @@ nsSocketTransport::OnSocketEvent(PRUint32 type, nsresult status, nsISupports *pa
         break;
 
     case MSG_DNS_LOOKUP_COMPLETE:
+        if (mDNSRequest)  // only send this if we actually resolved anything
+            SendStatus(STATUS_RESOLVED);
+
         SOCKET_LOG(("  MSG_DNS_LOOKUP_COMPLETE\n"));
         mDNSRequest = 0;
         if (param) {
@@ -1795,9 +1796,21 @@ nsSocketTransport::GetSecurityCallbacks(nsIInterfaceRequestor **callbacks)
 NS_IMETHODIMP
 nsSocketTransport::SetSecurityCallbacks(nsIInterfaceRequestor *callbacks)
 {
-    MutexAutoLock lock(mLock);
-    mCallbacks = callbacks;
-    // XXX should we tell PSM about this?
+    nsCOMPtr<nsISupports> secinfo;
+    {
+        MutexAutoLock lock(mLock);
+        mCallbacks = callbacks;
+        SOCKET_LOG(("Reset callbacks for secinfo=%p callbacks=%p\n",
+                    mSecInfo.get(), mCallbacks.get()));
+
+        secinfo = mSecInfo;
+    }
+
+    // don't call into PSM while holding mLock!!
+    nsCOMPtr<nsISSLSocketControl> secCtrl(do_QueryInterface(secinfo));
+    if (secCtrl)
+        secCtrl->SetNotificationCallbacks(callbacks);
+
     return NS_OK;
 }
 

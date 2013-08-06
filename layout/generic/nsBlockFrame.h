@@ -262,8 +262,8 @@ public:
   virtual bool HasBullet() const;
 
   virtual void MarkIntrinsicWidthsDirty();
-  virtual nscoord GetMinWidth(nsIRenderingContext *aRenderingContext);
-  virtual nscoord GetPrefWidth(nsIRenderingContext *aRenderingContext);
+  virtual nscoord GetMinWidth(nsRenderingContext *aRenderingContext);
+  virtual nscoord GetPrefWidth(nsRenderingContext *aRenderingContext);
 
   virtual nsRect ComputeTightBounds(gfxContext* aContext) const;
   
@@ -369,6 +369,7 @@ protected:
                                        const nsPoint& aPt,
                                        nsLineBox* aLine,
                                        nscolor aColor,
+                                       PRUint8 aStyle,
                                        gfxFloat aOffset,
                                        gfxFloat aAscent,
                                        gfxFloat aSize,

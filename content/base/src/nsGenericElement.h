@@ -66,6 +66,7 @@
 #include "nsIDOMNodeSelector.h"
 #include "nsIDOMXPathNSResolver.h"
 #include "nsPresContext.h"
+#include "nsIDOMDOMStringMap.h"
 
 #ifdef MOZ_SMIL
 #include "nsISMILAttr.h"
@@ -95,8 +96,7 @@ typedef PRUptrdiff PtrBits;
  * and Item to its existing child list.
  * @see nsIDOMNodeList
  */
-class nsChildContentList : public nsINodeList,
-                           public nsWrapperCache
+class nsChildContentList : public nsINodeList
 {
 public:
   nsChildContentList(nsINode* aNode)
@@ -118,25 +118,9 @@ public:
     mNode = nsnull;
   }
 
-  nsINode* GetParentObject()
+  virtual nsINode* GetParentObject()
   {
     return mNode;
-  }
-
-  static nsChildContentList* FromSupports(nsISupports* aSupports)
-  {
-    nsINodeList* list = static_cast<nsINodeList*>(aSupports);
-#ifdef DEBUG
-    {
-      nsCOMPtr<nsINodeList> list_qi = do_QueryInterface(aSupports);
-
-      // If this assertion fires the QI implementation for the object in
-      // question doesn't use the nsINodeList pointer as the nsISupports
-      // pointer. That must be fixed, or we'll crash...
-      NS_ASSERTION(list_qi == list, "Uh, fix QI!");
-    }
-#endif
-    return static_cast<nsChildContentList*>(list);
   }
 
 private:
@@ -367,8 +351,6 @@ public:
   }
   virtual nsresult SetTextContent(const nsAString& aTextContent)
   {
-    // Batch possible DOMSubtreeModified events.
-    mozAutoSubtreeModified subtree(GetOwnerDoc(), nsnull);
     return nsContentUtils::SetNodeTextContent(this, aTextContent, PR_FALSE);
   }
 
@@ -786,6 +768,11 @@ public:
   {
   }
 
+  /**
+   * Fire a DOMNodeRemoved mutation event for all children of this node
+   */
+  void FireNodeRemovedForChildren();
+
 protected:
   /**
    * Set attribute and (if needed) notify documentobservers and fire off
@@ -948,8 +935,15 @@ public:
     /**
      * The .style attribute (an interface that forwards to the actual
      * style rules)
-     * @see nsGenericHTMLElement::GetStyle */
+     * @see nsGenericHTMLElement::GetStyle
+     */
     nsCOMPtr<nsICSSDeclaration> mStyle;
+
+    /**
+     * The .dataset attribute.
+     * @see nsGenericHTMLElement::GetDataset
+     */
+    nsIDOMDOMStringMap* mDataset; // [Weak]
 
     /**
      * SMIL Overridde style rules (for SMIL animation of CSS properties)

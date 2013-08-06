@@ -50,7 +50,9 @@
 #include "nsINode.h"
 #include "nsPIDOMWindow.h"
 #include "nsDOMPopStateEvent.h"
+#include "nsDOMHashChangeEvent.h"
 #include "nsFrameLoader.h"
+#include "nsDOMTouchEvent.h"
 
 #define NS_TARGET_CHAIN_FORCE_CONTENT_DISPATCH  (1 << 0)
 #define NS_TARGET_CHAIN_WANTS_WILL_HANDLE_EVENT (1 << 1)
@@ -731,6 +733,7 @@ nsEventDispatcher::CreateEvent(nsPresContext* aPresContext,
     case NS_GUI_EVENT:
     case NS_COMPOSITION_EVENT:
     case NS_SCROLLPORT_EVENT:
+    case NS_UI_EVENT:
       return NS_NewDOMUIEvent(aDOMEvent, aPresContext,
                               static_cast<nsGUIEvent*>(aEvent));
     case NS_SCROLLAREA_EVENT:
@@ -810,8 +813,10 @@ nsEventDispatcher::CreateEvent(nsPresContext* aPresContext,
     return NS_NewDOMTextEvent(aDOMEvent, aPresContext, nsnull);
   if (aEventType.LowerCaseEqualsLiteral("popupblockedevents"))
     return NS_NewDOMPopupBlockedEvent(aDOMEvent, aPresContext, nsnull);
-  if (aEventType.LowerCaseEqualsLiteral("orientation"))
-    return NS_NewDOMOrientationEvent(aDOMEvent, aPresContext, nsnull);
+  if (aEventType.LowerCaseEqualsLiteral("deviceorientationevent"))
+    return NS_NewDOMDeviceOrientationEvent(aDOMEvent, aPresContext, nsnull);
+  if (aEventType.LowerCaseEqualsLiteral("devicemotionevent"))
+    return NS_NewDOMDeviceMotionEvent(aDOMEvent, aPresContext, nsnull);
   if (aEventType.LowerCaseEqualsLiteral("uievent") ||
       aEventType.LowerCaseEqualsLiteral("uievents"))
     return NS_NewDOMUIEvent(aDOMEvent, aPresContext, nsnull);
@@ -871,6 +876,13 @@ nsEventDispatcher::CreateEvent(nsPresContext* aPresContext,
     return NS_NewDOMAudioAvailableEvent(aDOMEvent, aPresContext, nsnull);
   if (aEventType.LowerCaseEqualsLiteral("closeevent"))
     return NS_NewDOMCloseEvent(aDOMEvent, aPresContext, nsnull);
+  if (aEventType.LowerCaseEqualsLiteral("touchevent") &&
+      nsDOMTouchEvent::PrefEnabled())
+    return NS_NewDOMTouchEvent(aDOMEvent, aPresContext, nsnull);
+  if (aEventType.LowerCaseEqualsLiteral("hashchangeevent"))
+    return NS_NewDOMHashChangeEvent(aDOMEvent, aPresContext, nsnull);
+  if (aEventType.LowerCaseEqualsLiteral("customevent"))
+    return NS_NewDOMCustomEvent(aDOMEvent, aPresContext, nsnull);
 
   return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
 }

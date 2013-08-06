@@ -208,11 +208,11 @@ public:
 
   void SetRequestObserver(nsIRequestObserver* aObserver);
 
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsXMLHttpRequest,
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(nsXMLHttpRequest,
                                            nsXHREventTarget)
-
   PRBool AllowUploadProgress();
-
+  void RootResultArrayBuffer();
+  
 protected:
   friend class nsMultipartProxyListener;
 
@@ -224,6 +224,8 @@ protected:
                 PRUint32 toOffset,
                 PRUint32 count,
                 PRUint32 *writeCount);
+  nsresult CreateResponseArrayBuffer(JSContext* aCx);
+  void CreateResponseBlob(nsIRequest *request);
   // Change the state of the object with this. The broadcast argument
   // determines if the onreadystatechange listener should be called.
   nsresult ChangeState(PRUint32 aState, PRBool aBroadcast = PR_TRUE);
@@ -293,6 +295,16 @@ protected:
   // will cause us to clear the cached value anyway.
   nsString mResponseBodyUnicode;
 
+  enum {
+    XML_HTTP_RESPONSE_TYPE_DEFAULT,
+    XML_HTTP_RESPONSE_TYPE_ARRAYBUFFER,
+    XML_HTTP_RESPONSE_TYPE_BLOB,
+    XML_HTTP_RESPONSE_TYPE_DOCUMENT,
+    XML_HTTP_RESPONSE_TYPE_TEXT
+  } mResponseType;
+
+  nsCOMPtr<nsIDOMBlob> mResponseBlob;
+
   nsCString mOverrideMimeType;
 
   /**
@@ -333,6 +345,8 @@ protected:
   
   nsCOMPtr<nsIAsyncVerifyRedirectCallback> mRedirectCallback;
   nsCOMPtr<nsIChannel> mNewRedirectChannel;
+  
+  JSObject* mResultArrayBuffer;
 };
 
 // helper class to expose a progress DOM Event

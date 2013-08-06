@@ -62,7 +62,6 @@
 #include "nsIDocShellTreeOwner.h"
 #include "nsIDocShellTreeItem.h"
 #include "nsIDOMClientInformation.h"
-#include "nsIDOMViewCSS.h"
 #include "nsIDOMEventTarget.h"
 #include "nsIDOM3EventTarget.h"
 #include "nsIDOMNSEventTarget.h"
@@ -280,7 +279,6 @@ class nsGlobalWindow : public nsPIDOMWindow,
                        public nsPIDOMEventTarget,
                        public nsIDOM3EventTarget,
                        public nsIDOMNSEventTarget,
-                       public nsIDOMViewCSS,
                        public nsIDOMStorageWindow,
                        public nsIDOMStorageIndexedDB,
                        public nsSupportsWeakReference,
@@ -320,7 +318,7 @@ public:
   // for the context is created by the context's GetNativeGlobal() method.
   virtual nsresult SetScriptContext(PRUint32 lang, nsIScriptContext *aContext);
   
-  virtual void OnFinalize(PRUint32 aLangID, void *aScriptGlobal);
+  virtual void OnFinalize(JSObject* aObject);
   virtual void SetScriptsEnabled(PRBool aEnabled, PRBool aFireTimeouts);
 
   // nsIScriptObjectPrincipal
@@ -418,12 +416,6 @@ public:
   virtual NS_HIDDEN_(void) SetHasOrientationEventListener();
   virtual NS_HIDDEN_(void) MaybeUpdateTouchState();
   virtual NS_HIDDEN_(void) UpdateTouchState();
-
-  // nsIDOMViewCSS
-  NS_DECL_NSIDOMVIEWCSS
-
-  // nsIDOMAbstractView
-  NS_DECL_NSIDOMABSTRACTVIEW
 
   // nsIDOMStorageWindow
   NS_DECL_NSIDOMSTORAGEWINDOW
@@ -548,7 +540,7 @@ public:
   virtual PRBool TakeFocus(PRBool aFocus, PRUint32 aFocusMethod);
   virtual void SetReadyForFocus();
   virtual void PageHidden();
-  virtual nsresult DispatchAsyncHashchange();
+  virtual nsresult DispatchAsyncHashchange(nsIURI *aOldURI, nsIURI *aNewURI);
   virtual nsresult DispatchSyncPopState();
 
   virtual nsresult SetArguments(nsIArray *aArguments, nsIPrincipal *aOrigin);
@@ -582,12 +574,13 @@ public:
 
 private:
   // Enable updates for the accelerometer.
-  void EnableAccelerationUpdates();
+  void EnableDeviceMotionUpdates();
 
   // Disables updates for the accelerometer.
-  void DisableAccelerationUpdates();
+  void DisableDeviceMotionUpdates();
 
 protected:
+  friend class HashchangeCallback;
   friend class nsBarProp;
 
   // Object Management
@@ -718,7 +711,7 @@ protected:
                            const nsAString &aPopupWindowName,
                            const nsAString &aPopupWindowFeatures);
   void FireOfflineStatusEvent();
-  nsresult FireHashchange();
+  nsresult FireHashchange(const nsAString &aOldURL, const nsAString &aNewURL);
 
   void FlushPendingNotifications(mozFlushType aType);
   void EnsureReflowFlushAndPaint();
@@ -767,11 +760,13 @@ protected:
   {
     NS_ASSERTION(!IsFrozen(), "Double-freezing?");
     mIsFrozen = PR_TRUE;
+    NotifyDOMWindowFrozen(this);
   }
 
   void Thaw()
   {
     mIsFrozen = PR_FALSE;
+    NotifyDOMWindowThawed(this);
   }
 
   PRBool IsInModalState();
@@ -817,6 +812,9 @@ protected:
 
   static void NotifyDOMWindowDestroyed(nsGlobalWindow* aWindow);
   void NotifyWindowIDDestroyed(const char* aTopic);
+
+  static void NotifyDOMWindowFrozen(nsGlobalWindow* aWindow);
+  static void NotifyDOMWindowThawed(nsGlobalWindow* aWindow);
   
   void ClearStatus();
 
@@ -894,8 +892,8 @@ protected:
   // should be displayed.
   PRPackedBool           mFocusByKeyOccurred : 1;
 
-  // Indicates whether this window is getting acceleration change events
-  PRPackedBool           mHasAcceleration : 1;
+  // Indicates whether this window is getting device motion change events
+  PRPackedBool           mHasDeviceMotion : 1;
 
   // whether we've sent the destroy notification for our window id
   PRPackedBool           mNotifiedIDDestroyed : 1;
@@ -1147,6 +1145,7 @@ protected:
 
   nsresult CheckURL(nsIURI *url, nsIDocShellLoadInfo** aLoadInfo);
 
+  nsString mCachedHash;
   nsWeakPtr mDocShell;
 };
 

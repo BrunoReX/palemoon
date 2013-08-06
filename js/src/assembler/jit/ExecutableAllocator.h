@@ -31,9 +31,26 @@
 #include "assembler/wtf/Assertions.h"
 
 #include "jsapi.h"
+#include "jshashtable.h"
 #include "jsprvtd.h"
 #include "jsvector.h"
 #include "jslock.h"
+
+#if WTF_CPU_SPARC
+#ifdef linux  // bugzilla 502369
+static void sync_instruction_memory(caddr_t v, u_int len)
+{
+    caddr_t end = v + len;
+    caddr_t p = v;
+    while (p < end) {
+        asm("flush %0" : : "r" (p));
+        p += 32;
+    }
+}
+#else
+extern  "C" void sync_instruction_memory(caddr_t v, u_int len);
+#endif
+#endif
 
 #if WTF_PLATFORM_IPHONE
 #include <libkern/OSCacheControl.h>
@@ -46,12 +63,6 @@
 
 #if WTF_CPU_MIPS && WTF_PLATFORM_LINUX
 #include <sys/cachectl.h>
-#endif
-
-#if WTF_PLATFORM_WINCE
-// From pkfuncs.h (private header file from the Platform Builder)
-#define CACHE_SYNC_ALL 0x07F
-extern "C" __declspec(dllimport) void CacheRangeFlush(LPVOID pAddr, DWORD dwLength, DWORD dwFlags);
 #endif
 
 #if ENABLE_ASSEMBLER_WX_EXCLUSIVE
@@ -68,6 +79,8 @@ extern "C" __declspec(dllimport) void CacheRangeFlush(LPVOID pAddr, DWORD dwLeng
 
 namespace JSC {
 
+  class ExecutableAllocator;
+
   // These are reference-counted. A new one starts with a count of 1. 
   class ExecutablePool {
 
@@ -82,6 +95,7 @@ private:
 #endif
     };
 
+    ExecutableAllocator* m_allocator;
     char* m_freePtr;
     char* m_end;
     Allocation m_allocation;
@@ -100,7 +114,8 @@ public:
     void release(bool willDestroy = false)
     { 
         JS_ASSERT(m_refCount != 0);
-        JS_ASSERT_IF(willDestroy, m_refCount = 1);
+        // XXX: disabled, see bug 654820.
+        //JS_ASSERT_IF(willDestroy, m_refCount == 1);
         if (--m_refCount == 0) {
             js::UnwantedForeground::delete_(this);
         }
@@ -116,17 +131,12 @@ private:
         ++m_refCount;
     }
 
-private:
-    ExecutablePool(Allocation a)
-      : m_freePtr(a.pages), m_end(m_freePtr + a.size), m_allocation(a), m_refCount(1),
-        m_destroy(false), m_gcNumber(0)
+    ExecutablePool(ExecutableAllocator* allocator, Allocation a)
+      : m_allocator(allocator), m_freePtr(a.pages), m_end(m_freePtr + a.size), m_allocation(a),
+        m_refCount(1), m_destroy(false), m_gcNumber(0)
     { }
 
-    ~ExecutablePool()
-    {
-        if (m_allocation.pages)
-            ExecutablePool::systemRelease(m_allocation);
-    }
+    ~ExecutablePool();
 
     void* alloc(size_t n)
     {
@@ -140,14 +150,10 @@ private:
         JS_ASSERT(m_end >= m_freePtr);
         return m_end - m_freePtr;
     }
-
-    // On OOM, this will return an Allocation where pages is NULL.
-    static Allocation systemAlloc(size_t n);
-    static void systemRelease(const Allocation& alloc);
 };
 
 class ExecutableAllocator {
-    enum ProtectionSeting { Writable, Executable };
+    enum ProtectionSetting { Writable, Executable };
 
 public:
     ExecutableAllocator()
@@ -165,13 +171,15 @@ public:
             largeAllocSize = pageSize * 16;
         }
 
-        JS_ASSERT(m_smallAllocationPools.empty());
+        JS_ASSERT(m_smallPools.empty());
     }
 
     ~ExecutableAllocator()
     {
-        for (size_t i = 0; i < m_smallAllocationPools.length(); i++)
-            m_smallAllocationPools[i]->release(/* willDestroy = */true);
+        for (size_t i = 0; i < m_smallPools.length(); i++)
+            m_smallPools[i]->release(/* willDestroy = */true);
+        // XXX: temporarily disabled because it fails;  see bug 654820.
+        //JS_ASSERT(m_pools.empty());     // if this asserts we have a pool leak
     }
 
     // alloc() returns a pointer to some memory, and also (by reference) a
@@ -199,6 +207,14 @@ public:
         return result;
     }
 
+    void releasePoolPages(ExecutablePool *pool) {
+        JS_ASSERT(pool->m_allocation.pages);
+        systemRelease(pool->m_allocation);
+        m_pools.remove(m_pools.lookup(pool));   // this asserts if |pool| is not in m_pools
+    }
+
+    size_t getCodeSize() const;
+
 private:
     static size_t pageSize;
     static size_t largeAllocSize;
@@ -223,20 +239,34 @@ private:
         return size;
     }
 
+    // On OOM, this will return an Allocation where pages is NULL.
+    static ExecutablePool::Allocation systemAlloc(size_t n);
+    static void systemRelease(const ExecutablePool::Allocation& alloc);
+
     ExecutablePool* createPool(size_t n)
     {
         size_t allocSize = roundUpAllocationSize(n, pageSize);
         if (allocSize == OVERSIZE_ALLOCATION)
             return NULL;
+
+        if (!m_pools.initialized() && !m_pools.init())
+            return NULL;
+
 #ifdef DEBUG_STRESS_JSC_ALLOCATOR
-        ExecutablePool::Allocation a = ExecutablePool::systemAlloc(size_t(4294967291));
+        ExecutablePool::Allocation a = systemAlloc(size_t(4294967291));
 #else
-        ExecutablePool::Allocation a = ExecutablePool::systemAlloc(allocSize);
+        ExecutablePool::Allocation a = systemAlloc(allocSize);
 #endif
         if (!a.pages)
             return NULL;
 
-        return js::OffTheBooks::new_<ExecutablePool>(a);
+        ExecutablePool *pool = js::OffTheBooks::new_<ExecutablePool>(this, a);
+        if (!pool) {
+            systemRelease(a);
+            return NULL;
+        }
+        m_pools.put(pool);
+        return pool;
     }
 
     ExecutablePool* poolForSize(size_t n)
@@ -248,8 +278,8 @@ private:
         // allocation fitting in a small pool, and (b) it minimizes the
         // potential waste when a small pool is next abandoned.
         ExecutablePool *minPool = NULL;
-        for (size_t i = 0; i < m_smallAllocationPools.length(); i++) {
-            ExecutablePool *pool = m_smallAllocationPools[i];
+        for (size_t i = 0; i < m_smallPools.length(); i++) {
+            ExecutablePool *pool = m_smallPools[i];
             if (n <= pool->available() && (!minPool || pool->available() < minPool->available()))
                 minPool = pool;
         }
@@ -269,26 +299,26 @@ private:
             return NULL;
   	    // At this point, local |pool| is the owner.
 
-        if (m_smallAllocationPools.length() < maxSmallPools) {
+        if (m_smallPools.length() < maxSmallPools) {
             // We haven't hit the maximum number of live pools;  add the new pool.
-            m_smallAllocationPools.append(pool);
+            m_smallPools.append(pool);
             pool->addRef();
         } else {
             // Find the pool with the least space.
             int iMin = 0;
-            for (size_t i = 1; i < m_smallAllocationPools.length(); i++)
-                if (m_smallAllocationPools[i]->available() <
-                    m_smallAllocationPools[iMin]->available())
+            for (size_t i = 1; i < m_smallPools.length(); i++)
+                if (m_smallPools[i]->available() <
+                    m_smallPools[iMin]->available())
                 {
                     iMin = i;
                 }
 
             // If the new allocator will result in more free space than the small
             // pool with the least space, then we will use it instead
-            ExecutablePool *minPool = m_smallAllocationPools[iMin];
+            ExecutablePool *minPool = m_smallPools[iMin];
             if ((pool->available() - n) > minPool->available()) {
                 minPool->release();
-                m_smallAllocationPools[iMin] = pool;
+                m_smallPools[iMin] = pool;
                 pool->addRef();
             }
         }
@@ -389,10 +419,10 @@ public:
             : "r" (code), "r" (reinterpret_cast<char*>(code) + size)
             : "r0", "r1", "r2");
     }
-#elif WTF_PLATFORM_WINCE
+#elif WTF_CPU_SPARC
     static void cacheFlush(void* code, size_t size)
     {
-        CacheRangeFlush(code, size, CACHE_SYNC_ALL);
+        sync_instruction_memory((caddr_t)code, size);
     }
 #else
     #error "The cacheFlush support is missing on this platform."
@@ -401,12 +431,21 @@ public:
 private:
 
 #if ENABLE_ASSEMBLER_WX_EXCLUSIVE
-    static void reprotectRegion(void*, size_t, ProtectionSeting);
+    static void reprotectRegion(void*, size_t, ProtectionSetting);
 #endif
 
+    // These are strong references;  they keep pools alive.
     static const size_t maxSmallPools = 4;
-    typedef js::Vector<ExecutablePool *, maxSmallPools, js::SystemAllocPolicy > SmallExecPoolVector;
-    SmallExecPoolVector m_smallAllocationPools;
+    typedef js::Vector<ExecutablePool *, maxSmallPools, js::SystemAllocPolicy> SmallExecPoolVector;
+    SmallExecPoolVector m_smallPools;
+
+    // All live pools are recorded here, just for stats purposes.  These are
+    // weak references;  they don't keep pools alive.  When a pool is destroyed
+    // its reference is removed from m_pools.
+    typedef js::HashSet<ExecutablePool *, js::DefaultHasher<ExecutablePool *>, js::SystemAllocPolicy>
+            ExecPoolHashSet;
+    ExecPoolHashSet m_pools;    // All pools, just for stats purposes.
+
     static size_t determinePageSize();
 };
 

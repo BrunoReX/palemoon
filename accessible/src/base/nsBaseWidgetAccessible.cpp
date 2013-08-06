@@ -39,6 +39,7 @@
 
 #include "nsBaseWidgetAccessible.h"
 
+#include "States.h"
 #include "nsAccessibilityAtoms.h"
 #include "nsAccessibilityService.h"
 #include "nsAccUtils.h"
@@ -92,7 +93,7 @@ nsLeafAccessible::CacheChildren()
 nsLinkableAccessible::
   nsLinkableAccessible(nsIContent *aContent, nsIWeakReference *aShell) :
   nsAccessibleWrap(aContent, aShell),
-  mActionContent(nsnull),
+  mActionAcc(nsnull),
   mIsLink(PR_FALSE),
   mIsOnclick(PR_FALSE)
 {
@@ -106,27 +107,20 @@ NS_IMPL_ISUPPORTS_INHERITED0(nsLinkableAccessible, nsAccessibleWrap)
 NS_IMETHODIMP
 nsLinkableAccessible::TakeFocus()
 {
-  nsAccessible *actionAcc = GetActionAccessible();
-  if (actionAcc)
-    return actionAcc->TakeFocus();
-
-  return nsAccessibleWrap::TakeFocus();
+  return mActionAcc ? mActionAcc->TakeFocus() : nsAccessibleWrap::TakeFocus();
 }
 
-nsresult
-nsLinkableAccessible::GetStateInternal(PRUint32 *aState, PRUint32 *aExtraState)
+PRUint64
+nsLinkableAccessible::NativeState()
 {
-  nsresult rv = nsAccessibleWrap::GetStateInternal(aState, aExtraState);
-  NS_ENSURE_A11Y_SUCCESS(rv, rv);
-
+  PRUint64 states = nsAccessibleWrap::NativeState();
   if (mIsLink) {
-    *aState |= nsIAccessibleStates::STATE_LINKED;
-    nsAccessible *actionAcc = GetActionAccessible();
-    if (nsAccUtils::State(actionAcc) & nsIAccessibleStates::STATE_TRAVERSED)
-      *aState |= nsIAccessibleStates::STATE_TRAVERSED;
+    states |= states::LINKED;
+    if (mActionAcc->State() & states::TRAVERSED)
+      states |= states::TRAVERSED;
   }
 
-  return NS_OK;
+  return states;
 }
 
 NS_IMETHODIMP
@@ -138,13 +132,7 @@ nsLinkableAccessible::GetValue(nsAString& aValue)
   if (!aValue.IsEmpty())
     return NS_OK;
 
-  if (mIsLink) {
-    nsAccessible *actionAcc = GetActionAccessible();
-    if (actionAcc)
-      return actionAcc->GetValue(aValue);
-  }
-
-  return NS_ERROR_NOT_IMPLEMENTED;
+  return mIsLink ? mActionAcc->GetValue(aValue) : NS_ERROR_NOT_IMPLEMENTED;
 }
 
 
@@ -153,7 +141,7 @@ nsLinkableAccessible::GetNumActions(PRUint8 *aNumActions)
 {
   NS_ENSURE_ARG_POINTER(aNumActions);
 
-  *aNumActions = mActionContent ? 1 : 0;
+  *aNumActions = (mIsOnclick || mIsLink) ? 1 : 0;
   return NS_OK;
 }
 
@@ -183,11 +171,8 @@ nsLinkableAccessible::DoAction(PRUint8 aIndex)
   if (aIndex != eAction_Jump)
     return NS_ERROR_INVALID_ARG;
 
-  nsAccessible *actionAcc = GetActionAccessible();
-  if (actionAcc)
-    return actionAcc->DoAction(aIndex);
-  
-  return nsAccessibleWrap::DoAction(aIndex);
+  return mActionAcc ? mActionAcc->DoAction(aIndex) :
+    nsAccessibleWrap::DoAction(aIndex);
 }
 
 NS_IMETHODIMP
@@ -195,11 +180,8 @@ nsLinkableAccessible::GetKeyboardShortcut(nsAString& aKeyboardShortcut)
 {
   aKeyboardShortcut.Truncate();
 
-  nsAccessible *actionAcc = GetActionAccessible();
-  if (actionAcc)
-    return actionAcc->GetKeyboardShortcut(aKeyboardShortcut);
-
-  return nsAccessible::GetKeyboardShortcut(aKeyboardShortcut);
+  return mActionAcc ? mActionAcc->GetKeyboardShortcut(aKeyboardShortcut) :
+    nsAccessible::GetKeyboardShortcut(aKeyboardShortcut);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -208,7 +190,9 @@ nsLinkableAccessible::GetKeyboardShortcut(nsAString& aKeyboardShortcut)
 void
 nsLinkableAccessible::Shutdown()
 {
-  mActionContent = nsnull;
+  mIsLink = PR_FALSE;
+  mIsOnclick = PR_FALSE;
+  mActionAcc = nsnull;
   nsAccessibleWrap::Shutdown();
 }
 
@@ -219,14 +203,11 @@ already_AddRefed<nsIURI>
 nsLinkableAccessible::GetAnchorURI(PRUint32 aAnchorIndex)
 {
   if (mIsLink) {
-    nsAccessible* link = GetActionAccessible();
-    if (link) {
-      NS_ASSERTION(link->IsHyperLink(),
-                   "nsIAccessibleHyperLink isn't implemented.");
+    NS_ASSERTION(mActionAcc->IsHyperLink(),
+                 "nsIAccessibleHyperLink isn't implemented.");
 
-      if (link->IsHyperLink())
-        return link->GetAnchorURI(aAnchorIndex);
-    }
+    if (mActionAcc->IsHyperLink())
+      return mActionAcc->GetAnchorURI(aAnchorIndex);
   }
 
   return nsnull;
@@ -242,53 +223,33 @@ nsLinkableAccessible::BindToParent(nsAccessible* aParent,
   nsAccessibleWrap::BindToParent(aParent, aIndexInParent);
 
   // Cache action content.
-  mActionContent = nsnull;
+  mActionAcc = nsnull;
   mIsLink = PR_FALSE;
   mIsOnclick = PR_FALSE;
 
-  nsIContent* walkUpContent = mContent;
-  PRBool isOnclick = nsCoreUtils::HasClickListener(walkUpContent);
-
-  if (isOnclick) {
-    mActionContent = walkUpContent;
+  if (nsCoreUtils::HasClickListener(mContent)) {
     mIsOnclick = PR_TRUE;
     return;
   }
 
-  while ((walkUpContent = walkUpContent->GetParent())) {
-    nsAccessible* walkUpAcc =
-      GetAccService()->GetAccessibleInWeakShell(walkUpContent, mWeakShell);
-
+  // XXX: The logic looks broken since the click listener may be registered
+  // on non accessible node in parent chain but this node is skipped when tree
+  // is traversed.
+  nsAccessible* walkUpAcc = this;
+  while ((walkUpAcc = walkUpAcc->GetParent()) && !walkUpAcc->IsDoc()) {
     if (walkUpAcc && walkUpAcc->Role() == nsIAccessibleRole::ROLE_LINK &&
-        nsAccUtils::State(walkUpAcc) & nsIAccessibleStates::STATE_LINKED) {
+        walkUpAcc->State() & states::LINKED) {
       mIsLink = PR_TRUE;
-      mActionContent = walkUpContent;
+      mActionAcc = walkUpAcc;
       return;
     }
 
-    isOnclick = nsCoreUtils::HasClickListener(walkUpContent);
-    if (isOnclick) {
-      mActionContent = walkUpContent;
+    if (nsCoreUtils::HasClickListener(walkUpAcc->GetContent())) {
+      mActionAcc = walkUpAcc;
       mIsOnclick = PR_TRUE;
       return;
     }
   }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// nsLinkableAccessible: protected
-
-nsAccessible *
-nsLinkableAccessible::GetActionAccessible() const
-{
-  // Return accessible for the action content if it's different from node of
-  // this accessible. If the action accessible is not null then it is used to
-  // redirect methods calls otherwise we use method implementation from the
-  // base class.
-  if (!mActionContent || mContent == mActionContent)
-    return nsnull;
-
-  return GetAccService()->GetAccessibleInWeakShell(mActionContent, mWeakShell);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

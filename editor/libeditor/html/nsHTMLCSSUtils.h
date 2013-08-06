@@ -21,6 +21,7 @@
  *
  * Contributor(s):
  *   Original Author: Daniel Glazman <glazman@netscape.com>
+ *   Ms2ger <ms2ger@gmail.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either of the GNU General Public License Version 2 or later (the "GPL"),
@@ -42,7 +43,6 @@
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "nsIDOMViewCSS.h"
 #include "nsIDOMNode.h"
 #include "nsIDOMElement.h"
 #include "nsIHTMLEditor.h"
@@ -54,6 +54,7 @@
 #define COMPUTED_STYLE_TYPE     2
 
 class nsHTMLEditor;
+class nsIDOMWindow;
 
 typedef void (*nsProcessValueFunc)(const nsAString * aInputString, nsAString & aOutputString,
                                    const char * aDefaultValueString,
@@ -62,7 +63,7 @@ typedef void (*nsProcessValueFunc)(const nsAString * aInputString, nsAString & a
 class nsHTMLCSSUtils
 {
 public:
-  nsHTMLCSSUtils();
+  explicit nsHTMLCSSUtils(nsHTMLEditor* aEditor);
   ~nsHTMLCSSUtils();
 
   enum nsCSSEditableProperty {
@@ -98,9 +99,6 @@ public:
     PRBool gettable;
     PRBool caseSensitiveValue;
   };
-
-public:
-  nsresult    Init(nsHTMLEditor * aEditor);
 
   /** answers true if the given combination element_name/attribute_name
     * has a CSS equivalence in this implementation
@@ -312,12 +310,13 @@ public:
     */
   nsresult GetElementContainerOrSelf(nsIDOMNode * aNode, nsIDOMElement ** aElement);
 
-  /** Gets the default DOMView for a given node
+  /**
+   * Gets the default Window for a given node.
    *
-   * @param aNode               the node we want the default DOMView for
-   * @param aViewCSS            [OUT] the default DOMViewCSS
+   * @param aNode    the node we want the default Window for
+   * @param aWindow  [OUT] the default Window
    */
-  nsresult        GetDefaultViewCSS(nsIDOMNode * aNode, nsIDOMViewCSS ** aViewCSS);
+  nsresult        GetDefaultViewCSS(nsIDOMNode* aNode, nsIDOMWindow** aWindow);
 
 
 private:
@@ -383,27 +382,24 @@ private:
                                    PRBool aRemoveProperty);
 
   /** back-end for GetSpecifiedProperty and GetComputedProperty
-    *
-    * @param aNode               [IN] a DOM node
-    * @param aProperty           [IN] a CSS property
-    * @param aValue              [OUT] the retrieved value for this property
-    * @param aViewCSS            [IN] the ViewCSS we need in case we query computed styles
-    * @param aStyleType          [IN] SPECIFIED_STYLE_TYPE to query the specified style values
-                                      COMPUTED_STYLE_TYPE  to query the computed style values
-    */
+   *
+   * @param aNode               [IN] a DOM node
+   * @param aProperty           [IN] a CSS property
+   * @param aValue              [OUT] the retrieved value for this property
+   * @param aWindow             [IN] the window we need in case we query computed styles
+   * @param aStyleType          [IN] SPECIFIED_STYLE_TYPE to query the specified style values
+   *                                 COMPUTED_STYLE_TYPE  to query the computed style values
+   */
   nsresult    GetCSSInlinePropertyBase(nsIDOMNode * aNode, nsIAtom * aProperty,
                                        nsAString & aValue,
-                                       nsIDOMViewCSS * aViewCSS,
+                                       nsIDOMWindow* aWindow,
                                        PRUint8 aStyleType);
 
 
 private:
   nsHTMLEditor            *mHTMLEditor;
   PRBool                  mIsCSSPrefChecked; 
-
 };
-
-nsresult NS_NewHTMLCSSUtils(nsHTMLCSSUtils** aInstancePtrResult);
 
 #define NS_EDITOR_INDENT_INCREMENT_IN        0.4134f
 #define NS_EDITOR_INDENT_INCREMENT_CM        1.05f

@@ -50,11 +50,12 @@
 // Classes
 class nsPagePrintTimer;
 class nsIDocShellTreeNode;
-class nsIDeviceContext;
+class nsDeviceContext;
 class nsIDocumentViewerPrint;
 class nsPrintObject;
 class nsIDocShell;
 class nsIPageSequenceFrame;
+class nsIWeakReference;
 
 //------------------------------------------------------------------------
 // nsPrintEngine Class
@@ -102,7 +103,7 @@ public:
   void DestroyPrintingData();
 
   nsresult Initialize(nsIDocumentViewerPrint* aDocViewerPrint, 
-                      nsISupports*            aContainer,
+                      nsIWeakReference*       aContainer,
                       nsIDocument*            aDocument,
                       float                   aScreenDPI,
                       FILE*                   aDebugFile);
@@ -237,7 +238,7 @@ protected:
                                                    PRInt32&        aCount);
 
   static nsresult FindSelectionBoundsWithList(nsPresContext* aPresContext,
-                                              nsIRenderingContext& aRC,
+                                              nsRenderingContext& aRC,
                                               nsIAtom*        aList,
                                               nsIFrame *      aParentFrame,
                                               nsRect&         aRect,
@@ -247,7 +248,7 @@ protected:
                                               nsRect&         aEndRect);
 
   static nsresult FindSelectionBounds(nsPresContext* aPresContext,
-                                      nsIRenderingContext& aRC,
+                                      nsRenderingContext& aRC,
                                       nsIFrame *      aParentFrame,
                                       nsRect&         aRect,
                                       nsIFrame *&     aStartFrame,
@@ -257,7 +258,7 @@ protected:
 
   static nsresult GetPageRangeForSelection(nsIPresShell *        aPresShell,
                                            nsPresContext*       aPresContext,
-                                           nsIRenderingContext&  aRC,
+                                           nsRenderingContext&  aRC,
                                            nsISelection*         aSelection,
                                            nsIPageSequenceFrame* aPageSeqFrame,
                                            nsIFrame**            aStartFrame,
@@ -280,7 +281,7 @@ protected:
   PRPackedBool mProgressDialogIsShown;
 
   nsCOMPtr<nsIDocumentViewerPrint> mDocViewerPrint;
-  nsISupports*            mContainer;      // [WEAK] it owns me!
+  nsWeakPtr               mContainer;
   float                   mScreenDPI;
   
   nsPrintData*            mPrt;

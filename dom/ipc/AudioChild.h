@@ -41,7 +41,7 @@
 #define mozilla_dom_AudioChild_h
 
 #include "mozilla/dom/PAudioChild.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/ReentrantMonitor.h"
 
 namespace mozilla {
 namespace dom {
@@ -56,9 +56,11 @@ class AudioChild : public PAudioChild
     virtual ~AudioChild();
     virtual bool RecvSampleOffsetUpdate(const PRInt64&, const PRInt64&);
     virtual bool RecvDrainDone();
+    virtual PRInt32 WaitForMinWriteSample();
+    virtual bool RecvMinWriteSampleDone(const PRInt32& sampleCount);
     virtual void WaitForDrain();
     virtual void ActorDestroy(ActorDestroyReason);
-    
+
     PRInt64 GetLastKnownSampleOffset();
     PRInt64 GetLastKnownSampleOffsetTime();
 
@@ -67,7 +69,8 @@ class AudioChild : public PAudioChild
     nsAutoRefCnt mRefCnt;
     NS_DECL_OWNINGTHREAD
     PRInt64 mLastSampleOffset, mLastSampleOffsetTime;
-    mozilla::Monitor mAudioMonitor;
+    PRInt32 mMinWriteSample;
+    mozilla::ReentrantMonitor mAudioReentrantMonitor;
     PRPackedBool mIPCOpen;
     PRPackedBool mDrained;
 };

@@ -29,7 +29,8 @@ function setPagePermission(type, uri, allow) {
     pm.add(uri, type, Ci.nsIPermissionManager.DENY_ACTION);
 }
 
-const kEntities = { "geolocation": "geolocation", "desktop-notification": "desktopNotification" };
+const kEntities = { "geolocation": "geolocation", "desktop-notification": "desktopNotification",
+                    "indexedDB": "offlineApps", "indexedDBQuota": "indexedDBQuota" };
 
 function ContentPermissionPrompt() {}
 
@@ -108,7 +109,7 @@ ContentPermissionPrompt.prototype = {
       }
     }];
 
-    let message = browserBundle.formatStringFromName(entityName + ".siteWantsTo",
+    let message = browserBundle.formatStringFromName(entityName + ".wantsTo",
                                                      [request.uri.host], 1);
     let newBar = notificationBox.appendNotification(message,
                                                     request.type,

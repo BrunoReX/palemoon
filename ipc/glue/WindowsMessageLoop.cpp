@@ -46,13 +46,10 @@
 #include "nsStringGlue.h"
 #include "nsIXULAppInfo.h"
 
-#include "mozilla/Mutex.h"
 #include "mozilla/PaintTracker.h"
 
-using mozilla::ipc::SyncChannel;
-using mozilla::ipc::RPCChannel;
-using mozilla::MutexAutoUnlock;
-
+using namespace mozilla;
+using namespace mozilla::ipc;
 using namespace mozilla::ipc::windows;
 
 /**
@@ -587,6 +584,7 @@ TimeoutHasExpired(const TimeoutData& aData)
 RPCChannel::SyncStackFrame::SyncStackFrame(SyncChannel* channel, bool rpc)
   : mRPC(rpc)
   , mSpinNestedEvents(false)
+  , mListenerNotified(false)
   , mChannel(channel)
   , mPrev(mChannel->mTopFrame)
   , mStaticPrev(sStaticTopFrame)
@@ -620,11 +618,29 @@ RPCChannel::SyncStackFrame::~SyncStackFrame()
 
 SyncChannel::SyncStackFrame* SyncChannel::sStaticTopFrame;
 
+// nsAppShell's notification that gecko events are being processed.
+// If we are here and there is an RPC Incall active, we are spinning
+// a nested gecko event loop. In which case the remote process needs
+// to know about it.
+void /* static */
+RPCChannel::NotifyGeckoEventDispatch()
+{
+  // sStaticTopFrame is only valid for RPC channels
+  if (!sStaticTopFrame || sStaticTopFrame->mListenerNotified)
+    return;
+
+  sStaticTopFrame->mListenerNotified = true;
+  RPCChannel* channel = static_cast<RPCChannel*>(sStaticTopFrame->mChannel);
+  channel->Listener()->ProcessRemoteNativeEventsInRPCCall();
+}
+
+// invoked by the module that receives the spin event loop
+// message.
 void
 RPCChannel::ProcessNativeEventsInRPCCall()
 {
   if (!mTopFrame) {
-    NS_ERROR("Child logic error: no RPC frame");
+    NS_ERROR("Spin logic error: no RPC frame");
     return;
   }
 
@@ -658,7 +674,7 @@ RPCChannel::SpinInternalEventLoop()
 
     // Don't get wrapped up in here if the child connection dies.
     {
-      MutexAutoLock lock(mMutex);
+      MonitorAutoLock lock(mMonitor);
       if (!Connected()) {
         return;
       }
@@ -695,7 +711,7 @@ RPCChannel::SpinInternalEventLoop()
 bool
 SyncChannel::WaitForNotify()
 {
-  mMutex.AssertCurrentThreadOwns();
+  mMonitor.AssertCurrentThreadOwns();
 
   // Initialize global objects used in deferred messaging.
   Init();
@@ -703,7 +719,7 @@ SyncChannel::WaitForNotify()
   NS_ASSERTION(mTopFrame && !mTopFrame->mRPC,
                "Top frame is not a sync frame!");
 
-  MutexAutoUnlock unlock(mMutex);
+  MonitorAutoUnlock unlock(mMonitor);
 
   bool retval = true;
 
@@ -733,7 +749,7 @@ SyncChannel::WaitForNotify()
       MSG msg = { 0 };
       // Don't get wrapped up in here if the child connection dies.
       {
-        MutexAutoLock lock(mMutex);
+        MonitorAutoLock lock(mMonitor);
         if (!Connected()) {
           break;
         }
@@ -817,7 +833,7 @@ SyncChannel::WaitForNotify()
 bool
 RPCChannel::WaitForNotify()
 {
-  mMutex.AssertCurrentThreadOwns();
+  mMonitor.AssertCurrentThreadOwns();
 
   if (!StackDepth() && !mBlockedOnParent) {
     // There is currently no way to recover from this condition.
@@ -830,7 +846,7 @@ RPCChannel::WaitForNotify()
   NS_ASSERTION(mTopFrame && mTopFrame->mRPC,
                "Top frame is not a sync frame!");
 
-  MutexAutoUnlock unlock(mMutex);
+  MonitorAutoUnlock unlock(mMonitor);
 
   bool retval = true;
 
@@ -893,7 +909,7 @@ RPCChannel::WaitForNotify()
 
     // Don't get wrapped up in here if the child connection dies.
     {
-      MutexAutoLock lock(mMutex);
+      MonitorAutoLock lock(mMonitor);
       if (!Connected()) {
         break;
       }
@@ -957,7 +973,7 @@ RPCChannel::WaitForNotify()
 void
 SyncChannel::NotifyWorkerThread()
 {
-  mMutex.AssertCurrentThreadOwns();
+  mMonitor.AssertCurrentThreadOwns();
   NS_ASSERTION(mEvent, "No signal event to set, this is really bad!");
   if (!SetEvent(mEvent)) {
     NS_WARNING("Failed to set NotifyWorkerThread event!");
@@ -999,19 +1015,30 @@ DeferredRedrawMessage::Run()
   NS_ASSERTION(ret, "RedrawWindow failed!");
 }
 
+DeferredUpdateMessage::DeferredUpdateMessage(HWND aHWnd)
+{
+  mWnd = aHWnd;
+  if (!GetUpdateRect(mWnd, &mUpdateRect, FALSE)) {
+    memset(&mUpdateRect, 0, sizeof(RECT));
+    return;
+  }
+  ValidateRect(mWnd, &mUpdateRect);
+}
+
 void
 DeferredUpdateMessage::Run()
 {
-  AssertWindowIsNotNeutered(hWnd);
-  if (!IsWindow(hWnd)) {
+  AssertWindowIsNotNeutered(mWnd);
+  if (!IsWindow(mWnd)) {
     NS_ERROR("Invalid window!");
     return;
   }
 
+  InvalidateRect(mWnd, &mUpdateRect, FALSE);
 #ifdef DEBUG
   BOOL ret =
 #endif
-  UpdateWindow(hWnd);
+  UpdateWindow(mWnd);
   NS_ASSERTION(ret, "UpdateWindow failed!");
 }
 

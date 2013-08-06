@@ -212,7 +212,7 @@ Shutdown when destroying the nsBuiltinDecoder object.
 #include "nsMediaStream.h"
 #include "nsMediaDecoder.h"
 #include "nsHTMLMediaElement.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/ReentrantMonitor.h"
 
 class nsAudioStream;
 
@@ -250,14 +250,20 @@ public:
   virtual void Shutdown() = 0;
 
   // Called from the main thread to get the duration. The decoder monitor
-  // must be obtained before calling this. It is in units of milliseconds.
+  // must be obtained before calling this. It is in units of microseconds.
   virtual PRInt64 GetDuration() = 0;
 
   // Called from the main thread to set the duration of the media resource
   // if it is able to be obtained via HTTP headers. Called from the 
   // state machine thread to set the duration if it is obtained from the
   // media metadata. The decoder monitor must be obtained before calling this.
+  // aDuration is in microseconds.
   virtual void SetDuration(PRInt64 aDuration) = 0;
+
+  // Called while decoding metadata to set the end time of the media
+  // resource. The decoder monitor must be obtained before calling this.
+  // aEndTime is in microseconds.
+  virtual void SetEndTime(PRInt64 aEndTime) = 0;
 
   // Functions used by assertions to ensure we're calling things
   // on the appropriate threads.
@@ -284,8 +290,14 @@ public:
   virtual void ClearPositionChangeFlag() = 0;
 
   // Called from the main thread to set whether the media resource can
-  // be seeked. The decoder monitor must be obtained before calling this.
+  // seek into unbuffered ranges. The decoder monitor must be obtained
+  // before calling this.
   virtual void SetSeekable(PRBool aSeekable) = 0;
+
+  // Returns PR_TRUE if the media resource can seek into unbuffered ranges,
+  // as set by SetSeekable(). The decoder monitor must be obtained before
+  // calling this.
+  virtual PRBool GetSeekable() = 0;
 
   // Update the playback position. This can result in a timeupdate event
   // and an invalidate of the frame being dispatched asynchronously if
@@ -318,7 +330,7 @@ class nsBuiltinDecoder : public nsMediaDecoder
   NS_DECL_NSIOBSERVER
 
  public:
-  typedef mozilla::Monitor Monitor;
+  typedef mozilla::ReentrantMonitor ReentrantMonitor;
 
   // Enumeration for the valid play states (see mPlayState)
   enum PlayState {
@@ -387,10 +399,10 @@ class nsBuiltinDecoder : public nsMediaDecoder
   // Call on the main thread only.
   virtual PRBool IsEnded() const;
 
-  // Set the duration of the media resource in units of milliseconds.
+  // Set the duration of the media resource in units of seconds.
   // This is called via a channel listener if it can pick up the duration
   // from a content header. Must be called from the main thread only.
-  virtual void SetDuration(PRInt64 aDuration);
+  virtual void SetDuration(double aDuration);
 
   // Set a flag indicating whether seeking is supported
   virtual void SetSeekable(PRBool aSeekable);
@@ -433,8 +445,8 @@ class nsBuiltinDecoder : public nsMediaDecoder
 
   // Returns the monitor for other threads to synchronise access to
   // state.
-  Monitor& GetMonitor() { 
-    return mMonitor; 
+  ReentrantMonitor& GetReentrantMonitor() { 
+    return mReentrantMonitor; 
   }
 
   // Constructs the time ranges representing what segments of the media
@@ -593,7 +605,7 @@ public:
 
   // Position to seek to when the seek notification is received by the
   // decode thread. Written by the main thread and read via the
-  // decode thread. Synchronised using mMonitor. If the
+  // decode thread. Synchronised using mReentrantMonitor. If the
   // value is negative then no seek has been requested. When a seek is
   // started this is reset to negative.
   double mRequestedSeekTime;
@@ -621,13 +633,13 @@ public:
   // Stream of media data.
   nsAutoPtr<nsMediaStream> mStream;
 
-  // Monitor for detecting when the video play state changes. A call
+  // ReentrantMonitor for detecting when the video play state changes. A call
   // to Wait on this monitor will block the thread until the next
   // state change.
-  Monitor mMonitor;
+  ReentrantMonitor mReentrantMonitor;
 
   // Set to one of the valid play states. It is protected by the
-  // monitor mMonitor. This monitor must be acquired when reading or
+  // monitor mReentrantMonitor. This monitor must be acquired when reading or
   // writing the state. Any change to the state on the main thread
   // must call NotifyAll on the monitor so the decode thread can wake up.
   PlayState mPlayState;

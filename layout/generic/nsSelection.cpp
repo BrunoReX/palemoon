@@ -94,7 +94,6 @@ static NS_DEFINE_CID(kFrameTraversalCID, NS_FRAMETRAVERSAL_CID);
 #include "nsCaret.h"
 
 
-#include "nsIDeviceContext.h"
 #include "nsITimer.h"
 #include "nsIServiceManager.h"
 #include "nsFrameManager.h"
@@ -504,16 +503,6 @@ private:
 
 NS_IMPL_ISUPPORTS1(nsAutoScrollTimer, nsITimerCallback)
 
-nsresult NS_NewSelection(nsFrameSelection **aFrameSelection)
-{
-  nsFrameSelection *rlist = new nsFrameSelection;
-  if (!rlist)
-    return NS_ERROR_OUT_OF_MEMORY;
-  *aFrameSelection = rlist;
-  NS_ADDREF(rlist);
-  return NS_OK;
-}
-
 nsresult NS_NewDomSelection(nsISelection **aDomSelection)
 {
   nsTypedSelection *rlist = new nsTypedSelection;
@@ -537,6 +526,7 @@ GetIndexFromSelectionType(SelectionType aType)
     case nsISelectionController::SELECTION_IME_SELECTEDCONVERTEDTEXT: return 5; break;
     case nsISelectionController::SELECTION_ACCESSIBILITY: return 6; break;
     case nsISelectionController::SELECTION_FIND: return 7; break;
+    case nsISelectionController::SELECTION_URLSECONDARY: return 8; break;
     default:
       return -1; break;
     }
@@ -557,6 +547,7 @@ GetSelectionTypeFromIndex(PRInt8 aIndex)
     case 5: return nsISelectionController::SELECTION_IME_SELECTEDCONVERTEDTEXT; break;
     case 6: return nsISelectionController::SELECTION_ACCESSIBILITY; break;
     case 7: return nsISelectionController::SELECTION_FIND; break;
+    case 8: return nsISelectionController::SELECTION_URLSECONDARY; break;
     default:
       return nsISelectionController::SELECTION_NORMAL; break;
   }
@@ -792,7 +783,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsFrameSelection)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsFrameSelection)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsFrameSelection)
-  NS_INTERFACE_MAP_ENTRY(nsFrameSelection)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
@@ -5556,7 +5546,7 @@ nsTypedSelection::GetSelectionAnchorGeometry(SelectionRegion aRegion,
   // make focusRect relative to anchorFrame
   focusRect += focusFrame->GetOffsetTo(anchorFrame);
 
-  aRect->UnionRectIncludeEmpty(anchorRect, focusRect);
+  aRect->UnionRectEdges(anchorRect, focusRect);
   return anchorFrame;
 }
 

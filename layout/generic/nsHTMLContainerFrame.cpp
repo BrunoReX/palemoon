@@ -40,7 +40,7 @@
 
 #include "nsHTMLContainerFrame.h"
 #include "nsFirstLetterFrame.h"
-#include "nsIRenderingContext.h"
+#include "nsRenderingContext.h"
 #include "nsPresContext.h"
 #include "nsIPresShell.h"
 #include "nsStyleContext.h"
@@ -60,9 +60,6 @@
 #include "nsIDOMEvent.h"
 #include "nsWidgetsCID.h"
 #include "nsCOMPtr.h"
-#include "nsIDeviceContext.h"
-#include "nsIFontMetrics.h"
-#include "nsIThebesFontMetrics.h"
 #include "gfxFont.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsDisplayList.h"
@@ -75,9 +72,9 @@ class nsDisplayTextDecoration : public nsDisplayItem {
 public:
   nsDisplayTextDecoration(nsDisplayListBuilder* aBuilder,
                           nsHTMLContainerFrame* aFrame, PRUint8 aDecoration,
-                          nscolor aColor, nsLineBox* aLine)
+                          nscolor aColor, PRUint8 aStyle, nsLineBox* aLine)
     : nsDisplayItem(aBuilder, aFrame), mLine(aLine), mColor(aColor),
-      mDecoration(aDecoration) {
+      mDecoration(aDecoration), mStyle(aStyle) {
     MOZ_COUNT_CTOR(nsDisplayTextDecoration);
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
@@ -87,7 +84,7 @@ public:
 #endif
 
   virtual void Paint(nsDisplayListBuilder* aBuilder,
-                     nsIRenderingContext* aCtx);
+                     nsRenderingContext* aCtx);
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder);
   NS_DISPLAY_DECL_NAME("TextDecoration", TYPE_TEXT_DECORATION)
 
@@ -100,16 +97,16 @@ private:
   nsLineBox* mLine;
   nscolor    mColor;
   PRUint8    mDecoration;
+  PRUint8    mStyle;
 };
 
 void
 nsDisplayTextDecoration::Paint(nsDisplayListBuilder* aBuilder,
-                               nsIRenderingContext* aCtx)
+                               nsRenderingContext* aCtx)
 {
-  nsCOMPtr<nsIFontMetrics> fm;
+  nsRefPtr<nsFontMetrics> fm;
   nsLayoutUtils::GetFontMetricsForFrame(mFrame, getter_AddRefs(fm));
-  nsIThebesFontMetrics* tfm = static_cast<nsIThebesFontMetrics*>(fm.get());
-  gfxFontGroup* fontGroup = tfm->GetThebesFontGroup();
+  gfxFontGroup* fontGroup = fm->GetThebesFontGroup();
   gfxFont* firstFont = fontGroup->GetFontAt(0);
   if (!firstFont)
     return; // OOM
@@ -133,19 +130,19 @@ nsDisplayTextDecoration::Paint(nsDisplayListBuilder* aBuilder,
 
   nsPoint pt = ToReferenceFrame();
   nsHTMLContainerFrame* f = static_cast<nsHTMLContainerFrame*>(mFrame);
-  if (mDecoration == NS_STYLE_TEXT_DECORATION_UNDERLINE) {
+  if (mDecoration == NS_STYLE_TEXT_DECORATION_LINE_UNDERLINE) {
     gfxFloat underlineOffset = fontGroup->GetUnderlineOffset();
     f->PaintTextDecorationLine(aCtx->ThebesContext(), pt, mLine, mColor,
-                               underlineOffset, ascent,
+                               mStyle, underlineOffset, ascent,
                                metrics.underlineSize, mDecoration);
-  } else if (mDecoration == NS_STYLE_TEXT_DECORATION_OVERLINE) {
+  } else if (mDecoration == NS_STYLE_TEXT_DECORATION_LINE_OVERLINE) {
     f->PaintTextDecorationLine(aCtx->ThebesContext(), pt, mLine, mColor,
-                               metrics.maxAscent, ascent,
+                               mStyle, metrics.maxAscent, ascent,
                                metrics.underlineSize, mDecoration);
   } else {
     f->PaintTextDecorationLine(aCtx->ThebesContext(), pt, mLine, mColor,
-                               metrics.strikeoutOffset, ascent,
-                               metrics.strikeoutSize, mDecoration);
+                               mStyle, metrics.strikeoutOffset,
+                               ascent, metrics.strikeoutSize, mDecoration);
   }
 }
 
@@ -159,10 +156,12 @@ class nsDisplayTextShadow : public nsDisplayItem {
 public:
   nsDisplayTextShadow(nsDisplayListBuilder* aBuilder,
                       nsHTMLContainerFrame* aFrame,
-                      const PRUint8 aDecoration,
+                      const PRUint8 aDecoration, PRUint8 aUnderlineStyle,
+                      PRUint8 aOverlineStyle, PRUint8 aStrikeThroughStyle,
                       nsLineBox* aLine)
     : nsDisplayItem(aBuilder, aFrame), mLine(aLine),
-      mDecorationFlags(aDecoration) {
+      mDecorationFlags(aDecoration), mUnderlineStyle(aUnderlineStyle),
+      mOverlineStyle(aOverlineStyle), mStrikeThroughStyle(aStrikeThroughStyle) {
     MOZ_COUNT_CTOR(nsDisplayTextShadow);
   }
   virtual ~nsDisplayTextShadow() {
@@ -170,22 +169,24 @@ public:
   }
 
   virtual void Paint(nsDisplayListBuilder* aBuilder,
-                     nsIRenderingContext* aCtx);
+                     nsRenderingContext* aCtx);
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder);
   NS_DISPLAY_DECL_NAME("TextShadowContainer", TYPE_TEXT_SHADOW)
 private:
   nsLineBox*    mLine;
   PRUint8       mDecorationFlags;
+  PRUint8       mUnderlineStyle;
+  PRUint8       mOverlineStyle;
+  PRUint8       mStrikeThroughStyle;
 };
 
 void
 nsDisplayTextShadow::Paint(nsDisplayListBuilder* aBuilder,
-                           nsIRenderingContext* aCtx)
+                           nsRenderingContext* aCtx)
 {
-  nsCOMPtr<nsIFontMetrics> fm;
+  nsRefPtr<nsFontMetrics> fm;
   nsLayoutUtils::GetFontMetricsForFrame(mFrame, getter_AddRefs(fm));
-  nsIThebesFontMetrics* tfm = static_cast<nsIThebesFontMetrics*>(fm.get());
-  gfxFontGroup* fontGroup = tfm->GetThebesFontGroup();
+  gfxFontGroup* fontGroup = fm->GetThebesFontGroup();
   gfxFont* firstFont = fontGroup->GetFontAt(0);
   if (!firstFont)
     return; // OOM
@@ -239,26 +240,25 @@ nsDisplayTextShadow::Paint(nsDisplayListBuilder* aBuilder,
   nsRect underlineRect;
   nsRect overlineRect;
   nsRect lineThroughRect;
-  if (mDecorationFlags & NS_STYLE_TEXT_DECORATION_UNDERLINE) {
+  if (mDecorationFlags & NS_STYLE_TEXT_DECORATION_LINE_UNDERLINE) {
     gfxSize size(lineWidth, metrics.underlineSize);
     underlineRect = nsCSSRendering::GetTextDecorationRect(presContext, size,
                        ascent, underlineOffset,
-                       NS_STYLE_TEXT_DECORATION_UNDERLINE,
-                       nsCSSRendering::DECORATION_STYLE_SOLID);
+                       NS_STYLE_TEXT_DECORATION_LINE_UNDERLINE,
+                       mUnderlineStyle);
   }
-  if (mDecorationFlags & NS_STYLE_TEXT_DECORATION_OVERLINE) {
+  if (mDecorationFlags & NS_STYLE_TEXT_DECORATION_LINE_OVERLINE) {
     gfxSize size(lineWidth, metrics.underlineSize);
     overlineRect = nsCSSRendering::GetTextDecorationRect(presContext, size,
                        ascent, metrics.maxAscent,
-                       NS_STYLE_TEXT_DECORATION_OVERLINE,
-                       nsCSSRendering::DECORATION_STYLE_SOLID);
+                       NS_STYLE_TEXT_DECORATION_LINE_OVERLINE, mOverlineStyle);
   }
-  if (mDecorationFlags & NS_STYLE_TEXT_DECORATION_LINE_THROUGH) {
+  if (mDecorationFlags & NS_STYLE_TEXT_DECORATION_LINE_LINE_THROUGH) {
     gfxSize size(lineWidth, metrics.strikeoutSize);
     lineThroughRect = nsCSSRendering::GetTextDecorationRect(presContext, size,
                        ascent, metrics.strikeoutOffset,
-                       NS_STYLE_TEXT_DECORATION_LINE_THROUGH,
-                       nsCSSRendering::DECORATION_STYLE_SOLID);
+                       NS_STYLE_TEXT_DECORATION_LINE_LINE_THROUGH,
+                       mStrikeThroughStyle);
   }
 
   for (PRUint32 i = shadowList->Length(); i > 0; --i) {
@@ -277,13 +277,13 @@ nsDisplayTextShadow::Paint(nsDisplayListBuilder* aBuilder,
     }
 
     nsRect shadowRect(0, 0, 0, 0);
-    if (mDecorationFlags & NS_STYLE_TEXT_DECORATION_UNDERLINE) {
+    if (mDecorationFlags & NS_STYLE_TEXT_DECORATION_LINE_UNDERLINE) {
       shadowRect.UnionRect(shadowRect, underlineRect + linePt);
     }
-    if (mDecorationFlags & NS_STYLE_TEXT_DECORATION_OVERLINE) {
+    if (mDecorationFlags & NS_STYLE_TEXT_DECORATION_LINE_OVERLINE) {
       shadowRect.UnionRect(shadowRect, overlineRect + linePt);
     }
-    if (mDecorationFlags & NS_STYLE_TEXT_DECORATION_LINE_THROUGH) {
+    if (mDecorationFlags & NS_STYLE_TEXT_DECORATION_LINE_LINE_THROUGH) {
       shadowRect.UnionRect(shadowRect, lineThroughRect + linePt);
     }
 
@@ -300,20 +300,23 @@ nsDisplayTextShadow::Paint(nsDisplayListBuilder* aBuilder,
       continue;
     }
 
-    if (mDecorationFlags & NS_STYLE_TEXT_DECORATION_UNDERLINE) {
+    if (mDecorationFlags & NS_STYLE_TEXT_DECORATION_LINE_UNDERLINE) {
       f->PaintTextDecorationLine(shadowCtx, pt, mLine, shadowColor,
-                                 underlineOffset, ascent,
-                                 metrics.underlineSize, NS_STYLE_TEXT_DECORATION_UNDERLINE);
+                                 mUnderlineStyle, underlineOffset, ascent,
+                                 metrics.underlineSize,
+                                 NS_STYLE_TEXT_DECORATION_LINE_UNDERLINE);
     }
-    if (mDecorationFlags & NS_STYLE_TEXT_DECORATION_OVERLINE) {
+    if (mDecorationFlags & NS_STYLE_TEXT_DECORATION_LINE_OVERLINE) {
       f->PaintTextDecorationLine(shadowCtx, pt, mLine, shadowColor,
-                                 metrics.maxAscent, ascent,
-                                 metrics.underlineSize, NS_STYLE_TEXT_DECORATION_OVERLINE);
+                                 mOverlineStyle, metrics.maxAscent, ascent,
+                                 metrics.underlineSize,
+                                 NS_STYLE_TEXT_DECORATION_LINE_OVERLINE);
     }
-    if (mDecorationFlags & NS_STYLE_TEXT_DECORATION_LINE_THROUGH) {
+    if (mDecorationFlags & NS_STYLE_TEXT_DECORATION_LINE_LINE_THROUGH) {
       f->PaintTextDecorationLine(shadowCtx, pt, mLine, shadowColor,
-                                 metrics.strikeoutOffset, ascent,
-                                 metrics.strikeoutSize, NS_STYLE_TEXT_DECORATION_LINE_THROUGH);
+                                 mStrikeThroughStyle, metrics.strikeoutOffset,
+                                 ascent, metrics.strikeoutSize,
+                                 NS_STYLE_TEXT_DECORATION_LINE_LINE_THROUGH);
     }
 
     contextBoxBlur.DoPaint();
@@ -339,49 +342,58 @@ nsHTMLContainerFrame::DisplayTextDecorations(nsDisplayListBuilder* aBuilder,
     return NS_OK;
 
   // Hide text decorations if we're currently hiding @font-face fallback text
-  nsCOMPtr<nsIFontMetrics> fm;
+  nsRefPtr<nsFontMetrics> fm;
   nsresult rv = nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm));
   NS_ENSURE_SUCCESS(rv, rv);
-  nsIThebesFontMetrics* tfm = static_cast<nsIThebesFontMetrics*>(fm.get());
-  if (tfm->GetThebesFontGroup()->ShouldSkipDrawing())
+  if (fm->GetThebesFontGroup()->ShouldSkipDrawing())
     return NS_OK;
 
   // Do standards mode painting of 'text-decoration's: under+overline
   // behind children, line-through in front.  For Quirks mode, see
   // nsTextFrame::PaintTextDecorations.  (See bug 1777.)
   nscolor underColor, overColor, strikeColor;
-  PRUint8 decorations = NS_STYLE_TEXT_DECORATION_NONE;
+  PRUint8 underStyle, overStyle, strikeStyle;
+  PRUint8 decorations = NS_STYLE_TEXT_DECORATION_LINE_NONE;
   GetTextDecorations(PresContext(), aLine != nsnull, decorations, underColor, 
-                     overColor, strikeColor);
+                     overColor, strikeColor, underStyle, overStyle,
+                     strikeStyle);
 
-  if (decorations == NS_STYLE_TEXT_DECORATION_NONE)
+  if (decorations == NS_STYLE_TEXT_DECORATION_LINE_NONE) {
     return NS_OK;
+  }
 
   // The text-shadow spec says that any text decorations must also have a
   // shadow applied to them. So draw the shadows as part of the display
   // list, underneath the text and all decorations.
   if (GetStyleText()->mTextShadow) {
     rv = aBelowTextDecorations->AppendNewToTop(new (aBuilder)
-      nsDisplayTextShadow(aBuilder, this, decorations, aLine));
+      nsDisplayTextShadow(aBuilder, this, decorations, underStyle, overStyle,
+                          strikeStyle, aLine));
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  if (decorations & NS_STYLE_TEXT_DECORATION_UNDERLINE) {
+  if ((decorations & NS_STYLE_TEXT_DECORATION_LINE_UNDERLINE) &&
+      underStyle != NS_STYLE_TEXT_DECORATION_STYLE_NONE) {
     rv = aBelowTextDecorations->AppendNewToTop(new (aBuilder)
-      nsDisplayTextDecoration(aBuilder, this, NS_STYLE_TEXT_DECORATION_UNDERLINE,
-                              underColor, aLine));
+      nsDisplayTextDecoration(aBuilder, this,
+                              NS_STYLE_TEXT_DECORATION_LINE_UNDERLINE,
+                              underColor, underStyle, aLine));
     NS_ENSURE_SUCCESS(rv, rv);
   }
-  if (decorations & NS_STYLE_TEXT_DECORATION_OVERLINE) {
+  if ((decorations & NS_STYLE_TEXT_DECORATION_LINE_OVERLINE) &&
+      overStyle != NS_STYLE_TEXT_DECORATION_STYLE_NONE) {
     rv = aBelowTextDecorations->AppendNewToTop(new (aBuilder)
-      nsDisplayTextDecoration(aBuilder, this, NS_STYLE_TEXT_DECORATION_OVERLINE,
-                              overColor, aLine));
+      nsDisplayTextDecoration(aBuilder, this,
+                              NS_STYLE_TEXT_DECORATION_LINE_OVERLINE,
+                              overColor, overStyle, aLine));
     NS_ENSURE_SUCCESS(rv, rv);
   }
-  if (decorations & NS_STYLE_TEXT_DECORATION_LINE_THROUGH) {
+  if ((decorations & NS_STYLE_TEXT_DECORATION_LINE_LINE_THROUGH) &&
+      strikeStyle != NS_STYLE_TEXT_DECORATION_STYLE_NONE) {
     rv = aAboveTextDecorations->AppendNewToTop(new (aBuilder)
-      nsDisplayTextDecoration(aBuilder, this, NS_STYLE_TEXT_DECORATION_LINE_THROUGH,
-                              strikeColor, aLine));
+      nsDisplayTextDecoration(aBuilder, this,
+                              NS_STYLE_TEXT_DECORATION_LINE_LINE_THROUGH,
+                              strikeColor, strikeStyle, aLine));
     NS_ENSURE_SUCCESS(rv, rv);
   }
   return NS_OK;
@@ -424,6 +436,7 @@ nsHTMLContainerFrame::PaintTextDecorationLine(
                    const nsPoint& aPt,
                    nsLineBox* aLine,
                    nscolor aColor, 
+                   PRUint8 aStyle,
                    gfxFloat aOffset, 
                    gfxFloat aAscent, 
                    gfxFloat aSize,
@@ -434,7 +447,7 @@ nsHTMLContainerFrame::PaintTextDecorationLine(
   PRIntn skip = GetSkipSides();
   NS_FOR_CSS_SIDES(side) {
     if (skip & (1 << side)) {
-      bp.side(side) = 0;
+      bp.Side(side) = 0;
     }
   }
   nscoord innerWidth = mRect.width - bp.left - bp.right;
@@ -442,7 +455,7 @@ nsHTMLContainerFrame::PaintTextDecorationLine(
               PresContext()->AppUnitsToGfxUnits(bp.top + aPt.y));
   gfxSize size(PresContext()->AppUnitsToGfxUnits(innerWidth), aSize);
   nsCSSRendering::PaintDecorationLine(aCtx, aColor, pt, size, aAscent, aOffset,
-                    aDecoration, nsCSSRendering::DECORATION_STYLE_SOLID);
+                                      aDecoration, aStyle);
 }
 
 /*virtual*/ void
@@ -461,23 +474,28 @@ nsHTMLContainerFrame::GetTextDecorations(nsPresContext* aPresContext,
                                          PRUint8& aDecorations,
                                          nscolor& aUnderColor, 
                                          nscolor& aOverColor, 
-                                         nscolor& aStrikeColor)
+                                         nscolor& aStrikeColor,
+                                         PRUint8& aUnderStyle,
+                                         PRUint8& aOverStyle,
+                                         PRUint8& aStrikeStyle)
 {
-  aDecorations = NS_STYLE_TEXT_DECORATION_NONE;
-  if (!mStyleContext->HasTextDecorations()) {
+  aDecorations = NS_STYLE_TEXT_DECORATION_LINE_NONE;
+  if (!mStyleContext->HasTextDecorationLines()) {
     // This is a necessary, but not sufficient, condition for text
     // decorations.
     return; 
   }
 
   if (!aIsBlock) {
-    aDecorations = this->GetStyleTextReset()->mTextDecoration &
-                   NS_STYLE_TEXT_DECORATION_LINES_MASK;
+    const nsStyleTextReset* styleTextReset = this->GetStyleTextReset();
+    aDecorations = styleTextReset->mTextDecorationLine &
+                   NS_STYLE_TEXT_DECORATION_LINE_LINES_MASK;
     if (aDecorations) {
-      nscolor color = this->GetVisitedDependentColor(eCSSProperty_color);
-      aUnderColor = color;
-      aOverColor = color;
-      aStrikeColor = color;
+      nscolor color =
+        this->GetVisitedDependentColor(eCSSProperty_text_decoration_color);
+      aUnderColor = aOverColor = aStrikeColor = color;
+      aUnderStyle = aOverStyle = aStrikeStyle =
+        styleTextReset->GetDecorationStyle();
     }
   }
   else {
@@ -487,29 +505,35 @@ nsHTMLContainerFrame::GetTextDecorations(nsPresContext* aPresContext,
     // must win.  At any point in the loop below, this variable
     // indicates which decorations we are still paying attention to;
     // it starts set to all possible decorations.
-    PRUint8 decorMask = NS_STYLE_TEXT_DECORATION_LINES_MASK;
+    PRUint8 decorMask = NS_STYLE_TEXT_DECORATION_LINE_LINES_MASK;
 
     // walk tree
     for (nsIFrame* frame = this; frame; frame = frame->GetParent()) {
-      PRUint8 decors = frame->GetStyleTextReset()->mTextDecoration & decorMask;
+      const nsStyleTextReset* styleTextReset = frame->GetStyleTextReset();
+      PRUint8 decors = styleTextReset->mTextDecorationLine & decorMask;
       if (decors) {
         // A *new* text-decoration is found.
-        nscolor color = frame->GetVisitedDependentColor(eCSSProperty_color);
+        nscolor color = frame->GetVisitedDependentColor(
+                                 eCSSProperty_text_decoration_color);
+        PRUint8 style = styleTextReset->GetDecorationStyle();
 
-        if (NS_STYLE_TEXT_DECORATION_UNDERLINE & decors) {
+        if (NS_STYLE_TEXT_DECORATION_LINE_UNDERLINE & decors) {
           aUnderColor = color;
-          decorMask &= ~NS_STYLE_TEXT_DECORATION_UNDERLINE;
-          aDecorations |= NS_STYLE_TEXT_DECORATION_UNDERLINE;
+          aUnderStyle = style;
+          decorMask &= ~NS_STYLE_TEXT_DECORATION_LINE_UNDERLINE;
+          aDecorations |= NS_STYLE_TEXT_DECORATION_LINE_UNDERLINE;
         }
-        if (NS_STYLE_TEXT_DECORATION_OVERLINE & decors) {
+        if (NS_STYLE_TEXT_DECORATION_LINE_OVERLINE & decors) {
           aOverColor = color;
-          decorMask &= ~NS_STYLE_TEXT_DECORATION_OVERLINE;
-          aDecorations |= NS_STYLE_TEXT_DECORATION_OVERLINE;
+          aOverStyle = style;
+          decorMask &= ~NS_STYLE_TEXT_DECORATION_LINE_OVERLINE;
+          aDecorations |= NS_STYLE_TEXT_DECORATION_LINE_OVERLINE;
         }
-        if (NS_STYLE_TEXT_DECORATION_LINE_THROUGH & decors) {
+        if (NS_STYLE_TEXT_DECORATION_LINE_LINE_THROUGH & decors) {
           aStrikeColor = color;
-          decorMask &= ~NS_STYLE_TEXT_DECORATION_LINE_THROUGH;
-          aDecorations |= NS_STYLE_TEXT_DECORATION_LINE_THROUGH;
+          aStrikeStyle = style;
+          decorMask &= ~NS_STYLE_TEXT_DECORATION_LINE_LINE_THROUGH;
+          aDecorations |= NS_STYLE_TEXT_DECORATION_LINE_LINE_THROUGH;
         }
       }
       // If all possible decorations have now been specified, no
@@ -547,7 +571,7 @@ nsHTMLContainerFrame::GetTextDecorations(nsPresContext* aPresContext,
   if (aDecorations) {
     // If this frame contains no text, we're required to ignore this property
     if (!HasTextFrameDescendantOrInFlow(this)) {
-      aDecorations = NS_STYLE_TEXT_DECORATION_NONE;
+      aDecorations = NS_STYLE_TEXT_DECORATION_LINE_NONE;
     }
   }
 }
@@ -616,228 +640,6 @@ nsHTMLContainerFrame::CreateNextInFlow(nsPresContext* aPresContext,
 
     aNextInFlowResult = nextInFlow;
   }
-  return NS_OK;
-}
-
-static nsresult
-ReparentFrameViewTo(nsIFrame*       aFrame,
-                    nsIViewManager* aViewManager,
-                    nsIView*        aNewParentView,
-                    nsIView*        aOldParentView)
-{
-
-  // XXX What to do about placeholder views for "position: fixed" elements?
-  // They should be reparented too.
-
-  // Does aFrame have a view?
-  if (aFrame->HasView()) {
-#ifdef MOZ_XUL
-    if (aFrame->GetType() == nsGkAtoms::menuPopupFrame) {
-      // This view must be parented by the root view, don't reparent it.
-      return NS_OK;
-    }
-#endif
-    nsIView* view = aFrame->GetView();
-    // Verify that the current parent view is what we think it is
-    //nsIView*  parentView;
-    //NS_ASSERTION(parentView == aOldParentView, "unexpected parent view");
-
-    aViewManager->RemoveChild(view);
-    
-    // The view will remember the Z-order and other attributes that have been set on it.
-    nsIView* insertBefore = nsLayoutUtils::FindSiblingViewFor(aNewParentView, aFrame);
-    aViewManager->InsertChild(aNewParentView, view, insertBefore, insertBefore != nsnull);
-  } else {
-    PRInt32 listIndex = 0;
-    nsIAtom* listName = nsnull;
-    // This loop iterates through every child list name, and also
-    // executes once with listName == nsnull.
-    do {
-      // Iterate the child frames, and check each child frame to see if it has
-      // a view
-      nsIFrame* childFrame = aFrame->GetFirstChild(listName);
-      for (; childFrame; childFrame = childFrame->GetNextSibling()) {
-        ReparentFrameViewTo(childFrame, aViewManager,
-                            aNewParentView, aOldParentView);
-      }
-      listName = aFrame->GetAdditionalChildListName(listIndex++);
-    } while (listName);
-  }
-
-  return NS_OK;
-}
-
-nsresult
-nsHTMLContainerFrame::ReparentFrameView(nsPresContext* aPresContext,
-                                        nsIFrame*       aChildFrame,
-                                        nsIFrame*       aOldParentFrame,
-                                        nsIFrame*       aNewParentFrame)
-{
-  NS_PRECONDITION(aChildFrame, "null child frame pointer");
-  NS_PRECONDITION(aOldParentFrame, "null old parent frame pointer");
-  NS_PRECONDITION(aNewParentFrame, "null new parent frame pointer");
-  NS_PRECONDITION(aOldParentFrame != aNewParentFrame, "same old and new parent frame");
-
-  // See if either the old parent frame or the new parent frame have a view
-  while (!aOldParentFrame->HasView() && !aNewParentFrame->HasView()) {
-    // Walk up both the old parent frame and the new parent frame nodes
-    // stopping when we either find a common parent or views for one
-    // or both of the frames.
-    //
-    // This works well in the common case where we push/pull and the old parent
-    // frame and the new parent frame are part of the same flow. They will
-    // typically be the same distance (height wise) from the
-    aOldParentFrame = aOldParentFrame->GetParent();
-    aNewParentFrame = aNewParentFrame->GetParent();
-    
-    // We should never walk all the way to the root frame without finding
-    // a view
-    NS_ASSERTION(aOldParentFrame && aNewParentFrame, "didn't find view");
-
-    // See if we reached a common ancestor
-    if (aOldParentFrame == aNewParentFrame) {
-      break;
-    }
-  }
-
-  // See if we found a common parent frame
-  if (aOldParentFrame == aNewParentFrame) {
-    // We found a common parent and there are no views between the old parent
-    // and the common parent or the new parent frame and the common parent.
-    // Because neither the old parent frame nor the new parent frame have views,
-    // then any child views don't need reparenting
-    return NS_OK;
-  }
-
-  // We found views for one or both of the ancestor frames before we
-  // found a common ancestor.
-  nsIView* oldParentView = aOldParentFrame->GetClosestView();
-  nsIView* newParentView = aNewParentFrame->GetClosestView();
-  
-  // See if the old parent frame and the new parent frame are in the
-  // same view sub-hierarchy. If they are then we don't have to do
-  // anything
-  if (oldParentView != newParentView) {
-    // They're not so we need to reparent any child views
-    return ReparentFrameViewTo(aChildFrame, oldParentView->GetViewManager(), newParentView,
-                               oldParentView);
-  }
-
-  return NS_OK;
-}
-
-nsresult
-nsHTMLContainerFrame::ReparentFrameViewList(nsPresContext*     aPresContext,
-                                            const nsFrameList& aChildFrameList,
-                                            nsIFrame*          aOldParentFrame,
-                                            nsIFrame*          aNewParentFrame)
-{
-  NS_PRECONDITION(aChildFrameList.NotEmpty(), "empty child frame list");
-  NS_PRECONDITION(aOldParentFrame, "null old parent frame pointer");
-  NS_PRECONDITION(aNewParentFrame, "null new parent frame pointer");
-  NS_PRECONDITION(aOldParentFrame != aNewParentFrame, "same old and new parent frame");
-
-  // See if either the old parent frame or the new parent frame have a view
-  while (!aOldParentFrame->HasView() && !aNewParentFrame->HasView()) {
-    // Walk up both the old parent frame and the new parent frame nodes
-    // stopping when we either find a common parent or views for one
-    // or both of the frames.
-    //
-    // This works well in the common case where we push/pull and the old parent
-    // frame and the new parent frame are part of the same flow. They will
-    // typically be the same distance (height wise) from the
-    aOldParentFrame = aOldParentFrame->GetParent();
-    aNewParentFrame = aNewParentFrame->GetParent();
-    
-    // We should never walk all the way to the root frame without finding
-    // a view
-    NS_ASSERTION(aOldParentFrame && aNewParentFrame, "didn't find view");
-
-    // See if we reached a common ancestor
-    if (aOldParentFrame == aNewParentFrame) {
-      break;
-    }
-  }
-
-
-  // See if we found a common parent frame
-  if (aOldParentFrame == aNewParentFrame) {
-    // We found a common parent and there are no views between the old parent
-    // and the common parent or the new parent frame and the common parent.
-    // Because neither the old parent frame nor the new parent frame have views,
-    // then any child views don't need reparenting
-    return NS_OK;
-  }
-
-  // We found views for one or both of the ancestor frames before we
-  // found a common ancestor.
-  nsIView* oldParentView = aOldParentFrame->GetClosestView();
-  nsIView* newParentView = aNewParentFrame->GetClosestView();
-  
-  // See if the old parent frame and the new parent frame are in the
-  // same view sub-hierarchy. If they are then we don't have to do
-  // anything
-  if (oldParentView != newParentView) {
-    nsIViewManager* viewManager = oldParentView->GetViewManager();
-
-    // They're not so we need to reparent any child views
-    for (nsFrameList::Enumerator e(aChildFrameList); !e.AtEnd(); e.Next()) {
-      ReparentFrameViewTo(e.get(), viewManager, newParentView, oldParentView);
-    }
-  }
-
-  return NS_OK;
-}
-
-nsresult
-nsHTMLContainerFrame::CreateViewForFrame(nsIFrame* aFrame,
-                                         PRBool aForce)
-{
-  if (aFrame->HasView()) {
-    return NS_OK;
-  }
-
-  // If we don't yet have a view, see if we need a view
-  if (!aForce && !aFrame->NeedsView()) {
-    // don't need a view
-    return NS_OK;
-  }
-
-  nsIView* parentView = aFrame->GetParent()->GetClosestView();
-  NS_ASSERTION(parentView, "no parent with view");
-
-  nsIViewManager* viewManager = parentView->GetViewManager();
-  NS_ASSERTION(viewManager, "null view manager");
-    
-  // Create a view
-  nsIView* view = viewManager->CreateView(aFrame->GetRect(), parentView);
-  if (!view)
-    return NS_ERROR_OUT_OF_MEMORY;
-
-  SyncFrameViewProperties(aFrame->PresContext(), aFrame, nsnull, view);
-
-  nsIView* insertBefore = nsLayoutUtils::FindSiblingViewFor(parentView, aFrame);
-  // we insert this view 'above' the insertBefore view, unless insertBefore is null,
-  // in which case we want to call with aAbove == PR_FALSE to insert at the beginning
-  // in document order
-  viewManager->InsertChild(parentView, view, insertBefore, insertBefore != nsnull);
-
-  // REVIEW: Don't create a widget for fixed-pos elements anymore.
-  // ComputeRepaintRegionForCopy will calculate the right area to repaint
-  // when we scroll.
-  // Reparent views on any child frames (or their descendants) to this
-  // view. We can just call ReparentFrameViewTo on this frame because
-  // we know this frame has no view, so it will crawl the children. Also,
-  // we know that any descendants with views must have 'parentView' as their
-  // parent view.
-  ReparentFrameViewTo(aFrame, viewManager, view, parentView);
-
-  // Remember our view
-  aFrame->SetView(view);
-
-  NS_FRAME_LOG(NS_FRAME_TRACE_CALLS,
-               ("nsHTMLContainerFrame::CreateViewForFrame: frame=%p view=%p",
-                aFrame));
   return NS_OK;
 }
 

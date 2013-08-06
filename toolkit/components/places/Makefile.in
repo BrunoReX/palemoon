@@ -58,13 +58,13 @@ IS_COMPONENT = 1
 
 XPIDLSRCS += \
   mozIAsyncHistory.idl \
+  mozIAsyncFavicons.idl \
   mozIPlacesAutoComplete.idl \
   nsIAnnotationService.idl \
   nsIBrowserHistory.idl \
   nsIDynamicContainer.idl \
   nsIFaviconService.idl \
   nsILivemarkService.idl \
-  nsIMicrosummaryService.idl \
   nsINavBookmarksService.idl \
   nsIPlacesImportExportService.idl \
   nsITaggingService.idl  \
@@ -104,12 +104,6 @@ EXTRA_DSO_LDOPTS += \
   $(MOZ_COMPONENT_LIBS) \
   $(NULL)
 
-ifndef MOZ_ENABLE_LIBXUL
-EXTRA_DSO_LDOPTS += \
-  $(MOZ_JS_LIBS) \
-  $(NULL)
-endif
-
 LOCAL_INCLUDES += -I$(srcdir)/../build
 
 # This is the default value.  Must be in sync with the one defined in SQLite.
@@ -120,7 +114,6 @@ EXTRA_COMPONENTS = \
   nsLivemarkService.js \
   nsTaggingService.js \
   nsPlacesExpiration.js \
-  nsMicrosummaryService.js \
   PlacesCategoriesStarter.js \
   $(NULL)
 

@@ -57,7 +57,6 @@
 #include "nsITextScroll.h"
 #include "nsIDocShellTreeOwner.h"
 #include "nsIContentViewerContainer.h"
-#include "nsIDeviceContext.h"
 
 #include "nsDocLoader.h"
 #include "nsIURILoader.h"
@@ -185,7 +184,7 @@ class nsDocShell : public nsDocLoader,
                    public nsIObserver,
                    public nsILoadContext,
                    public nsIWebShellServices,
-                   public nsILinkHandler,
+                   public nsILinkHandler_5_0,
                    public nsIClipboardCommands
 {
     friend class nsDSURIContentListener;
@@ -248,6 +247,13 @@ public:
         nsIURI* aURI,
         const PRUnichar* aTargetSpec);
     NS_IMETHOD OnLeaveLink();
+    // nsILinkHandler_5_0
+    NS_IMETHOD OnLinkClick(nsIContent* aContent,
+        nsIURI* aURI,
+        const PRUnichar* aTargetSpec,
+        nsIInputStream* aPostDataStream,
+        nsIInputStream* aHeadersDataStream,
+        PRBool aIsTrusted);
 
     nsDocShellInfoLoadType ConvertLoadTypeToDocShellLoadInfo(PRUint32 aLoadType);
     PRUint32 ConvertDocShellLoadInfoToLoadType(nsDocShellInfoLoadType aDocShellLoadType);
@@ -333,12 +339,12 @@ protected:
                                    nsIURILoader * aURILoader,
                                    PRBool aBypassClassifier);
 
-    nsresult ScrollIfAnchor(nsIURI * aURI, PRBool * aWasAnchor,
-                            PRUint32 aLoadType, PRBool * aDoHashchange);
+    nsresult ScrollToAnchor(nsACString & curHash, nsACString & newHash,
+                            PRUint32 aLoadType);
 
-    // Tries to stringify a given variant by converting it to JSON.  This only
+    // Tries to serialize a given variant using structured clone.  This only
     // works if the variant is backed by a JSVal.
-    nsresult StringifyJSValVariant(JSContext *aCx, nsIVariant *aData,
+    nsresult SerializeJSValVariant(JSContext *aCx, nsIVariant *aData,
                                    nsAString &aResult);
 
     // Returns PR_TRUE if would have called FireOnLocationChange,

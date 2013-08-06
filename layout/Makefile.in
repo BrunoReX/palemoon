@@ -91,3 +91,7 @@ endif
 endif
 
 include $(topsrcdir)/config/rules.mk
+
+# Pale Moon: Kill Opt, SSE/SSE2 (PGO bug)
+# CXXFLAGS := $(CXXFLAGS:-O2=-O1)
+# CXXFLAGS := $(filter-out $(CXXFLAGS),%SSE2 %SSE)

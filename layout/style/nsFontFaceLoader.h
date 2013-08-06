@@ -50,6 +50,7 @@
 #include "gfxUserFontSet.h"
 #include "nsHashKeys.h"
 #include "nsTHashtable.h"
+#include "nsCSSRules.h"
 
 class nsIRequest;
 class nsISupports;
@@ -57,6 +58,7 @@ class nsPresContext;
 class nsIPrincipal;
 
 class nsFontFaceLoader;
+class nsCSSFontFaceRule;
 
 // nsUserFontSet - defines the loading mechanism for downloadable fonts
 class nsUserFontSet : public gfxUserFontSet
@@ -70,29 +72,49 @@ public:
 
   // starts loading process, creating and initializing a nsFontFaceLoader obj
   // returns whether load process successfully started or not
-  nsresult StartLoad(gfxFontEntry *aFontToLoad, 
+  nsresult StartLoad(gfxProxyFontEntry *aFontToLoad, 
                      const gfxFontFaceSrc *aFontFaceSrc);
 
   // Called by nsFontFaceLoader when the loader has completed normally.
   // It's removed from the mLoaders set.
   void RemoveLoader(nsFontFaceLoader *aLoader);
 
+  PRBool UpdateRules(const nsTArray<nsFontFaceRuleContainer>& aRules);
+
   nsPresContext *GetPresContext() { return mPresContext; }
 
+  virtual void ReplaceFontEntry(gfxProxyFontEntry *aProxy,
+                                gfxFontEntry *aFontEntry);
+
 protected:
+  // The font-set keeps track of the collection of rules, and their
+  // corresponding font entries (whether proxies or real entries),
+  // so that we can update the set without having to throw away
+  // all the existing fonts.
+  struct FontFaceRuleRecord {
+    nsRefPtr<gfxFontEntry>       mFontEntry;
+    nsFontFaceRuleContainer      mContainer;
+  };
+
+  void InsertRule(nsCSSFontFaceRule *aRule, PRUint8 aSheetType,
+                  nsTArray<FontFaceRuleRecord>& oldRules,
+                  PRBool& aFontSetModified);
+
   nsPresContext *mPresContext;  // weak reference
 
   // Set of all loaders pointing to us. These are not strong pointers,
   // but that's OK because nsFontFaceLoader always calls RemoveLoader on
   // us before it dies (unless we die first).
   nsTHashtable< nsPtrHashKey<nsFontFaceLoader> > mLoaders;
+
+  nsTArray<FontFaceRuleRecord>   mRules;
 };
 
 class nsFontFaceLoader : public nsIStreamLoaderObserver
 {
 public:
 
-  nsFontFaceLoader(gfxFontEntry *aFontToLoad, nsIURI *aFontURI, 
+  nsFontFaceLoader(gfxProxyFontEntry *aFontToLoad, nsIURI *aFontURI, 
                    nsUserFontSet *aFontSet, nsIChannel *aChannel);
   virtual ~nsFontFaceLoader();
 
@@ -115,7 +137,7 @@ public:
                                    nsISupports* aContext);
 
 private:
-  nsRefPtr<gfxFontEntry>  mFontEntry;
+  nsRefPtr<gfxProxyFontEntry>  mFontEntry;
   nsCOMPtr<nsIURI>        mFontURI;
   nsRefPtr<nsUserFontSet> mFontSet;
   nsCOMPtr<nsIChannel>    mChannel;

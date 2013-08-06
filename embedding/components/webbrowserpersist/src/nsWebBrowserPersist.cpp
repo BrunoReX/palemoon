@@ -72,7 +72,6 @@
 #include "nsIDocument.h"
 #include "nsIDOMDocument.h"
 #include "nsIDOMXMLDocument.h"
-#include "nsIDOMDocumentTraversal.h"
 #include "nsIDOMTreeWalker.h"
 #include "nsIDOMNode.h"
 #include "nsIDOMComment.h"
@@ -215,12 +214,7 @@ struct CleanupData
 // volume / server dependent but it is difficult to obtain
 // that information. Instead this constant is a reasonable value that
 // modern systems should able to cope with.
-
-#ifdef XP_MAC
-const PRUint32 kDefaultMaxFilenameLength = 31;
-#else
 const PRUint32 kDefaultMaxFilenameLength = 64;
-#endif
 
 // Default flags for persistence
 const PRUint32 kDefaultPersistFlags = 
@@ -242,9 +236,9 @@ nsWebBrowserPersist::nsWebBrowserPersist() :
     mSerializingOutput(PR_FALSE),
     mPersistFlags(kDefaultPersistFlags),
     mPersistResult(NS_OK),
-    mWrapColumn(72),
     mTotalCurrentProgress(0),
     mTotalMaxProgress(0),
+    mWrapColumn(72),
     mEncodingFlags(0)
 {
 }
@@ -1027,6 +1021,7 @@ NS_IMETHODIMP nsWebBrowserPersist::OnStatus(
         switch ( status )
         {
         case NS_NET_STATUS_RESOLVING_HOST:
+        case NS_NET_STATUS_RESOLVED_HOST:
         case NS_NET_STATUS_BEGIN_FTP_TRANSACTION:
         case NS_NET_STATUS_END_FTP_TRANSACTION:
         case NS_NET_STATUS_CONNECTING_TO:
@@ -1649,10 +1644,8 @@ nsresult nsWebBrowserPersist::SaveDocumentInternal(
         mDocList.AppendElement(docData);
 
         // Walk the DOM gathering a list of externally referenced URIs in the uri map
-        nsCOMPtr<nsIDOMDocumentTraversal> trav = do_QueryInterface(docData->mDocument, &rv);
-        NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
         nsCOMPtr<nsIDOMTreeWalker> walker;
-        rv = trav->CreateTreeWalker(docAsNode, 
+        rv = aDocument->CreateTreeWalker(docAsNode, 
             nsIDOMNodeFilter::SHOW_ELEMENT |
                 nsIDOMNodeFilter::SHOW_DOCUMENT |
                 nsIDOMNodeFilter::SHOW_PROCESSING_INSTRUCTION,
@@ -2589,10 +2582,7 @@ nsWebBrowserPersist::EnumCleanupOutputMap(nsHashKey *aKey, void *aData, void* cl
         channel->Cancel(NS_BINDING_ABORTED);
     }
     OutputData *data = (OutputData *) aData;
-    if (data)
-    {
-        delete data;
-    }
+    delete data;
     return PR_TRUE;
 }
 
@@ -2601,10 +2591,7 @@ PRBool
 nsWebBrowserPersist::EnumCleanupURIMap(nsHashKey *aKey, void *aData, void* closure)
 {
     URIData *data = (URIData *) aData;
-    if (data)
-    {
-        delete data; // Delete data associated with key
-    }
+    delete data; // Delete data associated with key
     return PR_TRUE;
 }
 
@@ -2620,10 +2607,7 @@ nsWebBrowserPersist::EnumCleanupUploadList(nsHashKey *aKey, void *aData, void* c
         channel->Cancel(NS_BINDING_ABORTED);
     }
     UploadData *data = (UploadData *) aData;
-    if (data)
-    {
-        delete data; // Delete data associated with key
-    }
+    delete data; // Delete data associated with key
     return PR_TRUE;
 }
 

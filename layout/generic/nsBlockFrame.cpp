@@ -61,7 +61,6 @@
 #include "nsIPresShell.h"
 #include "nsStyleContext.h"
 #include "nsIView.h"
-#include "nsIFontMetrics.h"
 #include "nsHTMLParts.h"
 #include "nsGkAtoms.h"
 #include "nsIDOMEvent.h"
@@ -89,6 +88,7 @@
 #include "nsCSSFrameConstructor.h"
 #include "nsCSSRendering.h"
 #include "FrameLayerBuilder.h"
+#include "nsRenderingContext.h"
 
 #ifdef IBMBIDI
 #include "nsBidiPresUtils.h"
@@ -569,7 +569,7 @@ nsBlockFrame::GetCaretBaseline() const
       return bp.top + firstLine->mFirstChild->GetCaretBaseline();
     }
   }
-  nsCOMPtr<nsIFontMetrics> fm;
+  nsRefPtr<nsFontMetrics> fm;
   nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm));
   return nsLayoutUtils::GetCenteredFontBaseline(fm, nsHTMLReflowState::
       CalcLineHeight(GetStyleContext(), contentRect.height)) +
@@ -674,8 +674,8 @@ static void ReparentFrame(nsIFrame* aFrame, nsIFrame* aOldParent,
 
   // When pushing and pulling frames we need to check for whether any
   // views need to be reparented
-  nsHTMLContainerFrame::ReparentFrameView(aFrame->PresContext(), aFrame,
-                                          aOldParent, aNewParent);
+  nsContainerFrame::ReparentFrameView(aFrame->PresContext(), aFrame,
+                                      aOldParent, aNewParent);
 }
  
 //////////////////////////////////////////////////////////////////////
@@ -701,7 +701,7 @@ nsBlockFrame::MarkIntrinsicWidthsDirty()
 }
 
 /* virtual */ nscoord
-nsBlockFrame::GetMinWidth(nsIRenderingContext *aRenderingContext)
+nsBlockFrame::GetMinWidth(nsRenderingContext *aRenderingContext)
 {
   nsIFrame* firstInFlow = GetFirstContinuation();
   if (firstInFlow != this)
@@ -778,7 +778,7 @@ nsBlockFrame::GetMinWidth(nsIRenderingContext *aRenderingContext)
 }
 
 /* virtual */ nscoord
-nsBlockFrame::GetPrefWidth(nsIRenderingContext *aRenderingContext)
+nsBlockFrame::GetPrefWidth(nsRenderingContext *aRenderingContext)
 {
   nsIFrame* firstInFlow = GetFirstContinuation();
   if (firstInFlow != this)
@@ -859,8 +859,9 @@ nsRect
 nsBlockFrame::ComputeTightBounds(gfxContext* aContext) const
 {
   // be conservative
-  if (GetStyleContext()->HasTextDecorations())
+  if (GetStyleContext()->HasTextDecorationLines()) {
     return GetVisualOverflowRect();
+  }
   return ComputeSimpleTightBounds(aContext);
 }
 
@@ -2368,13 +2369,12 @@ nsBlockFrame::ReflowDirtyLines(nsBlockReflowState& aState)
         metrics.ascent = metrics.height;
       }
 
-      nsIRenderingContext *rc = aState.mReflowState.rendContext;
+      nsRenderingContext *rc = aState.mReflowState.rendContext;
       nsLayoutUtils::SetFontFromStyle(rc, GetStyleContext());
-      nsCOMPtr<nsIFontMetrics> fm;
-      rc->GetFontMetrics(*getter_AddRefs(fm));
 
       nscoord minAscent =
-        nsLayoutUtils::GetCenteredFontBaseline(fm, aState.mMinLineHeight);
+        nsLayoutUtils::GetCenteredFontBaseline(rc->FontMetrics(),
+                                               aState.mMinLineHeight);
       nscoord minDescent = aState.mMinLineHeight - minAscent;
 
       aState.mY += NS_MAX(minAscent, metrics.ascent) +
@@ -3047,6 +3047,7 @@ nsBlockFrame::ReflowBlockFrame(nsBlockReflowState& aState,
     clearance = 0;
     nscoord topMargin = 0;
     PRBool mayNeedRetry = PR_FALSE;
+    PRBool clearedFloats = PR_FALSE;
     if (applyTopMargin) {
       // Precompute the blocks top margin value so that we can get the
       // correct available space (there might be a float that's
@@ -3121,7 +3122,9 @@ nsBlockFrame::ReflowBlockFrame(nsBlockReflowState& aState,
         nscoord currentY = aState.mY;
         // advance mY to the clear position.
         aState.mY = aState.ClearFloats(aState.mY, breakType, replacedBlock);
-        
+
+        clearedFloats = aState.mY != currentY;
+
         // Compute clearance. It's the amount we need to add to the top
         // border-edge of the frame, after applying collapsed margins
         // from the frame and its children, to get it to line up with
@@ -3153,21 +3156,38 @@ nsBlockFrame::ReflowBlockFrame(nsBlockReflowState& aState,
     nsRect availSpace;
     aState.ComputeBlockAvailSpace(frame, display, floatAvailableSpace,
                                   replacedBlock != nsnull, availSpace);
-    
+
+    // The check for
+    //   (!aState.mReflowState.mFlags.mIsTopOfPage || clearedFloats)
+    // is to some degree out of paranoia:  if we reliably eat up top
+    // margins at the top of the page as we ought to, it wouldn't be
+    // needed.
+    if ((!aState.mReflowState.mFlags.mIsTopOfPage || clearedFloats) &&
+        availSpace.height < 0) {
+      // We know already that this child block won't fit on this
+      // page/column due to the top margin or the clearance.  So we need
+      // to get out of here now.  (If we don't, most blocks will handle
+      // things fine, and report break-before, but zero-height blocks
+      // won't, and will thus make their parent overly-large and force
+      // *it* to be pushed in its entirety.)
+      // Doing this means that we also don't need to worry about the
+      // |availSpace.height += topMargin| below interacting with pushed
+      // floats (which force nscoord_MAX clearance) to cause a
+      // constrained height to turn into an unconstrained one.
+      aState.mY = startingY;
+      aState.mPrevBottomMargin = incomingMargin;
+      PushLines(aState, aLine.prev());
+      NS_FRAME_SET_INCOMPLETE(aState.mReflowStatus);
+      *aKeepReflowGoing = PR_FALSE;
+      return NS_OK;
+    }
+
     // Now put the Y coordinate back to the top of the top-margin +
     // clearance, and flow the block.
     aState.mY -= topMargin;
     availSpace.y -= topMargin;
     if (NS_UNCONSTRAINEDSIZE != availSpace.height) {
       availSpace.height += topMargin;
-
-      // When there is a pushed float, clearance could equal
-      // NS_UNCONSTRAINEDSIZE (FIXME: is that really a good idea?), but
-      // we don't want that to change a constrained height to an
-      // unconstrained one.
-      if (NS_UNCONSTRAINEDSIZE == availSpace.height) {
-        --availSpace.height;
-      }
     }
     
     // Reflow the block into the available space
@@ -3438,9 +3458,6 @@ nsBlockFrame::ReflowInlineFrames(nsBlockReflowState& aState,
   }
   nsFlowAreaRect floatAvailableSpace = aState.GetFloatAvailableSpace();
 
-#ifdef DEBUG
-  PRInt32 spins = 0;
-#endif
   LineReflowStatus lineReflowStatus;
   do {
     nscoord availableSpaceHeight = 0;
@@ -3495,15 +3512,6 @@ nsBlockFrame::ReflowInlineFrames(nsBlockReflowState& aState,
           aState.mCurrentLineFloats.DeleteAll();
           aState.mBelowCurrentLineFloats.DeleteAll();
         }
-        
-  #ifdef DEBUG
-        spins++;
-        if (1000 == spins) {
-          ListTag(stdout);
-          printf(": yikes! spinning on a line over 1000 times!\n");
-          NS_ABORT();
-        }
-  #endif
 
         // Don't allow pullup on a subsequent LINE_REFLOW_REDO_NO_PULL pass
         allowPullUp = PR_FALSE;
@@ -5929,7 +5937,7 @@ nsBlockFrame::ReflowPushedFloats(nsBlockReflowState& aState,
 
       // Invalidate if there was a position or size change
       nsRect rect = f->GetRect();
-      if (rect != oldRect) {
+      if (!rect.IsEqualInterior(oldRect)) {
         nsRect dirtyRect = oldOverflow;
         dirtyRect.MoveBy(oldRect.x, oldRect.y);
         Invalidate(dirtyRect);
@@ -6083,6 +6091,7 @@ nsBlockFrame::PaintTextDecorationLine(gfxContext* aCtx,
                                       const nsPoint& aPt,
                                       nsLineBox* aLine,
                                       nscolor aColor, 
+                                      PRUint8 aStyle,
                                       gfxFloat aOffset, 
                                       gfxFloat aAscent, 
                                       gfxFloat aSize,
@@ -6103,7 +6112,7 @@ nsBlockFrame::PaintTextDecorationLine(gfxContext* aCtx,
     nsCSSRendering::PaintDecorationLine(
       aCtx, aColor, pt, size,
       PresContext()->AppUnitsToGfxUnits(aLine->GetAscent()),
-      aOffset, aDecoration, nsCSSRendering::DECORATION_STYLE_SOLID);
+      aOffset, aDecoration, aStyle);
   }
 }
 

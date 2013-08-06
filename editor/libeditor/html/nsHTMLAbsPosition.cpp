@@ -50,7 +50,7 @@
 #include "nsEditorUtils.h"
 #include "nsHTMLEditUtils.h"
 #include "nsTextEditRules.h"
-#include "nsIHTMLEditRules.h"
+#include "nsHTMLEditRules.h"
 
 #include "nsIDOMHTMLElement.h"
 #include "nsIDOMNSHTMLElement.h"
@@ -311,8 +311,7 @@ nsHTMLEditor::HideGrabber()
   NS_ENSURE_TRUE(mGrabber, NS_ERROR_NULL_POINTER);
 
   // get the presshell's document observer interface.
-  nsCOMPtr<nsIPresShell> ps;
-  GetPresShell(getter_AddRefs(ps));
+  nsCOMPtr<nsIPresShell> ps = GetPresShell();
   // We allow the pres shell to be null; when it is, we presume there
   // are no document observers to notify, but we still want to
   // UnbindFromTree.
@@ -428,8 +427,7 @@ nsresult
 nsHTMLEditor::EndMoving()
 {
   if (mPositioningShadow) {
-    nsCOMPtr<nsIPresShell> ps;
-    GetPresShell(getter_AddRefs(ps));
+    nsCOMPtr<nsIPresShell> ps = GetPresShell();
     NS_ENSURE_TRUE(ps, NS_ERROR_NOT_INITIALIZED);
 
     nsCOMPtr<nsIDOMNode> parentNode;
@@ -595,7 +593,7 @@ nsHTMLEditor::AbsolutelyPositionElement(nsIDOMElement * aElement,
     res = HasStyleOrIdOrClass(aElement, &hasStyleOrIdOrClass);
     NS_ENSURE_SUCCESS(res, res);
     if (!hasStyleOrIdOrClass && nsHTMLEditUtils::IsDiv(aElement)) {
-      nsCOMPtr<nsIHTMLEditRules> htmlRules = do_QueryInterface(mRules);
+      nsHTMLEditRules* htmlRules = static_cast<nsHTMLEditRules*>(mRules.get());
       NS_ENSURE_TRUE(htmlRules, NS_ERROR_FAILURE);
       res = htmlRules->MakeSureElemStartsOrEndsOnCR(aElement);
       NS_ENSURE_SUCCESS(res, res);
@@ -690,13 +688,14 @@ nsHTMLEditor::CheckPositionedElementBGandFG(nsIDOMElement * aElement,
                                          bgColorStr);
     NS_ENSURE_SUCCESS(res, res);
     if (bgColorStr.EqualsLiteral("transparent")) {
+      nsCOMPtr<nsIDOMWindow> window;
+      res = mHTMLCSSUtils->GetDefaultViewCSS(aElement, getter_AddRefs(window));
+      NS_ENSURE_SUCCESS(res, res);
 
-      nsCOMPtr<nsIDOMViewCSS> viewCSS;
-      res = mHTMLCSSUtils->GetDefaultViewCSS(aElement, getter_AddRefs(viewCSS));
-      NS_ENSURE_SUCCESS(res, res);
       nsCOMPtr<nsIDOMCSSStyleDeclaration> cssDecl;
-      res = viewCSS->GetComputedStyle(aElement, EmptyString(), getter_AddRefs(cssDecl));
+      res = window->GetComputedStyle(aElement, EmptyString(), getter_AddRefs(cssDecl));
       NS_ENSURE_SUCCESS(res, res);
+
       // from these declarations, get the one we want and that one only
       nsCOMPtr<nsIDOMCSSValue> colorCssValue;
       res = cssDecl->GetPropertyCSSValue(NS_LITERAL_STRING("color"), getter_AddRefs(colorCssValue));

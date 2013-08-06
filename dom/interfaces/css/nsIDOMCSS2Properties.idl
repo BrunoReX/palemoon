@@ -50,12 +50,9 @@
  * http://www.w3.org/TR/DOM-Level-2-Style
  */
 
-[scriptable, uuid(e6d25dc8-0831-439c-9f8c-ec86c9dc5293)]
+[scriptable, uuid(249755DF-EEFE-4AF4-8127-BE3D6BDAED2D)]
 interface nsIDOMCSS2Properties : nsISupports
 {
-           attribute DOMString        azimuth;
-                                        // raises(DOMException) on setting
-
            attribute DOMString        background;
                                         // raises(DOMException) on setting
 
@@ -182,15 +179,6 @@ interface nsIDOMCSS2Properties : nsISupports
            attribute DOMString        counterReset;
                                         // raises(DOMException) on setting
 
-           attribute DOMString        cue;
-                                        // raises(DOMException) on setting
-
-           attribute DOMString        cueAfter;
-                                        // raises(DOMException) on setting
-
-           attribute DOMString        cueBefore;
-                                        // raises(DOMException) on setting
-
            attribute DOMString        cursor;
                                         // raises(DOMException) on setting
 
@@ -198,9 +186,6 @@ interface nsIDOMCSS2Properties : nsISupports
                                         // raises(DOMException) on setting
 
            attribute DOMString        display;
-                                        // raises(DOMException) on setting
-
-           attribute DOMString        elevation;
                                         // raises(DOMException) on setting
 
            attribute DOMString        emptyCells;
@@ -335,52 +320,16 @@ interface nsIDOMCSS2Properties : nsISupports
            attribute DOMString        pageBreakInside;
                                         // raises(DOMException) on setting
 
-           attribute DOMString        pause;
-                                        // raises(DOMException) on setting
-
-           attribute DOMString        pauseAfter;
-                                        // raises(DOMException) on setting
-
-           attribute DOMString        pauseBefore;
-                                        // raises(DOMException) on setting
-
-           attribute DOMString        pitch;
-                                        // raises(DOMException) on setting
-
-           attribute DOMString        pitchRange;
-                                        // raises(DOMException) on setting
-
            attribute DOMString        position;
                                         // raises(DOMException) on setting
 
            attribute DOMString        quotes;
                                         // raises(DOMException) on setting
 
-           attribute DOMString        richness;
-                                        // raises(DOMException) on setting
-
            attribute DOMString        right;
                                         // raises(DOMException) on setting
 
            attribute DOMString        size;
-                                        // raises(DOMException) on setting
-
-           attribute DOMString        speak;
-                                        // raises(DOMException) on setting
-
-           attribute DOMString        speakHeader;
-                                        // raises(DOMException) on setting
-
-           attribute DOMString        speakNumeral;
-                                        // raises(DOMException) on setting
-
-           attribute DOMString        speakPunctuation;
-                                        // raises(DOMException) on setting
-
-           attribute DOMString        speechRate;
-                                        // raises(DOMException) on setting
-
-           attribute DOMString        stress;
                                         // raises(DOMException) on setting
 
            attribute DOMString        tableLayout;
@@ -411,12 +360,6 @@ interface nsIDOMCSS2Properties : nsISupports
                                         // raises(DOMException) on setting
 
            attribute DOMString        visibility;
-                                        // raises(DOMException) on setting
-
-           attribute DOMString        voiceFamily;
-                                        // raises(DOMException) on setting
-
-           attribute DOMString        volume;
                                         // raises(DOMException) on setting
 
            attribute DOMString        whiteSpace;
@@ -612,6 +555,9 @@ interface nsIDOMCSS2Properties : nsISupports
            attribute DOMString        MozOpacity;
                                         // raises(DOMException) on setting
 
+           attribute DOMString        MozOrient;
+                                        // raises(DOMException) on setting
+
            attribute DOMString        MozOutline;
                                         // raises(DOMException) on setting
 
@@ -722,6 +668,9 @@ interface nsIDOMCSS2Properties : nsISupports
            attribute DOMString        wordWrap;
                                         // raises(DOMException) on setting
 
+           attribute DOMString        MozHyphens;
+                                        // raises(DOMException) on setting
+
            attribute DOMString        MozTransform;
                                         // raises(DOMException) on setting
 
@@ -732,6 +681,18 @@ interface nsIDOMCSS2Properties : nsISupports
                                         // raises(DOMException) on setting
 
            attribute DOMString        backgroundSize;
+                                        // raises(DOMException) on setting
+
+           attribute DOMString        MozTextBlink;
+                                        // raises(DOMException) on setting
+
+           attribute DOMString        MozTextDecorationColor;
+                                        // raises(DOMException) on setting
+
+           attribute DOMString        MozTextDecorationLine;
+                                        // raises(DOMException) on setting
+
+           attribute DOMString        MozTextDecorationStyle;
                                         // raises(DOMException) on setting
 
            attribute DOMString        MozTransitionProperty;

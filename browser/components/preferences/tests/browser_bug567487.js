@@ -65,8 +65,6 @@ function runTest(win) {
 }
 
 function resetPreferences() {
-  if (Services.prefs.prefHasUserValue("browser.startup.page"))
-    Services.prefs.clearUserPref("browser.startup.page");
-  if (Services.prefs.prefHasUserValue("browser.privatebrowsing.autostart"))
-    Services.prefs.clearUserPref("browser.privatebrowsing.autostart");
+  Services.prefs.clearUserPref("browser.startup.page");
+  Services.prefs.clearUserPref("browser.privatebrowsing.autostart");
 }

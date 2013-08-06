@@ -63,7 +63,7 @@
 #include "nsIFormControlFrame.h"
 #include "nsITextControlFrame.h"
 #include "nsIFrame.h"
-#include "nsIEventStateManager.h"
+#include "nsEventStates.h"
 #include "nsIServiceManager.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsDOMError.h"
@@ -71,6 +71,7 @@
 #include "nsIEditor.h"
 #include "nsGUIEvent.h"
 #include "nsIIOService.h"
+#include "nsDocument.h"
 
 #include "nsPresState.h"
 #include "nsLayoutErrors.h"
@@ -909,12 +910,13 @@ nsHTMLInputElement::AfterSetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
     }
 
     if (mType == NS_FORM_INPUT_RADIO && aName == nsGkAtoms::required) {
-      nsCOMPtr<nsIRadioGroupContainer> c = GetRadioGroupContainer();
+      nsIRadioGroupContainer* c = GetRadioGroupContainer();
       nsCOMPtr<nsIRadioGroupContainer_MOZILLA_2_0_BRANCH> container =
         do_QueryInterface(c);
-      nsAutoString name;
 
-      if (container && GetNameIfExists(name)) {
+      if (container) {
+        nsAutoString name;
+        GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
         container->RadioRequiredChanged(name, this);
       }
     }
@@ -1576,12 +1578,11 @@ nsHTMLInputElement::DoSetChecked(PRBool aChecked, PRBool aNotify,
     if (aChecked) {
       rv = RadioSetChecked(aNotify);
     } else {
-      nsCOMPtr<nsIRadioGroupContainer> container = GetRadioGroupContainer();
+      nsIRadioGroupContainer* container = GetRadioGroupContainer();
       if (container) {
         nsAutoString name;
-        if (GetNameIfExists(name)) {
-          container->SetCurrentRadioButton(name, nsnull);
-        }
+        GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+        container->SetCurrentRadioButton(name, nsnull);
       }
       // SetCheckedInternal is going to ask all radios to update their
       // validity state. We have to be sure the radio group container knows
@@ -1618,9 +1619,10 @@ nsHTMLInputElement::RadioSetChecked(PRBool aNotify)
   //
   // Let the group know that we are now the One True Radio Button
   //
-  nsCOMPtr<nsIRadioGroupContainer> container = GetRadioGroupContainer();
-  nsAutoString name;
-  if (container && GetNameIfExists(name)) {
+  nsIRadioGroupContainer* container = GetRadioGroupContainer();
+  if (container) {
+    nsAutoString name;
+    GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
     rv = container->SetCurrentRadioButton(name, this);
   }
 
@@ -1634,35 +1636,38 @@ nsHTMLInputElement::RadioSetChecked(PRBool aNotify)
   return rv;
 }
 
-/* virtual */ already_AddRefed<nsIRadioGroupContainer>
-nsHTMLInputElement::GetRadioGroupContainer()
+nsIRadioGroupContainer*
+nsHTMLInputElement::GetRadioGroupContainer() const
 {
-  nsIRadioGroupContainer* retval = nsnull;
-  if (mForm) {
-    CallQueryInterface(mForm, &retval);
-  } else {
-    nsIDocument* currentDoc = GetCurrentDoc();
-    if (currentDoc) {
-      CallQueryInterface(currentDoc, &retval);
-    }
+  NS_ASSERTION(mType == NS_FORM_INPUT_RADIO,
+               "GetRadioGroupContainer should only be called when type='radio'");
+
+  nsAutoString name;
+  GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+
+  if (name.IsEmpty()) {
+    return nsnull;
   }
-  return retval;
+
+  if (mForm) {
+    return mForm;
+  }
+
+  return static_cast<nsDocument*>(GetCurrentDoc());
 }
 
 already_AddRefed<nsIDOMHTMLInputElement>
 nsHTMLInputElement::GetSelectedRadioButton()
 {
   nsIDOMHTMLInputElement* selected;
-  nsCOMPtr<nsIRadioGroupContainer> container = GetRadioGroupContainer();
+  nsIRadioGroupContainer* container = GetRadioGroupContainer();
 
   if (!container) {
     return nsnull;
   }
 
   nsAutoString name;
-  if (!GetNameIfExists(name)) {
-    return nsnull;
-  }
+  GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
 
   container->GetCurrentRadioButton(name, &selected);
   return selected;
@@ -1735,13 +1740,7 @@ nsHTMLInputElement::SetCheckedInternal(PRBool aChecked, PRBool aNotify)
     }
   }
 
-  if (mType == NS_FORM_INPUT_CHECKBOX) {
-    UpdateAllValidityStates(aNotify);
-  }
-
-  if (mType == NS_FORM_INPUT_RADIO) {
-    UpdateValueMissingValidityState();
-  }
+  UpdateAllValidityStates(aNotify);
 }
 
 NS_IMETHODIMP
@@ -2279,29 +2278,28 @@ nsHTMLInputElement::PostHandleEvent(nsEventChainPostVisitor& aVisitor)
               case NS_VK_DOWN:
               case NS_VK_RIGHT:
               // Arrow key pressed, focus+select prev/next radio button
-              nsCOMPtr<nsIRadioGroupContainer> container = GetRadioGroupContainer();
+              nsIRadioGroupContainer* container = GetRadioGroupContainer();
               if (container) {
                 nsAutoString name;
-                if (GetNameIfExists(name)) {
-                  nsCOMPtr<nsIDOMHTMLInputElement> selectedRadioButton;
-                  container->GetNextRadioButton(name, isMovingBack, this,
-                                                getter_AddRefs(selectedRadioButton));
-                  nsCOMPtr<nsIContent> radioContent =
-                    do_QueryInterface(selectedRadioButton);
-                  if (radioContent) {
-                    rv = selectedRadioButton->Focus();
+                GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+                nsCOMPtr<nsIDOMHTMLInputElement> selectedRadioButton;
+                container->GetNextRadioButton(name, isMovingBack, this,
+                                              getter_AddRefs(selectedRadioButton));
+                nsCOMPtr<nsIContent> radioContent =
+                  do_QueryInterface(selectedRadioButton);
+                if (radioContent) {
+                  rv = selectedRadioButton->Focus();
+                  if (NS_SUCCEEDED(rv)) {
+                    nsEventStatus status = nsEventStatus_eIgnore;
+                    nsMouseEvent event(NS_IS_TRUSTED_EVENT(aVisitor.mEvent),
+                                       NS_MOUSE_CLICK, nsnull,
+                                       nsMouseEvent::eReal);
+                    event.inputSource = nsIDOMNSMouseEvent::MOZ_SOURCE_KEYBOARD;
+                    rv = nsEventDispatcher::Dispatch(radioContent,
+                                                     aVisitor.mPresContext,
+                                                     &event, nsnull, &status);
                     if (NS_SUCCEEDED(rv)) {
-                      nsEventStatus status = nsEventStatus_eIgnore;
-                      nsMouseEvent event(NS_IS_TRUSTED_EVENT(aVisitor.mEvent),
-                                         NS_MOUSE_CLICK, nsnull,
-                                         nsMouseEvent::eReal);
-                      event.inputSource = nsIDOMNSMouseEvent::MOZ_SOURCE_KEYBOARD;
-                      rv = nsEventDispatcher::Dispatch(radioContent,
-                                                       aVisitor.mPresContext,
-                                                       &event, nsnull, &status);
-                      if (NS_SUCCEEDED(rv)) {
-                        aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
-                      }
+                      aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
                     }
                   }
                 }
@@ -2310,8 +2308,7 @@ nsHTMLInputElement::PostHandleEvent(nsEventChainPostVisitor& aVisitor)
           }
 
           /*
-           * If this is input type=text, and the user hit enter, fire onChange
-           * and submit the form (if we are in one)
+           * For some input types, if the user hits enter, the form is submitted.
            *
            * Bug 99920, bug 109463 and bug 147850:
            * (a) if there is a submit control in the form, click the first
@@ -2325,42 +2322,19 @@ nsHTMLInputElement::PostHandleEvent(nsEventChainPostVisitor& aVisitor)
           if (aVisitor.mEvent->message == NS_KEY_PRESS &&
               (keyEvent->keyCode == NS_VK_RETURN ||
                keyEvent->keyCode == NS_VK_ENTER) &&
-              (mType == NS_FORM_INPUT_TEXT ||
-               mType == NS_FORM_INPUT_EMAIL ||
-               mType == NS_FORM_INPUT_SEARCH ||
-               mType == NS_FORM_INPUT_PASSWORD ||
-               mType == NS_FORM_INPUT_TEL ||
-               mType == NS_FORM_INPUT_URL ||
-               mType == NS_FORM_INPUT_FILE)) {
+               IsSingleLineTextControl(PR_FALSE, mType)) {
+            nsIFrame* primaryFrame = GetPrimaryFrame();
+            if (primaryFrame) {
+              nsITextControlFrame* textFrame = do_QueryFrame(primaryFrame);
 
-            PRBool isButton = PR_FALSE;
-            // If this is an enter on the button of a file input, don't submit
-            // -- that's supposed to put up the filepicker
-            if (mType == NS_FORM_INPUT_FILE) {
-              nsCOMPtr<nsIContent> maybeButton =
-                do_QueryInterface(aVisitor.mEvent->originalTarget);
-              if (maybeButton) {
-                isButton = maybeButton->AttrValueIs(kNameSpaceID_None,
-                                                    nsGkAtoms::type,
-                                                    nsGkAtoms::button,
-                                                    eCaseMatters);
+              // Fire onChange (if necessary)
+              if (textFrame) {
+                textFrame->CheckFireOnChange();
               }
             }
 
-            if (!isButton) {
-              nsIFrame* primaryFrame = GetPrimaryFrame();
-              if (primaryFrame) {
-                nsITextControlFrame* textFrame = do_QueryFrame(primaryFrame);
-              
-                // Fire onChange (if necessary)
-                if (textFrame) {
-                  textFrame->CheckFireOnChange();
-                }
-              }
-
-              rv = MaybeSubmitForm(aVisitor.mPresContext);
-              NS_ENSURE_SUCCESS(rv, rv);
-            }
+            rv = MaybeSubmitForm(aVisitor.mPresContext);
+            NS_ENSURE_SUCCESS(rv, rv);
           }
 
         } break; // NS_KEY_PRESS || NS_KEY_UP
@@ -3021,7 +2995,7 @@ nsHTMLInputElement::SubmitNamesValues(nsFormSubmission* aFormSubmission)
 
   // Get the name
   nsAutoString name;
-  PRBool nameThere = GetNameIfExists(name);
+  GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
 
   // Submit .x, .y for input type=image
   if (mType == NS_FORM_INPUT_IMAGE) {
@@ -3059,7 +3033,7 @@ nsHTMLInputElement::SubmitNamesValues(nsFormSubmission* aFormSubmission)
   //
 
   // If name not there, don't submit
-  if (!nameThere) {
+  if (name.IsEmpty()) {
     return NS_OK;
   }
 
@@ -3430,69 +3404,40 @@ nsHTMLInputElement::AddedToRadioGroup()
   nsCOMPtr<nsIRadioGroupContainer> container = GetRadioGroupContainer();
   if (container) {
     nsAutoString name;
-    if (GetNameIfExists(name)) {
-      container->AddToRadioGroup(name, static_cast<nsIFormControl*>(this));
+    GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+    container->AddToRadioGroup(name, static_cast<nsIFormControl*>(this));
 
-      // We initialize the validity of the element to the validity of the group
-      // because we assume UpdateValueMissingState() will be called after.
-      nsCOMPtr<nsIRadioGroupContainer_MOZILLA_2_0_BRANCH> container2 =
-        do_QueryInterface(container);
-      SetValidityState(VALIDITY_STATE_VALUE_MISSING,
-                       container2->GetValueMissingState(name));
-    }
+    // We initialize the validity of the element to the validity of the group
+    // because we assume UpdateValueMissingState() will be called after.
+    nsCOMPtr<nsIRadioGroupContainer_MOZILLA_2_0_BRANCH> container2 =
+      do_QueryInterface(container);
+    SetValidityState(VALIDITY_STATE_VALUE_MISSING,
+                     container2->GetValueMissingState(name));
   }
 }
 
 void
 nsHTMLInputElement::WillRemoveFromRadioGroup()
 {
-  //
-  // If the input element is not in a form and
-  // not in a document, we just need to return.
-  //
-  if (!mForm && !(IsInDoc() && GetParent())) {
+  nsIRadioGroupContainer* container = GetRadioGroupContainer();
+  if (!container) {
     return;
   }
 
-  //
+  nsAutoString name;
+  GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+
   // If this button was checked, we need to notify the group that there is no
   // longer a selected radio button
-  //
-  nsAutoString name;
-  PRBool gotName = PR_FALSE;
   if (GetChecked()) {
-    if (!gotName) {
-      if (!GetNameIfExists(name)) {
-        // If the name doesn't exist, nothing is going to happen anyway
-        return;
-      }
-      gotName = PR_TRUE;
-    }
-
-    nsCOMPtr<nsIRadioGroupContainer> container = GetRadioGroupContainer();
-    if (container) {
-      container->SetCurrentRadioButton(name, nsnull);
-    }
+    container->SetCurrentRadioButton(name, nsnull);
   }
 
-  //
-  // Remove this radio from its group in the container
-  //
-  nsCOMPtr<nsIRadioGroupContainer> container = GetRadioGroupContainer();
-  if (container) {
-    if (!gotName) {
-      if (!GetNameIfExists(name)) {
-        // If the name doesn't exist, nothing is going to happen anyway
-        return;
-      }
-      gotName = PR_TRUE;
-    }
-
-    UpdateValueMissingValidityStateForRadio(true);
-
-    container->RemoveFromRadioGroup(name,
-                                    static_cast<nsIFormControl*>(this));
-  }
+  // Remove this radio from its group in the container.
+  // We need to call UpdateValueMissingValidityStateForRadio before to make sure
+  // the group validity is updated (with this element being ignored).
+  UpdateValueMissingValidityStateForRadio(true);
+  container->RemoveFromRadioGroup(name, static_cast<nsIFormControl*>(this));
 }
 
 PRBool
@@ -3553,12 +3498,14 @@ nsHTMLInputElement::IsHTMLFocusable(PRBool aWithMouse, PRBool *aIsFocusable, PRI
 
   // Current radio button is not selected.
   // But make it tabbable if nothing in group is selected.
-  nsCOMPtr<nsIRadioGroupContainer> container = GetRadioGroupContainer();
-  nsAutoString name;
-  if (!container || !GetNameIfExists(name)) {
+  nsIRadioGroupContainer* container = GetRadioGroupContainer();
+  if (!container) {
     *aIsFocusable = defaultFocusable;
     return PR_FALSE;
   }
+
+  nsAutoString name;
+  GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
 
   nsCOMPtr<nsIDOMHTMLInputElement> currentRadio;
   container->GetCurrentRadioButton(name, getter_AddRefs(currentRadio));
@@ -3572,19 +3519,15 @@ nsHTMLInputElement::IsHTMLFocusable(PRBool aWithMouse, PRBool *aIsFocusable, PRI
 nsresult
 nsHTMLInputElement::VisitGroup(nsIRadioVisitor* aVisitor, PRBool aFlushContent)
 {
-  nsresult rv = NS_OK;
-  nsCOMPtr<nsIRadioGroupContainer> container = GetRadioGroupContainer();
+  nsIRadioGroupContainer* container = GetRadioGroupContainer();
   if (container) {
     nsAutoString name;
-    if (GetNameIfExists(name)) {
-      rv = container->WalkRadioGroup(name, aVisitor, aFlushContent);
-    } else {
-      aVisitor->Visit(this);
-    }
-  } else {
-    aVisitor->Visit(this);
+    GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+    return container->WalkRadioGroup(name, aVisitor, aFlushContent);
   }
-  return rv;
+
+  aVisitor->Visit(this);
+  return NS_OK;
 }
 
 nsHTMLInputElement::ValueModeType
@@ -3837,7 +3780,7 @@ nsHTMLInputElement::HasPatternMismatch() const
     return PR_FALSE;
   }
 
-  return !IsPatternMatching(value, pattern, doc);
+  return !nsContentUtils::IsPatternMatching(value, pattern, doc);
 }
 
 void
@@ -3863,15 +3806,21 @@ nsHTMLInputElement::UpdateValueMissingValidityStateForRadio(bool aIgnoreSelf)
                               : HasAttr(kNameSpaceID_None, nsGkAtoms::required);
   bool valueMissing = false;
 
-  nsCOMPtr<nsIRadioGroupContainer> c = GetRadioGroupContainer();
+  nsIRadioGroupContainer* c = GetRadioGroupContainer();
   nsCOMPtr<nsIRadioGroupContainer_MOZILLA_2_0_BRANCH> container =
     do_QueryInterface(c);
+
+  if (!container) {
+    SetValidityState(VALIDITY_STATE_VALUE_MISSING, required && !selected);
+    return;
+  }
+
   nsAutoString name;
-  GetNameIfExists(name);
+  GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
 
   // If the current radio is required and not ignored, we can assume the entire
   // group is required.
-  if (!required && container && !name.IsEmpty()) {
+  if (!required) {
     required = (aIgnoreSelf && HasAttr(kNameSpaceID_None, nsGkAtoms::required))
                  ? container->GetRequiredRadioCount(name) - 1
                  : container->GetRequiredRadioCount(name);
@@ -3879,18 +3828,14 @@ nsHTMLInputElement::UpdateValueMissingValidityStateForRadio(bool aIgnoreSelf)
 
   valueMissing = required && !selected;
 
-  if (container && !name.IsEmpty()) {
-    if (container->GetValueMissingState(name) != valueMissing) {
-      container->SetValueMissingState(name, valueMissing);
+  if (container->GetValueMissingState(name) != valueMissing) {
+    container->SetValueMissingState(name, valueMissing);
 
-      SetValidityState(VALIDITY_STATE_VALUE_MISSING, valueMissing);
-
-      nsCOMPtr<nsIRadioVisitor> visitor =
-        new nsRadioSetValueMissingState(this, valueMissing, notify);
-      VisitGroup(visitor, notify);
-    }
-  } else {
     SetValidityState(VALIDITY_STATE_VALUE_MISSING, valueMissing);
+
+    nsCOMPtr<nsIRadioVisitor> visitor =
+      new nsRadioSetValueMissingState(this, valueMissing, notify);
+    VisitGroup(visitor, notify);
   }
 }
 
@@ -4117,40 +4062,6 @@ nsHTMLInputElement::IsValidEmailAddress(const nsAString& aValue)
   }
 
   return PR_TRUE;
-}
-
-//static
-PRBool
-nsHTMLInputElement::IsPatternMatching(nsAString& aValue, nsAString& aPattern,
-                                      nsIDocument* aDocument)
-{
-  NS_ASSERTION(aDocument, "aDocument should be a valid pointer (not null)");
-  NS_ENSURE_TRUE(aDocument->GetScriptGlobalObject(), PR_TRUE);
-
-  JSContext* ctx = (JSContext*) aDocument->GetScriptGlobalObject()->
-                                  GetContext()->GetNativeContext();
-  NS_ENSURE_TRUE(ctx, PR_TRUE);
-
-  JSAutoRequest ar(ctx);
-
-  // The pattern has to match the entire value.
-  aPattern.Insert(NS_LITERAL_STRING("^(?:"), 0);
-  aPattern.Append(NS_LITERAL_STRING(")$"));
-
-  JSObject* re = JS_NewUCRegExpObjectNoStatics(ctx, reinterpret_cast<jschar*>
-                                                 (aPattern.BeginWriting()),
-                                                aPattern.Length(), 0);
-  NS_ENSURE_TRUE(re, PR_TRUE);
-
-  jsval rval = JSVAL_NULL;
-  size_t idx = 0;
-  JSBool res;
-
-  res = JS_ExecuteRegExpNoStatics(ctx, re, reinterpret_cast<jschar*>
-                                    (aValue.BeginWriting()),
-                                  aValue.Length(), &idx, JS_TRUE, &rval);
-
-  return res == JS_FALSE || rval != JSVAL_NULL;
 }
 
 NS_IMETHODIMP_(PRBool)

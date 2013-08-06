@@ -80,7 +80,6 @@
 #include "nsTextFragment.h"
 #include "nsCSSRuleProcessor.h"
 #include "nsCrossSiteListenerProxy.h"
-#include "nsWebSocket.h"
 #include "nsDOMThreadService.h"
 #include "nsHTMLDNSPrefetch.h"
 #include "nsHtml5Module.h"
@@ -128,6 +127,8 @@
 #include "nsFrameMessageManager.h"
 #include "nsRefreshDriver.h"
 #include "CanvasImageCache.h"
+
+#include "nsHyphenationManager.h"
 
 extern void NS_ShutdownChainItemPool();
 
@@ -367,8 +368,6 @@ nsLayoutStatics::Shutdown()
 
   nsCORSListenerProxy::Shutdown();
   
-  nsWebSocket::ReleaseGlobals();
-  
   nsIPresShell::ReleaseStatics();
 
   nsHtml5Module::ReleaseStatics();
@@ -382,4 +381,6 @@ nsLayoutStatics::Shutdown()
   nsHTMLInputElement::DestroyUploadLastDir();
 
   nsLayoutUtils::Shutdown();
+
+  nsHyphenationManager::Shutdown();
 }

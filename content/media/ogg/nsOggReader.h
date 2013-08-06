@@ -71,22 +71,15 @@ public:
   virtual PRBool DecodeVideoFrame(PRBool &aKeyframeSkip,
                                   PRInt64 aTimeThreshold);
 
-  virtual VideoData* FindStartTime(PRInt64 aOffset,
-                                   PRInt64& aOutStartTime);
-
-  // Get the end time of aEndOffset. This is the playback position we'd reach
-  // after playback finished at aEndOffset.
-  virtual PRInt64 FindEndTime(PRInt64 aEndOffset);
-
   virtual PRBool HasAudio()
   {
-    mozilla::MonitorAutoEnter mon(mMonitor);
+    mozilla::ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     return mVorbisState != 0 && mVorbisState->mActive;
   }
 
   virtual PRBool HasVideo()
   {
-    mozilla::MonitorAutoEnter mon(mMonitor);
+    mozilla::ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     return mTheoraState != 0 && mTheoraState->mActive;
   }
 
@@ -98,14 +91,14 @@ private:
 
   PRBool HasSkeleton()
   {
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     return mSkeletonState != 0 && mSkeletonState->mActive;
   }
 
   // Returns PR_TRUE if we should decode up to the seek target rather than
   // seeking to the target using a bisection search or index-assisted seek.
-  // We should do this if the seek target (aTarget, in ms), lies not too far
-  // ahead of the current playback position (aCurrentTime, in ms).
+  // We should do this if the seek target (aTarget, in usecs), lies not too far
+  // ahead of the current playback position (aCurrentTime, in usecs).
   PRBool CanDecodeToTarget(PRInt64 aTarget,
                            PRInt64 aCurrentTime);
 
@@ -152,10 +145,10 @@ private:
     }
 
     PRInt64 mOffsetStart, mOffsetEnd; // in bytes.
-    PRInt64 mTimeStart, mTimeEnd; // in ms.
+    PRInt64 mTimeStart, mTimeEnd; // in usecs.
   };
 
-  // Seeks to aTarget ms in the buffered range aRange using bisection search,
+  // Seeks to aTarget usecs in the buffered range aRange using bisection search,
   // or to the keyframe prior to aTarget if we have video. aStartTime must be
   // the presentation time at the start of media, and aEndTime the time at
   // end of media. aRanges must be the time/byte ranges buffered in the media
@@ -166,7 +159,7 @@ private:
                                const nsTArray<SeekRange>& aRanges,
                                const SeekRange& aRange);
 
-  // Seeks to before aTarget ms in media using bisection search. If the media
+  // Seeks to before aTarget usecs in media using bisection search. If the media
   // has video, this will seek to before the keyframe required to render the
   // media at aTarget. Will use aRanges in order to narrow the bisection
   // search space. aStartTime must be the presentation time at the start of
@@ -177,42 +170,32 @@ private:
                             PRInt64 aEndTime,
                             const nsTArray<SeekRange>& aRanges);
 
+  // Get the end time of aEndOffset. This is the playback position we'd reach
+  // after playback finished at aEndOffset.
+  PRInt64 RangeEndTime(PRInt64 aEndOffset);
+
   // Get the end time of aEndOffset, without reading before aStartOffset.
   // This is the playback position we'd reach after playback finished at
   // aEndOffset. If PRBool aCachedDataOnly is PR_TRUE, then we'll only read
   // from data which is cached in the media cached, otherwise we'll do
   // regular blocking reads from the media stream. If PRBool aCachedDataOnly
-  // is PR_TRUE, and aState is not mOggState, this can safely be called on
-  // the main thread, otherwise it must be called on the state machine thread.
-  PRInt64 FindEndTime(PRInt64 aStartOffset,
-                      PRInt64 aEndOffset,
-                      PRBool aCachedDataOnly,
-                      ogg_sync_state* aState);
+  // is PR_TRUE, this can safely be called on the main thread, otherwise it
+  // must be called on the state machine thread.
+  PRInt64 RangeEndTime(PRInt64 aStartOffset,
+                       PRInt64 aEndOffset,
+                       PRBool aCachedDataOnly);
 
-  // Decodes one packet of Vorbis data, storing the resulting chunks of
-  // PCM samples in aChunks.
-  nsresult DecodeVorbis(nsTArray<nsAutoPtr<SoundData> >& aChunks,
-                        ogg_packet* aPacket);
-
-  // May return NS_ERROR_OUT_OF_MEMORY. Caller must have obtained the
-  // reader's monitor.
-  nsresult DecodeTheora(nsTArray<nsAutoPtr<VideoData> >& aFrames,
-                        ogg_packet* aPacket);
-
-  // Read a page of data from the Ogg file. Returns the offset of the start
-  // of the page, or -1 if the page read failed.
-  PRInt64 ReadOggPage(ogg_page* aPage);
-
-  // Read a packet for an Ogg bitstream/codec state. Returns PR_TRUE on
-  // success, or PR_FALSE if the read failed.
-  PRBool ReadOggPacket(nsOggCodecState* aCodecState, ogg_packet* aPacket);
+  // Get the start time of the range beginning at aOffset. This is the start
+  // time of the first frame and or audio sample we'd be able to play if we
+  // started playback at aOffset.
+  PRInt64 RangeStartTime(PRInt64 aOffset);
 
   // Performs a seek bisection to move the media stream's read cursor to the
-  // last ogg page boundary which has end time before aTarget ms on both the
+  // last ogg page boundary which has end time before aTarget usecs on both the
   // Theora and Vorbis bitstreams. Limits its search to data inside aRange;
   // i.e. it will only read inside of the aRange's start and end offsets.
-  // aFuzz is the number of ms of leniency we'll allow; we'll terminate the
-  // seek when we land in the range (aTime - aFuzz, aTime) ms.
+  // aFuzz is the number of usecs of leniency we'll allow; we'll terminate the
+  // seek when we land in the range (aTime - aFuzz, aTime) usecs.
   nsresult SeekBisection(PRInt64 aTarget,
                          const SeekRange& aRange,
                          PRUint32 aFuzz);
@@ -228,7 +211,7 @@ private:
   nsresult GetSeekRanges(nsTArray<SeekRange>& aRanges);
 
   // Returns the range in which you should perform a seek bisection if
-  // you wish to seek to aTarget ms, given the known (buffered) byte ranges
+  // you wish to seek to aTarget usecs, given the known (buffered) byte ranges
   // in aRanges. If aExact is PR_TRUE, we only return an exact copy of a
   // range in which aTarget lies, or a null range if aTarget isn't contained
   // in any of the (buffered) ranges. Otherwise, when aExact is PR_FALSE,
@@ -241,6 +224,31 @@ private:
                             PRInt64 aEndTime,
                             PRBool aExact);
 private:
+
+  // Decodes a packet of Vorbis data, and inserts its samples into the 
+  // audio queue.
+  nsresult DecodeVorbis(ogg_packet* aPacket);
+
+  // Decodes a packet of Theora data, and inserts its frame into the
+  // video queue. May return NS_ERROR_OUT_OF_MEMORY. Caller must have obtained
+  // the reader's monitor.
+  nsresult DecodeTheora(ogg_packet* aPacket);
+
+  // Read a page of data from the Ogg file. Returns the offset of the start
+  // of the page, or -1 if the page read failed.
+  PRInt64 ReadOggPage(ogg_page* aPage);
+
+  // Reads and decodes header packets for aState, until either header decode
+  // fails, or is complete. Initializes the codec state before returning.
+  // Returns PR_TRUE if reading headers and initializtion of the stream
+  // succeeds.
+  PRBool ReadHeaders(nsOggCodecState* aState);
+
+  // Returns the next Ogg packet for an bitstream/codec state. Returns a
+  // pointer to an ogg_packet on success, or nsnull if the read failed.
+  // The caller is responsible for deleting the packet and its |packet| field.
+  ogg_packet* NextOggPacket(nsOggCodecState* aCodecState);
+
   // Maps Ogg serialnos to nsOggStreams.
   nsClassHashtable<nsUint32HashKey, nsOggCodecState> mCodecStates;
 
@@ -276,12 +284,6 @@ private:
   // The offset of the end of the last page we've read, or the start of
   // the page we're about to read.
   PRInt64 mPageOffset;
-
-  // The granulepos of the last decoded Theora frame.
-  PRInt64 mTheoraGranulepos;
-
-  // The granulepos of the last decoded Vorbis sample.
-  PRInt64 mVorbisGranulepos;
 };
 
 #endif

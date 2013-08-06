@@ -42,6 +42,7 @@
 #include <gtk/gtk.h>
 
 #include "gtkdrawing.h"
+#include "nsStyleConsts.h"
 
 #ifdef MOZ_PLATFORM_MAEMO
 #include "nsIServiceManager.h"
@@ -442,7 +443,7 @@ NS_IMETHODIMP nsLookAndFeel::GetMetric(const nsMetricID aID, PRInt32 & aMetric)
             gboolean select_on_focus;
 
             entry = gtk_entry_new();
-            g_object_ref_sink(GTK_OBJECT(entry));
+            g_object_ref_sink(entry);
             settings = gtk_widget_get_settings(entry);
             g_object_get(settings, 
                          "gtk-entry-select-on-focus",
@@ -483,7 +484,7 @@ NS_IMETHODIMP nsLookAndFeel::GetMetric(const nsMetricID aID, PRInt32 & aMetric)
             g_object_get(gtk_widget_get_settings(box),
                          "gtk-dnd-drag-threshold", &threshold,
                          NULL);
-            g_object_ref_sink(GTK_OBJECT(box));
+            g_object_ref_sink(box);
             
             aMetric = threshold;
         }
@@ -553,14 +554,14 @@ NS_IMETHODIMP nsLookAndFeel::GetMetric(const nsMetricID aID, PRInt32 & aMetric)
         break;
     case eMetric_IMERawInputUnderlineStyle:
     case eMetric_IMEConvertedTextUnderlineStyle:
-        aMetric = NS_UNDERLINE_STYLE_SOLID;
+        aMetric = NS_STYLE_TEXT_DECORATION_STYLE_SOLID;
         break;
     case eMetric_IMESelectedRawTextUnderlineStyle:
     case eMetric_IMESelectedConvertedTextUnderline:
-        aMetric = NS_UNDERLINE_STYLE_NONE;
+        aMetric = NS_STYLE_TEXT_DECORATION_STYLE_NONE;
         break;
     case eMetric_SpellCheckerUnderlineStyle:
-        aMetric = NS_UNDERLINE_STYLE_WAVY;
+        aMetric = NS_STYLE_TEXT_DECORATION_STYLE_WAVY;
         break;
     case eMetric_ImagesInMenus:
         aMetric = moz_gtk_images_in_menus();
@@ -624,7 +625,7 @@ nsLookAndFeel::InitLookAndFeel()
     GtkWidget *menuitem = gtk_menu_item_new();
     GtkWidget *menu = gtk_menu_new();
 
-    g_object_ref_sink(GTK_OBJECT(menu));
+    g_object_ref_sink(menu);
 
     gtk_container_add(GTK_CONTAINER(menuitem), accel_label);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), menuitem);

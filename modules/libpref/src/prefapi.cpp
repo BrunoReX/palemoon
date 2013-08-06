@@ -45,12 +45,8 @@
 #define PL_ARENA_CONST_ALIGN_MASK 3
 #include "plarena.h"
 
-#if defined(XP_MAC)
-  #include <stat.h>
-#else
-  #ifdef XP_OS2
-    #include <sys/types.h>
-  #endif
+#ifdef XP_OS2
+  #include <sys/types.h>
 #endif
 #ifdef _WIN32
   #include "windows.h"
@@ -613,7 +609,6 @@ PREF_ClearUserPref(const char *pref_name)
     if (!gHashTable.ops)
         return NS_ERROR_NOT_INITIALIZED;
 
-    nsresult rv = NS_ERROR_UNEXPECTED;
     PrefHashEntry* pref = pref_HashTableLookup(pref_name);
     if (pref && PREF_HAS_USER_VALUE(pref))
     {
@@ -629,9 +624,8 @@ PREF_ClearUserPref(const char *pref_name)
 
         pref_DoCallback(pref_name);
         gDirty = PR_TRUE;
-        rv = NS_OK;
     }
-    return rv;
+    return NS_OK;
 }
 
 static PLDHashOperator

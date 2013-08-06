@@ -39,7 +39,7 @@
 #include "nsCoreUtils.h"
 #include "nsAccUtils.h"
 
-#include "nsIAccessibleStates.h"
+#include "States.h"
 #include "nsIAccessibleTypes.h"
 
 #include "nsAccessibilityService.h"
@@ -160,10 +160,10 @@ nsAccUtils::GetPositionAndSizeForXULSelectControlItem(nsIContent *aContent,
     control->GetItemAtIndex(index, getter_AddRefs(currItem));
     nsCOMPtr<nsINode> currNode(do_QueryInterface(currItem));
 
-    nsAccessible* itemAcc = GetAccService()->GetAccessible(currNode);
+    nsAccessible* itemAcc = currNode ?
+      GetAccService()->GetAccessible(currNode) : nsnull;
 
-    if (!itemAcc ||
-        State(itemAcc) & nsIAccessibleStates::STATE_INVISIBLE) {
+    if (!itemAcc || itemAcc->State() & states::INVISIBLE) {
       (*aSetSize)--;
       if (index < static_cast<PRUint32>(indexOf))
         (*aPosInSet)--;
@@ -202,15 +202,15 @@ nsAccUtils::GetPositionAndSizeForXULContainerItem(nsIContent *aContent,
     container->GetItemAtIndex(index, getter_AddRefs(item));
     nsCOMPtr<nsINode> itemNode(do_QueryInterface(item));
 
-    nsAccessible* itemAcc = GetAccService()->GetAccessible(itemNode);
+    nsAccessible* itemAcc = itemNode ?
+      GetAccService()->GetAccessible(itemNode) : nsnull;
 
     if (itemAcc) {
       PRUint32 itemRole = Role(itemAcc);
       if (itemRole == nsIAccessibleRole::ROLE_SEPARATOR)
         break; // We reached the beginning of our group.
 
-      PRUint32 itemState = State(itemAcc);
-      if (!(itemState & nsIAccessibleStates::STATE_INVISIBLE)) {
+      if (!(itemAcc->State() & states::INVISIBLE)) {
         (*aSetSize)++;
         (*aPosInSet)++;
       }
@@ -222,16 +222,16 @@ nsAccUtils::GetPositionAndSizeForXULContainerItem(nsIContent *aContent,
     nsCOMPtr<nsIDOMXULElement> item;
     container->GetItemAtIndex(index, getter_AddRefs(item));
     nsCOMPtr<nsINode> itemNode(do_QueryInterface(item));
-    
-    nsAccessible* itemAcc = GetAccService()->GetAccessible(itemNode);
+
+    nsAccessible* itemAcc =
+      itemNode ? GetAccService()->GetAccessible(itemNode) : nsnull;
 
     if (itemAcc) {
       PRUint32 itemRole = Role(itemAcc);
       if (itemRole == nsIAccessibleRole::ROLE_SEPARATOR)
         break; // We reached the end of our group.
 
-      PRUint32 itemState = State(itemAcc);
-      if (!(itemState & nsIAccessibleStates::STATE_INVISIBLE))
+      if (!(itemAcc->State() & states::INVISIBLE))
         (*aSetSize)++;
     }
   }
@@ -349,13 +349,13 @@ nsAccUtils::GetAncestorWithRole(nsAccessible *aDescendant, PRUint32 aRole)
   return nsnull;
 }
 
-nsAccessible *
-nsAccUtils::GetSelectableContainer(nsAccessible *aAccessible, PRUint32 aState)
+nsAccessible*
+nsAccUtils::GetSelectableContainer(nsAccessible* aAccessible, PRUint64 aState)
 {
   if (!aAccessible)
     return nsnull;
 
-  if (!(aState & nsIAccessibleStates::STATE_SELECTABLE))
+  if (!(aState & states::SELECTABLE))
     return nsnull;
 
   nsAccessible* parent = aAccessible;
@@ -366,15 +366,17 @@ nsAccUtils::GetSelectableContainer(nsAccessible *aAccessible, PRUint32 aState)
   return parent;
 }
 
-nsAccessible *
-nsAccUtils::GetMultiSelectableContainer(nsINode *aNode)
+nsAccessible*
+nsAccUtils::GetMultiSelectableContainer(nsINode* aNode)
 {
-  nsAccessible *accessible = GetAccService()->GetAccessible(aNode);
-  nsAccessible *container = GetSelectableContainer(accessible,
-                                                   State(accessible));
+  nsAccessible* accessible = GetAccService()->GetAccessible(aNode);
+  if (accessible) {
+    nsAccessible* container = GetSelectableContainer(accessible,
+                                                     accessible->State());
+    if (container && container->State() & states::MULTISELECTABLE)
+      return container;
+  }
 
-  if (State(container) & nsIAccessibleStates::STATE_MULTISELECTABLE)
-    return container;
   return nsnull;
 }
 

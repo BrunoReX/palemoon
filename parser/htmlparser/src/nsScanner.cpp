@@ -90,7 +90,6 @@ const int   kBufsize=64;
  */
 nsScanner::nsScanner(const nsAString& anHTMLString, const nsACString& aCharset,
                      PRInt32 aSource)
-  : mParser(nsnull)
 {
   MOZ_COUNT_CTOR(nsScanner);
 
@@ -123,7 +122,7 @@ nsScanner::nsScanner(const nsAString& anHTMLString, const nsACString& aCharset,
  */
 nsScanner::nsScanner(nsString& aFilename,PRBool aCreateStream,
                      const nsACString& aCharset, PRInt32 aSource)
-  : mFilename(aFilename), mParser(nsnull)
+  : mFilename(aFilename)
 {
   MOZ_COUNT_CTOR(nsScanner);
   NS_ASSERTION(!aCreateStream, "This is always true.");
@@ -210,9 +209,7 @@ nsresult nsScanner::SetDocumentCharset(const nsACString& aCharset , PRInt32 aSou
  */
 nsScanner::~nsScanner() {
 
-  if (mSlidingBuffer) {
-    delete mSlidingBuffer;
-  }
+  delete mSlidingBuffer;
 
   MOZ_COUNT_DTOR(nsScanner);
 }
@@ -1166,14 +1163,6 @@ PRBool nsScanner::AppendToBuffer(nsScannerString::Buffer* aBuf,
                                  nsIRequest *aRequest,
                                  PRInt32 aErrorPos)
 {
-  if (nsParser::sParserDataListeners && mParser &&
-      NS_FAILED(mParser->DataAdded(Substring(aBuf->DataStart(),
-                                             aBuf->DataEnd()), aRequest))) {
-    // Don't actually append on failure.
-
-    return mSlidingBuffer != nsnull;
-  }
-
   PRUint32 countRemaining = mCountRemaining;
   if (!mSlidingBuffer) {
     mSlidingBuffer = new nsScannerString(aBuf);

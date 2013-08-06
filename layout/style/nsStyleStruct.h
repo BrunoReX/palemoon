@@ -81,8 +81,8 @@ struct nsCSSValueList;
 #define NS_STYLE_INHERIT_MASK             0x00ffffff
 
 // Additional bits for nsStyleContext's mBits:
-// See nsStyleContext::HasTextDecorations
-#define NS_STYLE_HAS_TEXT_DECORATIONS     0x01000000
+// See nsStyleContext::HasTextDecorationLines
+#define NS_STYLE_HAS_TEXT_DECORATION_LINES 0x01000000
 // See nsStyleContext::HasPseudoElementData.
 #define NS_STYLE_HAS_PSEUDO_ELEMENT_DATA  0x02000000
 // See nsStyleContext::RelevantLinkIsVisited
@@ -351,17 +351,7 @@ struct nsStyleBackground {
   struct Position;
   friend struct Position;
   struct Position {
-    struct PositionCoord {
-      // A 'background-position' can be a linear combination of length
-      // and percent (thanks to calc(), which can combine them).
-      nscoord mLength;
-      float   mPercent;
-
-      bool operator==(const PositionCoord& aOther) const
-        { return mLength == aOther.mLength && mPercent == aOther.mPercent; }
-      bool operator!=(const PositionCoord& aOther) const
-        { return !(*this == aOther); }
-    };
+    typedef nsStyleCoord::Calc PositionCoord;
     PositionCoord mXPosition, mYPosition;
 
     // Initialize nothing
@@ -388,17 +378,7 @@ struct nsStyleBackground {
   struct Size;
   friend struct Size;
   struct Size {
-    struct Dimension {
-      // A 'background-size' can be a linear combination of length
-      // and percent (thanks to calc(), which can combine them).
-      nscoord mLength;
-      float   mPercent;
-
-      bool operator==(const Dimension& aOther) const
-        { return mLength == aOther.mLength && mPercent == aOther.mPercent; }
-      bool operator!=(const Dimension& aOther) const
-        { return !(*this == aOther); }
-    };
+    typedef nsStyleCoord::Calc Dimension;
     Dimension mWidth, mHeight;
 
     // Except for eLengthPercentage, Dimension types which might change
@@ -802,14 +782,14 @@ struct nsStyleBorder {
   {
     nscoord roundedWidth =
       NS_ROUND_BORDER_TO_PIXELS(aBorderWidth, mTwipsPerPixel);
-    mBorder.side(aSide) = roundedWidth;
+    mBorder.Side(aSide) = roundedWidth;
     if (HasVisibleStyle(aSide))
-      mComputedBorder.side(aSide) = roundedWidth;
+      mComputedBorder.Side(aSide) = roundedWidth;
   }
 
   void SetBorderImageWidthOverride(mozilla::css::Side aSide, nscoord aBorderWidth)
   {
-    mBorderImageWidth.side(aSide) =
+    mBorderImageWidth.Side(aSide) =
       NS_ROUND_BORDER_TO_PIXELS(aBorderWidth, mTwipsPerPixel);
   }
 
@@ -834,7 +814,7 @@ struct nsStyleBorder {
   // value is rounded to the nearest device pixel by NS_ROUND_BORDER_TO_PIXELS.
   nscoord GetActualBorderWidth(mozilla::css::Side aSide) const
   {
-    return GetActualBorder().side(aSide);
+    return GetActualBorder().Side(aSide);
   }
 
   PRUint8 GetBorderStyle(mozilla::css::Side aSide) const
@@ -848,8 +828,8 @@ struct nsStyleBorder {
     NS_ASSERTION(aSide <= NS_SIDE_LEFT, "bad side");
     mBorderStyle[aSide] &= ~BORDER_STYLE_MASK;
     mBorderStyle[aSide] |= (aStyle & BORDER_STYLE_MASK);
-    mComputedBorder.side(aSide) =
-      (HasVisibleStyle(aSide) ? mBorder.side(aSide) : 0);
+    mComputedBorder.Side(aSide) =
+      (HasVisibleStyle(aSide) ? mBorder.Side(aSide) : 0);
   }
 
   // Defined in nsStyleStructInlines.h
@@ -1165,16 +1145,58 @@ struct nsStyleTextReset {
     aContext->FreeToShell(sizeof(nsStyleTextReset), this);
   }
 
+  PRUint8 GetDecorationStyle() const
+  {
+    return (mTextDecorationStyle & BORDER_STYLE_MASK);
+  }
+
+  void SetDecorationStyle(PRUint8 aStyle)
+  {
+    NS_ABORT_IF_FALSE((aStyle & BORDER_STYLE_MASK) == aStyle,
+                      "style doesn't fit");
+    mTextDecorationStyle &= ~BORDER_STYLE_MASK;
+    mTextDecorationStyle |= (aStyle & BORDER_STYLE_MASK);
+  }
+
+  void GetDecorationColor(nscolor& aColor, PRBool& aForeground) const
+  {
+    aForeground = PR_FALSE;
+    if ((mTextDecorationStyle & BORDER_COLOR_SPECIAL) == 0) {
+      aColor = mTextDecorationColor;
+    } else if (mTextDecorationStyle & BORDER_COLOR_FOREGROUND) {
+      aForeground = PR_TRUE;
+    } else {
+      NS_NOTREACHED("OUTLINE_COLOR_INITIAL should not be set here");
+    }
+  }
+
+  void SetDecorationColor(nscolor aColor)
+  {
+    mTextDecorationColor = aColor;
+    mTextDecorationStyle &= ~BORDER_COLOR_SPECIAL;
+  }
+
+  void SetDecorationColorToForeground()
+  {
+    mTextDecorationStyle &= ~BORDER_COLOR_SPECIAL;
+    mTextDecorationStyle |= BORDER_COLOR_FOREGROUND;
+  }
+
   nsChangeHint CalcDifference(const nsStyleTextReset& aOther) const;
 #ifdef DEBUG
   static nsChangeHint MaxDifference();
 #endif
   static PRBool ForceCompare() { return PR_FALSE; }
 
-  PRUint8 mTextDecoration;              // [reset] see nsStyleConsts.h
-  PRUint8 mUnicodeBidi;                 // [reset] see nsStyleConsts.h
-
   nsStyleCoord  mVerticalAlign;         // [reset] coord, percent, calc, enum (see nsStyleConsts.h)
+
+  PRUint8 mTextBlink;                   // [reset] see nsStyleConsts.h
+  PRUint8 mTextDecorationLine;          // [reset] see nsStyleConsts.h
+  PRUint8 mUnicodeBidi;                 // [reset] see nsStyleConsts.h
+protected:
+  PRUint8 mTextDecorationStyle;         // [reset] see nsStyleConsts.h
+
+  nscolor mTextDecorationColor;         // [reset] the colors to use for a decoration lines, not used at currentColor
 };
 
 struct nsStyleText {
@@ -1200,6 +1222,7 @@ struct nsStyleText {
   PRUint8 mTextTransform;               // [inherited] see nsStyleConsts.h
   PRUint8 mWhiteSpace;                  // [inherited] see nsStyleConsts.h
   PRUint8 mWordWrap;                    // [inherited] see nsStyleConsts.h
+  PRUint8 mHyphens;                     // [inherited] see nsStyleConsts.h
   PRInt32 mTabSize;                     // [inherited] see nsStyleConsts.h
 
   nsStyleCoord  mLetterSpacing;         // [inherited] coord, normal
@@ -1293,16 +1316,8 @@ struct nsTimingFunction {
   }
 
   nsTimingFunction(const nsTimingFunction& aOther)
-    : mType(aOther.mType)
   {
-    if (mType == Function) {
-      mFunc.mX1 = aOther.mFunc.mX1;
-      mFunc.mY1 = aOther.mFunc.mY1;
-      mFunc.mX2 = aOther.mFunc.mX2;
-      mFunc.mY2 = aOther.mFunc.mY2;
-    } else {
-      mSteps = aOther.mSteps;
-    }
+    *this = aOther;
   }
 
   Type mType;
@@ -1315,6 +1330,26 @@ struct nsTimingFunction {
     } mFunc;
     PRUint32 mSteps;
   };
+
+  nsTimingFunction&
+  operator=(const nsTimingFunction& aOther)
+  {
+    if (&aOther == this)
+      return *this;
+
+    mType = aOther.mType;
+
+    if (mType == Function) {
+      mFunc.mX1 = aOther.mFunc.mX1;
+      mFunc.mY1 = aOther.mFunc.mY1;
+      mFunc.mX2 = aOther.mFunc.mX2;
+      mFunc.mY2 = aOther.mFunc.mY2;
+    } else {
+      mSteps = aOther.mSteps;
+    }
+
+    return *this;
+  }
 
   bool operator==(const nsTimingFunction& aOther) const
   {
@@ -1367,6 +1402,8 @@ struct nsTransition {
       mUnknownProperty = aOther.mUnknownProperty;
     }
 
+  nsTimingFunction& TimingFunctionSlot() { return mTimingFunction; }
+
 private:
   nsTimingFunction mTimingFunction;
   float mDuration;
@@ -1405,6 +1442,8 @@ struct nsAnimation {
   void SetIterationCount(float aIterationCount)
     { mIterationCount = aIterationCount; }
 
+  nsTimingFunction& TimingFunctionSlot() { return mTimingFunction; }
+
 private:
   nsTimingFunction mTimingFunction;
   float mDuration;
@@ -1438,7 +1477,7 @@ struct nsStyleDisplay {
 #endif
   static PRBool ForceCompare() { return PR_TRUE; }
 
-  // We guarantee that if mBinding is non-null, so are mBinding->mURI and
+  // We guarantee that if mBinding is non-null, so are mBinding->GetURI() and
   // mBinding->mOriginPrincipal.
   nsRefPtr<nsCSSValue::URL> mBinding;    // [reset]
   nsRect    mClip;              // [reset] offsets from upper-left border edge
@@ -1455,6 +1494,7 @@ struct nsStyleDisplay {
   PRUint8 mOverflowY;           // [reset] see nsStyleConsts.h
   PRUint8 mResize;              // [reset] see nsStyleConsts.h
   PRUint8   mClipFlags;         // [reset] see nsStyleConsts.h
+  PRUint8 mOrient;              // [reset] see nsStyleConsts.h
 
   // mSpecifiedTransform is the list of transform functions as
   // specified, or null to indicate there is no transform.  (inherit or

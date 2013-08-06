@@ -94,6 +94,7 @@ public:
     void AddFontEntry(gfxFontEntry *aFontEntry) {
         nsRefPtr<gfxFontEntry> fe = aFontEntry;
         mAvailableFonts.AppendElement(fe);
+        aFontEntry->SetFamily(this);
     }
 
     void ReplaceFontEntry(gfxFontEntry *aOldFontEntry, gfxFontEntry *aNewFontEntry) 
@@ -102,7 +103,11 @@ public:
         for (PRUint32 i = 0; i < numFonts; i++) {
             gfxFontEntry *fe = mAvailableFonts[i];
             if (fe == aOldFontEntry) {
+                aOldFontEntry->SetFamily(nsnull);
+                // note that this may delete aOldFontEntry, if there's no
+                // other reference to it except from its family
                 mAvailableFonts[i] = aNewFontEntry;
+                aNewFontEntry->SetFamily(this);
                 return;
             }
         }
@@ -114,6 +119,7 @@ public:
         for (PRUint32 i = 0; i < numFonts; i++) {
             gfxFontEntry *fe = mAvailableFonts[i];
             if (fe == aFontEntry) {
+                aFontEntry->SetFamily(nsnull);
                 mAvailableFonts.RemoveElementAt(i);
                 return;
             }
@@ -172,14 +178,17 @@ public:
     // weight, stretch - 0 == unknown, [1, 9] otherwise
     // italic style = constants in gfxFontConstants.h, e.g. NS_FONT_STYLE_NORMAL
     // TODO: support for unicode ranges not yet implemented
-    void AddFontFace(const nsAString& aFamilyName,
-                     const nsTArray<gfxFontFaceSrc>& aFontFaceSrcList,
-                     PRUint32 aWeight,
-                     PRUint32 aStretch,
-                     PRUint32 aItalicStyle,
-                     const nsString& aFeatureSettings,
-                     const nsString& aLanguageOverride,
-                     gfxSparseBitSet *aUnicodeRanges = nsnull);
+    gfxFontEntry *AddFontFace(const nsAString& aFamilyName,
+                              const nsTArray<gfxFontFaceSrc>& aFontFaceSrcList,
+                              PRUint32 aWeight,
+                              PRUint32 aStretch,
+                              PRUint32 aItalicStyle,
+                              const nsString& aFeatureSettings,
+                              const nsString& aLanguageOverride,
+                              gfxSparseBitSet *aUnicodeRanges = nsnull);
+
+    // add in a font face for which we have the gfxFontEntry already
+    void AddFontFace(const nsAString& aFamilyName, gfxFontEntry* aFontEntry);
 
     // Whether there is a face with this family name
     PRBool HasFamily(const nsAString& aFamilyName) const
@@ -196,7 +205,7 @@ public:
                                 
     // initialize the process that loads external font data, which upon 
     // completion will call OnLoadComplete method
-    virtual nsresult StartLoad(gfxFontEntry *aFontToLoad, 
+    virtual nsresult StartLoad(gfxProxyFontEntry *aProxy, 
                                const gfxFontFaceSrc *aFontFaceSrc) = 0;
 
     // when download has been completed, pass back data here
@@ -205,9 +214,15 @@ public:
     // reference was next in line)
     // Ownership of aFontData is passed in here; the font set must
     // ensure that it is eventually deleted with NS_Free().
-    PRBool OnLoadComplete(gfxFontEntry *aFontToLoad,
+    PRBool OnLoadComplete(gfxProxyFontEntry *aProxy,
                           const PRUint8 *aFontData, PRUint32 aLength,
                           nsresult aDownloadStatus);
+
+    // Replace a proxy with a real fontEntry; this is implemented in
+    // nsUserFontSet in order to keep track of the entry corresponding
+    // to each @font-face rule.
+    virtual void ReplaceFontEntry(gfxProxyFontEntry *aProxy,
+                                  gfxFontEntry *aFontEntry) = 0;
 
     // generation - each time a face is loaded, generation is
     // incremented so that the change can be recognized 
@@ -222,9 +237,6 @@ protected:
     LoadStatus LoadNext(gfxProxyFontEntry *aProxyEntry);
 
     gfxMixedFontFamily *GetFamily(const nsAString& aName) const;
-
-    // remove family
-    void RemoveFamily(const nsAString& aFamilyName);
 
     // font families defined by @font-face rules
     nsRefPtrHashtable<nsStringHashKey, gfxMixedFontFamily> mFontFamilies;

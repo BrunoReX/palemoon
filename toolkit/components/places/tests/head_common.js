@@ -256,16 +256,17 @@ function dump_table(aName)
 
 /**
  * Checks if an address is found in the database.
- * @param aUrl
- *        Address to look for.
+ * @param aURI
+ *        nsIURI or address to look for.
  * @return place id of the page or 0 if not found
  */
-function page_in_database(aUrl)
+function page_in_database(aURI)
 {
+  let url = aURI instanceof Ci.nsIURI ? aURI.spec : aURI;
   let stmt = DBConn().createStatement(
     "SELECT id FROM moz_places WHERE url = :url"
   );
-  stmt.params.url = aUrl;
+  stmt.params.url = url;
   try {
     if (!stmt.executeStep())
       return 0;
@@ -276,6 +277,30 @@ function page_in_database(aUrl)
   }
 }
 
+/**
+ * Checks how many visits exist for a specified page.
+ * @param aURI
+ *        nsIURI or address to look for.
+ * @return number of visits found.
+ */
+function visits_in_database(aURI)
+{
+  let url = aURI instanceof Ci.nsIURI ? aURI.spec : aURI;
+  let stmt = DBConn().createStatement(
+    "SELECT count(*) FROM moz_historyvisits v "
+  + "JOIN moz_places h ON h.id = v.place_id "
+  + "WHERE url = :url"
+  );
+  stmt.params.url = url;
+  try {
+    if (!stmt.executeStep())
+      return 0;
+    return stmt.getInt64(0);
+  }
+  finally {
+    stmt.finalize();
+  }
+}
 
 /**
  * Removes all bookmarks and checks for correct cleanup
@@ -645,40 +670,6 @@ function do_check_guid_for_uri(aURI,
 function do_log_info(aMessage)
 {
   print("TEST-INFO | " + _TEST_FILE + " | " + aMessage);
-}
-
-/**
- * Runs the next test in the gTests array.  gTests should be a array defined in
- * each test file.
- */
-let gRunningTest = null;
-let gTestIndex = 0; // The index of the currently running test.
-function run_next_test()
-{
-  function _run_next_test()
-  {
-    if (gTestIndex < gTests.length) {
-      do_test_pending();
-      gRunningTest = gTests[gTestIndex++];
-      print("TEST-INFO | " + _TEST_FILE + " | Starting " +
-            gRunningTest.name);
-      // Exceptions do not kill asynchronous tests, so they'll time out.
-      try {
-        gRunningTest();
-      }
-      catch (e) {
-        do_throw(e);
-      }
-    }
-  }
-
-  // For sane stacks during failures, we execute this code soon, but not now.
-  do_execute_soon(_run_next_test);
-
-  if (gRunningTest !== null) {
-    // Close the previous test do_test_pending call.
-    do_test_finished();
-  }
 }
 
 /**

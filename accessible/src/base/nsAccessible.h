@@ -120,6 +120,11 @@ public:
   // Public methods
 
   /**
+   * get the description of this accessible
+   */
+  virtual void Description(nsString& aDescription);
+
+  /**
    * Returns the accessible name specified by ARIA.
    */
   nsresult GetARIAName(nsAString& aName);
@@ -130,9 +135,8 @@ public:
    * method.
    *
    * @param  [in/out] where to fill the states into.
-   * @param  [in/out] where to fill the extra states into
    */
-  virtual nsresult GetARIAState(PRUint32 *aState, PRUint32 *aExtraState);
+  virtual void ApplyARIAState(PRUint64* aState);
 
   /**
    * Returns the accessible name provided by native markup. It doesn't take
@@ -176,12 +180,15 @@ public:
   virtual PRUint32 NativeRole();
 
   /**
-   * Return the state of accessible that doesn't take into account ARIA states.
-   * Use nsIAccessible::state to get all states for accessible. If
-   * second argument is omitted then second bit field of accessible state won't
-   * be calculated.
+   * Return all states of accessible (including ARIA states).
    */
-  virtual nsresult GetStateInternal(PRUint32 *aState, PRUint32 *aExtraState);
+  virtual PRUint64 State();
+
+  /**
+   * Return the states of accessible, not taking into account ARIA states.
+   * Use State() to get complete set of states.
+   */
+  virtual PRUint64 NativeState();
 
   /**
    * Returns attributes for accessible without explicitly setted ARIA
@@ -369,6 +376,9 @@ public:
 
   inline bool IsApplication() const { return mFlags & eApplicationAccessible; }
 
+  inline bool IsDoc() const { return mFlags & eDocAccessible; }
+  nsDocAccessible* AsDoc();
+
   inline bool IsHyperText() const { return mFlags & eHyperTextAccessible; }
   nsHyperTextAccessible* AsHyperText();
 
@@ -522,10 +532,11 @@ protected:
    */
   enum AccessibleTypes {
     eApplicationAccessible = 1 << 2,
-    eHyperTextAccessible = 1 << 3,
-    eHTMLListItemAccessible = 1 << 4,
-    eRootAccessible = 1 << 5,
-    eTextLeafAccessible = 1 << 6
+    eDocAccessible = 1 << 3,
+    eHyperTextAccessible = 1 << 4,
+    eHTMLListItemAccessible = 1 << 5,
+    eRootAccessible = 1 << 6,
+    eTextLeafAccessible = 1 << 7
   };
 
   //////////////////////////////////////////////////////////////////////////////
@@ -620,7 +631,7 @@ protected:
    *
    * @param aStates  [in] states of the accessible
    */
-  PRUint32 GetActionRule(PRUint32 aStates);
+  PRUint32 GetActionRule(PRUint64 aStates);
 
   /**
    * Return group info.

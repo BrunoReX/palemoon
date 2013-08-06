@@ -99,7 +99,6 @@ private:
   nsCOMArray<nsISHEntry>          mChildren;
   PRUint32                        mLoadType;
   PRUint32                        mID;
-  PRUint32                        mPageIdentifier;
   PRInt64                         mDocIdentifier;
   PRInt32                         mScrollPositionX;
   PRInt32                         mScrollPositionY;
@@ -118,9 +117,9 @@ private:
   nsCOMPtr<nsISupports>           mOwner;
   nsExpirationState               mExpirationState;
   nsAutoPtr<nsDocShellEditorData> mEditorData;
-  nsString                        mStateData;
   PRUint64                        mDocShellID;
   PRUint32                        mLastTouched;
+  nsCOMPtr<nsIStructuredCloneContainer> mStateData;
 };
 
 #endif /* nsSHEntry_h */

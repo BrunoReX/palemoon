@@ -145,6 +145,7 @@ TabChild::Init()
 }
 
 NS_INTERFACE_MAP_BEGIN(TabChild)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIWebBrowserChrome)
   NS_INTERFACE_MAP_ENTRY(nsIWebBrowserChrome)
   NS_INTERFACE_MAP_ENTRY(nsIWebBrowserChrome2)
   NS_INTERFACE_MAP_ENTRY(nsIEmbeddingSiteWindow)
@@ -356,6 +357,7 @@ TabChild::ProvideWindow(nsIDOMWindow* aParent, PRUint32 aChromeFlags,
         return NS_ERROR_NOT_AVAILABLE;
     }
 
+    *aWindowIsNew = PR_TRUE;
     nsCOMPtr<nsIDOMWindow> win =
         do_GetInterface(static_cast<TabChild*>(newChild)->mWebNav);
     win.forget(aReturn);
@@ -753,9 +755,11 @@ TabChild::RecvAsyncMessage(const nsString& aMessage,
                            const nsString& aJSON)
 {
   if (mTabChildGlobal) {
-    static_cast<nsFrameMessageManager*>(mTabChildGlobal->mMessageManager.get())->
-      ReceiveMessage(static_cast<nsPIDOMEventTarget*>(mTabChildGlobal),
-                     aMessage, PR_FALSE, aJSON, nsnull, nsnull);
+    nsFrameScriptCx cx(static_cast<nsIWebBrowserChrome*>(this), this);
+    nsRefPtr<nsFrameMessageManager> mm =
+      static_cast<nsFrameMessageManager*>(mTabChildGlobal->mMessageManager.get());
+    mm->ReceiveMessage(static_cast<nsPIDOMEventTarget*>(mTabChildGlobal),
+                       aMessage, PR_FALSE, aJSON, nsnull, nsnull);
   }
   return true;
 }
@@ -847,6 +851,7 @@ TabChild::InitTabChildGlobal()
 
   JS_SetOptions(cx, JS_GetOptions(cx) | JSOPTION_JIT | JSOPTION_ANONFUNFIX | JSOPTION_PRIVATE_IS_NSISUPPORTS);
   JS_SetVersion(cx, JSVERSION_LATEST);
+  JS_SetErrorReporter(cx, ContentScriptErrorReporter);
 
   xpc_LocalizeContext(cx);
 
@@ -899,7 +904,7 @@ TabChild::InitWidget(const nsIntSize& size)
         nsnull, 0,              // no parents
         nsIntRect(nsIntPoint(0, 0), size),
         nsnull,                 // HandleWidgetEvent
-        nsnull                  // nsIDeviceContext
+        nsnull                  // nsDeviceContext
         );
 
     RenderFrameChild* remoteFrame =

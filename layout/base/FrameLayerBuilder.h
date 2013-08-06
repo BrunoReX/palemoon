@@ -226,7 +226,7 @@ public:
    */
   void AddLayerDisplayItem(Layer* aLayer,
                            nsDisplayItem* aItem,
-                           LayerState aLayerState = LAYER_ACTIVE);
+                           LayerState aLayerState);
 
   /**
    * Record aItem as a display item that is rendered by the ThebesLayer
@@ -299,6 +299,18 @@ public:
   static PRBool HasRetainedLayerFor(nsIFrame* aFrame, PRUint32 aDisplayItemKey);
 
   /**
+   * Save transform that was in aLayer when we last painted. It must be an integer
+   * translation.
+   */
+  void SaveLastPaintOffset(ThebesLayer* aLayer);
+  /**
+   * Get the translation transform that was in aLayer when we last painted. It's either
+   * the transform saved by SaveLastPaintTransform, or else the transform
+   * that's currently in the layer (which must be an integer translation).
+   */
+  nsIntPoint GetLastPaintOffset(ThebesLayer* aLayer);
+
+  /**
    * Clip represents the intersection of an optional rectangle with a
    * list of rounded rectangles.
    */
@@ -309,7 +321,7 @@ public:
       nscoord mRadii[8];
 
       bool operator==(const RoundedRect& aOther) const {
-        if (mRect != aOther.mRect) {
+        if (!mRect.IsEqualInterior(aOther.mRect)) {
           return false;
         }
 
@@ -356,7 +368,7 @@ public:
 
     bool operator==(const Clip& aOther) const {
       return mHaveClipRect == aOther.mHaveClipRect &&
-             (!mHaveClipRect || mClipRect == aOther.mClipRect) &&
+             (!mHaveClipRect || mClipRect.IsEqualInterior(aOther.mClipRect)) &&
              mRoundedClipRects == aOther.mRoundedClipRects;
     }
     bool operator!=(const Clip& aOther) const {
@@ -441,7 +453,9 @@ protected:
    */
   class ThebesLayerItemsEntry : public nsPtrHashKey<ThebesLayer> {
   public:
-    ThebesLayerItemsEntry(const ThebesLayer *key) : nsPtrHashKey<ThebesLayer>(key) {}
+    ThebesLayerItemsEntry(const ThebesLayer *key) :
+        nsPtrHashKey<ThebesLayer>(key), mContainerLayerFrame(nsnull),
+        mHasExplicitLastPaintOffset(PR_FALSE) {}
     ThebesLayerItemsEntry(const ThebesLayerItemsEntry &toCopy) :
       nsPtrHashKey<ThebesLayer>(toCopy.mKey), mItems(toCopy.mItems)
     {
@@ -450,6 +464,10 @@ protected:
 
     nsTArray<ClippedDisplayItem> mItems;
     nsIFrame* mContainerLayerFrame;
+    // The translation set on this ThebesLayer before we started updating the
+    // layer tree.
+    nsIntPoint mLastPaintOffset;
+    PRPackedBool mHasExplicitLastPaintOffset;
 
     enum { ALLOW_MEMMOVE = PR_TRUE };
   };

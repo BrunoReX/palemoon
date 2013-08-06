@@ -53,7 +53,7 @@ namespace xpc {
 
 using namespace js;
 
-static const uint32 JSSLOT_WN_OBJ = 0;
+static const uint32 JSSLOT_WN = 0;
 static const uint32 JSSLOT_RESOLVING = 1;
 static const uint32 JSSLOT_EXPANDO = 2;
 
@@ -129,13 +129,18 @@ GetWrappedNative(JSObject *obj)
     return static_cast<XPCWrappedNative *>(obj->getPrivate());
 }
 
-static JSObject *
-GetWrappedNativeObjectFromHolder(JSContext *cx, JSObject *holder)
+static XPCWrappedNative *
+GetWrappedNativeFromHolder(JSObject *holder)
 {
     NS_ASSERTION(holder->getJSClass() == &HolderClass, "expected a native property holder object");
-    JSObject *wrappedObj = &holder->getSlot(JSSLOT_WN_OBJ).toObject();
-    OBJ_TO_INNER_OBJECT(cx, wrappedObj);
-    return wrappedObj;
+    return static_cast<XPCWrappedNative *>(holder->getSlot(JSSLOT_WN).toPrivate());
+}
+
+static JSObject *
+GetWrappedNativeObjectFromHolder(JSObject *holder)
+{
+    NS_ASSERTION(holder->getJSClass() == &HolderClass, "expected a native property holder object");
+    return GetWrappedNativeFromHolder(holder)->GetFlatJSObject();
 }
 
 static JSObject *
@@ -154,7 +159,7 @@ EnsureExpandoObject(JSContext *cx, JSObject *holder)
         return expando;
     CompartmentPrivate *priv =
         (CompartmentPrivate *)JS_GetCompartmentPrivate(cx, holder->compartment());
-    XPCWrappedNative *wn = GetWrappedNative(GetWrappedNativeObjectFromHolder(cx, holder));
+    XPCWrappedNative *wn = GetWrappedNativeFromHolder(holder);
     expando = priv->LookupExpandoObject(wn);
     if (!expando) {
         expando = JS_NewObjectWithGivenProto(cx, nsnull, nsnull, holder->getParent());
@@ -175,17 +180,29 @@ EnsureExpandoObject(JSContext *cx, JSObject *holder)
     return expando;
 }
 
+static inline JSObject *
+FindWrapper(JSObject *wrapper)
+{
+    while (!wrapper->isWrapper() ||
+           !(JSWrapper::wrapperHandler(wrapper)->flags() & WrapperFactory::IS_XRAY_WRAPPER_FLAG)) {
+        wrapper = wrapper->getProto();
+        // NB: we must eventually hit our wrapper.
+    }
+
+    return wrapper;
+}
+
 // Some DOM objects have shared properties that don't have an explicit
 // getter/setter and rely on the class getter/setter. We install a
 // class getter/setter on the holder object to trigger them.
 static JSBool
 holder_get(JSContext *cx, JSObject *wrapper, jsid id, jsval *vp)
 {
-    NS_ASSERTION(wrapper->isProxy(), "bad this object in get");
+    wrapper = FindWrapper(wrapper);
+
     JSObject *holder = GetHolder(wrapper);
 
-    JSObject *wnObject = GetWrappedNativeObjectFromHolder(cx, holder);
-    XPCWrappedNative *wn = GetWrappedNative(wnObject);
+    XPCWrappedNative *wn = GetWrappedNativeFromHolder(holder);
     if (NATIVE_HAS_FLAG(wn, WantGetProperty)) {
         JSAutoEnterCompartment ac;
         if (!ac.enter(cx, holder))
@@ -204,15 +221,14 @@ holder_get(JSContext *cx, JSObject *wrapper, jsid id, jsval *vp)
 static JSBool
 holder_set(JSContext *cx, JSObject *wrapper, jsid id, JSBool strict, jsval *vp)
 {
-    NS_ASSERTION(wrapper->isProxy(), "bad this object in set");
+    wrapper = FindWrapper(wrapper);
+
     JSObject *holder = GetHolder(wrapper);
     if (IsResolving(holder, id)) {
         return true;
     }
 
-    JSObject *wnObject = GetWrappedNativeObjectFromHolder(cx, holder);
-
-    XPCWrappedNative *wn = GetWrappedNative(wnObject);
+    XPCWrappedNative *wn = GetWrappedNativeFromHolder(holder);
     if (NATIVE_HAS_FLAG(wn, WantSetProperty)) {
         JSAutoEnterCompartment ac;
         if (!ac.enter(cx, holder))
@@ -235,7 +251,7 @@ ResolveNativeProperty(JSContext *cx, JSObject *wrapper, JSObject *holder, jsid i
     desc->obj = NULL;
 
     NS_ASSERTION(holder->getJSClass() == &HolderClass, "expected a native property holder object");
-    JSObject *wnObject = GetWrappedNativeObjectFromHolder(cx, holder);
+    JSObject *wnObject = GetWrappedNativeObjectFromHolder(holder);
     XPCWrappedNative *wn = GetWrappedNative(wnObject);
 
     // This will do verification and the method lookup for us.
@@ -330,8 +346,8 @@ XrayToString(JSContext *cx, uintN argc, jsval *vp)
         return false;
     }
     JSObject *holder = GetHolder(wrapper);
-    JSObject *wrappednative = GetWrappedNativeObjectFromHolder(cx, holder);
-    XPCWrappedNative *wn = GetWrappedNative(wrappednative);
+    XPCWrappedNative *wn = GetWrappedNativeFromHolder(holder);
+    JSObject *wrappednative = wn->GetFlatJSObject();
 
     XPCCallContext ccx(JS_CALLER, cx, wrappednative);
     char *wrapperStr = wn->ToString(ccx);
@@ -463,8 +479,7 @@ XrayWrapper<Base>::resolveOwnProperty(JSContext *cx, JSObject *wrapper, jsid id,
         return false;
     }
     if (!hasProp) {
-        JSObject *wnObject = GetWrappedNativeObjectFromHolder(cx, holder);
-        XPCWrappedNative *wn = GetWrappedNative(wnObject);
+        XPCWrappedNative *wn = GetWrappedNativeFromHolder(holder);
 
         // Run the resolve hook of the wrapped native.
         if (!NATIVE_HAS_FLAG(wn, WantNewResolve)) {
@@ -526,7 +541,7 @@ XrayWrapper<Base>::getPropertyDescriptor(JSContext *cx, JSObject *wrapper, jsid 
 
     // Redirect access straight to the wrapper if we should be transparent.
     if (Transparent(cx, wrapper)) {
-        JSObject *wnObject = GetWrappedNativeObjectFromHolder(cx, holder);
+        JSObject *wnObject = GetWrappedNativeObjectFromHolder(holder);
 
         {
             JSAutoEnterCompartment ac;
@@ -597,7 +612,7 @@ XrayWrapper<Base>::getOwnPropertyDescriptor(JSContext *cx, JSObject *wrapper, js
     // enter our policy.
     // Redirect access straight to the wrapper if we should be transparent.
     if (Transparent(cx, wrapper)) {
-        JSObject *wnObject = GetWrappedNativeObjectFromHolder(cx, holder);
+        JSObject *wnObject = GetWrappedNativeObjectFromHolder(holder);
 
         {
             JSAutoEnterCompartment ac;
@@ -628,7 +643,7 @@ XrayWrapper<Base>::defineProperty(JSContext *cx, JSObject *wrapper, jsid id,
 
     // Redirect access straight to the wrapper if we should be transparent.
     if (Transparent(cx, wrapper)) {
-        JSObject *wnObject = GetWrappedNativeObjectFromHolder(cx, holder);
+        JSObject *wnObject = GetWrappedNativeObjectFromHolder(holder);
 
         JSAutoEnterCompartment ac;
         if (!ac.enter(cx, wnObject))
@@ -673,7 +688,7 @@ EnumerateNames(JSContext *cx, JSObject *wrapper, uintN flags, js::AutoIdVector &
 {
     JSObject *holder = GetHolder(wrapper);
 
-    JSObject *wnObject = GetWrappedNativeObjectFromHolder(cx, holder);
+    JSObject *wnObject = GetWrappedNativeObjectFromHolder(holder);
 
     // Redirect access straight to the wrapper if we should be transparent.
     if (Transparent(cx, wrapper)) {
@@ -734,7 +749,7 @@ XrayWrapper<Base>::delete_(JSContext *cx, JSObject *wrapper, jsid id, bool *bp)
 
     // Redirect access straight to the wrapper if we should be transparent.
     if (Transparent(cx, wrapper)) {
-        JSObject *wnObject = GetWrappedNativeObjectFromHolder(cx, holder);
+        JSObject *wnObject = GetWrappedNativeObjectFromHolder(holder);
 
         JSAutoEnterCompartment ac;
         if (!ac.enter(cx, wnObject))
@@ -832,8 +847,7 @@ bool
 XrayWrapper<Base>::call(JSContext *cx, JSObject *wrapper, uintN argc, js::Value *vp)
 {
     JSObject *holder = GetHolder(wrapper);
-    JSObject *wnObject = GetWrappedNativeObjectFromHolder(cx, holder);
-    XPCWrappedNative *wn = GetWrappedNative(wnObject);
+    XPCWrappedNative *wn = GetWrappedNativeFromHolder(holder);
 
     // Run the resolve hook of the wrapped native.
     if (NATIVE_HAS_FLAG(wn, WantCall)) {
@@ -861,8 +875,7 @@ XrayWrapper<Base>::construct(JSContext *cx, JSObject *wrapper, uintN argc,
                              js::Value *argv, js::Value *rval)
 {
     JSObject *holder = GetHolder(wrapper);
-    JSObject *wnObject = GetWrappedNativeObjectFromHolder(cx, holder);
-    XPCWrappedNative *wn = GetWrappedNative(wnObject);
+    XPCWrappedNative *wn = GetWrappedNativeFromHolder(holder);
 
     // Run the resolve hook of the wrapped native.
     if (NATIVE_HAS_FLAG(wn, WantConstruct)) {
@@ -901,9 +914,17 @@ XrayWrapper<Base>::createHolder(JSContext *cx, JSObject *wrappedNative, JSObject
     XPCWrappedNative *wn = GetWrappedNative(inner);
     Value expando = ObjectOrNullValue(priv->LookupExpandoObject(wn));
 
+    // A note about ownership: the holder has a direct pointer to the wrapped
+    // native that we're wrapping. Normally, we'd have to AddRef the pointer
+    // so that it doesn't have to be collected, but then we'd have to tell the
+    // cycle collector. Fortunately for us, we know that the Xray wrapper
+    // itself has a reference to the flat JS object which will hold the
+    // wrapped native alive. Furthermore, the reachability of that object and
+    // the associated holder are exactly the same, so we can use that for our
+    // strong reference.
     JS_ASSERT(IS_WN_WRAPPER(wrappedNative) ||
               wrappedNative->getClass()->ext.innerObject);
-    holder->setSlot(JSSLOT_WN_OBJ, ObjectValue(*wrappedNative));
+    holder->setSlot(JSSLOT_WN, PrivateValue(wn));
     holder->setSlot(JSSLOT_RESOLVING, PrivateValue(NULL));
     holder->setSlot(JSSLOT_EXPANDO, expando);
     return holder;

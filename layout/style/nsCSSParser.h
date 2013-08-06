@@ -46,11 +46,9 @@
 #include "nsCOMArray.h"
 #include "nsCOMPtr.h"
 
-class nsICSSRule;
 class nsCSSStyleSheet;
 class nsIPrincipal;
 class nsIURI;
-class nsIUnicharInputStream;
 struct nsCSSSelectorList;
 class nsMediaList;
 #ifdef MOZ_CSS_ANIMATIONS
@@ -59,6 +57,7 @@ class nsCSSKeyframeRule;
 
 namespace mozilla {
 namespace css {
+class Rule;
 class Declaration;
 class Loader;
 class StyleRule;
@@ -81,11 +80,6 @@ private:
   nsCSSParser& operator=(nsCSSParser const&);
 
 public:
-  // If this is false, memory allocation failed in the constructor
-  // and all other methods will crash.
-  operator bool() const
-  { return !!mImpl; }
-
   // Set a style sheet for the parser to fill in. The style sheet must
   // implement the nsCSSStyleSheet interface.  Null can be passed in to clear
   // out an existing stylesheet reference.
@@ -118,12 +112,12 @@ public:
    * @param aAllowUnsafeRules see aEnableUnsafeRules in
    *                          mozilla::css::Loader::LoadSheetSync
    */
-  nsresult Parse(nsIUnicharInputStream* aInput,
-                 nsIURI*                aSheetURL,
-                 nsIURI*                aBaseURI,
-                 nsIPrincipal*          aSheetPrincipal,
-                 PRUint32               aLineNumber,
-                 PRBool                 aAllowUnsafeRules);
+  nsresult ParseSheet(const nsAString& aInput,
+                      nsIURI*          aSheetURL,
+                      nsIURI*          aBaseURI,
+                      nsIPrincipal*    aSheetPrincipal,
+                      PRUint32         aLineNumber,
+                      PRBool           aAllowUnsafeRules);
 
   // Parse HTML style attribute or its equivalent in other markup
   // languages.  aBaseURL is the base url to use for relative links in
@@ -150,7 +144,7 @@ public:
                      nsIURI*                 aSheetURL,
                      nsIURI*                 aBaseURL,
                      nsIPrincipal*           aSheetPrincipal,
-                     nsCOMArray<nsICSSRule>& aResult);
+                     nsCOMArray<mozilla::css::Rule>& aResult);
 
   nsresult ParseProperty(const nsCSSProperty aPropID,
                          const nsAString&    aPropValue,

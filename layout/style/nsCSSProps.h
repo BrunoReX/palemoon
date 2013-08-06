@@ -113,11 +113,8 @@ PR_STATIC_ASSERT((CSS_PROPERTY_PARSE_PROPERTY_MASK &
 // should enforce that the value of this property must be 0 or larger.
 #define CSS_PROPERTY_VALUE_NONNEGATIVE            (1<<13)
 // The parser (in particular, CSSParserImpl::ParseSingleValueProperty)
-// should enforce that the value of this property must be greater than 0.
-#define CSS_PROPERTY_VALUE_POSITIVE_NONZERO       (2<<13)
-// The parser (in particular, CSSParserImpl::ParseSingleValueProperty)
 // should enforce that the value of this property must be 1 or larger.
-#define CSS_PROPERTY_VALUE_AT_LEAST_ONE           (3<<13)
+#define CSS_PROPERTY_VALUE_AT_LEAST_ONE           (2<<13)
 
 // NOTE: next free bit is (1<<15)
 
@@ -386,6 +383,7 @@ public:
   static const PRInt32 kLineHeightKTable[];
   static const PRInt32 kListStylePositionKTable[];
   static const PRInt32 kListStyleKTable[];
+  static const PRInt32 kOrientKTable[];
   static const PRInt32 kOutlineStyleKTable[];
   static const PRInt32 kOutlineColorKTable[];
   static const PRInt32 kOverflowKTable[];
@@ -408,7 +406,9 @@ public:
   static const PRInt32 kStackSizingKTable[];
   static const PRInt32 kTableLayoutKTable[];
   static const PRInt32 kTextAlignKTable[];
-  static const PRInt32 kTextDecorationKTable[];
+  static const PRInt32 kTextBlinkKTable[];
+  static const PRInt32 kTextDecorationLineKTable[];
+  static const PRInt32 kTextDecorationStyleKTable[];
   static const PRInt32 kTextTransformKTable[];
   static const PRInt32 kTransitionTimingFunctionKTable[];
   static const PRInt32 kUnicodeBidiKTable[];
@@ -423,6 +423,7 @@ public:
   static const PRInt32 kWidthKTable[]; // also min-width, max-width
   static const PRInt32 kWindowShadowKTable[];
   static const PRInt32 kWordwrapKTable[];
+  static const PRInt32 kHyphensKTable[];
 };
 
 #endif /* nsCSSProps_h___ */

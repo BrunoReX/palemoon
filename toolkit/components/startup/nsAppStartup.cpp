@@ -26,6 +26,7 @@
  *   Benjamin Smedberg <bsmedberg@covad.net>
  *   Daniel Brooks <db48x@db48x.net>
  *   Taras Glek <tglek@mozilla.com>
+ *   Landry Breuil <landry@openbsd.org>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either of the GNU General Public License Version 2 or later (the "GPL"),
@@ -90,11 +91,14 @@
 #include <sys/sysctl.h>
 #endif
 
+#ifdef __OpenBSD__
+#include <sys/param.h>
+#include <sys/sysctl.h>
+#endif
+
 static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
-#ifdef MOZ_ENABLE_LIBXUL
 extern PRTime gXRE_mainTimestamp;
 extern PRTime gFirstPaintTimestamp;
-#endif
 // mfinklesessionstore-browser-state-restored might be a better choice than the one below
 static PRTime gRestoredTimestamp = 0;       // Timestamp of sessionstore-windows-restored
 static PRTime gProcessCreationTimestamp = 0;// Timestamp of sessionstore-windows-restored
@@ -646,6 +650,25 @@ CalculateProcessCreationTimestamp()
   free(proc);
   return starttime;
 }
+#elif defined(__OpenBSD__)
+static PRTime
+CalculateProcessCreationTimestamp()
+{
+  int mib[6] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid(), sizeof(struct kinfo_proc), 1 };
+  size_t buffer_size;
+  if (sysctl(mib, 6, NULL, &buffer_size, NULL, 0))
+    return 0;
+
+  struct kinfo_proc *proc = (struct kinfo_proc*) malloc(buffer_size);
+  if (sysctl(mib, 6, proc, &buffer_size, NULL, 0)) {
+    free(proc);
+    return 0;
+  }
+  PRTime starttime = static_cast<PRTime>(proc->p_ustart_sec) * PR_USEC_PER_SEC;
+  starttime += proc->p_ustart_usec;
+  free(proc);
+  return starttime;
+}
 #else
 static PRTime
 CalculateProcessCreationTimestamp()
@@ -699,10 +722,8 @@ nsAppStartup::GetStartupInfo()
   }
 
   MaybeDefineProperty(cx, obj, "process", gProcessCreationTimestamp);
-#ifdef MOZ_ENABLE_LIBXUL
   MaybeDefineProperty(cx, obj, "main", gXRE_mainTimestamp);
   MaybeDefineProperty(cx, obj, "firstPaint", gFirstPaintTimestamp);
-#endif
   MaybeDefineProperty(cx, obj, "sessionRestored", gRestoredTimestamp);
   return NS_OK;
 }

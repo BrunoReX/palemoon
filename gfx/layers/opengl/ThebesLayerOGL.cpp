@@ -120,20 +120,22 @@ BindAndDrawQuadWithTextureRect(GLContext* aGl,
     GLContext::DecomposeIntoNoRepeatTriangles(aTexCoordRect, aTexSize, rects);
   }
 
+  // vertex position buffer is 2 floats, not normalized, 0 stride.
   aGl->fVertexAttribPointer(vertAttribIndex, 2,
                             LOCAL_GL_FLOAT, LOCAL_GL_FALSE, 0,
-                            rects.vertexCoords);
+                            rects.vertexPointer());
 
+  // texture coord buffer is 2 floats, not normalized, 0 stride.
   aGl->fVertexAttribPointer(texCoordAttribIndex, 2,
                             LOCAL_GL_FLOAT, LOCAL_GL_FALSE, 0,
-                            rects.texCoords);
+                            rects.texCoordPointer());
 
   {
     aGl->fEnableVertexAttribArray(texCoordAttribIndex);
     {
       aGl->fEnableVertexAttribArray(vertAttribIndex);
 
-      aGl->fDrawArrays(LOCAL_GL_TRIANGLES, 0, rects.numRects * 6);
+      aGl->fDrawArrays(LOCAL_GL_TRIANGLES, 0, rects.elements());
 
       aGl->fDisableVertexAttribArray(vertAttribIndex);
     }
@@ -210,8 +212,8 @@ ThebesLayerBufferOGL::RenderTo(const nsIntPoint& aOffset,
   }
 
   // Bind textures.
-  TextureImage::ScopedBindTexture(mTexImage, LOCAL_GL_TEXTURE0);
-  TextureImage::ScopedBindTexture(mTexImageOnWhite, LOCAL_GL_TEXTURE1);
+  TextureImage::ScopedBindTexture texBind(mTexImage, LOCAL_GL_TEXTURE0);
+  TextureImage::ScopedBindTexture texOnWhiteBind(mTexImageOnWhite, LOCAL_GL_TEXTURE1);
 
   float xres = mLayer->GetXResolution();
   float yres = mLayer->GetYResolution();
@@ -485,7 +487,7 @@ BasicBufferOGL::BeginPaint(ContentType aContentType,
     }
  
     if ((aFlags & PAINT_WILL_RESAMPLE) &&
-        (neededRegion.GetBounds() != destBufferRect ||
+        (!neededRegion.GetBounds().IsEqualInterior(destBufferRect) ||
          neededRegion.GetNumRects() > 1)) {
       // The area we add to neededRegion might not be painted opaquely
       if (mode == Layer::SURFACE_OPAQUE) {
@@ -918,8 +920,8 @@ ShadowBufferOGL::Upload(gfxASurface* aUpdate, const nsIntRegion& aUpdated,
   destRect.RoundOut();
 
   // NB: this gfxContext must not escape EndUpdate() below
-  nsIntRegion scaledDestRegion(nsIntRect(destRect.pos.x, destRect.pos.y,
-                                         destRect.size.width, destRect.size.height));
+  nsIntRegion scaledDestRegion(nsIntRect(destRect.X(), destRect.Y(),
+                                         destRect.Width(), destRect.Height()));
   mTexImage->DirectUpdate(aUpdate, scaledDestRegion);
 
   mBufferRect = aRect;

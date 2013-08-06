@@ -131,39 +131,6 @@ function test_create_and_add()
   stmts[1].finalize();
 }
 
-function test_transaction_created()
-{
-  let stmts = [];
-  stmts[0] = getOpenedDatabase().createAsyncStatement(
-    "BEGIN"
-  );
-  stmts[1] = getOpenedDatabase().createStatement(
-    "SELECT * FROM test"
-  );
-
-  getOpenedDatabase().executeAsync(stmts, stmts.length, {
-    handleResult: function(aResultSet)
-    {
-      dump("handleResults("+aResultSet+")\n");
-      do_throw("unexpected results obtained!");
-    },
-    handleError: function(aError)
-    {
-      dump("handleError("+aError.result+")\n");
-    },
-    handleCompletion: function(aReason)
-    {
-      dump("handleCompletion("+aReason+")\n");
-      do_check_eq(Ci.mozIStorageStatementCallback.REASON_ERROR, aReason);
-
-      // Run the next test.
-      run_next_test();
-    }
-  });
-  stmts[0].finalize();
-  stmts[1].finalize();
-}
-
 function test_multiple_bindings_on_statements()
 {
   // This tests to make sure that we pass all the statements multiply bound
@@ -307,44 +274,16 @@ function test_double_asyncClose_throws()
 ////////////////////////////////////////////////////////////////////////////////
 //// Test Runner
 
-let tests =
 [
   test_create_and_add,
-  test_transaction_created,
   test_multiple_bindings_on_statements,
   test_asyncClose_does_not_complete_before_statements,
   test_asyncClose_does_not_throw_no_callback,
   test_double_asyncClose_throws,
-];
-let index = 0;
-
-function run_next_test()
-{
-  function _run_next_test() {
-    if (index < tests.length) {
-      do_test_pending();
-      print("Running the next test: " + tests[index].name);
-
-      // Asynchronous tests means that exceptions don't kill the test.
-      try {
-        tests[index++]();
-      }
-      catch (e) {
-        do_throw(e);
-      }
-    }
-
-    do_test_finished();
-  }
-
-  // For saner stacks, we execute this code RSN.
-  do_execute_soon(_run_next_test);
-}
+].forEach(add_test);
 
 function run_test()
 {
   cleanup();
-
-  do_test_pending();
   run_next_test();
 }

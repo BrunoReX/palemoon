@@ -93,7 +93,7 @@
 #include "nsPermissionManager.h"
 #endif
 
-#include "nsAccelerometer.h"
+#include "nsDeviceMotion.h"
 
 #if defined(ANDROID)
 #include "APKOpen.h"
@@ -111,6 +111,8 @@ using namespace mozilla::docshell;
 
 namespace mozilla {
 namespace dom {
+
+nsString* gIndexedDBPath = nsnull;
 
 class MemoryReportRequestChild : public PMemoryReportRequestChild
 {
@@ -229,6 +231,8 @@ ContentChild::ContentChild()
 
 ContentChild::~ContentChild()
 {
+    delete gIndexedDBPath;
+    gIndexedDBPath = nsnull;
 }
 
 bool
@@ -256,7 +260,7 @@ ContentChild::Init(MessageLoop* aIOLoop,
     Open(aChannel, aParentHandle, aIOLoop);
     sSingleton = this;
 
-#if defined(ANDROID)
+#if defined(ANDROID) && defined(MOZ_CRASHREPORTER)
     PCrashReporterChild* crashreporter = SendPCrashReporterConstructor();
     InfallibleTArray<Mapping> mappings;
     const struct mapping_info *info = getLibraryMapping();
@@ -309,14 +313,19 @@ ContentChild::RecvPMemoryReportRequestConstructor(PMemoryReportRequestChild* chi
       r->GetNext(getter_AddRefs(report));
 
       nsCString path;
+      PRInt32 kind;
       nsCString desc;
       PRInt64 memoryUsed;
       report->GetPath(getter_Copies(path));
+      report->GetKind(&kind);
       report->GetDescription(getter_Copies(desc));
       report->GetMemoryUsed(&memoryUsed);
 
-      MemoryReport memreport(nsPrintfCString("Content Process - %d - ", getpid()),
+      static const int maxLength = 31;   // big enough; pid is only a few chars
+      MemoryReport memreport(nsPrintfCString(maxLength, "Content (%d)",
+                                             getpid()),
                              path,
+                             kind,
                              desc,
                              memoryUsed);
 
@@ -638,14 +647,16 @@ ContentChild::RecvAddPermission(const IPC::Permission& permission)
 
   return true;
 }
+
 bool
-ContentChild::RecvAccelerationChanged(const double& x, const double& y,
+ContentChild::RecvDeviceMotionChanged(const long int& type,
+                                      const double& x, const double& y,
                                       const double& z)
 {
-    nsCOMPtr<nsIAccelerometerUpdate> acu = 
-        do_GetService(NS_ACCELEROMETER_CONTRACTID);
-    if (acu)
-        acu->AccelerationChanged(x, y, z);
+    nsCOMPtr<nsIDeviceMotionUpdate> dmu = 
+        do_GetService(NS_DEVICE_MOTION_CONTRACTID);
+    if (dmu)
+        dmu->DeviceMotionChanged(type, x, y, z);
     return true;
 }
 
@@ -668,6 +679,17 @@ ContentChild::RecvFlushMemory(const nsString& reason)
     if (os)
         os->NotifyObservers(nsnull, "memory-pressure", reason.get());
   return true;
+}
+
+nsString&
+ContentChild::GetIndexedDBPath()
+{
+    if (!gIndexedDBPath) {
+        gIndexedDBPath = new nsString(); // cleaned up in the destructor
+        SendGetIndexedDBDirectory(gIndexedDBPath);
+    }
+
+    return *gIndexedDBPath;
 }
 
 } // namespace dom

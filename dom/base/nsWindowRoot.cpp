@@ -47,7 +47,6 @@
 #include "nsPresContext.h"
 #include "nsLayoutCID.h"
 #include "nsContentCID.h"
-#include "nsIEventStateManager.h"
 #include "nsIPrivateDOMEvent.h"
 #include "nsIDOMWindowInternal.h"
 #include "nsString.h"
@@ -98,7 +97,7 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(nsWindowRoot)
 NS_IMETHODIMP
 nsWindowRoot::AddEventListener(const nsAString& aType, nsIDOMEventListener* aListener, PRBool aUseCapture)
 {
-  return AddEventListener(aType, aListener, aUseCapture, PR_FALSE, 0);
+  return AddEventListener(aType, aListener, aUseCapture, PR_FALSE, 1);
 }
 
 NS_IMETHODIMP
@@ -168,7 +167,7 @@ nsWindowRoot::AddEventListener(const nsAString& aType,
                                PRBool aUseCapture, PRBool aWantsUntrusted,
                                PRUint8 optional_argc)
 {
-  NS_ASSERTION(!aWantsUntrusted || optional_argc > 0,
+  NS_ASSERTION(!aWantsUntrusted || optional_argc > 1,
                "Won't check if this is chrome, you want to set "
                "aWantsUntrusted to PR_FALSE or make the aWantsUntrusted "
                "explicit by making optional_argc non-zero.");

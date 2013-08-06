@@ -73,6 +73,8 @@
 
 #include "jsobjinlines.h"
 
+#include "vm/Stack-inl.h"
+
 using namespace js;
 
 /*
@@ -2041,10 +2043,16 @@ date_utc_format(JSContext *cx, Value *vp,
         return false;
 
     char buf[100];
-    if (!JSDOUBLE_IS_FINITE(utctime))
+    if (!JSDOUBLE_IS_FINITE(utctime)) {
+        if (printFunc == print_iso_string) {
+            JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_INVALID_DATE);
+            return false;
+        }
+
         JS_snprintf(buf, sizeof buf, js_NaN_date_str);
-    else
+    } else {
         (*printFunc)(buf, sizeof buf, utctime);
+    }
 
     JSString *str = JS_NewStringCopyZ(cx, buf);
     if (!str)
@@ -2100,13 +2108,13 @@ date_toJSON(JSContext *cx, uintN argc, Value *vp)
     /* Step 6. */
     LeaveTrace(cx);
     InvokeArgsGuard args;
-    if (!cx->stack().pushInvokeArgs(cx, 0, &args))
+    if (!cx->stack.pushInvokeArgs(cx, 0, &args))
         return false;
 
-    args.callee() = toISO;
+    args.calleev() = toISO;
     args.thisv().setObject(*obj);
 
-    if (!Invoke(cx, args, 0))
+    if (!Invoke(cx, args))
         return false;
     *vp = args.rval();
     return true;

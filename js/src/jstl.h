@@ -40,6 +40,7 @@
 #ifndef jstl_h_
 #define jstl_h_
 
+#include "jspubtd.h"
 #include "jsbit.h"
 #include "jsstaticcheck.h"
 #include "jsstdint.h"
@@ -232,164 +233,6 @@ PointerRangeSize(T *begin, T *end)
 {
     return (size_t(end) - size_t(begin)) / sizeof(T);
 }
-
-/*
- * Allocation policies.  These model the concept:
- *  - public copy constructor, assignment, destructor
- *  - void *malloc_(size_t)
- *      Responsible for OOM reporting on NULL return value.
- *  - void *realloc_(size_t)
- *      Responsible for OOM reporting on NULL return value.
- *  - void free_(void *)
- *  - reportAllocOverflow()
- *      Called on overflow before the container returns NULL.
- */
-
-/* Policy for using system memory functions and doing no error reporting. */
-class SystemAllocPolicy
-{
-  public:
-    void *malloc_(size_t bytes) { return js::OffTheBooks::malloc_(bytes); }
-    void *realloc_(void *p, size_t bytes) { return js::OffTheBooks::realloc_(p, bytes); }
-    void free_(void *p) { js::UnwantedForeground::free_(p); }
-    void reportAllocOverflow() const {}
-};
-
-/*
- * This utility pales in comparison to Boost's aligned_storage. The utility
- * simply assumes that JSUint64 is enough alignment for anyone. This may need
- * to be extended one day...
- *
- * As an important side effect, pulling the storage into this template is
- * enough obfuscation to confuse gcc's strict-aliasing analysis into not giving
- * false negatives when we cast from the char buffer to whatever type we've
- * constructed using the bytes.
- */
-template <size_t nbytes>
-struct AlignedStorage
-{
-    union U {
-        char bytes[nbytes];
-        uint64 _;
-    } u;
-
-    const void *addr() const { return u.bytes; }
-    void *addr() { return u.bytes; }
-};
-
-template <class T>
-struct AlignedStorage2
-{
-    union U {
-        char bytes[sizeof(T)];
-        uint64 _;
-    } u;
-
-    const T *addr() const { return (const T *)u.bytes; }
-    T *addr() { return (T *)u.bytes; }
-};
-
-/*
- * Small utility for lazily constructing objects without using dynamic storage.
- * When a LazilyConstructed<T> is constructed, it is |empty()|, i.e., no value
- * of T has been constructed and no T destructor will be called when the
- * LazilyConstructed<T> is destroyed. Upon calling |construct|, a T object will
- * be constructed with the given arguments and that object will be destroyed
- * when the owning LazilyConstructed<T> is destroyed.
- *
- * N.B. GCC seems to miss some optimizations with LazilyConstructed and may
- * generate extra branches/loads/stores. Use with caution on hot paths.
- */
-template <class T>
-class LazilyConstructed
-{
-    AlignedStorage2<T> storage;
-    bool constructed;
-
-    T &asT() { return *storage.addr(); }
-
-    explicit LazilyConstructed(const LazilyConstructed &other);
-    const LazilyConstructed &operator=(const LazilyConstructed &other);
-
-  public:
-    LazilyConstructed() { constructed = false; }
-    ~LazilyConstructed() { if (constructed) asT().~T(); }
-
-    bool empty() const { return !constructed; }
-
-    void construct() {
-        JS_ASSERT(!constructed);
-        new(storage.addr()) T();
-        constructed = true;
-    }
-
-    template <class T1>
-    void construct(const T1 &t1) {
-        JS_ASSERT(!constructed);
-        new(storage.addr()) T(t1);
-        constructed = true;
-    }
-
-    template <class T1, class T2>
-    void construct(const T1 &t1, const T2 &t2) {
-        JS_ASSERT(!constructed);
-        new(storage.addr()) T(t1, t2);
-        constructed = true;
-    }
-
-    template <class T1, class T2, class T3>
-    void construct(const T1 &t1, const T2 &t2, const T3 &t3) {
-        JS_ASSERT(!constructed);
-        new(storage.addr()) T(t1, t2, t3);
-        constructed = true;
-    }
-
-    template <class T1, class T2, class T3, class T4>
-    void construct(const T1 &t1, const T2 &t2, const T3 &t3, const T4 &t4) {
-        JS_ASSERT(!constructed);
-        new(storage.addr()) T(t1, t2, t3, t4);
-        constructed = true;
-    }
-
-    T *addr() {
-        JS_ASSERT(constructed);
-        return &asT();
-    }
-
-    T &ref() {
-        JS_ASSERT(constructed);
-        return asT();
-    }
-
-    void destroy() {
-        ref().~T();
-        constructed = false;
-    }
-
-    void destroyIfConstructed() {
-        if (!empty())
-            destroy();
-    }
-};
-
-
-/*
- * N.B. GCC seems to miss some optimizations with Conditionally and may
- * generate extra branches/loads/stores. Use with caution on hot paths.
- */
-template <class T>
-class Conditionally {
-    LazilyConstructed<T> t;
-
-  public:
-    Conditionally(bool b) { if (b) t.construct(); }
-
-    template <class T1>
-    Conditionally(bool b, const T1 &t1) { if (b) t.construct(t1); }
-
-    template <class T1, class T2>
-    Conditionally(bool b, const T1 &t1, const T2 &t2) { if (b) t.construct(t1, t2); }
-};
 
 template <class T>
 class AlignedPtrAndFlag
@@ -650,6 +493,33 @@ class RangeCheckedPointer
   private:
     RangeCheckedPointer();
     T *operator&();
+};
+
+template <class T, class U>
+JS_ALWAYS_INLINE T &
+ImplicitCast(U &u)
+{
+    T &t = u;
+    return t;
+}
+
+template<typename T>
+class AutoScopedAssign
+{
+  private:
+    JS_DECL_USE_GUARD_OBJECT_NOTIFIER
+    T *addr;
+    T old;
+
+  public:
+    AutoScopedAssign(T *addr, const T &value JS_GUARD_OBJECT_NOTIFIER_PARAM)
+        : addr(addr), old(*addr)
+    {
+        JS_GUARD_OBJECT_NOTIFIER_INIT;
+        *addr = value;
+    }
+
+    ~AutoScopedAssign() { *addr = old; }
 };
 
 } /* namespace js */

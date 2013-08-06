@@ -159,10 +159,11 @@ class JSString : public js::gc::Cell
                     JSLinearString *base;               /* JSDependentString */
                     JSString       *right;              /* JSRope */
                     size_t         capacity;            /* JSFlatString (extensible) */
-                    size_t         externalStringType;  /* JSExternalString */
+                    size_t         externalType;        /* JSExternalString */
                 } u2;
                 union {
                     JSString       *parent;             /* JSRope (temporary) */
+                    void           *externalClosure;    /* JSExternalString */
                     size_t         reserved;            /* may use for bug 615290 */
                 } u3;
             } s;
@@ -340,6 +341,14 @@ class JSString : public js::gc::Cell
         return *(JSFixedString *)this;
     }
 
+    bool isExternal() const;
+
+    JS_ALWAYS_INLINE
+    JSExternalString &asExternal() {
+        JS_ASSERT(isExternal());
+        return *(JSExternalString *)this;
+    }
+
     JS_ALWAYS_INLINE
     bool isAtom() const {
         bool atomized = (d.lengthAndFlags & ATOM_MASK) == ATOM_FLAGS;
@@ -364,7 +373,7 @@ class JSString : public js::gc::Cell
 
     /* Called during GC for any string. */
 
-    inline void mark(JSTracer *trc);
+    void mark(JSTracer *trc);
 
     /* Offsets for direct field from jit code. */
 
@@ -404,7 +413,7 @@ JS_STATIC_ASSERT(sizeof(JSRope) == sizeof(JSString));
 class JSLinearString : public JSString
 {
     friend class JSString;
-    inline void mark(JSTracer *trc);
+    void mark(JSTracer *trc);
 
   public:
     JS_ALWAYS_INLINE
@@ -477,10 +486,11 @@ class JSFixedString : public JSFlatString
     static inline JSFixedString *new_(JSContext *cx, const jschar *chars, size_t length);
 
     /*
-     * Once a JSFixedString has been added to the atom table, this operation
-     * changes the type (in place) of the JSFixedString into a JSAtom.
+     * Once a JSFixedString has been added to the atom state, this operation
+     * changes the type (in place, as reflected by the flag bits) of the
+     * JSFixedString into a JSAtom.
      */
-    inline JSAtom *morphInternedStringIntoAtom();
+    inline JSAtom *morphAtomizedStringIntoAtom();
 };
 
 JS_STATIC_ASSERT(sizeof(JSFixedString) == sizeof(JSString));
@@ -542,22 +552,31 @@ class JSShortString : public JSInlineString
 
 JS_STATIC_ASSERT(sizeof(JSShortString) == 2 * sizeof(JSString));
 
+/*
+ * The externalClosure stored in an external string is a black box to the JS
+ * engine; see JS_NewExternalStringWithClosure.
+ */
 class JSExternalString : public JSFixedString
 {
     static void staticAsserts() {
         JS_STATIC_ASSERT(TYPE_LIMIT == 8);
     }
 
-    void init(const jschar *chars, size_t length, intN type);
+    void init(const jschar *chars, size_t length, intN type, void *closure);
 
   public:
     static inline JSExternalString *new_(JSContext *cx, const jschar *chars,
-                                         size_t length, intN type);
+                                         size_t length, intN type, void *closure);
 
-    intN externalStringType() const {
-        JS_ASSERT(isFlat() && !isAtom());
-        JS_ASSERT(d.s.u2.externalStringType < TYPE_LIMIT);
-        return d.s.u2.externalStringType;
+    intN externalType() const {
+        JS_ASSERT(isExternal());
+        JS_ASSERT(d.s.u2.externalType < TYPE_LIMIT);
+        return d.s.u2.externalType;
+    }
+
+    void *externalClosure() const {
+        JS_ASSERT(isExternal());
+        return d.s.u3.externalClosure;
     }
 
     static const uintN TYPE_LIMIT = 8;
@@ -676,13 +695,17 @@ JS_STATIC_ASSERT(sizeof(JSStaticAtom) == sizeof(JSString));
 JS_ALWAYS_INLINE const jschar *
 JSString::getChars(JSContext *cx)
 {
-    return ensureLinear(cx)->chars();
+    if (JSLinearString *str = ensureLinear(cx))
+        return str->chars();
+    return NULL;
 }
 
 JS_ALWAYS_INLINE const jschar *
 JSString::getCharsZ(JSContext *cx)
 {
-    return ensureFlat(cx)->chars();
+    if (JSFlatString *str = ensureFlat(cx))
+        return str->chars();
+    return NULL;
 }
 
 JS_ALWAYS_INLINE JSLinearString *
@@ -1086,12 +1109,22 @@ js_SkipWhiteSpace(const jschar *s, const jschar *end)
 }
 
 /*
+ * Some string functions have an optional bool useCESU8 argument.
+ * CESU-8 (Compatibility Encoding Scheme for UTF-16: 8-bit) is a
+ * variant of UTF-8 that allows us to store any wide character
+ * string as a narrow character string. For strings containing
+ * mostly ascii, it saves space.
+ * http://www.unicode.org/reports/tr26/
+ */
+
+/*
  * Inflate bytes to JS chars and vice versa.  Report out of memory via cx and
  * return null on error, otherwise return the jschar or byte vector that was
  * JS_malloc'ed. length is updated to the length of the new string in jschars.
+ * Using useCESU8 = true treats 'bytes' as CESU-8.
  */
 extern jschar *
-js_InflateString(JSContext *cx, const char *bytes, size_t *length);
+js_InflateString(JSContext *cx, const char *bytes, size_t *length, bool useCESU8 = false);
 
 extern char *
 js_DeflateString(JSContext *cx, const jschar *chars, size_t length);
@@ -1107,11 +1140,12 @@ js_InflateStringToBuffer(JSContext *cx, const char *bytes, size_t length,
                          jschar *chars, size_t *charsLength);
 
 /*
- * Same as js_InflateStringToBuffer, but always treats 'bytes' as UTF-8.
+ * Same as js_InflateStringToBuffer, but treats 'bytes' as UTF-8 or CESU-8.
  */
 extern JSBool
 js_InflateUTF8StringToBuffer(JSContext *cx, const char *bytes, size_t length,
-                             jschar *chars, size_t *charsLength);
+                             jschar *chars, size_t *charsLength,
+                             bool useCESU8 = false);
 
 /*
  * Get number of bytes in the deflated sequence of characters. Behavior depends
@@ -1122,11 +1156,12 @@ js_GetDeflatedStringLength(JSContext *cx, const jschar *chars,
                            size_t charsLength);
 
 /*
- * Same as js_GetDeflatedStringLength, but always treats the result as UTF-8.
+ * Same as js_GetDeflatedStringLength, but treats the result as UTF-8 or CESU-8.
+ * This function will never fail (return -1) in CESU-8 mode.
  */
 extern size_t
 js_GetDeflatedUTF8StringLength(JSContext *cx, const jschar *chars,
-                               size_t charsLength);
+                               size_t charsLength, bool useCESU8 = false);
 
 /*
  * Deflate JS chars to bytes into a buffer. 'bytes' must be large enough for
@@ -1139,11 +1174,12 @@ js_DeflateStringToBuffer(JSContext *cx, const jschar *chars,
                          size_t charsLength, char *bytes, size_t *length);
 
 /*
- * Same as js_DeflateStringToBuffer, but always treats 'bytes' as UTF-8.
+ * Same as js_DeflateStringToBuffer, but treats 'bytes' as UTF-8 or CESU-8.
  */
 extern JSBool
 js_DeflateStringToUTF8Buffer(JSContext *cx, const jschar *chars,
-                             size_t charsLength, char *bytes, size_t *length);
+                             size_t charsLength, char *bytes, size_t *length,
+                             bool useCESU8 = false);
 
 /* Export a few natives and a helper to other files in SpiderMonkey. */
 extern JSBool

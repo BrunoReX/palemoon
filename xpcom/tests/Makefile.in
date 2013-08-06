@@ -45,16 +45,7 @@ include $(DEPTH)/config/autoconf.mk
 
 MODULE		= xpcom
 
-ifndef MOZ_ENABLE_LIBXUL
-MOZILLA_INTERNAL_API = 1
-endif
-
 DIRS		= external component bug656331_component
-
-# Disabled because manifests make this test difficult to run correctly.
-# ifdef MOZ_ENABLE_LIBXUL
-# DIRS += xptinfo
-# endif
 
 ifeq ($(OS_ARCH),WINNT)
 DIRS		+= windows
@@ -64,20 +55,22 @@ ifdef DEHYDRA_PATH
 DIRS += static-checker
 endif
 
+VPATH += $(topsrcdir)/build
 
-CPPSRCS		= \
-		nsIFileEnumerator.cpp \
-		TestCallTemplates.cpp \
-		TestINIParser.cpp \
-		TestRacingServiceManager.cpp \
-		TestRegistrationOrder.cpp \
-		TestThreadPoolListener.cpp \
-		TestTimers.cpp \
-		TestBlockingProcess.cpp \
-		TestQuickReturn.cpp \
-		TestArguments.cpp \
-		TestUnicodeArguments.cpp \
-		$(NULL)
+CPPSRCS = \
+  nsIFileEnumerator.cpp \
+  TestCallTemplates.cpp \
+  TestINIParser.cpp \
+  TestRacingServiceManager.cpp \
+  TestRegistrationOrder.cpp \
+  TestThreadPoolListener.cpp \
+  TestTimers.cpp \
+  TestBlockingProcess.cpp \
+  TestQuickReturn.cpp \
+  TestArguments.cpp \
+  TestUnicodeArguments.cpp \
+  $(STDCPPFLAGS) \
+  $(NULL)
 
 ifdef WRAP_STL_INCLUDES
 CPPSRCS += TestSTLWrappers.cpp
@@ -103,35 +96,34 @@ CPP_UNIT_TESTS = \
                  TestCheckedInt.cpp \
                  $(NULL)
 
-ifndef MOZ_ENABLE_LIBXUL
-CPP_UNIT_TESTS += \
-                  TestArray.cpp \
-                  TestCRT.cpp \
-                  TestDeque.cpp \
-                  TestEncoding.cpp \
-                  TestExpirationTracker.cpp \
-                  TestPipes.cpp \
-                  TestPriorityQueue.cpp \
-                  TestProxies.cpp \
-                  TestStorageStream.cpp \
-                  TestStrings.cpp \
-                  TestSynchronization.cpp \
-                  TestTArray.cpp \
-                  TestThreadPool.cpp \
-                  TestThreads.cpp \
-                  TestTimeStamp.cpp \
-                  TestXPIDLString.cpp \
-                  TestUTF.cpp \
-                  TestAtoms.cpp \
-                  $(NULL)
-# FIXME: bug 577500 TestStaticAtoms fails when run in dist/bin
-# TestStaticAtoms.cpp
-endif
+# XXX Make this tests work in libxul builds.
+#CPP_UNIT_TESTS += \
+#                  TestArray.cpp \
+#                  TestCRT.cpp \
+#                  TestDeque.cpp \
+#                  TestEncoding.cpp \
+#                  TestExpirationTracker.cpp \
+#                  TestPipes.cpp \
+#                  TestPriorityQueue.cpp \
+#                  TestProxies.cpp \
+#                  TestStorageStream.cpp \
+#                  TestStrings.cpp \
+#                  TestSynchronization.cpp \
+#                  TestTArray.cpp \
+#                  TestThreadPool.cpp \
+#                  TestThreads.cpp \
+#                  TestTimeStamp.cpp \
+#                  TestXPIDLString.cpp \
+#                  TestUTF.cpp \
+#                  TestAtoms.cpp \
+#                  $(NULL)
+## FIXME: bug 577500 TestStaticAtoms fails when run in dist/bin
+## TestStaticAtoms.cpp
 
 ifdef MOZ_DEBUG
 # FIXME bug 523392: TestDeadlockDetector doesn't like Windows
 # FIXME bug 523378: also fails on OS X
-ifneq (,$(filter-out WINNT WINCE Darwin,$(OS_ARCH)))
+ifneq (,$(filter-out WINNT Darwin,$(OS_ARCH)))
 CPP_UNIT_TESTS += \
                   TestDeadlockDetector.cpp \
                   TestDeadlockDetectorScalability.cpp \
@@ -161,10 +153,6 @@ MOZ_DEBUG_SYMBOLS = 1
 
 include $(topsrcdir)/config/rules.mk
 
-ifeq ($(OS_ARCH),WINCE)
-EXTRA_LIBS += libcmt.lib
-endif
-
 LOCAL_INCLUDES	= \
                 -I$(srcdir)/../ds \
 		-I$(srcdir)/services \
@@ -172,7 +160,9 @@ LOCAL_INCLUDES	= \
 
 libs::
 	$(INSTALL) $(srcdir)/test.properties $(DIST)/bin/res
+ifneq (,$(SIMPLE_PROGRAMS))
 	$(INSTALL) $(SIMPLE_PROGRAMS) $(DEPTH)/_tests/xpcshell/$(relativesrcdir)/unit
+endif
 
 # Copy TestHarness.h into its own module, for ease of setting up includes
 # correctly.
@@ -183,7 +173,7 @@ export::
 install::
 	$(SYSINSTALL) $(IFLAGS1) $(srcdir)/test.properties $(DESTDIR)$(mozappdir)/res
 
-ifeq (,$(filter-out WINNT WINCE os2-emx, $(HOST_OS_ARCH)))
+ifeq (,$(filter-out WINNT os2-emx, $(HOST_OS_ARCH)))
 swapslashes = $(shell echo $(1) | sed -e 's|/|\\|g')
 getnativepath = $(call swapslashes,$(call normalizepath,$(1)))
 else
@@ -192,19 +182,11 @@ endif
 
 abs_srcdir = $(shell cd $(srcdir) && pwd)
 
-ifdef WINCE
-DM_RM = $(PYTHON) $(topsrcdir)/build/mobile/devicemanager-utils.py delete
-DM_CP = $(PYTHON) $(topsrcdir)/build/mobile/devicemanager-utils.py copy
-
-RM_DIST = $(DM_RM)
-regOrderDir=\\tests\\regorder; # This is WinCe specific, adjust for other platforms
-DOCOPY=$(DM_CP)  $(srcdir)/regorder $(regOrderDir)
-else
 DIST_PATH = $(DIST)/bin/
 RM_DIST = rm -f
 regOrderDir="$(call getnativepath,$(abs_srcdir)/regorder)";
 DOCOPY=
-endif
+
 check::
 	@echo "Running XPIDL tests"
 	$(XPIDL_COMPILE) -m header $(srcdir)/TestScriptable.idl
@@ -222,3 +204,8 @@ check::
 	  $(DIST)/bin/TestRegistrationOrder$(BIN_SUFFIX) $(regOrderDir)
 
 GARBAGE += TestScriptable.h
+
+ifdef STDCXX_COMPAT
+TestCheckedInt: $(STDCXX_COMPAT:.cpp=.$(OBJ_SUFFIX))
+TestCheckedInt: LIBS += $(STDCXX_COMPAT:.cpp=.$(OBJ_SUFFIX))
+endif

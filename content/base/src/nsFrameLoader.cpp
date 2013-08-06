@@ -862,6 +862,31 @@ nsFrameLoader::Show(PRInt32 marginWidth, PRInt32 marginHeight,
   return PR_TRUE;
 }
 
+void
+nsFrameLoader::MarginsChanged(PRUint32 aMarginWidth,
+                              PRUint32 aMarginHeight)
+{
+  // We assume that the margins are always zero for remote frames.
+  if (mRemoteFrame)
+    return;
+
+  // If there's no docshell, we're probably not up and running yet.
+  // nsFrameLoader::Show() will take care of setting the right
+  // margins.
+  if (!mDocShell)
+    return;
+
+  // Set the margins
+  mDocShell->SetMarginWidth(aMarginWidth);
+  mDocShell->SetMarginHeight(aMarginHeight);
+
+  // Trigger a restyle if there's a prescontext
+  nsRefPtr<nsPresContext> presContext;
+  mDocShell->GetPresContext(getter_AddRefs(presContext));
+  if (presContext)
+    presContext->RebuildAllStyleData(nsChangeHint(0));
+}
+
 bool
 nsFrameLoader::ShowRemoteFrame(const nsIntSize& size)
 {
@@ -1555,18 +1580,6 @@ nsFrameLoader::CheckForRecursiveLoad(nsIURI* aURI)
   }
   
   // Bug 136580: Check for recursive frame loading
-  // pre-grab these for speed
-  nsCOMPtr<nsIURI> cloneURI;
-  rv = aURI->Clone(getter_AddRefs(cloneURI));
-  NS_ENSURE_SUCCESS(rv, rv);
-  
-  // Bug 98158/193011: We need to ignore data after the #
-  nsCOMPtr<nsIURL> cloneURL(do_QueryInterface(cloneURI)); // QI can fail
-  if (cloneURL) {
-    rv = cloneURL->SetRef(EmptyCString());
-    NS_ENSURE_SUCCESS(rv,rv);
-  }
-
   PRInt32 matchCount = 0;
   treeItem->GetSameTypeParent(getter_AddRefs(parentAsItem));
   while (parentAsItem) {
@@ -1577,17 +1590,9 @@ nsFrameLoader::CheckForRecursiveLoad(nsIURI* aURI)
       nsCOMPtr<nsIURI> parentURI;
       parentAsNav->GetCurrentURI(getter_AddRefs(parentURI));
       if (parentURI) {
-        nsCOMPtr<nsIURI> parentClone;
-        rv = parentURI->Clone(getter_AddRefs(parentClone));
-        NS_ENSURE_SUCCESS(rv, rv);
-        nsCOMPtr<nsIURL> parentURL(do_QueryInterface(parentClone));
-        if (parentURL) {
-          rv = parentURL->SetRef(EmptyCString());
-          NS_ENSURE_SUCCESS(rv,rv);
-        }
-
+        // Bug 98158/193011: We need to ignore data after the #
         PRBool equal;
-        rv = cloneURI->Equals(parentClone, &equal);
+        rv = aURI->EqualsExceptRef(parentURI, &equal);
         NS_ENSURE_SUCCESS(rv, rv);
         
         if (equal) {
@@ -1896,9 +1901,10 @@ public:
     nsInProcessTabChildGlobal* tabChild =
       static_cast<nsInProcessTabChildGlobal*>(mFrameLoader->mChildMessageManager.get());
     if (tabChild && tabChild->GetInnerManager()) {
-      tabChild->GetInnerManager()->
-        ReceiveMessage(static_cast<nsPIDOMEventTarget*>(tabChild), mMessage,
-                       PR_FALSE, mJSON, nsnull, nsnull);
+      nsFrameScriptCx cx(static_cast<nsPIDOMEventTarget*>(tabChild), tabChild);
+      nsRefPtr<nsFrameMessageManager> mm = tabChild->GetInnerManager();
+      mm->ReceiveMessage(static_cast<nsPIDOMEventTarget*>(tabChild), mMessage,
+                         PR_FALSE, mJSON, nsnull, nsnull);
     }
     return NS_OK;
   }

@@ -39,6 +39,7 @@
 
 #include "nsHTMLTableAccessible.h"
 
+#include "States.h"
 #include "nsAccessibilityService.h"
 #include "nsAccTreeWalker.h"
 #include "nsAccUtils.h"
@@ -48,7 +49,6 @@
 
 #include "nsIDOMElement.h"
 #include "nsIDOMDocument.h"
-#include "nsIDOMDocumentRange.h"
 #include "nsIDOMRange.h"
 #include "nsISelection2.h"
 #include "nsISelectionPrivate.h"
@@ -92,25 +92,23 @@ nsHTMLTableCellAccessible::NativeRole()
   return nsIAccessibleRole::ROLE_CELL;
 }
 
-nsresult
-nsHTMLTableCellAccessible::GetStateInternal(PRUint32 *aState,
-                                            PRUint32 *aExtraState)
+PRUint64
+nsHTMLTableCellAccessible::NativeState()
 {
-  nsresult rv= nsHyperTextAccessibleWrap::GetStateInternal(aState, aExtraState);
-  NS_ENSURE_A11Y_SUCCESS(rv, rv);
+  PRUint64 state = nsHyperTextAccessibleWrap::NativeState();
 
   nsIFrame *frame = mContent->GetPrimaryFrame();
   NS_ASSERTION(frame, "No frame for valid cell accessible!");
 
   if (frame) {
-    *aState |= nsIAccessibleStates::STATE_SELECTABLE;
+    state |= states::SELECTABLE;
     PRBool isSelected = PR_FALSE;
     frame->GetSelected(&isSelected);
     if (isSelected)
-      *aState |= nsIAccessibleStates::STATE_SELECTED;
+      state |= states::SELECTED;
   }
 
-  return NS_OK;
+  return state;
 }
 
 nsresult
@@ -456,14 +454,10 @@ nsHTMLTableAccessible::NativeRole()
   return nsIAccessibleRole::ROLE_TABLE;
 }
 
-nsresult
-nsHTMLTableAccessible::GetStateInternal(PRUint32 *aState, PRUint32 *aExtraState)
+PRUint64
+nsHTMLTableAccessible::NativeState()
 {
-  nsresult rv= nsAccessible::GetStateInternal(aState, aExtraState);
-  NS_ENSURE_A11Y_SUCCESS(rv, rv);
-
-  *aState |= nsIAccessibleStates::STATE_READONLY;
-  return NS_OK;
+  return nsAccessible::NativeState() | states::READONLY;
 }
 
 nsresult
@@ -1265,14 +1259,14 @@ nsHTMLTableAccessible::GetCellAt(PRInt32        aRowIndex,
   return rv;
 }
 
-NS_IMETHODIMP nsHTMLTableAccessible::GetDescription(nsAString& aDescription)
+void
+nsHTMLTableAccessible::Description(nsString& aDescription)
 {
   // Helpful for debugging layout vs. data tables
   aDescription.Truncate();
-  nsAccessible::GetDescription(aDescription);
-  if (!aDescription.IsEmpty()) {
-    return NS_OK;
-  }
+  nsAccessible::Description(aDescription);
+  if (!aDescription.IsEmpty())
+    return;
 
   nsCOMPtr<nsIAccessible> captionAccessible;
   GetCaption(getter_AddRefs(captionAccessible));
@@ -1281,10 +1275,9 @@ NS_IMETHODIMP nsHTMLTableAccessible::GetDescription(nsAString& aDescription)
     nsCOMPtr<nsIDOMNode> captionNode;
     captionAccessNode->GetDOMNode(getter_AddRefs(captionNode));
     nsCOMPtr<nsIContent> captionContent = do_QueryInterface(captionNode);
-    if (captionContent) {
-      nsTextEquivUtils::
-        AppendTextEquivFromContent(this, captionContent, &aDescription);
-    }
+    if (captionContent)
+      nsTextEquivUtils::AppendTextEquivFromContent(this, captionContent,
+                                                   &aDescription);
   }
 #ifdef SHOW_LAYOUT_HEURISTIC
   if (aDescription.IsEmpty()) {
@@ -1296,8 +1289,6 @@ NS_IMETHODIMP nsHTMLTableAccessible::GetDescription(nsAString& aDescription)
   printf("\nTABLE: %s\n", NS_ConvertUTF16toUTF8(mLayoutHeuristic).get());
 #endif
 #endif
-
-  return NS_OK;
 }
 
 PRBool
@@ -1367,9 +1358,8 @@ nsHTMLTableAccessible::IsProbablyForLayout(PRBool *aIsProbablyForLayout)
 
   nsDocAccessible *docAccessible = GetDocAccessible();
   if (docAccessible) {
-    PRUint32 state, extState;
-    docAccessible->GetState(&state, &extState);
-    if (extState & nsIAccessibleStates::EXT_STATE_EDITABLE) {  // Need to see all elements while document is being edited
+    PRUint64 docState = docAccessible->State();
+    if (docState & states::EDITABLE) {  // Need to see all elements while document is being edited
       RETURN_LAYOUT_ANSWER(PR_FALSE, "In editable document");
     }
   }

@@ -215,8 +215,7 @@ RasterImage::RasterImage(imgStatusTracker* aStatusTracker) :
 //******************************************************************************
 RasterImage::~RasterImage()
 {
-  if (mAnim)
-    delete mAnim;
+  delete mAnim;
 
   for (unsigned int i = 0; i < mFrames.Length(); ++i)
     delete mFrames[i];
@@ -523,7 +522,7 @@ RasterImage::GetCurrentFrameIsOpaque(PRBool *aIsOpaque)
     // We are also transparent if the current frame's size doesn't cover our
     // entire area.
     nsIntRect framerect = curframe->GetRect();
-    *aIsOpaque = *aIsOpaque && (framerect != nsIntRect(0, 0, mSize.width, mSize.height));
+    *aIsOpaque = *aIsOpaque && framerect.IsEqualInterior(nsIntRect(0, 0, mSize.width, mSize.height));
   }
 
   return NS_OK;
@@ -681,19 +680,23 @@ RasterImage::GetFrame(PRUint32 aWhichFrame,
 
   nsresult rv = NS_OK;
 
-  PRUint32 desiredDecodeFlags = aFlags & DECODE_FLAGS_MASK;
-  if (desiredDecodeFlags != mFrameDecodeFlags) {
-    // if we can't discard, then we're screwed; we have no way
-    // to re-decode.  Similarly if we aren't allowed to do a sync
-    // decode.
-    if (!(aFlags & FLAG_SYNC_DECODE))
-      return NS_ERROR_NOT_AVAILABLE;
-    if (!CanForciblyDiscard() || mDecoder || mAnim)
-      return NS_ERROR_NOT_AVAILABLE;
-
-    ForceDiscard();
-
-    mFrameDecodeFlags = desiredDecodeFlags;
+  if (mDecoded) {
+    // If we have decoded data, and it is not a perfect match for what we are
+    // looking for, we must discard to be able to generate the proper data.
+    PRUint32 desiredDecodeFlags = aFlags & DECODE_FLAGS_MASK;
+    if (desiredDecodeFlags != mFrameDecodeFlags) {
+      // if we can't discard, then we're screwed; we have no way
+      // to re-decode.  Similarly if we aren't allowed to do a sync
+      // decode.
+      if (!(aFlags & FLAG_SYNC_DECODE))
+        return NS_ERROR_NOT_AVAILABLE;
+      if (!CanForciblyDiscard() || mDecoder || mAnim)
+        return NS_ERROR_NOT_AVAILABLE;
+  
+      ForceDiscard();
+  
+      mFrameDecodeFlags = desiredDecodeFlags;
+    }
   }
 
   // If the caller requested a synchronous decode, do it

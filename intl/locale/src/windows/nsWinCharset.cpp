@@ -39,13 +39,14 @@
 #include "nsUConvPropertySearch.h"
 #include "pratom.h"
 #include <windows.h>
-#include "nsIWin32Locale.h"
+#include "nsWin32Locale.h"
 #include "nsCOMPtr.h"
 #include "nsReadableUtils.h"
 #include "nsLocaleCID.h"
 #include "nsServiceManagerUtils.h"
 #include "nsITimelineService.h"
 #include "nsPlatformCharset.h"
+#include "nsEncoderDecoderUtils.h"
 
 static const char* kWinCharsets[][3] = {
 #include "wincharset.properties.h"
@@ -79,6 +80,7 @@ nsPlatformCharset::MapToCharset(nsAString& inANSICodePage, nsACString& outCharse
       NS_ARRAY_LENGTH(kWinCharsets), key, outCharset);
   if (NS_FAILED(rv)) {
     outCharset.AssignLiteral("windows-1252");
+    return NS_SUCCESS_USING_FALLBACK_LOCALE;
   }
   return rv;
 }
@@ -94,7 +96,6 @@ nsPlatformCharset::GetCharset(nsPlatformCharsetSel selector,
 NS_IMETHODIMP
 nsPlatformCharset::GetDefaultCharsetForLocale(const nsAString& localeName, nsACString& oResult)
 {
-  nsCOMPtr<nsIWin32Locale>  winLocale;
   LCID                      localeAsLCID;
 
   //
@@ -103,10 +104,7 @@ nsPlatformCharset::GetDefaultCharsetForLocale(const nsAString& localeName, nsACS
   nsresult rv;
   oResult.Truncate();
 
-  winLocale = do_GetService(NS_WIN32LOCALE_CONTRACTID, &rv);
-  if (NS_FAILED(rv)) { return rv; }
-
-  rv = winLocale->GetPlatformLocale(localeName, &localeAsLCID);
+  rv = nsWin32Locale::GetPlatformLocale(localeName, &localeAsLCID);
   if (NS_FAILED(rv)) { return rv; }
 
   PRUnichar acp_name[6];
@@ -122,12 +120,6 @@ nsPlatformCharset::GetDefaultCharsetForLocale(const nsAString& localeName, nsACS
 
 NS_IMETHODIMP 
 nsPlatformCharset::Init()
-{
-  return NS_OK;
-}
-
-nsresult 
-nsPlatformCharset::MapToCharset(short script, short region, nsACString& outCharset)
 {
   return NS_OK;
 }

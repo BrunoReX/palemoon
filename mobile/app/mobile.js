@@ -124,6 +124,9 @@ pref("network.autodial-helper.enabled", true);
 pref("network.buffer.cache.count", 24);
 pref("network.buffer.cache.size",  16384);
 
+// Cross-process websockets are not implemented
+pref("network.websocket.enabled", false);
+
 /* history max results display */
 pref("browser.display.history.maxresults", 100);
 
@@ -172,7 +175,8 @@ pref("signon.expireMasterPassword", false);
 pref("signon.SignonFileName", "signons.txt");
 
 /* form helper */
-pref("formhelper.enabled", true);
+// 0 = disabled, 1 = enabled, 2 = dynamic depending on screen size
+pref("formhelper.mode", 2);
 pref("formhelper.autozoom", true);
 pref("formhelper.autozoom.caret", true);
 pref("formhelper.restore", false);
@@ -182,10 +186,6 @@ pref("findhelper.autozoom", true);
 
 /* autocomplete */
 pref("browser.formfill.enable", true);
-
-/* microsummaries */
-pref("browser.microsummary.enabled", false);
-pref("browser.microsummary.updateGenerators", false);
 
 /* spellcheck */
 pref("layout.spellcheckDefault", 0);
@@ -386,7 +386,6 @@ pref("content.sink.perf_parse_time", 50000000);
 
 pref("javascript.options.mem.gc_frequency", 300);
 pref("javascript.options.mem.high_water_mark", 32);
-pref("javascript.options.methodjit.chrome", false);
 
 pref("dom.max_chrome_script_run_time", 0); // disable slow script dialog for chrome
 pref("dom.max_script_run_time", 20);
@@ -450,13 +449,6 @@ pref("app.faqURL", "http://www.mozilla.com/%LOCALE%/mobile/beta/faq/");
 #else
 pref("app.featuresURL", "http://www.mozilla.com/%LOCALE%/mobile/features/");
 pref("app.faqURL", "http://www.mozilla.com/%LOCALE%/mobile/faq/");
-#endif
-
-pref("app.promo.spark.baseURL", "http://spark.mozilla.org");
-#ifdef MOZ_OFFICIAL_BRANDING
-pref("app.promo.spark.endDate", "2011-05-01");
-#else
-pref("app.promo.spark.endDate", "2011-01-01");
 #endif
 
 // Name of alternate about: page for certificate errors (when undefined, defaults to about:neterror)
@@ -579,7 +571,8 @@ pref("notification.feature.enabled", true);
 
 // prevent tooltips from showing up
 pref("browser.chrome.toolbar_tips", false);
-pref("indexedDB.feature.enabled", false);
+pref("indexedDB.feature.enabled", true);
+pref("dom.indexedDB.warningQuota", 5);
 
 // prevent video elements from preloading too much data
 pref("media.preload.default", 1); // default to preload none
@@ -596,3 +589,62 @@ pref("image.mem.decodeondraw", true);
 pref("content.image.allow_locking", false);
 pref("image.mem.min_discard_timeout_ms", 20000);
 
+// enable touch events interfaces
+pref("dom.w3c_touch_events.enabled", true);
+pref("dom.w3c_touch_events.safetyX", 0); // escape borders in units of 1/240"
+pref("dom.w3c_touch_events.safetyY", 120); // escape borders in units of 1/240"
+
+#ifdef MOZ_SAFE_BROWSING
+// Safe browsing does nothing unless this pref is set
+pref("browser.safebrowsing.enabled", true);
+
+// Prevent loading of pages identified as malware
+pref("browser.safebrowsing.malware.enabled", true);
+
+// Non-enhanced mode (local url lists) URL list to check for updates
+pref("browser.safebrowsing.provider.0.updateURL", "http://safebrowsing.clients.google.com/safebrowsing/downloads?client={moz:client}&appver={moz:version}&pver=2.2");
+
+pref("browser.safebrowsing.dataProvider", 0);
+
+// Does the provider name need to be localizable?
+pref("browser.safebrowsing.provider.0.name", "Google");
+pref("browser.safebrowsing.provider.0.keyURL", "https://sb-ssl.google.com/safebrowsing/newkey?client={moz:client}&appver={moz:version}&pver=2.2");
+pref("browser.safebrowsing.provider.0.reportURL", "http://safebrowsing.clients.google.com/safebrowsing/report?");
+pref("browser.safebrowsing.provider.0.gethashURL", "http://safebrowsing.clients.google.com/safebrowsing/gethash?client={moz:client}&appver={moz:version}&pver=2.2");
+
+// HTML report pages
+pref("browser.safebrowsing.provider.0.reportGenericURL", "http://{moz:locale}.phish-generic.mozilla.com/?hl={moz:locale}");
+pref("browser.safebrowsing.provider.0.reportErrorURL", "http://{moz:locale}.phish-error.mozilla.com/?hl={moz:locale}");
+pref("browser.safebrowsing.provider.0.reportPhishURL", "http://{moz:locale}.phish-report.mozilla.com/?hl={moz:locale}");
+pref("browser.safebrowsing.provider.0.reportMalwareURL", "http://{moz:locale}.malware-report.mozilla.com/?hl={moz:locale}");
+pref("browser.safebrowsing.provider.0.reportMalwareErrorURL", "http://{moz:locale}.malware-error.mozilla.com/?hl={moz:locale}");
+
+// FAQ URLs
+pref("browser.safebrowsing.warning.infoURL", "http://www.mozilla.com/%LOCALE%/%APP%/phishing-protection/");
+pref("browser.geolocation.warning.infoURL", "http://www.mozilla.com/%LOCALE%/%APP%/geolocation/");
+
+// Name of the about: page contributed by safebrowsing to handle display of error
+// pages on phishing/malware hits.  (bug 399233)
+pref("urlclassifier.alternate_error_page", "blocked");
+
+// The number of random entries to send with a gethash request.
+pref("urlclassifier.gethashnoise", 4);
+
+// The list of tables that use the gethash request to confirm partial results.
+pref("urlclassifier.gethashtables", "goog-phish-shavar,goog-malware-shavar");
+
+// If an urlclassifier table has not been updated in this number of seconds,
+// a gethash request will be forced to check that the result is still in
+// the database.
+pref("urlclassifier.confirm-age", 2700);
+
+// Maximum size of the sqlite3 cache during an update, in bytes
+pref("urlclassifier.updatecachemax", 4194304);
+
+// URL for checking the reason for a malware warning.
+pref("browser.safebrowsing.malware.reportURL", "http://safebrowsing.clients.google.com/safebrowsing/diagnostic?client=%NAME%&hl=%LOCALE%&site=");
+#endif
+
+// prevent focus to show/hide the virtual keyboard if the action is not
+// initiated by a user
+pref("content.ime.strict_policy", true);
