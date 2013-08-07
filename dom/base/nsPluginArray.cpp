@@ -38,27 +38,29 @@
 
 #include "nsPluginArray.h"
 #include "nsMimeTypeArray.h"
-#include "nsGlobalWindow.h"
+#include "Navigator.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIDOMNavigator.h"
 #include "nsIDOMMimeType.h"
 #include "nsIPluginHost.h"
 #include "nsIDocShell.h"
 #include "nsIWebNavigation.h"
-#include "nsDOMClassInfo.h"
+#include "nsDOMClassInfoID.h"
 #include "nsPluginError.h"
 #include "nsContentUtils.h"
 #include "nsPluginHost.h"
 
-nsPluginArray::nsPluginArray(nsNavigator* navigator,
+using namespace mozilla;
+using namespace mozilla::dom;
+
+nsPluginArray::nsPluginArray(Navigator* navigator,
                              nsIDocShell *aDocShell)
+  : mNavigator(navigator),
+    mPluginHost(do_GetService(MOZ_PLUGIN_HOST_CONTRACTID)),
+    mPluginCount(0),
+    mPluginArray(nsnull),
+    mDocShell(do_GetWeakReference(aDocShell))
 {
-  nsresult rv;
-  mNavigator = navigator; // don't ADDREF here, needed for parent of script object.
-  mPluginHost = do_GetService(MOZ_PLUGIN_HOST_CONTRACTID, &rv);
-  mPluginCount = 0;
-  mPluginArray = nsnull;
-  mDocShell = aDocShell;
 }
 
 nsPluginArray::~nsPluginArray()
@@ -94,13 +96,15 @@ nsPluginArray::GetLength(PRUint32* aLength)
   return NS_OK;
 }
 
-PRBool
+bool
 nsPluginArray::AllowPlugins()
 {
-  PRBool allowPlugins = PR_FALSE;
-  if (mDocShell)
-    if (NS_FAILED(mDocShell->GetAllowPlugins(&allowPlugins)))
-      allowPlugins = PR_FALSE;
+  bool allowPlugins = false;
+  nsCOMPtr<nsIDocShell> docShell = do_QueryReferent(mDocShell);
+
+  if (docShell)
+    if (NS_FAILED(docShell->GetAllowPlugins(&allowPlugins)))
+      allowPlugins = false;
 
   return allowPlugins;
 }
@@ -191,12 +195,6 @@ nsPluginArray::GetPluginHost(nsIPluginHost** aPluginHost)
 }
 
 void
-nsPluginArray::SetDocShell(nsIDocShell *aDocShell)
-{
-  mDocShell = aDocShell;
-}
-
-void
 nsPluginArray::Invalidate()
 {
   mDocShell = nsnull;
@@ -204,7 +202,7 @@ nsPluginArray::Invalidate()
 }
 
 NS_IMETHODIMP
-nsPluginArray::Refresh(PRBool aReloadDocuments)
+nsPluginArray::Refresh(bool aReloadDocuments)
 {
   nsresult res = NS_OK;
   if (!AllowPlugins())
@@ -220,7 +218,7 @@ nsPluginArray::Refresh(PRBool aReloadDocuments)
 
   // NS_ERROR_PLUGINS_PLUGINSNOTCHANGED on reloading plugins indicates
   // that plugins did not change and was not reloaded
-  PRBool pluginsNotChanged = PR_FALSE;
+  bool pluginsNotChanged = false;
   if(mPluginHost)
     pluginsNotChanged = (NS_ERROR_PLUGINS_PLUGINSNOTCHANGED == mPluginHost->ReloadPlugins(aReloadDocuments));
 
@@ -229,7 +227,7 @@ nsPluginArray::Refresh(PRBool aReloadDocuments)
   if(pluginsNotChanged)
     return res;
 
-  nsCOMPtr<nsIWebNavigation> webNav = do_QueryInterface(mDocShell);
+  nsCOMPtr<nsIWebNavigation> webNav = do_QueryReferent(mDocShell);
 
   if (mPluginArray != nsnull) {
     for (PRUint32 i = 0; i < mPluginCount; i++) 

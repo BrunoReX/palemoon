@@ -99,7 +99,7 @@ void nsTableColGroupFrame::ResetColIndices(nsIFrame*       aFirstColGroup,
 
 nsresult
 nsTableColGroupFrame::AddColsToTable(PRInt32                   aFirstColIndex,
-                                     PRBool                    aResetSubsequentColIndices,
+                                     bool                      aResetSubsequentColIndices,
                                      const nsFrameList::Slice& aCols)
 {
   nsresult rv = NS_OK;
@@ -182,7 +182,7 @@ nsTableColGroupFrame::SetInitialChildList(ChildListID     aListID,
 
   if (aChildList.IsEmpty()) {
     tableFrame->AppendAnonymousColFrames(this, GetSpan(), eColAnonymousColGroup, 
-                                         PR_FALSE);
+                                         false);
     return NS_OK; 
   }
 
@@ -205,7 +205,7 @@ nsTableColGroupFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
       return; // this is a degenerated colgroup 
     nsRect damageArea(GetFirstColumn()->GetColIndex(), 0, colCount,
                       tableFrame->GetRowCount());
-    tableFrame->SetBCDamageArea(damageArea);
+    tableFrame->AddBCDamageArea(damageArea);
   }
   return;
 }
@@ -283,7 +283,7 @@ void
 nsTableColGroupFrame::InsertColsReflow(PRInt32                   aColIndex,
                                        const nsFrameList::Slice& aCols)
 {
-  AddColsToTable(aColIndex, PR_TRUE, aCols);
+  AddColsToTable(aColIndex, true, aCols);
 
   PresContext()->PresShell()->FrameNeedsReflow(this,
                                                nsIPresShell::eTreeChange,
@@ -292,7 +292,7 @@ nsTableColGroupFrame::InsertColsReflow(PRInt32                   aColIndex,
 
 void
 nsTableColGroupFrame::RemoveChild(nsTableColFrame& aChild,
-                                  PRBool           aResetSubsequentColIndices)
+                                  bool             aResetSubsequentColIndices)
 {
   PRInt32 colIndex = 0;
   nsIFrame* nextChild = nsnull;
@@ -325,12 +325,12 @@ nsTableColGroupFrame::RemoveFrame(ChildListID     aListID,
   NS_ASSERTION(aListID == kPrincipalList, "unexpected child list");
 
   if (!aOldFrame) return NS_OK;
-  PRBool contentRemoval = PR_FALSE;
+  bool contentRemoval = false;
   
   if (nsGkAtoms::tableColFrame == aOldFrame->GetType()) {
     nsTableColFrame* colFrame = (nsTableColFrame*)aOldFrame;
     if (colFrame->GetColType() == eColContent) {
-      contentRemoval = PR_TRUE;
+      contentRemoval = true;
       // Remove any anonymous column frames this <col> produced via a colspan
       nsTableColFrame* col = colFrame->GetNextCol();
       nsTableColFrame* nextCol;
@@ -356,17 +356,17 @@ nsTableColGroupFrame::RemoveFrame(ChildListID     aListID,
     
     PRInt32 colIndex = colFrame->GetColIndex();
     // The RemoveChild call handles calling FrameNeedsReflow on us.
-    RemoveChild(*colFrame, PR_TRUE);
+    RemoveChild(*colFrame, true);
     
     nsTableFrame* tableFrame = nsTableFrame::GetTableFrame(this);
     if (!tableFrame)
       return NS_ERROR_NULL_POINTER;
 
-    tableFrame->RemoveCol(this, colIndex, PR_TRUE, PR_TRUE);
+    tableFrame->RemoveCol(this, colIndex, true, true);
     if (mFrames.IsEmpty() && contentRemoval && 
         GetColType() == eColGroupContent) {
       tableFrame->AppendAnonymousColFrames(this, GetSpan(),
-                                           eColAnonymousColGroup, PR_TRUE);
+                                           eColAnonymousColGroup, true);
     }
   }
   else {
@@ -400,11 +400,11 @@ NS_METHOD nsTableColGroupFrame::Reflow(nsPresContext*          aPresContext,
   nsresult rv=NS_OK;
   
   const nsStyleVisibility* groupVis = GetStyleVisibility();
-  PRBool collapseGroup = (NS_STYLE_VISIBILITY_COLLAPSE == groupVis->mVisible);
+  bool collapseGroup = (NS_STYLE_VISIBILITY_COLLAPSE == groupVis->mVisible);
   if (collapseGroup) {
     nsTableFrame* tableFrame = nsTableFrame::GetTableFrame(this);
     if (tableFrame)  {
-      tableFrame->SetNeedToCollapse(PR_TRUE);;
+      tableFrame->SetNeedToCollapse(true);;
     }
   }
   // for every content child that (is a column thingy and does not already have a frame)
@@ -427,12 +427,6 @@ NS_METHOD nsTableColGroupFrame::Reflow(nsPresContext*          aPresContext,
   aStatus = NS_FRAME_COMPLETE;
   NS_FRAME_SET_TRUNCATION(aStatus, aReflowState, aDesiredSize);
   return rv;
-}
-
-/* virtual */ PRBool
-nsTableColGroupFrame::IsContainingBlock() const
-{
-  return PR_TRUE;
 }
 
 nsTableColFrame * nsTableColGroupFrame::GetFirstColumn()

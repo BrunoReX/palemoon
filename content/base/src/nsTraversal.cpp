@@ -50,12 +50,12 @@
 nsTraversal::nsTraversal(nsINode *aRoot,
                          PRUint32 aWhatToShow,
                          nsIDOMNodeFilter *aFilter,
-                         PRBool aExpandEntityReferences) :
+                         bool aExpandEntityReferences) :
     mRoot(aRoot),
     mWhatToShow(aWhatToShow),
     mFilter(aFilter),
     mExpandEntityReferences(aExpandEntityReferences),
-    mInAcceptNode(PR_FALSE)
+    mInAcceptNode(false)
 {
     NS_ASSERTION(aRoot, "invalid root in call to nsTraversal constructor");
 }
@@ -88,9 +88,9 @@ nsresult nsTraversal::TestNode(nsINode* aNode, PRInt16* _filtered)
 
     if (mFilter) {
         nsCOMPtr<nsIDOMNode> domNode = do_QueryInterface(aNode);
-        mInAcceptNode = PR_TRUE;
+        mInAcceptNode = true;
         rv = mFilter->AcceptNode(domNode, _filtered);
-        mInAcceptNode = PR_FALSE;
+        mInAcceptNode = false;
         return rv;
     }
 

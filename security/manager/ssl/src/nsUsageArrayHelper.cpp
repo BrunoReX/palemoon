@@ -152,7 +152,7 @@ nsUsageArrayHelper::verifyFailed(PRUint32 *_verified, int err)
 
 nsresult
 nsUsageArrayHelper::GetUsagesArray(const char *suffix,
-                      PRBool localOnly,
+                      bool localOnly,
                       PRUint32 outArraySize,
                       PRUint32 *_verified,
                       PRUint32 *_count,
@@ -188,7 +188,7 @@ if (!nsNSSComponent::globalConstFlagUsePKIXVerification) {
   // valid for all the given usages. Hoewver, we are only looking for the list
   // of usages for which the cert *is* valid.
   (void)
-  CERT_VerifyCertificateNow(defaultcertdb, mCert, PR_TRUE,
+  CERT_VerifyCertificateNow(defaultcertdb, mCert, true,
 			    certificateUsageSSLClient |
 			    certificateUsageSSLServer |
 			    certificateUsageSSLServerWithStepUp |

@@ -219,8 +219,6 @@ public:
     eIntID_SubmenuDelay,
     // can popups overlap menu/task bar?
     eIntID_MenusCanOverlapOSBar,
-    // can scrollbars float above content?
-    eIntID_ScrollbarsCanOverlapContent,
     // skip navigating to disabled menu item?
     eIntID_SkipNavigatingDisabledMenuItem,
     // begin a drag if the mouse is moved further than the threshold while the
@@ -370,7 +368,16 @@ public:
     /**
      * Return the appropriate WindowsThemeIdentifier for the current theme.
      */
-    eIntID_WindowsThemeIdentifier
+    eIntID_WindowsThemeIdentifier,
+    /**
+     * 0: scrollbar button repeats to scroll only when cursor is on the button.
+     * 1: scrollbar button repeats to scroll even if cursor is outside of it.
+     */
+    eIntID_ScrollbarButtonAutoRepeatBehavior,
+    /**
+     * Dealy before showing a tooltip.
+     */
+    eIntID_TooltipDelay
   };
 
   /**
@@ -457,7 +464,7 @@ public:
 
   static nscolor GetColor(ColorID aID, nscolor aDefault = NS_RGB(0, 0, 0))
   {
-    nscolor result;
+    nscolor result = NS_RGB(0, 0, 0);
     if (NS_FAILED(GetColor(aID, &result))) {
       return aDefault;
     }
@@ -493,7 +500,7 @@ public:
    * result of GetPasswordCharacter(), GetEchoPassword() returns TRUE.
    * Otherwise, FALSE.
    */
-  static PRBool GetEchoPassword();
+  static bool GetEchoPassword();
 
   /**
    * When system look and feel is changed, Refresh() must be called.  Then,

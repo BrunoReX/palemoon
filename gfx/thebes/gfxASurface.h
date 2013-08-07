@@ -127,7 +127,7 @@ public:
     void SetDeviceOffset(const gfxPoint& offset);
     gfxPoint GetDeviceOffset() const;
 
-    virtual PRBool GetRotateForLandscape() { return PR_FALSE; }
+    virtual bool GetRotateForLandscape() { return false; }
 
     void Flush() const;
     void MarkDirty();
@@ -171,7 +171,7 @@ public:
      * using 4 bytes per pixel; optionally, make sure that either dimension
      * doesn't exceed the given limit.
      */
-    static PRBool CheckSurfaceSize(const gfxIntSize& sz, PRInt32 limit = 0);
+    static bool CheckSurfaceSize(const gfxIntSize& sz, PRInt32 limit = 0);
 
     /* Provide a stride value that will respect all alignment requirements of
      * the accelerated image-rendering code.
@@ -187,8 +187,8 @@ public:
     static gfxContentType ContentFromFormat(gfxImageFormat format);
     static gfxImageFormat FormatFromContent(gfxContentType format);
 
-    void SetSubpixelAntialiasingEnabled(PRBool aEnabled);
-    PRBool GetSubpixelAntialiasingEnabled();
+    void SetSubpixelAntialiasingEnabled(bool aEnabled);
+    bool GetSubpixelAntialiasingEnabled();
 
     /**
      * Record number of bytes for given surface type.  Use positive bytes
@@ -229,7 +229,28 @@ public:
 
     virtual const gfxIntSize GetSize() const { return gfxIntSize(-1, -1); }
 
+#ifdef MOZ_DUMP_PAINTING
+    /**
+     * Debug functions to encode the current image as a PNG and export it.
+     */
+
+    /**
+     * Writes a binary PNG file.
+     */
+    void WriteAsPNG(const char* aFile);
+
+    /**
+     * Write as a PNG encoded Data URL to stdout.
+     */
     void DumpAsDataURL();
+
+    /**
+     * Copy a PNG encoded Data URL to the clipboard.
+     */
+    void CopyAsDataURL();
+    
+    void WriteAsPNG_internal(FILE* aFile, bool aBinary);
+#endif
 
     void SetOpaqueRect(const gfxRect& aRect) {
         if (aRect.IsEmpty()) {
@@ -263,12 +284,12 @@ public:
     /**
      * Mark the surface as being allowed/not allowed to be used as a source.
      */
-    void SetAllowUseAsSource(PRBool aAllow) { mAllowUseAsSource = aAllow; }
-    PRBool GetAllowUseAsSource() { return mAllowUseAsSource; }
+    void SetAllowUseAsSource(bool aAllow) { mAllowUseAsSource = aAllow; }
+    bool GetAllowUseAsSource() { return mAllowUseAsSource; }
 
 protected:
     gfxASurface() : mSurface(nsnull), mFloatingRefs(0), mBytesRecorded(0),
-                    mSurfaceValid(PR_FALSE), mAllowUseAsSource(PR_TRUE)
+                    mSurfaceValid(false), mAllowUseAsSource(true)
     {
         MOZ_COUNT_CTOR(gfxASurface);
     }
@@ -287,7 +308,7 @@ protected:
     // NB: Init() *must* be called from within subclass's
     // constructors.  It's unsafe to call it after the ctor finishes;
     // leaks and use-after-frees are possible.
-    void Init(cairo_surface_t *surface, PRBool existingSurface = PR_FALSE);
+    void Init(cairo_surface_t *surface, bool existingSurface = false);
 
     virtual ~gfxASurface()
     {
@@ -306,8 +327,8 @@ private:
     PRInt32 mBytesRecorded;
 
 protected:
-    PRPackedBool mSurfaceValid;
-    PRPackedBool mAllowUseAsSource;
+    bool mSurfaceValid;
+    bool mAllowUseAsSource;
 };
 
 /**
@@ -316,7 +337,7 @@ protected:
 class THEBES_API gfxUnknownSurface : public gfxASurface {
 public:
     gfxUnknownSurface(cairo_surface_t *surf) {
-        Init(surf, PR_TRUE);
+        Init(surf, true);
     }
 
     virtual ~gfxUnknownSurface() { }

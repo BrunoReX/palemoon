@@ -51,7 +51,7 @@ static int gNotOptimized;
 #define CALLING_CONVENTION_HACK
 #endif
 
-#ifdef ANDROID
+#ifdef MOZ_WIDGET_ANDROID
 #include "AndroidBridge.h"
 #include "android_npapi.h"
 #include <android/log.h>
@@ -59,21 +59,24 @@ static int gNotOptimized;
 #endif
 
 namespace mozilla {
-#ifdef ANDROID
+#ifdef MOZ_WIDGET_ANDROID
 nsresult
 PluginPRLibrary::NP_Initialize(NPNetscapeFuncs* bFuncs,
 			       NPPluginFuncs* pFuncs, NPError* error)
 {
+  JNIEnv* env = GetJNIForThread();
+  if (!env)
+    return NS_ERROR_FAILURE;
+
   if (mNP_Initialize) {
-    *error = mNP_Initialize(bFuncs, pFuncs, GetJNIForThread());
+    *error = mNP_Initialize(bFuncs, pFuncs, env);
   } else {
     NP_InitializeFunc pfNP_Initialize = (NP_InitializeFunc)
       PR_FindFunctionSymbol(mLibrary, "NP_Initialize");
     if (!pfNP_Initialize)
       return NS_ERROR_FAILURE;
-    *error = pfNP_Initialize(bFuncs, pFuncs, GetJNIForThread());
+    *error = pfNP_Initialize(bFuncs, pFuncs, env);
   }
-
 
   // Save pointers to functions that get called through PluginLibrary itself.
   mNPP_New = pFuncs->newp;
@@ -82,10 +85,16 @@ PluginPRLibrary::NP_Initialize(NPNetscapeFuncs* bFuncs,
   mNPP_GetSitesWithData = pFuncs->getsiteswithdata;
   return NS_OK;
 }
+#elif defined(MOZ_WIDGET_GONK)
+nsresult
+PluginPRLibrary::NP_Initialize(NPNetscapeFuncs* bFuncs, NPError* error)
+{
+  return NS_OK;
+}
 #elif defined(XP_UNIX) && !defined(XP_MACOSX)
 nsresult
 PluginPRLibrary::NP_Initialize(NPNetscapeFuncs* bFuncs,
-			       NPPluginFuncs* pFuncs, NPError* error)
+                               NPPluginFuncs* pFuncs, NPError* error)
 {
   if (mNP_Initialize) {
     *error = mNP_Initialize(bFuncs, pFuncs);
@@ -293,11 +302,11 @@ PluginPRLibrary::GetImage(NPP instance, ImageContainer* aContainer, Image** aIma
 
 #if defined(XP_MACOSX)
 nsresult
-PluginPRLibrary::IsRemoteDrawingCoreAnimation(NPP instance, PRBool *aDrawing)
+PluginPRLibrary::IsRemoteDrawingCoreAnimation(NPP instance, bool *aDrawing)
 {
   nsNPAPIPluginInstance* inst = (nsNPAPIPluginInstance*)instance->ndata;
   NS_ENSURE_TRUE(inst, NS_ERROR_NULL_POINTER);
-  *aDrawing = PR_FALSE; 
+  *aDrawing = false; 
   return NS_OK;
 }
 #endif

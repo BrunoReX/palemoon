@@ -84,45 +84,55 @@ nsScrollbarButtonFrame::HandleEvent(nsPresContext* aPresContext,
     return NS_OK;
   }
 
-  // XXX hack until handle release is actually called in nsframe.
-  if (aEvent->message == NS_MOUSE_EXIT_SYNTH ||
-      aEvent->message == NS_MOUSE_BUTTON_UP)
-     HandleRelease(aPresContext, aEvent, aEventStatus);
-  
-  // if we didn't handle the press ourselves, pass it on to the superclass
-  if (!HandleButtonPress(aPresContext, aEvent, aEventStatus))
-    return nsButtonBoxFrame::HandleEvent(aPresContext, aEvent, aEventStatus);
-  return NS_OK;
+  switch (aEvent->message) {
+    case NS_MOUSE_BUTTON_DOWN:
+      mCursorOnThis = true;
+      // if we didn't handle the press ourselves, pass it on to the superclass
+      if (HandleButtonPress(aPresContext, aEvent, aEventStatus)) {
+        return NS_OK;
+      }
+      break;
+    case NS_MOUSE_BUTTON_UP:
+      HandleRelease(aPresContext, aEvent, aEventStatus);
+      break;
+    case NS_MOUSE_EXIT_SYNTH:
+      mCursorOnThis = false;
+      break;
+    case NS_MOUSE_MOVE: {
+      nsPoint cursor =
+        nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, this);
+      nsRect frameRect(nsPoint(0, 0), GetSize());
+      mCursorOnThis = frameRect.Contains(cursor);
+      break;
+    }
+  }
+
+  return nsButtonBoxFrame::HandleEvent(aPresContext, aEvent, aEventStatus);
 }
 
 
-PRBool
+bool
 nsScrollbarButtonFrame::HandleButtonPress(nsPresContext* aPresContext, 
                                           nsGUIEvent*     aEvent,
                                           nsEventStatus*  aEventStatus)
 {
   // Get the desired action for the scrollbar button.
   LookAndFeel::IntID tmpAction;
-  if (aEvent->eventStructType == NS_MOUSE_EVENT &&
-      aEvent->message == NS_MOUSE_BUTTON_DOWN) {
-    PRUint16 button = static_cast<nsMouseEvent*>(aEvent)->button;
-    if (button == nsMouseEvent::eLeftButton) {
-      tmpAction = LookAndFeel::eIntID_ScrollButtonLeftMouseButtonAction;
-    } else if (button == nsMouseEvent::eMiddleButton) {
-      tmpAction = LookAndFeel::eIntID_ScrollButtonMiddleMouseButtonAction;
-    } else if (button == nsMouseEvent::eRightButton) {
-      tmpAction = LookAndFeel::eIntID_ScrollButtonRightMouseButtonAction;
-    } else {
-      return PR_FALSE;
-    }
+  PRUint16 button = static_cast<nsMouseEvent*>(aEvent)->button;
+  if (button == nsMouseEvent::eLeftButton) {
+    tmpAction = LookAndFeel::eIntID_ScrollButtonLeftMouseButtonAction;
+  } else if (button == nsMouseEvent::eMiddleButton) {
+    tmpAction = LookAndFeel::eIntID_ScrollButtonMiddleMouseButtonAction;
+  } else if (button == nsMouseEvent::eRightButton) {
+    tmpAction = LookAndFeel::eIntID_ScrollButtonRightMouseButtonAction;
   } else {
-    return PR_FALSE;
+    return false;
   }
 
   // Get the button action metric from the pres. shell.
   PRInt32 pressedButtonAction;
   if (NS_FAILED(LookAndFeel::GetInt(tmpAction, &pressedButtonAction))) {
-    return PR_FALSE;
+    return false;
   }
 
   // get the scrollbar control
@@ -130,7 +140,7 @@ nsScrollbarButtonFrame::HandleButtonPress(nsPresContext* aPresContext,
   GetParentWithTag(nsGkAtoms::scrollbar, this, scrollbar);
 
   if (scrollbar == nsnull)
-    return PR_FALSE;
+    return false;
 
   // get the scrollbars content node
   nsIContent* content = scrollbar->GetContent();
@@ -147,12 +157,12 @@ nsScrollbarButtonFrame::HandleButtonPress(nsPresContext* aPresContext,
   else if (index == 1)
     direction = -1;
   else
-    return PR_FALSE;
+    return false;
 
   // Whether or not to repeat the click action.
-  PRBool repeat = PR_TRUE;
+  bool repeat = true;
   // Use smooth scrolling by default.
-  PRBool smoothScroll = PR_TRUE;
+  bool smoothScroll = true;
   switch (pressedButtonAction) {
     case 0:
       mIncrement = direction * nsSliderFrame::GetIncrement(content);
@@ -168,24 +178,26 @@ nsScrollbarButtonFrame::HandleButtonPress(nsPresContext* aPresContext,
                      nsSliderFrame::GetCurrentPosition(content);
       // Don't repeat or use smooth scrolling if scrolling to beginning or end
       // of a page.
-      repeat = smoothScroll = PR_FALSE;
+      repeat = smoothScroll = false;
       break;
     case 3:
     default:
       // We were told to ignore this click, or someone assigned a non-standard
       // value to the button's action.
-      return PR_FALSE;
+      return false;
   }
   // set this attribute so we can style it later
   nsWeakFrame weakFrame(this);
-  mContent->SetAttr(kNameSpaceID_None, nsGkAtoms::active, NS_LITERAL_STRING("true"), PR_TRUE);
+  mContent->SetAttr(kNameSpaceID_None, nsGkAtoms::active, NS_LITERAL_STRING("true"), true);
+
+  nsIPresShell::SetCapturingContent(mContent, CAPTURE_IGNOREALLOWED);
 
   if (weakFrame.IsAlive()) {
     DoButtonAction(smoothScroll);
   }
   if (repeat)
     StartRepeat();
-  return PR_TRUE;
+  return true;
 }
 
 NS_IMETHODIMP 
@@ -193,8 +205,9 @@ nsScrollbarButtonFrame::HandleRelease(nsPresContext* aPresContext,
                                       nsGUIEvent*     aEvent,
                                       nsEventStatus*  aEventStatus)
 {
+  nsIPresShell::SetCapturingContent(nsnull, 0);
   // we're not active anymore
-  mContent->UnsetAttr(kNameSpaceID_None, nsGkAtoms::active, PR_TRUE);
+  mContent->UnsetAttr(kNameSpaceID_None, nsGkAtoms::active, true);
   StopRepeat();
   return NS_OK;
 }
@@ -203,7 +216,11 @@ void nsScrollbarButtonFrame::Notify()
 {
   // Since this is only going to get called if we're scrolling a page length
   // or a line increment, we will always use smooth scrolling.
-  DoButtonAction(PR_TRUE);
+  if (mCursorOnThis ||
+      LookAndFeel::GetInt(
+        LookAndFeel::eIntID_ScrollbarButtonAutoRepeatBehavior, 0)) {
+    DoButtonAction(true);
+  }
 }
 
 void
@@ -214,7 +231,7 @@ nsScrollbarButtonFrame::MouseClicked(nsPresContext* aPresContext, nsGUIEvent* aE
 }
 
 void
-nsScrollbarButtonFrame::DoButtonAction(PRBool aSmoothScroll) 
+nsScrollbarButtonFrame::DoButtonAction(bool aSmoothScroll) 
 {
   // get the scrollbar control
   nsIFrame* scrollbar;
@@ -257,10 +274,10 @@ nsScrollbarButtonFrame::DoButtonAction(PRBool aSmoothScroll)
   curposStr.AppendInt(curpos);
 
   if (aSmoothScroll)
-    content->SetAttr(kNameSpaceID_None, nsGkAtoms::smooth, NS_LITERAL_STRING("true"), PR_FALSE);
-  content->SetAttr(kNameSpaceID_None, nsGkAtoms::curpos, curposStr, PR_TRUE);
+    content->SetAttr(kNameSpaceID_None, nsGkAtoms::smooth, NS_LITERAL_STRING("true"), false);
+  content->SetAttr(kNameSpaceID_None, nsGkAtoms::curpos, curposStr, true);
   if (aSmoothScroll)
-    content->UnsetAttr(kNameSpaceID_None, nsGkAtoms::smooth, PR_FALSE);
+    content->UnsetAttr(kNameSpaceID_None, nsGkAtoms::smooth, false);
 }
 
 nsresult

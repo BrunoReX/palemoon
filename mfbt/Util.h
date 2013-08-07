@@ -40,6 +40,7 @@
 #ifndef mozilla_Util_h_
 #define mozilla_Util_h_
 
+#include "mozilla/Attributes.h"
 #include "mozilla/Types.h"
 
 /*
@@ -59,7 +60,7 @@
 MOZ_BEGIN_EXTERN_C
 
 extern MFBT_API(void)
-JS_Assert(const char *s, const char *file, JSIntn ln);
+JS_Assert(const char *s, const char *file, int ln);
 
 MOZ_END_EXTERN_C
 
@@ -69,14 +70,10 @@ MOZ_END_EXTERN_C
  * which it fails will stop running in a loud and dramatic way.
  */
 #ifdef DEBUG
-
-# define MOZ_ASSERT(expr_)                                      \
-    ((expr_) ? (void)0 : JS_Assert(#expr_, __FILE__, __LINE__))
-
+#  define MOZ_ASSERT(expr_)                                      \
+     ((expr_) ? (void)0 : JS_Assert(#expr_, __FILE__, __LINE__))
 #else
-
-# define MOZ_ASSERT(expr_) ((void)0)
-
+#  define MOZ_ASSERT(expr_) ((void)0)
 #endif  /* DEBUG */
 
 /*
@@ -86,15 +83,15 @@ MOZ_END_EXTERN_C
  * may ignore this directive if it chooses.
  */
 #ifndef MOZ_INLINE
-# if defined __cplusplus
-#  define MOZ_INLINE          inline
-# elif defined _MSC_VER
-#  define MOZ_INLINE          __inline
-# elif defined __GNUC__
-#  define MOZ_INLINE          __inline__
-# else
-#  define MOZ_INLINE          inline
-# endif
+#  if defined __cplusplus
+#    define MOZ_INLINE          inline
+#  elif defined _MSC_VER
+#    define MOZ_INLINE          __inline
+#  elif defined __GNUC__
+#    define MOZ_INLINE          __inline__
+#  else
+#    define MOZ_INLINE          inline
+#  endif
 #endif
 
 /*
@@ -105,15 +102,15 @@ MOZ_END_EXTERN_C
  * to do so).
  */
 #ifndef MOZ_ALWAYS_INLINE
-# if defined DEBUG
-#  define MOZ_ALWAYS_INLINE   MOZ_INLINE
-# elif defined _MSC_VER
-#  define MOZ_ALWAYS_INLINE   __forceinline
-# elif defined __GNUC__
-#  define MOZ_ALWAYS_INLINE   __attribute__((always_inline)) MOZ_INLINE
-# else
-#  define MOZ_ALWAYS_INLINE   MOZ_INLINE
-# endif
+#  if defined DEBUG
+#    define MOZ_ALWAYS_INLINE   MOZ_INLINE
+#  elif defined _MSC_VER
+#    define MOZ_ALWAYS_INLINE   __forceinline
+#  elif defined __GNUC__
+#    define MOZ_ALWAYS_INLINE   __attribute__((always_inline)) MOZ_INLINE
+#  else
+#    define MOZ_ALWAYS_INLINE   MOZ_INLINE
+#  endif
 #endif
 
 /*
@@ -123,13 +120,13 @@ MOZ_END_EXTERN_C
  * guaranteed to support this, but most do.
  */
 #ifndef MOZ_NEVER_INLINE
-# if defined _MSC_VER
-#  define MOZ_NEVER_INLINE __declspec(noinline)
-# elif defined __GNUC__
-#  define MOZ_NEVER_INLINE __attribute__((noinline))
-# else
-#  define MOZ_NEVER_INLINE
-# endif
+#  if defined _MSC_VER
+#    define MOZ_NEVER_INLINE __declspec(noinline)
+#  elif defined __GNUC__
+#    define MOZ_NEVER_INLINE __attribute__((noinline))
+#  else
+#    define MOZ_NEVER_INLINE
+#  endif
 #endif
 
 #ifdef __cplusplus
@@ -193,10 +190,93 @@ struct DebugOnly
     ~DebugOnly() {}
 };
 
+/*
+ * This class, and the corresponding macro MOZ_ALIGNOF, figure out how many 
+ * bytes of alignment a given type needs.
+ */
+template<class T>
+struct AlignmentFinder
+{
+private:
+  struct Aligner
+  {
+    char c;
+    T t;
+  };
+
+public:
+  static const int alignment = sizeof(Aligner) - sizeof(T);
+};
+
+#define MOZ_ALIGNOF(T) mozilla::AlignmentFinder<T>::alignment
+
+/*
+ * Declare the MOZ_ALIGNED_DECL macro for declaring aligned types.
+ *
+ * For instance,
+ *
+ *   MOZ_ALIGNED_DECL(char arr[2], 8);
+ *
+ * will declare a two-character array |arr| aligned to 8 bytes.
+ */
+
+#if defined(__GNUC__)
+#  define MOZ_ALIGNED_DECL(_type, _align) \
+     _type __attribute__((aligned(_align)))
+#elif defined(_MSC_VER)
+#  define MOZ_ALIGNED_DECL(_type, _align) \
+     __declspec(align(_align)) _type
+#else
+#  warning "We don't know how to align variables on this compiler."
+#  define MOZ_ALIGNED_DECL(_type, _align) _type
+#endif
+
+/*
+ * AlignedElem<N> is a structure whose alignment is guaranteed to be at least N bytes.
+ *
+ * We support 1, 2, 4, 8, and 16-bit alignment.
+ */
+template<size_t align>
+struct AlignedElem;
+
+/*
+ * We have to specialize this template because GCC doesn't like __attribute__((aligned(foo))) where
+ * foo is a template parameter.
+ */
+
+template<>
+struct AlignedElem<1>
+{
+  MOZ_ALIGNED_DECL(uint8_t elem, 1);
+};
+
+template<>
+struct AlignedElem<2>
+{
+  MOZ_ALIGNED_DECL(uint8_t elem, 2);
+};
+
+template<>
+struct AlignedElem<4>
+{
+  MOZ_ALIGNED_DECL(uint8_t elem, 4);
+};
+
+template<>
+struct AlignedElem<8>
+{
+  MOZ_ALIGNED_DECL(uint8_t elem, 8);
+};
+
+template<>
+struct AlignedElem<16>
+{
+  MOZ_ALIGNED_DECL(uint8_t elem, 16);
+};
 
 /*
  * This utility pales in comparison to Boost's aligned_storage. The utility
- * simply assumes that uint64 is enough alignment for anyone. This may need
+ * simply assumes that uint64_t is enough alignment for anyone. This may need
  * to be extended one day...
  *
  * As an important side effect, pulling the storage into this template is
@@ -209,7 +289,7 @@ struct AlignedStorage
 {
     union U {
         char bytes[nbytes];
-        uint64 _;
+        uint64_t _;
     } u;
 
     const void *addr() const { return u.bytes; }
@@ -221,7 +301,7 @@ struct AlignedStorage2
 {
     union U {
         char bytes[sizeof(T)];
-        uint64 _;
+        uint64_t _;
     } u;
 
     const T *addr() const { return (const T *)u.bytes; }
@@ -328,6 +408,31 @@ PointerRangeSize(T* begin, T* end)
 {
     MOZ_ASSERT(end >= begin);
     return (size_t(end) - size_t(begin)) / sizeof(T);
+}
+
+/*
+ * Compute the length of an array with constant length.  (Use of this method
+ * with a non-array pointer will not compile.)
+ *
+ * Beware of the implicit trailing '\0' when using this with string constants.
+ */
+template<typename T, size_t N>
+size_t
+ArrayLength(T (&arr)[N])
+{
+    return N;
+}
+
+/*
+ * Compute the address one past the last element of a constant-length array.
+ *
+ * Beware of the implicit trailing '\0' when using this with string constants.
+ */
+template<typename T, size_t N>
+T*
+ArrayEnd(T (&arr)[N])
+{
+    return arr + ArrayLength(arr);
 }
 
 } /* namespace mozilla */

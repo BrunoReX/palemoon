@@ -49,7 +49,7 @@ GRE_MODULE	= 1
 MOZILLA_INTERNAL_API =1
 LIBXUL_LIBRARY = 1
 
-# TODO: we do this in crashreporter too, should be centralized
+# TODO: we do this in crashreporter and storage/src too, should be centralized
 ifeq ($(OS_ARCH),Linux)
 DEFINES += -DXP_LINUX
 endif
@@ -92,6 +92,7 @@ EXPORTS		= \
 		nsTraceRefcntImpl.h \
 		nsWeakPtr.h \
 		nsInterfaceRequestorAgg.h \
+		dmd.h \
 		$(NULL)
 
 EXPORTS_NAMESPACES = mozilla
@@ -99,6 +100,8 @@ EXPORTS_NAMESPACES = mozilla
 EXPORTS_mozilla = \
 	FunctionTimer.h \
 	MapsMemoryReporter.h \
+	ClearOnShutdown.h \
+	AvailableMemoryTracker.h \
 	$(NULL)
 
 ifeq (windows,$(MOZ_WIDGET_TOOLKIT))
@@ -106,11 +109,15 @@ CPPSRCS += nsCrashOnException.cpp
 endif
 
 ifeq ($(OS_ARCH),WINNT)
+
 ifdef MOZ_DEBUG
 CSRCS		+= pure_api.c
 EXPORTS		+= pure.h
 endif
-endif
+
+CPPSRCS += AvailableMemoryTracker.cpp
+
+endif #if OS_ARCH == WINNT
 
 SDK_XPIDLSRCS   = \
 		nsIDebug.idl               \
@@ -153,9 +160,9 @@ endif
 # we don't want the shared lib, but we want to force the creation of a static lib.
 FORCE_STATIC_LIB = 1
 
-# Force use of PIC
-FORCE_USE_PIC	= 1
 
+include $(topsrcdir)/config/config.mk
+include $(topsrcdir)/ipc/chromium/chromium-config.mk
 include $(topsrcdir)/config/rules.mk
 
 DEFINES		+= -D_IMPL_NS_COM

@@ -68,16 +68,16 @@ public:
 private:
   class AttemptedInitMarker {
   public:
-    AttemptedInitMarker(PRPackedBool* aAttemptedInit) :
+    AttemptedInitMarker(bool* aAttemptedInit) :
       mAttemptedInit(aAttemptedInit)
     {}
 
     ~AttemptedInitMarker() {
-      *mAttemptedInit = PR_TRUE;
+      *mAttemptedInit = true;
     }
 
   private:
-    PRPackedBool* mAttemptedInit;
+    bool* mAttemptedInit;
   };
   
   nsCOMPtr<nsIPrincipal> mPrincipal;
@@ -86,8 +86,8 @@ private:
   nsCOMPtr<nsIURI> mBaseURI;
   nsWeakPtr mScriptHandlingObject;
   
-  PRPackedBool mLoopingForSyncLoad;
-  PRPackedBool mAttemptedInit;
+  bool mLoopingForSyncLoad;
+  bool mAttemptedInit;
 };
 
 #endif

@@ -69,14 +69,14 @@ LayerManagerD3D9::~LayerManagerD3D9()
   Destroy();
 }
 
-PRBool
+bool
 LayerManagerD3D9::Initialize()
 {
   ScopedGfxFeatureReporter reporter("D3D9 Layers");
 
   /* XXX: this preference and blacklist code should move out of the layer manager */
-  PRBool forceAccelerate =
-    Preferences::GetBool("layers.acceleration.force-enabled", PR_FALSE);
+  bool forceAccelerate =
+    Preferences::GetBool("layers.acceleration.force-enabled", false);
 
   nsCOMPtr<nsIGfxInfo> gfxInfo = do_GetService("@mozilla.org/gfx/info;1");
   if (gfxInfo) {
@@ -85,7 +85,7 @@ LayerManagerD3D9::Initialize()
       if (status != nsIGfxInfo::FEATURE_NO_INFO && !forceAccelerate)
       {
         NS_WARNING("Direct3D 9-accelerated layers are not supported on this system.");
-        return PR_FALSE;
+        return false;
       }
     }
   }
@@ -95,7 +95,7 @@ LayerManagerD3D9::Initialize()
 
     if (!mDeviceManager->Init()) {
       mDeviceManager = nsnull;
-      return PR_FALSE;
+      return false;
     }
 
     mDefaultDeviceManager = mDeviceManager;
@@ -107,11 +107,11 @@ LayerManagerD3D9::Initialize()
     CreateSwapChain((HWND)mWidget->GetNativeData(NS_NATIVE_WINDOW));
 
   if (!mSwapChain) {
-    return PR_FALSE;
+    return false;
   }
 
   reporter.SetSuccessful();
-  return PR_TRUE;
+  return true;
 }
 
 void

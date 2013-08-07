@@ -71,14 +71,14 @@ nsresult NS_CopyUnicodeToNative(const nsAString  &input, nsACString &output);
  * and other platforms (e.g. OS2), it's never UTF-8.  
  */
 #if defined(XP_UNIX) && !defined(XP_MACOSX) && !defined(ANDROID)
-PRBool NS_IsNativeUTF8();
+bool NS_IsNativeUTF8();
 #else
-inline PRBool NS_IsNativeUTF8()
+inline bool NS_IsNativeUTF8()
 {
 #if defined(XP_MACOSX) || defined(ANDROID)
-    return PR_TRUE;
+    return true;
 #else
-    return PR_FALSE;
+    return false;
 #endif
 }
 #endif

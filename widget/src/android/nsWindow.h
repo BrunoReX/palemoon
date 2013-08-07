@@ -43,6 +43,10 @@
 
 #include "nsTArray.h"
 
+#ifdef ACCESSIBILITY
+#include "nsAccessible.h"
+#endif
+
 class gfxASurface;
 class nsIdleService;
 
@@ -69,8 +73,9 @@ public:
 
     void OnAndroidEvent(mozilla::AndroidGeckoEvent *ae);
     void OnDraw(mozilla::AndroidGeckoEvent *ae);
+    bool OnMultitouchEvent(mozilla::AndroidGeckoEvent *ae);
+    void OnGestureEvent(mozilla::AndroidGeckoEvent *ae);
     void OnMotionEvent(mozilla::AndroidGeckoEvent *ae);
-    void OnMultitouchEvent(mozilla::AndroidGeckoEvent *ae);
     void OnKeyEvent(mozilla::AndroidGeckoEvent *ae);
     void OnIMEEvent(mozilla::AndroidGeckoEvent *ae);
 
@@ -87,46 +92,44 @@ public:
                       const nsIntRect &aRect,
                       EVENT_CALLBACK aHandleEventFunction,
                       nsDeviceContext *aContext,
-                      nsIAppShell *aAppShell,
-                      nsIToolkit *aToolkit,
                       nsWidgetInitData *aInitData);
     NS_IMETHOD Destroy(void);
     NS_IMETHOD ConfigureChildren(const nsTArray<nsIWidget::Configuration>&);
     NS_IMETHOD SetParent(nsIWidget* aNewParent);
     virtual nsIWidget *GetParent(void);
     virtual float GetDPI();
-    NS_IMETHOD Show(PRBool aState);
-    NS_IMETHOD SetModal(PRBool aModal);
-    NS_IMETHOD IsVisible(PRBool & aState);
-    NS_IMETHOD ConstrainPosition(PRBool aAllowSlop,
+    NS_IMETHOD Show(bool aState);
+    NS_IMETHOD SetModal(bool aModal);
+    NS_IMETHOD IsVisible(bool & aState);
+    NS_IMETHOD ConstrainPosition(bool aAllowSlop,
                                  PRInt32 *aX,
                                  PRInt32 *aY);
     NS_IMETHOD Move(PRInt32 aX,
                     PRInt32 aY);
     NS_IMETHOD Resize(PRInt32 aWidth,
                       PRInt32 aHeight,
-                      PRBool  aRepaint);
+                      bool    aRepaint);
     NS_IMETHOD Resize(PRInt32 aX,
                       PRInt32 aY,
                       PRInt32 aWidth,
                       PRInt32 aHeight,
-                      PRBool aRepaint);
+                      bool aRepaint);
     NS_IMETHOD SetZIndex(PRInt32 aZIndex);
     NS_IMETHOD PlaceBehind(nsTopLevelWidgetZPlacement aPlacement,
                            nsIWidget *aWidget,
-                           PRBool aActivate);
+                           bool aActivate);
     NS_IMETHOD SetSizeMode(PRInt32 aMode);
-    NS_IMETHOD Enable(PRBool aState);
-    NS_IMETHOD IsEnabled(PRBool *aState);
+    NS_IMETHOD Enable(bool aState);
+    NS_IMETHOD IsEnabled(bool *aState);
     NS_IMETHOD Invalidate(const nsIntRect &aRect,
-                          PRBool aIsSynchronous);
+                          bool aIsSynchronous);
     NS_IMETHOD Update();
-    NS_IMETHOD SetFocus(PRBool aRaise = PR_FALSE);
+    NS_IMETHOD SetFocus(bool aRaise = false);
     NS_IMETHOD GetScreenBounds(nsIntRect &aRect);
     virtual nsIntPoint WidgetToScreenOffset();
     NS_IMETHOD DispatchEvent(nsGUIEvent *aEvent, nsEventStatus &aStatus);
     nsEventStatus DispatchEvent(nsGUIEvent *aEvent);
-    NS_IMETHOD MakeFullScreen(PRBool aFullScreen);
+    NS_IMETHOD MakeFullScreen(bool aFullScreen);
     NS_IMETHOD SetWindowClass(const nsAString& xulWinType);
 
 
@@ -137,28 +140,28 @@ public:
     NS_IMETHOD SetCursor(imgIContainer* aCursor,
                          PRUint32 aHotspotX,
                          PRUint32 aHotspotY) { return NS_ERROR_NOT_IMPLEMENTED; }
-    NS_IMETHOD SetHasTransparentBackground(PRBool aTransparent) { return NS_OK; }
-    NS_IMETHOD GetHasTransparentBackground(PRBool& aTransparent) { aTransparent = PR_FALSE; return NS_OK; }
-    NS_IMETHOD HideWindowChrome(PRBool aShouldHide) { return NS_ERROR_NOT_IMPLEMENTED; }
+    NS_IMETHOD SetHasTransparentBackground(bool aTransparent) { return NS_OK; }
+    NS_IMETHOD GetHasTransparentBackground(bool& aTransparent) { aTransparent = false; return NS_OK; }
+    NS_IMETHOD HideWindowChrome(bool aShouldHide) { return NS_ERROR_NOT_IMPLEMENTED; }
     virtual void* GetNativeData(PRUint32 aDataType);
     NS_IMETHOD SetTitle(const nsAString& aTitle) { return NS_OK; }
     NS_IMETHOD SetIcon(const nsAString& aIconSpec) { return NS_OK; }
-    NS_IMETHOD EnableDragDrop(PRBool aEnable) { return NS_OK; }
-    NS_IMETHOD CaptureMouse(PRBool aCapture) { return NS_ERROR_NOT_IMPLEMENTED; }
+    NS_IMETHOD EnableDragDrop(bool aEnable) { return NS_OK; }
+    NS_IMETHOD CaptureMouse(bool aCapture) { return NS_ERROR_NOT_IMPLEMENTED; }
     NS_IMETHOD CaptureRollupEvents(nsIRollupListener *aListener,
-                                   nsIMenuRollup *aMenuRollup,
-                                   PRBool aDoCapture,
-                                   PRBool aConsumeRollupEvent) { return NS_ERROR_NOT_IMPLEMENTED; }
+                                   bool aDoCapture,
+                                   bool aConsumeRollupEvent) { return NS_ERROR_NOT_IMPLEMENTED; }
 
     NS_IMETHOD GetAttention(PRInt32 aCycleCount) { return NS_ERROR_NOT_IMPLEMENTED; }
     NS_IMETHOD BeginResizeDrag(nsGUIEvent* aEvent, PRInt32 aHorizontal, PRInt32 aVertical) { return NS_ERROR_NOT_IMPLEMENTED; }
 
     NS_IMETHOD ResetInputState();
-    NS_IMETHOD SetInputMode(const IMEContext& aContext);
-    NS_IMETHOD GetInputMode(IMEContext& aContext);
+    NS_IMETHOD_(void) SetInputContext(const InputContext& aContext,
+                                      const InputContextAction& aAction);
+    NS_IMETHOD_(InputContext) GetInputContext();
     NS_IMETHOD CancelIMEComposition();
 
-    NS_IMETHOD OnIMEFocusChange(PRBool aFocus);
+    NS_IMETHOD OnIMEFocusChange(bool aFocus);
     NS_IMETHOD OnIMETextChange(PRUint32 aStart, PRUint32 aOldEnd, PRUint32 aNewEnd);
     NS_IMETHOD OnIMESelectionChange(void);
     virtual nsIMEUpdatePreference GetIMEUpdatePreference();
@@ -170,18 +173,29 @@ public:
     gfxASurface* GetThebesSurface();
 
     NS_IMETHOD ReparentNativeWidget(nsIWidget* aNewParent);
+
+#ifdef ACCESSIBILITY
+    static bool sAccessibilityEnabled;
+#endif
+
+#ifdef MOZ_JAVA_COMPOSITOR
+    static void BindToTexture();
+    static bool HasDirectTexture();
+#endif
+
 protected:
     void BringToFront();
     nsWindow *FindTopLevel();
-    PRBool DrawTo(gfxASurface *targetSurface);
-    PRBool IsTopLevel();
+    bool DrawTo(gfxASurface *targetSurface);
+    bool DrawTo(gfxASurface *targetSurface, const nsIntRect &aRect);
+    bool IsTopLevel();
     void OnIMEAddRange(mozilla::AndroidGeckoEvent *ae);
 
     // Call this function when the users activity is the direct cause of an
     // event (like a keypress or mouse click).
     void UserActivity();
 
-    PRPackedBool mIsVisible;
+    bool mIsVisible;
     nsTArray<nsWindow*> mChildren;
     nsWindow* mParent;
     nsWindow* mFocus;
@@ -197,12 +211,12 @@ protected:
 
     nsCOMPtr<nsIdleService> mIdleService;
 
-    PRBool mIMEComposing;
+    bool mIMEComposing;
     nsString mIMEComposingText;
     nsString mIMELastDispatchedComposingText;
     nsAutoTArray<nsTextRange, 4> mIMERanges;
 
-    IMEContext mIMEContext;
+    InputContext mInputContext;
 
     static void DumpWindows();
     static void DumpWindows(const nsTArray<nsWindow*>& wins, int indent = 0);
@@ -210,10 +224,30 @@ protected:
 
 private:
     void InitKeyEvent(nsKeyEvent& event, mozilla::AndroidGeckoEvent& key);
-    void DispatchGestureEvent(mozilla::AndroidGeckoEvent *ae);
+    bool DispatchMultitouchEvent(nsTouchEvent &event,
+                             mozilla::AndroidGeckoEvent *ae);
+    void DispatchMotionEvent(nsInputEvent &event,
+                             mozilla::AndroidGeckoEvent *ae,
+                             const nsIntPoint &refPoint);
     void DispatchGestureEvent(PRUint32 msg, PRUint32 direction, double delta,
-                               const nsIntPoint &refPoint, PRUint64 time);
+                              const nsIntPoint &refPoint, PRUint64 time);
     void HandleSpecialKey(mozilla::AndroidGeckoEvent *ae);
+    void RedrawAll();
+
+#ifdef ACCESSIBILITY
+    nsRefPtr<nsAccessible> mRootAccessible;
+
+    /**
+     * Request to create the accessible for this window if it is top level.
+     */
+    void CreateRootAccessible();
+
+    /**
+     * Generate the NS_GETACCESSIBLE event to get accessible for this window
+     * and return it.
+     */
+    nsAccessible *DispatchAccessibleEvent();
+#endif // ACCESSIBILITY
 };
 
 #endif /* NSWINDOW_H_ */

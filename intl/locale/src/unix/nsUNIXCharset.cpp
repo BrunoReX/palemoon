@@ -36,6 +36,9 @@
  * ***** END LICENSE BLOCK ***** */
 
 #include <locale.h>
+
+#include "mozilla/Util.h"
+
 #include "nsIPlatformCharset.h"
 #include "pratom.h"
 #include "nsUConvPropertySearch.h"
@@ -60,6 +63,8 @@
 #include "prinit.h"
 #include "nsUnicharUtils.h"
 
+using namespace mozilla;
+
 static const char* kUnixCharsets[][3] = {
 #include "unixcharset.properties.h"
 };
@@ -71,7 +76,7 @@ nsPlatformCharset::nsPlatformCharset()
 }
 
 nsresult
-nsPlatformCharset::ConvertLocaleToCharsetUsingDeprecatedConfig(nsAString& locale, nsACString& oResult)
+nsPlatformCharset::ConvertLocaleToCharsetUsingDeprecatedConfig(nsACString& locale, nsACString& oResult)
 {
   if (!(locale.IsEmpty())) {
     nsCAutoString platformLocaleKey;
@@ -79,18 +84,18 @@ nsPlatformCharset::ConvertLocaleToCharsetUsingDeprecatedConfig(nsAString& locale
     platformLocaleKey.AssignLiteral("locale.");
     platformLocaleKey.Append(OSTYPE);
     platformLocaleKey.AppendLiteral(".");
-    platformLocaleKey.AppendWithConversion(locale);
+    platformLocaleKey.Append(locale);
 
     nsresult res = nsUConvPropertySearch::SearchPropertyValue(kUnixCharsets,
-        NS_ARRAY_LENGTH(kUnixCharsets), platformLocaleKey, oResult);
+        ArrayLength(kUnixCharsets), platformLocaleKey, oResult);
     if (NS_SUCCEEDED(res))  {
       return NS_OK;
     }
     nsCAutoString localeKey;
     localeKey.AssignLiteral("locale.all.");
-    localeKey.AppendWithConversion(locale);
+    localeKey.Append(locale);
     res = nsUConvPropertySearch::SearchPropertyValue(kUnixCharsets,
-        NS_ARRAY_LENGTH(kUnixCharsets), localeKey, oResult);
+        ArrayLength(kUnixCharsets), localeKey, oResult);
     if (NS_SUCCEEDED(res))  {
       return NS_OK;
     }
@@ -155,7 +160,7 @@ nsPlatformCharset::GetDefaultCharsetForLocale(const nsAString& localeName, nsACS
   // convert from locale to charset
   // using the deprecated locale to charset mapping 
   //
-  nsAutoString localeStr(localeName);
+  NS_LossyConvertUTF16toASCII localeStr(localeName);
   nsresult res = ConvertLocaleToCharsetUsingDeprecatedConfig(localeStr, oResult);
   if (NS_SUCCEEDED(res))
     return res;
@@ -196,8 +201,8 @@ nsPlatformCharset::InitGetCharset(nsACString &oString)
   // try falling back on a deprecated (locale based) name
   //
   char* locale = setlocale(LC_CTYPE, nsnull);
-  nsAutoString localeStr;
-  localeStr.AssignWithConversion(locale);
+  nsCAutoString localeStr;
+  localeStr.Assign(locale);
   res = ConvertLocaleToCharsetUsingDeprecatedConfig(localeStr, oString);
   if (NS_SUCCEEDED(res)) {
     return res; // succeeded

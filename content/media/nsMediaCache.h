@@ -43,7 +43,9 @@
 #include "nsIPrincipal.h"
 #include "nsCOMPtr.h"
 
+class nsMediaStream;
 class nsByteRange;
+
 namespace mozilla {
 class ReentrantMonitorAutoEnter;
 }
@@ -226,14 +228,16 @@ public:
   // aClient provides the underlying transport that cache will use to read
   // data for this stream.
   nsMediaCacheStream(nsMediaChannelStream* aClient)
-    : mClient(aClient), mResourceID(0), mInitialized(PR_FALSE),
-      mIsSeekable(PR_FALSE), mCacheSuspended(PR_FALSE),
-      mUsingNullPrincipal(PR_FALSE),
+    : mClient(aClient), mResourceID(0), mInitialized(false),
+      mHasHadUpdate(false),
+      mIsSeekable(false), mCacheSuspended(false),
+      mChannelEnded(false), mDidNotifyDataEnded(false),
+      mUsingNullPrincipal(false),
       mChannelOffset(0), mStreamLength(-1),  
       mStreamOffset(0), mPlaybackBytesPerSecond(10000),
       mPinCount(0), mCurrentMode(MODE_PLAYBACK),
-      mMetadataInPartialBlockBuffer(PR_FALSE),
-      mClosed(PR_FALSE) {}
+      mMetadataInPartialBlockBuffer(false),
+      mClosed(false) {}
   ~nsMediaCacheStream();
 
   // Set up this stream with the cache. Can fail on OOM. One
@@ -254,14 +258,19 @@ public:
   // change during the lifetime of the nsMediaCacheStream --- every time
   // we do an HTTP load the seekability may be different (and sometimes
   // is, in practice, due to the effects of caching proxies).
-  void SetSeekable(PRBool aIsSeekable);
+  void SetSeekable(bool aIsSeekable);
   // This must be called (and return) before the nsMediaChannelStream
   // used to create this nsMediaCacheStream is deleted.
   void Close();
   // This returns true when the stream has been closed
-  PRBool IsClosed() const { return mClosed; }
+  bool IsClosed() const { return mClosed; }
   // Get the principal for this stream.
   nsIPrincipal* GetCurrentPrincipal() { return mPrincipal; }
+  // Ensure a global media cache update has run with this stream present.
+  // This ensures the cache has had a chance to suspend or unsuspend this stream.
+  // Called only on main thread. This can change the state of streams, fire
+  // notifications, etc.
+  void EnsureCacheUpdate();
 
   // These callbacks are called on the main thread by the client
   // when data has been received via the channel.
@@ -334,7 +343,7 @@ public:
   // aOffset to the end of the stream (the server-reported end, if the
   // real end is not known) is in cache. If we know nothing about the
   // end of the stream, this returns false.
-  PRBool IsDataCachedToEndOfStream(PRInt64 aOffset);
+  bool IsDataCachedToEndOfStream(PRInt64 aOffset);
   // The mode is initially MODE_PLAYBACK.
   void SetReadMode(ReadMode aMode);
   // This is the client's estimate of the playback rate assuming
@@ -343,7 +352,13 @@ public:
   // Do not pass zero.
   void SetPlaybackRate(PRUint32 aBytesPerSecond);
   // Returns the last set value of SetSeekable.
-  PRBool IsSeekable();
+  bool IsSeekable();
+
+  // Returns true when all streams for this resource are suspended or their
+  // channel has ended.
+  // If aActiveStream is non-null, fills it with a pointer to a stream
+  // for this resource that is not suspended or ended.
+  bool AreAllStreamsForResourceSuspended(nsMediaStream** aActiveStream);
 
   // These methods must be called on a different thread from the main
   // thread. They should always be called on the same thread for a given
@@ -390,7 +405,7 @@ private:
     // Returns the previous block in the list before aBlock or -1 if
     // aBlock is the first block
     PRInt32 GetPrevBlock(PRInt32 aBlock) const;
-    PRBool IsEmpty() const { return mFirstBlock < 0; }
+    bool IsEmpty() const { return mFirstBlock < 0; }
     PRInt32 GetCount() const { return mCount; }
     // The contents of aBlockIndex1 and aBlockIndex2 have been swapped
     void NotifyBlockSwapped(PRInt32 aBlockIndex1, PRInt32 aBlockIndex2);
@@ -445,20 +460,27 @@ private:
   // underlying resource and should share data.
   PRInt64                mResourceID;
   // Set to true when Init or InitAsClone has been called
-  PRPackedBool           mInitialized;
+  bool                   mInitialized;
+  // Set to true when nsMediaCache::Update() has finished while this stream
+  // was present.
+  bool                   mHasHadUpdate;
 
   // The following fields are protected by the cache's monitor but are
   // only written on the main thread. 
 
   // The last reported seekability state for the underlying channel
-  PRPackedBool mIsSeekable;
-  // true if the cache has suspended our channel because the cache is
+  bool mIsSeekable;
+  // True if the cache has suspended our channel because the cache is
   // full and the priority of the data that would be received is lower
   // than the priority of the data already in the cache
-  PRPackedBool mCacheSuspended;
-  // true if mPrincipal is a null principal because we saw data from
+  bool mCacheSuspended;
+  // True if the channel ended and we haven't seeked it again.
+  bool mChannelEnded;
+  // True if CacheClientNotifyDataEnded has been called for this stream.
+  bool mDidNotifyDataEnded;
+  // True if mPrincipal is a null principal because we saw data from
   // multiple origins
-  PRPackedBool mUsingNullPrincipal;
+  bool mUsingNullPrincipal;
   // The offset where the next data from the channel will arrive
   PRInt64      mChannelOffset;
   // The reported or discovered length of the data, or -1 if nothing is
@@ -486,13 +508,15 @@ private:
   // The number of times this stream has been Pinned without a
   // corresponding Unpin
   PRUint32          mPinCount;
+  // The status used when we did CacheClientNotifyDataEnded
+  nsresult          mNotifyDataEndedStatus;
   // The last reported read mode
   ReadMode          mCurrentMode;
-  // true if some data in mPartialBlockBuffer has been read as metadata
-  PRPackedBool      mMetadataInPartialBlockBuffer;
+  // True if some data in mPartialBlockBuffer has been read as metadata
+  bool              mMetadataInPartialBlockBuffer;
   // Set to true when the stream has been closed either explicitly or
   // due to an internal cache error
-  PRPackedBool      mClosed;
+  bool              mClosed;
 
   // The following field is protected by the cache's monitor but are
   // only written on the main thread.

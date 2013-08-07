@@ -98,12 +98,12 @@ class Program
     bool setUniform3iv(GLint location, GLsizei count, const GLint *v);
     bool setUniform4iv(GLint location, GLsizei count, const GLint *v);
 
-    bool getUniformfv(GLint location, GLfloat *params);
-    bool getUniformiv(GLint location, GLint *params);
+    bool getUniformfv(GLint location, GLsizei *bufSize, GLfloat *params);
+    bool getUniformiv(GLint location, GLsizei *bufSize, GLint *params);
 
     GLint getDxDepthRangeLocation() const;
     GLint getDxDepthLocation() const;
-    GLint getDxViewportLocation() const;
+    GLint getDxCoordLocation() const;
     GLint getDxHalfPixelSizeLocation() const;
     GLint getDxFrontCCWLocation() const;
     GLint getDxPointsOrLinesLocation() const;
@@ -207,7 +207,7 @@ class Program
 
     GLint mDxDepthRangeLocation;
     GLint mDxDepthLocation;
-    GLint mDxViewportLocation;
+    GLint mDxCoordLocation;
     GLint mDxHalfPixelSizeLocation;
     GLint mDxFrontCCWLocation;
     GLint mDxPointsOrLinesLocation;

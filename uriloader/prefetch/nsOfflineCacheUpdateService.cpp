@@ -206,7 +206,8 @@ nsOfflineCachePendingUpdate::OnStateChange(nsIWebProgress* aWebProgress,
 NS_IMETHODIMP
 nsOfflineCachePendingUpdate::OnLocationChange(nsIWebProgress* aWebProgress,
                                               nsIRequest* aRequest,
-                                              nsIURI *location)
+                                              nsIURI *location,
+                                              PRUint32 aFlags)
 {
     NS_NOTREACHED("notification excluded in AddProgressListener(...)");
     return NS_OK;
@@ -245,8 +246,8 @@ NS_IMPL_ISUPPORTS3(nsOfflineCacheUpdateService,
 //-----------------------------------------------------------------------------
 
 nsOfflineCacheUpdateService::nsOfflineCacheUpdateService()
-    : mDisabled(PR_FALSE)
-    , mUpdateRunning(PR_FALSE)
+    : mDisabled(false)
+    , mUpdateRunning(false)
 {
 }
 
@@ -271,7 +272,7 @@ nsOfflineCacheUpdateService::Init()
 
     nsresult rv = observerService->AddObserver(this,
                                                NS_XPCOM_SHUTDOWN_OBSERVER_ID,
-                                               PR_TRUE);
+                                               true);
     NS_ENSURE_SUCCESS(rv, rv);
 
     gOfflineCacheUpdateService = this;
@@ -369,7 +370,7 @@ nsOfflineCacheUpdateService::UpdateFinished(nsOfflineCacheUpdate *aUpdate)
     // keep this item alive until we're done notifying observers
     nsRefPtr<nsOfflineCacheUpdate> update = mUpdates[0];
     mUpdates.RemoveElementAt(0);
-    mUpdateRunning = PR_FALSE;
+    mUpdateRunning = false;
 
     ProcessNextUpdate();
 
@@ -393,7 +394,7 @@ nsOfflineCacheUpdateService::ProcessNextUpdate()
         return NS_OK;
 
     if (mUpdates.Length() > 0) {
-        mUpdateRunning = PR_TRUE;
+        mUpdateRunning = true;
         return mUpdates[0]->Begin();
     }
 
@@ -439,7 +440,7 @@ nsOfflineCacheUpdateService::FindUpdate(nsIURI *aManifestURI,
     for (PRUint32 i = 0; i < mUpdates.Length(); i++) {
         update = mUpdates[i];
 
-        PRBool partial;
+        bool partial;
         rv = update->GetPartial(&partial);
         NS_ENSURE_SUCCESS(rv, rv);
 
@@ -451,7 +452,7 @@ nsOfflineCacheUpdateService::FindUpdate(nsIURI *aManifestURI,
         nsCOMPtr<nsIURI> manifestURI;
         update->GetManifestURI(getter_AddRefs(manifestURI));
         if (manifestURI) {
-            PRBool equals;
+            bool equals;
             rv = manifestURI->Equals(aManifestURI, &equals);
             if (equals) {
                 update.swap(*aUpdate);
@@ -512,7 +513,7 @@ nsOfflineCacheUpdateService::Observe(nsISupports     *aSubject,
     if (!strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID)) {
         if (mUpdates.Length() > 0)
             mUpdates[0]->Cancel();
-        mDisabled = PR_TRUE;
+        mDisabled = true;
     }
 
     return NS_OK;
@@ -525,7 +526,7 @@ nsOfflineCacheUpdateService::Observe(nsISupports     *aSubject,
 NS_IMETHODIMP
 nsOfflineCacheUpdateService::OfflineAppAllowed(nsIPrincipal *aPrincipal,
                                                nsIPrefBranch *aPrefBranch,
-                                               PRBool *aAllowed)
+                                               bool *aAllowed)
 {
     nsCOMPtr<nsIURI> codebaseURI;
     nsresult rv = aPrincipal->GetURI(getter_AddRefs(codebaseURI));
@@ -537,9 +538,9 @@ nsOfflineCacheUpdateService::OfflineAppAllowed(nsIPrincipal *aPrincipal,
 NS_IMETHODIMP
 nsOfflineCacheUpdateService::OfflineAppAllowedForURI(nsIURI *aURI,
                                                      nsIPrefBranch *aPrefBranch,
-                                                     PRBool *aAllowed)
+                                                     bool *aAllowed)
 {
-    *aAllowed = PR_FALSE;
+    *aAllowed = false;
     if (!aURI)
         return NS_OK;
 
@@ -548,7 +549,7 @@ nsOfflineCacheUpdateService::OfflineAppAllowedForURI(nsIURI *aURI,
         return NS_OK;
 
     // only http and https applications can use offline APIs.
-    PRBool match;
+    bool match;
     nsresult rv = innerURI->SchemeIs("http", &match);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -574,7 +575,7 @@ nsOfflineCacheUpdateService::OfflineAppAllowedForURI(nsIURI *aURI,
         if (aPrefBranch) {
             aPrefBranch->GetBoolPref(kPrefName, aAllowed);
         } else {
-            *aAllowed = Preferences::GetBool(kPrefName, PR_FALSE);
+            *aAllowed = Preferences::GetBool(kPrefName, false);
         }
 
         return NS_OK;
@@ -584,7 +585,7 @@ nsOfflineCacheUpdateService::OfflineAppAllowedForURI(nsIURI *aURI,
         return NS_OK;
     }
 
-    *aAllowed = PR_TRUE;
+    *aAllowed = true;
 
     return NS_OK;
 }

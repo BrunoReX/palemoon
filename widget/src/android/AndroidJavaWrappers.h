@@ -149,6 +149,32 @@ protected:
     static jfieldID jTopField;
 };
 
+class AndroidGeckoSoftwareLayerClient : public WrappedJavaObject {
+public:
+    static void InitGeckoSoftwareLayerClientClass(JNIEnv *jEnv);
+ 
+     void Init(jobject jobj);
+ 
+    AndroidGeckoSoftwareLayerClient() {}
+    AndroidGeckoSoftwareLayerClient(jobject jobj) { Init(jobj); }
+
+    jobject LockBuffer();
+    unsigned char *LockBufferBits();
+    void UnlockBuffer();
+    void BeginDrawing(int aWidth, int aHeight);
+    void EndDrawing(const nsIntRect &aRect, const nsAString &aMetadata, bool aHasDirectTexture);
+
+private:
+    static jclass jGeckoSoftwareLayerClientClass;
+    static jmethodID jLockBufferMethod;
+    static jmethodID jUnlockBufferMethod;
+
+protected:
+     static jmethodID jBeginDrawingMethod;
+     static jmethodID jEndDrawingMethod;
+};
+
+
 class AndroidGeckoSurfaceView : public WrappedJavaObject
 {
 public:
@@ -364,7 +390,6 @@ public:
     static jclass jAddressClass;
     static jmethodID jGetAddressLineMethod;
     static jmethodID jGetAdminAreaMethod;
-    static jmethodID jGetCountryCodeMethod;
     static jmethodID jGetCountryNameMethod;
     static jmethodID jGetFeatureNameMethod;
     static jmethodID jGetLocalityMethod;
@@ -388,6 +413,9 @@ public:
     AndroidGeckoEvent(int x1, int y1, int x2, int y2) {
         Init(x1, y1, x2, y2);
     }
+    AndroidGeckoEvent(int aType, const nsIntRect &aRect) {
+        Init(aType, aRect);
+    }
     AndroidGeckoEvent(JNIEnv *jenv, jobject jobj) {
         Init(jenv, jobj);
     }
@@ -398,13 +426,17 @@ public:
     void Init(JNIEnv *jenv, jobject jobj);
     void Init(int aType);
     void Init(int x1, int y1, int x2, int y2);
+    void Init(int aType, const nsIntRect &aRect);
     void Init(AndroidGeckoEvent *aResizeEvent);
 
     int Action() { return mAction; }
     int Type() { return mType; }
     int64_t Time() { return mTime; }
-    const nsIntPoint& P0() { return mP0; }
-    const nsIntPoint& P1() { return mP1; }
+    nsTArray<nsIntPoint> Points() { return mPoints; }
+    nsTArray<int> PointIndicies() { return mPointIndicies; }
+    nsTArray<float> Pressures() { return mPressures; }
+    nsTArray<float> Orientations() { return mOrientations; }
+    nsTArray<nsIntPoint> PointRadii() { return mPointRadii; }
     double Alpha() { return mAlpha; }
     double Beta() { return mBeta; }
     double Gamma() { return mGamma; }
@@ -413,12 +445,14 @@ public:
     double Z() { return mZ; }
     const nsIntRect& Rect() { return mRect; }
     nsAString& Characters() { return mCharacters; }
+    nsAString& CharactersExtra() { return mCharactersExtra; }
     int KeyCode() { return mKeyCode; }
     int MetaState() { return mMetaState; }
     int Flags() { return mFlags; }
     int UnicodeChar() { return mUnicodeChar; }
     int Offset() { return mOffset; }
     int Count() { return mCount; }
+    int PointerIndex() { return mPointerIndex; }
     int RangeType() { return mRangeType; }
     int RangeStyles() { return mRangeStyles; }
     int RangeForeColor() { return mRangeForeColor; }
@@ -430,8 +464,11 @@ protected:
     int mAction;
     int mType;
     int64_t mTime;
-    nsIntPoint mP0;
-    nsIntPoint mP1;
+    nsTArray<nsIntPoint> mPoints;
+    nsTArray<nsIntPoint> mPointRadii;
+    nsTArray<int> mPointIndicies;
+    nsTArray<float> mOrientations;
+    nsTArray<float> mPressures;
     nsIntRect mRect;
     int mFlags, mMetaState;
     int mKeyCode, mUnicodeChar;
@@ -440,21 +477,36 @@ protected:
     int mRangeForeColor, mRangeBackColor;
     double mAlpha, mBeta, mGamma;
     double mX, mY, mZ;
-    nsString mCharacters;
+    int mPointerIndex;
+    nsString mCharacters, mCharactersExtra;
     nsRefPtr<nsGeoPosition> mGeoPosition;
     nsRefPtr<nsGeoPositionAddress> mGeoAddress;
 
-    void ReadP0Field(JNIEnv *jenv);
-    void ReadP1Field(JNIEnv *jenv);
+    void ReadIntArray(nsTArray<int> &aVals,
+                      JNIEnv *jenv,
+                      jfieldID field,
+                      PRUint32 count);
+    void ReadFloatArray(nsTArray<float> &aVals,
+                        JNIEnv *jenv,
+                        jfieldID field,
+                        PRUint32 count);
+    void ReadPointArray(nsTArray<nsIntPoint> &mPoints,
+                        JNIEnv *jenv,
+                        jfieldID field,
+                        PRUint32 count);
     void ReadRectField(JNIEnv *jenv);
     void ReadCharactersField(JNIEnv *jenv);
+    void ReadCharactersExtraField(JNIEnv *jenv);
 
     static jclass jGeckoEventClass;
     static jfieldID jActionField;
     static jfieldID jTypeField;
     static jfieldID jTimeField;
-    static jfieldID jP0Field;
-    static jfieldID jP1Field;
+    static jfieldID jPoints;
+    static jfieldID jPointIndicies;
+    static jfieldID jOrientations;
+    static jfieldID jPressures;
+    static jfieldID jPointRadii;
     static jfieldID jAlphaField;
     static jfieldID jBetaField;
     static jfieldID jGammaField;
@@ -465,11 +517,13 @@ protected:
     static jfieldID jNativeWindowField;
 
     static jfieldID jCharactersField;
+    static jfieldID jCharactersExtraField;
     static jfieldID jKeyCodeField;
     static jfieldID jMetaStateField;
     static jfieldID jFlagsField;
     static jfieldID jOffsetField;
     static jfieldID jCountField;
+    static jfieldID jPointerIndexField;
     static jfieldID jUnicodeCharField;
     static jfieldID jRangeTypeField;
     static jfieldID jRangeStylesField;
@@ -498,6 +552,10 @@ public:
         GECKO_EVENT_SYNC = 15,
         FORCED_RESIZE = 16,
         ACTIVITY_START = 17,
+        BROADCAST = 19,
+        VIEWPORT = 20,
+        TILE_SIZE = 21,
+        VISITED = 22,
         dummy_java_enum_list_end
     };
 

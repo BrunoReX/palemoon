@@ -57,13 +57,13 @@ public:
 
   NS_DECL_ISUPPORTS
 
-  NS_IMETHOD SetShowFrameBorders(PRBool aEnable);
+  NS_IMETHOD SetShowFrameBorders(bool aEnable);
 
-  NS_IMETHOD GetShowFrameBorders(PRBool* aResult);
+  NS_IMETHOD GetShowFrameBorders(bool* aResult);
 
-  NS_IMETHOD SetShowEventTargetFrameBorder(PRBool aEnable);
+  NS_IMETHOD SetShowEventTargetFrameBorder(bool aEnable);
 
-  NS_IMETHOD GetShowEventTargetFrameBorder(PRBool* aResult);
+  NS_IMETHOD GetShowEventTargetFrameBorder(bool* aResult);
 
   NS_IMETHOD GetContentSize(nsIDocument* aDocument,
                             PRInt32* aSizeInBytesResult);
@@ -98,28 +98,28 @@ nsLayoutDebugger::~nsLayoutDebugger()
 NS_IMPL_ISUPPORTS1(nsLayoutDebugger, nsILayoutDebugger)
 
 NS_IMETHODIMP
-nsLayoutDebugger::SetShowFrameBorders(PRBool aEnable)
+nsLayoutDebugger::SetShowFrameBorders(bool aEnable)
 {
   nsFrame::ShowFrameBorders(aEnable);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsLayoutDebugger::GetShowFrameBorders(PRBool* aResult)
+nsLayoutDebugger::GetShowFrameBorders(bool* aResult)
 {
   *aResult = nsFrame::GetShowFrameBorders();
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsLayoutDebugger::SetShowEventTargetFrameBorder(PRBool aEnable)
+nsLayoutDebugger::SetShowEventTargetFrameBorder(bool aEnable)
 {
   nsFrame::ShowEventTargetFrameBorder(aEnable);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsLayoutDebugger::GetShowEventTargetFrameBorder(PRBool* aResult)
+nsLayoutDebugger::GetShowEventTargetFrameBorder(bool* aResult)
 {
   *aResult = nsFrame::GetShowEventTargetFrameBorder();
   return NS_OK;
@@ -148,22 +148,28 @@ nsLayoutDebugger::GetStyleSize(nsIPresShell* aPresentation,
   *aSizeInBytesResult = 0;
   return NS_ERROR_FAILURE;
 }
+#endif
 
+#ifdef MOZ_DUMP_PAINTING
 static void
 PrintDisplayListTo(nsDisplayListBuilder* aBuilder, const nsDisplayList& aList,
                    PRInt32 aIndent, FILE* aOutput)
 {
   for (nsDisplayItem* i = aList.GetBottom(); i != nsnull; i = i->GetAbove()) {
+#ifdef DEBUG
     if (aList.DidComputeVisibility() && i->GetVisibleRect().IsEmpty())
       continue;
+#endif
     for (PRInt32 j = 0; j < aIndent; ++j) {
       fputc(' ', aOutput);
     }
     nsIFrame* f = i->GetUnderlyingFrame();
     nsAutoString fName;
+#ifdef DEBUG
     if (f) {
       f->GetFrameName(fName);
     }
+#endif
     nsRect rect = i->GetBounds(aBuilder);
     switch (i->GetType()) {
       case nsDisplayItem::TYPE_CLIP:
@@ -183,9 +189,11 @@ PrintDisplayListTo(nsDisplayListBuilder* aBuilder, const nsDisplayList& aList,
         nsDisplayTransform* t = static_cast<nsDisplayTransform*>(i);
         list = t->GetStoredList()->GetList();
     }
+#ifdef DEBUG
     if (!list || list->DidComputeVisibility()) {
       opaque = i->GetOpaqueRegion(aBuilder);
     }
+#endif
     fprintf(aOutput, "%s %p(%s) (%d,%d,%d,%d)(%d,%d,%d,%d)%s%s",
             i->Name(), (void*)f, NS_ConvertUTF16toUTF8(fName).get(),
             rect.x, rect.y, rect.width, rect.height,
@@ -198,6 +206,9 @@ PrintDisplayListTo(nsDisplayListBuilder* aBuilder, const nsDisplayList& aList,
       if (layer) {
         fprintf(aOutput, " layer=%p", layer);
       }
+    }
+    if (i->GetType() == nsDisplayItem::TYPE_SVG_EFFECTS) {
+      (static_cast<nsDisplaySVGEffects*>(i))->PrintEffects(aOutput);
     }
     fputc('\n', aOutput);
     if (list) {

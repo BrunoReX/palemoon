@@ -95,7 +95,7 @@ public:
     return mHost;
   }
 
-  PRBool KeyEquals(KeyTypePointer aKey) const
+  bool KeyEquals(KeyTypePointer aKey) const
   {
     return !strcmp(mHost, aKey);
   }
@@ -114,7 +114,7 @@ public:
 
   // force the hashtable to use the copy constructor when shuffling entries
   // around, otherwise the Auto part of our nsAutoTArray won't be happy!
-  enum { ALLOW_MEMMOVE = PR_FALSE };
+  enum { ALLOW_MEMMOVE = false };
 
   // Permissions methods
   inline const nsDependentCString GetHost() const
@@ -200,18 +200,18 @@ public:
 private:
 
   PRInt32 GetTypeIndex(const char *aTypeString,
-                       PRBool      aAdd);
+                       bool        aAdd);
 
   nsHostEntry *GetHostEntry(const nsAFlatCString &aHost,
                             PRUint32              aType,
-                            PRBool                aExactHostMatch);
+                            bool                  aExactHostMatch);
 
   nsresult CommonTestPermission(nsIURI     *aURI,
                                 const char *aType,
                                 PRUint32   *aPermission,
-                                PRBool      aExactHostMatch);
+                                bool        aExactHostMatch);
 
-  nsresult InitDB(PRBool aRemoveFile);
+  nsresult InitDB(bool aRemoveFile);
   nsresult CreateTable();
   nsresult Import();
   nsresult Read();

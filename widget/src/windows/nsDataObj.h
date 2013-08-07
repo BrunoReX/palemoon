@@ -44,6 +44,7 @@
 #include <objidl.h>
 #endif
 #include <oleidl.h>
+#include <shldisp.h>
 
 #include "nsCOMPtr.h"
 #include "nsString.h"
@@ -55,6 +56,13 @@
 #include "nsCOMArray.h"
 #include "nsITimer.h"
 
+// The SDK shipping with VC11 has renamed IAsyncOperation to
+// IDataObjectAsyncCapability.  We try to detect this, and rename this in our
+// code too to make sure that we pick the correct name when building.
+#ifdef __IDataObjectAsyncCapability_INTERFACE_DEFINED__
+#define IAsyncOperation IDataObjectAsyncCapability
+#define IID_IAsyncOperation IID_IDataObjectAsyncCapability
+#else
 // XXX for older version of PSDK where IAsyncOperation and related stuff is not available
 // but thisdefine  should be removed when parocles config is updated
 #ifndef __IAsyncOperation_INTERFACE_DEFINED__
@@ -78,6 +86,7 @@ IAsyncOperation : public IUnknown
 #endif
 
 #endif // __IAsyncOperation_INTERFACE_DEFINED__
+#endif // __IDataObjectAsyncCapability_INTERFACE_DEFINED__
 
 /* 
  * CFSTR_SHELLURL is deprecated and doesn't have a Unicode version.
@@ -220,7 +229,7 @@ class nsDataObj : public IDataObject,
 
 	protected:
     // help determine the kind of drag
-    PRBool IsFlavourPresent(const char *inFlavour);
+    bool IsFlavourPresent(const char *inFlavour);
 
     virtual HRESULT AddSetFormat(FORMATETC&  FE);
     virtual HRESULT AddGetFormat(FORMATETC&  FE);
@@ -234,10 +243,10 @@ class nsDataObj : public IDataObject,
     virtual HRESULT DropFile( FORMATETC& aFE, STGMEDIUM& aSTG );
     virtual HRESULT DropTempFile( FORMATETC& aFE, STGMEDIUM& aSTG );
 
-    virtual HRESULT GetUniformResourceLocator ( FORMATETC& aFE, STGMEDIUM& aSTG, PRBool aIsUnicode ) ;
+    virtual HRESULT GetUniformResourceLocator ( FORMATETC& aFE, STGMEDIUM& aSTG, bool aIsUnicode ) ;
     virtual HRESULT ExtractUniformResourceLocatorA ( FORMATETC& aFE, STGMEDIUM& aSTG ) ;
     virtual HRESULT ExtractUniformResourceLocatorW ( FORMATETC& aFE, STGMEDIUM& aSTG ) ;
-    virtual HRESULT GetFileDescriptor ( FORMATETC& aFE, STGMEDIUM& aSTG, PRBool aIsUnicode ) ;
+    virtual HRESULT GetFileDescriptor ( FORMATETC& aFE, STGMEDIUM& aSTG, bool aIsUnicode ) ;
     virtual HRESULT GetFileContents ( FORMATETC& aFE, STGMEDIUM& aSTG ) ;
     virtual HRESULT GetPreferredDropEffect ( FORMATETC& aFE, STGMEDIUM& aSTG );
 
@@ -335,8 +344,8 @@ class nsDataObj : public IDataObject,
     nsTArray <LPDATAENTRY> mDataEntryList;
     nsCOMPtr<nsITimer> mTimer;
 
-    PRBool LookupArbitraryFormat(FORMATETC *aFormat, LPDATAENTRY *aDataEntry, BOOL aAddorUpdate);
-    PRBool CopyMediumData(STGMEDIUM *aMediumDst, STGMEDIUM *aMediumSrc, LPFORMATETC aFormat, BOOL aSetData);
+    bool LookupArbitraryFormat(FORMATETC *aFormat, LPDATAENTRY *aDataEntry, BOOL aAddorUpdate);
+    bool CopyMediumData(STGMEDIUM *aMediumDst, STGMEDIUM *aMediumSrc, LPFORMATETC aFormat, BOOL aSetData);
     static void RemoveTempFile(nsITimer* aTimer, void* aClosure);
 };
 

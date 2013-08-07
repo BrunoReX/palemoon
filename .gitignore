@@ -18,14 +18,12 @@ ID
 /configure
 /config.cache
 /config.log
-/.clang_complete
-/mach.ini
 
 # Empty marker file that's generated when we check out NSS
 security/manager/.nss.checkout
 
 # Build directories
-/obj*/
+obj/*
 
 # Build directories for js shell
 */_DBG.OBJ/
@@ -41,13 +39,3 @@ js/src/tests/results-*.txt
 # Java HTML5 parser classes
 parser/html/java/htmlparser/
 parser/html/java/javaparser/
-
-# Ignore the files and directory that Eclipse IDE creates
-.project
-.cproject
-.settings/
-
-# Python virtualenv artifacts.
-python/psutil/*.so
-python/psutil/*.pyd
-python/psutil/build/

@@ -40,7 +40,7 @@
 #define __mozinlinespellchecker_h__
 
 #include "nsAutoPtr.h"
-#include "nsIDOMRange.h"
+#include "nsIRange.h"
 #include "nsIEditorSpellCheck.h"
 #include "nsIEditActionListener.h"
 #include "nsIInlineSpellChecker.h"
@@ -73,14 +73,19 @@ public:
                                nsIDOMNode* aPreviousNode, PRInt32 aPreviousOffset,
                                nsIDOMNode* aStartNode, PRInt32 aStartOffset,
                                nsIDOMNode* aEndNode, PRInt32 aEndOffset);
-  nsresult InitForNavigation(PRBool aForceCheck, PRInt32 aNewPositionOffset,
+  nsresult InitForNavigation(bool aForceCheck, PRInt32 aNewPositionOffset,
                              nsIDOMNode* aOldAnchorNode, PRInt32 aOldAnchorOffset,
                              nsIDOMNode* aNewAnchorNode, PRInt32 aNewAnchorOffset,
-                             PRBool* aContinue);
+                             bool* aContinue);
   nsresult InitForSelection();
-  nsresult InitForRange(nsIDOMRange* aRange);
+  nsresult InitForRange(nsIRange* aRange);
 
   nsresult FinishInitOnEvent(mozInlineSpellWordUtil& aWordUtil);
+
+  // Return true if we plan to spell-check everything
+  bool IsFullSpellCheck() const {
+    return mOp == eOpChange && !mRange;
+  }
 
   nsRefPtr<mozInlineSpellChecker> mSpellChecker;
 
@@ -99,14 +104,14 @@ public:
 
   // Used for events where we have already computed the range to use. It can
   // also be NULL in these cases where we need to check the entire range.
-  nsCOMPtr<nsIDOMRange> mRange;
+  nsCOMPtr<nsIRange> mRange;
 
   // If we happen to know something was inserted, this is that range.
   // Can be NULL (this only allows an optimization, so not setting doesn't hurt)
   nsCOMPtr<nsIDOMRange> mCreatedRange;
 
   // Contains the range computed for the current word. Can be NULL.
-  nsCOMPtr<nsIDOMRange> mNoCheckRange;
+  nsCOMPtr<nsIRange> mNoCheckRange;
 
   // Indicates the position of the cursor for the event (so we can compute
   // mNoCheckRange). It can be NULL if we don't care about the cursor position
@@ -126,7 +131,7 @@ public:
   // Set when we should force checking the current word. See
   // mozInlineSpellChecker::HandleNavigationEvent for a description of why we
   // have this.
-  PRBool mForceNavigationWordCheck;
+  bool mForceNavigationWordCheck;
 
   // Contains the offset passed in to HandleNavigationEvent
   PRInt32 mNewNavigationPositionOffset;
@@ -179,7 +184,11 @@ private:
 
   // Set when we have spellchecked after the last edit operation. See the
   // commment at the top of the .cpp file for more info.
-  PRBool mNeedsCheckAfterNavigation;
+  bool mNeedsCheckAfterNavigation;
+
+  // Set when we have a pending mozInlineSpellResume which will check
+  // the whole document.
+  bool mFullSpellCheckScheduled;
 
   // TODO: these should be defined somewhere so that they don't have to be copied
   // from editor!
@@ -230,7 +239,7 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(mozInlineSpellChecker, nsIDOMEventListener)
 
   // returns true if there are any spell checking dictionaries available
-  static PRBool CanEnableInlineSpellChecking();
+  static bool CanEnableInlineSpellChecking();
   // update the cached value whenever the list of available dictionaries changes
   static void UpdateCanEnableInlineSpellChecking();
 
@@ -251,7 +260,7 @@ public:
   // checker should skip the node (i.e. the text is inside of a block quote
   // or an e-mail signature...)
   nsresult SkipSpellCheckForNode(nsIEditor* aEditor,
-                                 nsIDOMNode *aNode, PRBool * aCheckSpelling);
+                                 nsIDOMNode *aNode, bool * aCheckSpelling);
 
   nsresult SpellCheckAfterChange(nsIDOMNode* aCursorNode, PRInt32 aCursorOffset,
                                  nsIDOMNode* aPreviousNode, PRInt32 aPreviousOffset,
@@ -267,7 +276,7 @@ public:
   nsresult DoSpellCheck(mozInlineSpellWordUtil& aWordUtil,
                         nsISelection *aSpellCheckSelection,
                         mozInlineSpellStatus* aStatus,
-                        PRBool* aDoneChecking);
+                        bool* aDoneChecking);
 
   // helper routine to determine if a point is inside of the passed in selection.
   nsresult IsPointInSelection(nsISelection *aSelection,
@@ -279,16 +288,16 @@ public:
 
   nsresult RemoveRange(nsISelection *aSpellCheckSelection, nsIDOMRange * aRange);
   nsresult AddRange(nsISelection *aSpellCheckSelection, nsIDOMRange * aRange);
-  PRBool   SpellCheckSelectionIsFull() { return mNumWordsInSpellSelection >= mMaxNumWordsInSpellSelection; }
+  bool     SpellCheckSelectionIsFull() { return mNumWordsInSpellSelection >= mMaxNumWordsInSpellSelection; }
 
   nsresult MakeSpellCheckRange(nsIDOMNode* aStartNode, PRInt32 aStartOffset,
                                nsIDOMNode* aEndNode, PRInt32 aEndOffset,
-                               nsIDOMRange** aRange);
+                               nsIRange** aRange);
 
   // DOM and editor event registration helper routines
   nsresult RegisterEventListeners();
   nsresult UnregisterEventListeners();
-  nsresult HandleNavigationEvent(PRBool aForceWordSpellCheck, PRInt32 aNewPositionOffset = 0);
+  nsresult HandleNavigationEvent(bool aForceWordSpellCheck, PRInt32 aNewPositionOffset = 0);
 
   nsresult GetSpellCheckSelection(nsISelection ** aSpellCheckSelection);
   nsresult SaveCurrentSelectionPosition();

@@ -65,10 +65,10 @@ public:
   virtual nsIURI* GetBaseURI() const;
   virtual void GetTitle(nsString& aTitle) const;
   virtual void GetType(nsString& aType) const;
-  virtual PRBool HasRules() const;
-  virtual PRBool IsApplicable() const;
-  virtual void SetEnabled(PRBool aEnabled);
-  virtual PRBool IsComplete() const;
+  virtual bool HasRules() const;
+  virtual bool IsApplicable() const;
+  virtual void SetEnabled(bool aEnabled);
+  virtual bool IsComplete() const;
   virtual void SetComplete();
   virtual nsIStyleSheet* GetParentSheet() const;  // will be null
   virtual nsIDocument* GetOwningDocument() const;
@@ -85,11 +85,14 @@ public:
   virtual void RulesMatching(XULTreeRuleProcessorData* aData);
 #endif
   virtual nsRestyleHint HasStateDependentStyle(StateRuleProcessorData* aData);
-  virtual PRBool HasDocumentStateDependentStyle(StateRuleProcessorData* aData);
+  virtual bool HasDocumentStateDependentStyle(StateRuleProcessorData* aData);
   virtual nsRestyleHint
     HasAttributeDependentStyle(AttributeRuleProcessorData* aData);
-  virtual PRBool MediumFeaturesChanged(nsPresContext* aPresContext);
-  virtual PRInt64 SizeOf() const;
+  virtual bool MediumFeaturesChanged(nsPresContext* aPresContext);
+  virtual NS_MUST_OVERRIDE size_t
+    SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const MOZ_OVERRIDE;
+  virtual NS_MUST_OVERRIDE size_t
+    SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const MOZ_OVERRIDE;
 
   nsresult Init(nsIURI* aURL, nsIDocument* aDocument);
   void Reset(nsIURI* aURL);

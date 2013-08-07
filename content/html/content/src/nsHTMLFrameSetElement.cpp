@@ -78,7 +78,7 @@ nsHTMLFrameSetElement::SetAttr(PRInt32 aNameSpaceID,
                                nsIAtom* aAttribute,
                                nsIAtom* aPrefix,
                                const nsAString& aValue,
-                               PRBool aNotify)
+                               bool aNotify)
 {
   nsresult rv;
   /* The main goal here is to see whether the _number_ of rows or
@@ -182,7 +182,7 @@ nsHTMLFrameSetElement::GetColSpec(PRInt32 *aNumValues,
 }
 
 
-PRBool
+bool
 nsHTMLFrameSetElement::ParseAttribute(PRInt32 aNamespaceID,
                                       nsIAtom* aAttribute,
                                       const nsAString& aValue,
@@ -258,7 +258,7 @@ nsHTMLFrameSetElement::ParseRowCol(const nsAString & aValue,
   }
 
   // Pre-grab the compat mode; we may need it later in the loop.
-  PRBool isInQuirks = InNavQuirksMode(GetOwnerDoc());
+  bool isInQuirks = InNavQuirksMode(OwnerDoc());
       
   // Parse each comma separated token
 
@@ -360,7 +360,7 @@ nsHTMLFrameSetElement::ParseRowCol(const nsAString & aValue,
   NS_IMETHODIMP nsHTMLFrameSetElement::GetOn##name_(JSContext *cx,    \
                                                jsval *vp) {           \
     /* XXXbz note to self: add tests for this! */                     \
-    nsPIDOMWindow* win = GetOwnerDoc()->GetInnerWindow();             \
+    nsPIDOMWindow* win = OwnerDoc()->GetInnerWindow();             \
     if (win && win->IsInnerWindow()) {                                \
       nsCOMPtr<nsIInlineEventHandlers> ev = do_QueryInterface(win);   \
       return ev->GetOn##name_(cx, vp);                                \
@@ -370,7 +370,7 @@ nsHTMLFrameSetElement::ParseRowCol(const nsAString & aValue,
   }                                                                   \
   NS_IMETHODIMP nsHTMLFrameSetElement::SetOn##name_(JSContext *cx,    \
                                                const jsval &v) {      \
-    nsPIDOMWindow* win = GetOwnerDoc()->GetInnerWindow();             \
+    nsPIDOMWindow* win = OwnerDoc()->GetInnerWindow();             \
     if (win && win->IsInnerWindow()) {                                \
       nsCOMPtr<nsIInlineEventHandlers> ev = do_QueryInterface(win);   \
       return ev->SetOn##name_(cx, v);                                 \
@@ -381,7 +381,7 @@ nsHTMLFrameSetElement::ParseRowCol(const nsAString & aValue,
   NS_IMETHODIMP nsHTMLFrameSetElement::GetOn##name_(JSContext *cx,    \
                                                     jsval *vp) {      \
     /* XXXbz note to self: add tests for this! */                     \
-    nsPIDOMWindow* win = GetOwnerDoc()->GetInnerWindow();             \
+    nsPIDOMWindow* win = OwnerDoc()->GetInnerWindow();             \
     if (win && win->IsInnerWindow()) {                                \
       return win->GetOn##name_(cx, vp);                               \
     }                                                                 \
@@ -390,7 +390,7 @@ nsHTMLFrameSetElement::ParseRowCol(const nsAString & aValue,
   }                                                                   \
   NS_IMETHODIMP nsHTMLFrameSetElement::SetOn##name_(JSContext *cx,    \
                                                     const jsval &v) { \
-    nsPIDOMWindow* win = GetOwnerDoc()->GetInnerWindow();             \
+    nsPIDOMWindow* win = OwnerDoc()->GetInnerWindow();             \
     if (win && win->IsInnerWindow()) {                                \
       return win->SetOn##name_(cx, v);                                \
     }                                                                 \

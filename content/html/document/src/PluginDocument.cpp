@@ -66,17 +66,17 @@ public:
                                      nsILoadGroup*       aLoadGroup,
                                      nsISupports*        aContainer,
                                      nsIStreamListener** aDocListener,
-                                     PRBool              aReset = PR_TRUE,
+                                     bool                aReset = true,
                                      nsIContentSink*     aSink = nsnull);
 
   virtual void SetScriptGlobalObject(nsIScriptGlobalObject* aScriptGlobalObject);
-  virtual PRBool CanSavePresentation(nsIRequest *aNewRequest);
+  virtual bool CanSavePresentation(nsIRequest *aNewRequest);
 
   const nsCString& GetType() const { return mMimeType; }
   nsIContent*      GetPluginContent() { return mPluginContent; }
 
   void AllowNormalInstantiation() {
-    mWillHandleInstantiation = PR_FALSE;
+    mWillHandleInstantiation = false;
   }
 
   void StartLayout() { MediaDocument::StartLayout(); }
@@ -92,7 +92,7 @@ protected:
   // Hack to handle the fact that plug-in loading lives in frames and that the
   // frames may not be around when we need to instantiate.  Once plug-in
   // loading moves to content, this can all go away.
-  PRBool                                   mWillHandleInstantiation;
+  bool                                     mWillHandleInstantiation;
 };
 
 class PluginStreamListener : public MediaDocumentStreamListener
@@ -174,7 +174,7 @@ PluginStreamListener::SetupPlugin()
   // bother initializing members to 0.
 
 PluginDocument::PluginDocument()
-  : mWillHandleInstantiation(PR_TRUE)
+  : mWillHandleInstantiation(true)
 {
 }
 
@@ -221,12 +221,12 @@ PluginDocument::SetScriptGlobalObject(nsIScriptGlobalObject* aScriptGlobalObject
 }
 
 
-PRBool
+bool
 PluginDocument::CanSavePresentation(nsIRequest *aNewRequest)
 {
   // Full-page plugins cannot be cached, currently, because we don't have
   // the stream listener data to feed to the plugin instance.
-  return PR_FALSE;
+  return false;
 }
 
 
@@ -236,14 +236,14 @@ PluginDocument::StartDocumentLoad(const char*         aCommand,
                                   nsILoadGroup*       aLoadGroup,
                                   nsISupports*        aContainer,
                                   nsIStreamListener** aDocListener,
-                                  PRBool              aReset,
+                                  bool                aReset,
                                   nsIContentSink*     aSink)
 {
   // do not allow message panes to host full-page plugins
   // returning an error causes helper apps to take over
   nsCOMPtr<nsIDocShellTreeItem> dsti (do_QueryInterface(aContainer));
   if (dsti) {
-    PRBool isMsgPane = PR_FALSE;
+    bool isMsgPane = false;
     dsti->NameEquals(NS_LITERAL_STRING("messagepane").get(), &isMsgPane);
     if (isMsgPane) {
       return NS_ERROR_FAILURE;
@@ -291,8 +291,8 @@ PluginDocument::CreateSyntheticPluginDocument()
 
   // remove margins from body
   NS_NAMED_LITERAL_STRING(zero, "0");
-  body->SetAttr(kNameSpaceID_None, nsGkAtoms::marginwidth, zero, PR_FALSE);
-  body->SetAttr(kNameSpaceID_None, nsGkAtoms::marginheight, zero, PR_FALSE);
+  body->SetAttr(kNameSpaceID_None, nsGkAtoms::marginwidth, zero, false);
+  body->SetAttr(kNameSpaceID_None, nsGkAtoms::marginheight, zero, false);
 
 
   // make plugin content
@@ -307,28 +307,28 @@ PluginDocument::CreateSyntheticPluginDocument()
 
   // make it a named element
   mPluginContent->SetAttr(kNameSpaceID_None, nsGkAtoms::name,
-                          NS_LITERAL_STRING("plugin"), PR_FALSE);
+                          NS_LITERAL_STRING("plugin"), false);
 
   // fill viewport and auto-resize
   NS_NAMED_LITERAL_STRING(percent100, "100%");
   mPluginContent->SetAttr(kNameSpaceID_None, nsGkAtoms::width, percent100,
-                          PR_FALSE);
+                          false);
   mPluginContent->SetAttr(kNameSpaceID_None, nsGkAtoms::height, percent100,
-                          PR_FALSE);
+                          false);
 
   // set URL
   nsCAutoString src;
   mDocumentURI->GetSpec(src);
   mPluginContent->SetAttr(kNameSpaceID_None, nsGkAtoms::src,
-                          NS_ConvertUTF8toUTF16(src), PR_FALSE);
+                          NS_ConvertUTF8toUTF16(src), false);
 
   // set mime type
   mPluginContent->SetAttr(kNameSpaceID_None, nsGkAtoms::type,
-                          NS_ConvertUTF8toUTF16(mMimeType), PR_FALSE);
+                          NS_ConvertUTF8toUTF16(mMimeType), false);
 
   // This will not start the load because nsObjectLoadingContent checks whether
   // its document is an nsIPluginDocument
-  body->AppendChildTo(mPluginContent, PR_FALSE);
+  body->AppendChildTo(mPluginContent, false);
 
   return NS_OK;
 
@@ -360,8 +360,8 @@ PluginDocument::Print()
     if (pi) {
       NPPrint npprint;
       npprint.mode = NP_FULL;
-      npprint.print.fullPrint.pluginPrinted = PR_FALSE;
-      npprint.print.fullPrint.printOne = PR_FALSE;
+      npprint.print.fullPrint.pluginPrinted = false;
+      npprint.print.fullPrint.printOne = false;
       npprint.print.fullPrint.platformPrint = nsnull;
 
       pi->Print(&npprint);
@@ -372,7 +372,7 @@ PluginDocument::Print()
 }
 
 NS_IMETHODIMP
-PluginDocument::GetWillHandleInstantiation(PRBool* aWillHandle)
+PluginDocument::GetWillHandleInstantiation(bool* aWillHandle)
 {
   *aWillHandle = mWillHandleInstantiation;
   return NS_OK;

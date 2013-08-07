@@ -80,7 +80,7 @@ class StringObject : public ::JSObject
     void setStringThis(JSString *str) {
         JS_ASSERT(getSlot(PRIMITIVE_THIS_SLOT).isUndefined());
         setSlot(PRIMITIVE_THIS_SLOT, StringValue(str));
-        setSlot(LENGTH_SLOT, Int32Value(int32(str->length())));
+        setSlot(LENGTH_SLOT, Int32Value(int32_t(str->length())));
     }
 
     /* For access to init, as String.prototype is special. */
@@ -92,7 +92,7 @@ class StringObject : public ::JSObject
      * encodes the initial length property. Return the shape after changing
      * this String object's last property to it.
      */
-    const js::Shape *assignInitialShape(JSContext *cx);
+    Shape *assignInitialShape(JSContext *cx);
 
   private:
     StringObject();

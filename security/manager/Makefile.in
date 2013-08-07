@@ -191,9 +191,9 @@ ifndef MOZ_DEBUG
 DEFAULT_GMAKE_FLAGS += BUILD_OPT=1 OPT_CODE_SIZE=1
 endif
 ifdef GNU_CC
-DEFAULT_GMAKE_FLAGS += NS_USE_GCC=1 NS_USE_NATIVE=
+DEFAULT_GMAKE_FLAGS += NS_USE_GCC=1
 else
-DEFAULT_GMAKE_FLAGS += NS_USE_GCC= NS_USE_NATIVE=1
+DEFAULT_GMAKE_FLAGS += NS_USE_GCC=
 endif
 ifdef USE_N32
 # It is not really necessary to specify USE_PTHREADS=1.  USE_PTHREADS
@@ -260,8 +260,9 @@ DEFAULT_GMAKE_FLAGS += \
 	OS_RELEASE="2.6" \
 	OS_PTHREAD= \
 	STANDARDS_CFLAGS="-std=gnu89" \
-	ARCHFLAG="$(CFLAGS) -DCHECK_FORK_GETPID -DRTLD_NOLOAD=0 -DANDROID_VERSION=$(ANDROID_VERSION) -include $(ABS_topsrcdir)/security/manager/android_stub.h" \
 	$(NULL)
+
+DEFAULT_GMAKE_FLAGS += ARCHFLAG="$(CFLAGS) -DCHECK_FORK_GETPID -DRTLD_NOLOAD=0 -include $(ABS_topsrcdir)/security/manager/android_stub.h"
 endif
 endif
 
@@ -270,6 +271,11 @@ DEFAULT_GMAKE_FLAGS += \
 	LDFLAGS="$(LDFLAGS) $(WRAP_LDFLAGS)" \
 	DSO_LDOPTS="-shared $(LDFLAGS) $(WRAP_LDFLAGS)" \
 	$(NULL)
+endif
+
+DEFAULT_GMAKE_FLAGS += FREEBL_NO_DEPEND=0
+ifeq ($(OS_TARGET),Linux)
+DEFAULT_GMAKE_FLAGS += FREEBL_LOWHASH=1
 endif
 
 SUBMAKEFILES = boot/Makefile ssl/Makefile pki/Makefile locales/Makefile

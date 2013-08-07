@@ -7,10 +7,10 @@
 ;VIAddVersionKey /LANG=${LANG_ENGLISH} "FileDescription" "Installer for ${APP_DISPLAY_NAME}"
 ;VIAddVersionKey /LANG=${LANG_ENGLISH} "FileVersion" "${APP_VER}"
 
-VIProductVersion "1.0.0.0"
+VIProductVersion "11.0.0.0"
 VIAddVersionKey "ProductName"     "${BrandShortName}"
 VIAddVersionKey "CompanyName"     "${CompanyName}"
-VIAddVersionKey "LegalTrademarks" "${BrandShortName} is the property of Moonchild Productions."
+VIAddVersionKey "LegalTrademarks" "${BrandShortName} is the intellectual property of Moonchild Productions."
 VIAddVersionKey "LegalCopyright"  "${CompanyName}"
 VIAddVersionKey "FileVersion"     "${AppVersion}"
 VIAddVersionKey "ProductVersion"  "${AppVersion}"

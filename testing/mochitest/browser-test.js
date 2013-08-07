@@ -12,16 +12,16 @@ window.addEventListener("load", testOnLoad, false);
 function testOnLoad() {
   window.removeEventListener("load", testOnLoad, false);
 
-  // Make sure to launch the test harness for the first opened window only
-  var prefs = Cc["@mozilla.org/preferences-service;1"].
-              getService(Ci.nsIPrefBranch);
-  if (prefs.prefHasUserValue("testing.browserTestHarness.running"))
-    return;
-
-  prefs.setBoolPref("testing.browserTestHarness.running", true);
   gConfig = readConfig();
-
   if (gConfig.testRoot == "browser") {
+    // Make sure to launch the test harness for the first opened window only
+    var prefs = Cc["@mozilla.org/preferences-service;1"].
+                getService(Ci.nsIPrefBranch);
+    if (prefs.prefHasUserValue("testing.browserTestHarness.running"))
+      return;
+
+    prefs.setBoolPref("testing.browserTestHarness.running", true);
+
     var ww = Cc["@mozilla.org/embedcomp/window-watcher;1"].
              getService(Ci.nsIWindowWatcher);
     var sstring = Cc["@mozilla.org/supports-string;1"].
@@ -30,6 +30,22 @@ function testOnLoad() {
 
     ww.openWindow(window, "chrome://mochikit/content/browser-harness.xul", "browserTest",
                   "chrome,centerscreen,dialog=no,resizable,titlebar,toolbar=no,width=800,height=600", sstring);
+  } else {
+    // This code allows us to redirect without requiring specialpowers for chrome and a11y tests.
+    function messageHandler(m) {
+      messageManager.removeMessageListener("chromeEvent", messageHandler);
+      var url = m.json.data;
+
+      // Window is the [ChromeWindow] for messageManager, so we need content.window 
+      // Currently chrome tests are run in a content window instead of a ChromeWindow
+      var webNav = content.window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
+                         .getInterface(Components.interfaces.nsIWebNavigation);
+      webNav.loadURI(url, null, null, null, null);
+    }
+
+    var listener = 'data:,function doLoad(e) { var data=e.getData("data");removeEventListener("contentEvent", function (e) { doLoad(e); }, false, true);sendAsyncMessage("chromeEvent", {"data":data}); };addEventListener("contentEvent", function (e) { doLoad(e); }, false, true);';
+    messageManager.loadFrameScript(listener, true);
+    messageManager.addMessageListener("chromeEvent", messageHandler);
   }
 }
 
@@ -48,6 +64,9 @@ function Tester(aTests, aDumper, aCallback) {
                        getService(Ci.mozIJSSubScriptLoader);
   this._scriptLoader.loadSubScript("chrome://mochikit/content/tests/SimpleTest/EventUtils.js", this.EventUtils);
   var simpleTestScope = {};
+  this._scriptLoader.loadSubScript("chrome://mochikit/content/tests/SimpleTest/specialpowersAPI.js", simpleTestScope);
+  this._scriptLoader.loadSubScript("chrome://mochikit/content/tests/SimpleTest/SpecialPowersObserverAPI.js", simpleTestScope);
+  this._scriptLoader.loadSubScript("chrome://mochikit/content/tests/SimpleTest/ChromePowers.js", simpleTestScope);
   this._scriptLoader.loadSubScript("chrome://mochikit/content/tests/SimpleTest/SimpleTest.js", simpleTestScope);
   this._scriptLoader.loadSubScript("chrome://mochikit/content/chrome-harness.js", simpleTestScope);
   this.SimpleTest = simpleTestScope.SimpleTest;
@@ -149,7 +168,7 @@ Tester.prototype = {
                          "\tTodo: " + todoCount + "\n");
       } else {
         this.dumper.dump("TEST-UNEXPECTED-FAIL | (browser-test.js) | " +
-                         "No tests to run. Did you pass an invalid --test-path?");
+                         "No tests to run. Did you pass an invalid --test-path?\n");
       }
   
       this.dumper.dump("\n*** End BrowserChrome Test Results ***\n");
@@ -169,7 +188,7 @@ Tester.prototype = {
       if (this.currentTest)
         this.currentTest.addResult(new testMessage(msg));
       else
-        this.dumper.dump("TEST-INFO | (browser-test.js) | " + msg);
+        this.dumper.dump("TEST-INFO | (browser-test.js) | " + msg.replace(/\n$/, "") + "\n");
     } catch (ex) {
       // Swallow exception so we don't lead to another error being reported,
       // throwing us into an infinite loop
@@ -190,6 +209,10 @@ Tester.prototype = {
           this.currentTest.addResult(new testResult(false, "Cleanup function threw an exception", ex, false));
         }
       };
+
+      if (this.SimpleTest.isExpectingUncaughtException()) {
+        this.currentTest.addResult(new testResult(false, "expectUncaughtException was called but no uncaught exception was detected!", "", false));
+      }
 
       // Clear document.popupNode.  The test could have set it to a custom value
       // for its own purposes, nulling it out it will go back to the default
@@ -231,6 +254,8 @@ Tester.prototype = {
   execTest: function Tester_execTest() {
     this.dumper.dump("TEST-START | " + this.currentTest.path + "\n");
 
+    this.SimpleTest.reset();
+
     // Load the tests into a testscope
     this.currentTest.scope = new testScope(this, this.currentTest);
 
@@ -240,7 +265,7 @@ Tester.prototype = {
     this.currentTest.scope.gTestPath = this.currentTest.path;
 
     // Override SimpleTest methods with ours.
-    ["ok", "is", "isnot", "todo", "todo_is", "todo_isnot"].forEach(function(m) {
+    ["ok", "is", "isnot", "todo", "todo_is", "todo_isnot", "info"].forEach(function(m) {
       this.SimpleTest[m] = this[m];
     }, this.currentTest.scope);
 
@@ -277,7 +302,13 @@ Tester.prototype = {
         this.currentTest.scope.test();
       }
     } catch (ex) {
-      this.currentTest.addResult(new testResult(false, "Exception thrown", ex, false));
+      var isExpected = !!this.SimpleTest.isExpectingUncaughtException();
+      if (!this.SimpleTest.isIgnoringAllUncaughtExceptions()) {
+        this.currentTest.addResult(new testResult(isExpected, "Exception thrown", ex, false));
+        this.SimpleTest.expectUncaughtException(false);
+      } else {
+        this.currentTest.addResult(new testMessage("Exception thrown: " + ex));
+      }
       this.currentTest.scope.finish();
     }
 
@@ -360,12 +391,11 @@ function testMessage(aName) {
 // cannot conflict with global variables used in tests.
 function testScope(aTester, aTest) {
   this.__tester = aTester;
-  this.__browserTest = aTest;
 
   var self = this;
   this.ok = function test_ok(condition, name, diag, stack) {
-    self.__browserTest.addResult(new testResult(condition, name, diag, false,
-                                                stack ? stack : Components.stack.caller));
+    aTest.addResult(new testResult(condition, name, diag, false,
+                                   stack ? stack : Components.stack.caller));
   };
   this.is = function test_is(a, b, name) {
     self.ok(a == b, name, "Got " + a + ", expected " + b, false,
@@ -376,8 +406,8 @@ function testScope(aTester, aTest) {
             Components.stack.caller);
   };
   this.todo = function test_todo(condition, name, diag, stack) {
-    self.__browserTest.addResult(new testResult(!condition, name, diag, true,
-                                                stack ? stack : Components.stack.caller));
+    aTest.addResult(new testResult(!condition, name, diag, true,
+                                   stack ? stack : Components.stack.caller));
   };
   this.todo_is = function test_todo_is(a, b, name) {
     self.todo(a == b, name, "Got " + a + ", expected " + b,
@@ -388,7 +418,7 @@ function testScope(aTester, aTest) {
               Components.stack.caller);
   };
   this.info = function test_info(name) {
-    self.__browserTest.addResult(new testMessage(name));
+    aTest.addResult(new testMessage(name));
   };
 
   this.executeSoon = function test_executeSoon(func) {
@@ -419,7 +449,13 @@ function testScope(aTester, aTest) {
       // StopIteration means test is finished.
       self.finish();
     } catch (ex) {
-      aTest.addResult(new testResult(false, "Exception thrown", ex, false));
+      var isExpected = !!self.SimpleTest.isExpectingUncaughtException();
+      if (!self.SimpleTest.isIgnoringAllUncaughtExceptions()) {
+        aTest.addResult(new testResult(isExpected, "Exception thrown", ex, false));
+        self.SimpleTest.expectUncaughtException(false);
+      } else {
+        aTest.addResult(new testMessage("Exception thrown: " + ex));
+      }
       self.finish();
     }
   };
@@ -448,15 +484,16 @@ function testScope(aTester, aTest) {
     self.SimpleTest.copyToProfile(filename);
   };
 
-  this.expectUncaughtException = function test_expectUncaughtException() {
-    self.SimpleTest.expectUncaughtException();
+  this.expectUncaughtException = function test_expectUncaughtException(aExpecting) {
+    self.SimpleTest.expectUncaughtException(aExpecting);
+  };
+
+  this.ignoreAllUncaughtExceptions = function test_ignoreAllUncaughtExceptions(aIgnoring) {
+    self.SimpleTest.ignoreAllUncaughtExceptions(aIgnoring);
   };
 
   this.finish = function test_finish() {
     self.__done = true;
-    if (self.SimpleTest._expectingUncaughtException) {
-      self.ok(false, "expectUncaughtException was called but no uncaught exception was detected!");
-    }
     if (self.__waitTimer) {
       self.executeSoon(function() {
         if (self.__done && self.__waitTimer) {

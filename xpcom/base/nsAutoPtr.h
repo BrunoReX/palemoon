@@ -66,6 +66,7 @@ class nsAutoPtr
       void
       assign( T* newPtr )
         {
+          NS_ABORT_IF_FALSE(mRawPtr != newPtr || !newPtr, "This makes no sense!");
           T* oldPtr = mRawPtr;
           mRawPtr = newPtr;
           delete oldPtr;
@@ -1049,11 +1050,11 @@ class nsRefPtr
           return get();
         }
 
-      nsCOMPtr_base::nsDerivedSafe<T>*
+      T*
       operator->() const
         {
           NS_PRECONDITION(mRawPtr != 0, "You can't dereference a NULL nsRefPtr with operator->().");
-          return reinterpret_cast<nsCOMPtr_base::nsDerivedSafe<T>*> (get());
+          return get();
         }
 
       // This operator is needed for gcc <= 4.0.* and for Sun Studio; it

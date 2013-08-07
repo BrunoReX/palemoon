@@ -41,7 +41,7 @@
 #include "nsCExternalHandlerService.h"
 #include "nsContentCID.h"
 #include "nsContentUtils.h"
-#include "nsDOMClassInfo.h"
+#include "nsDOMClassInfoID.h"
 #include "nsDOMError.h"
 #include "nsICharsetAlias.h"
 #include "nsICharsetDetector.h"
@@ -148,7 +148,7 @@ NS_INTERFACE_MAP_BEGIN(nsDOMFileBase)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO_CONDITIONAL(Blob, !mIsFile)
 NS_INTERFACE_MAP_END
 
-// Threadsafe when GetMutable() == PR_FALSE
+// Threadsafe when GetMutable() == false
 NS_IMPL_THREADSAFE_ADDREF(nsDOMFileBase)
 NS_IMPL_THREADSAFE_RELEASE(nsDOMFileBase)
 
@@ -298,6 +298,76 @@ nsDOMFileBase::GetInternalUrl(nsIPrincipal* aPrincipal, nsAString& aURL)
   return NS_OK;
 }
 
+NS_IMETHODIMP_(PRInt64)
+nsDOMFileBase::GetFileId()
+{
+  PRInt64 id = -1;
+
+  if (IsStoredFile() && IsWholeFile()) {
+    if (!indexedDB::IndexedDatabaseManager::IsClosed()) {
+      indexedDB::IndexedDatabaseManager::FileMutex().Lock();
+    }
+
+    NS_ASSERTION(!mFileInfos.IsEmpty(),
+                 "A stored file must have at least one file info!");
+
+    nsRefPtr<indexedDB::FileInfo>& fileInfo = mFileInfos.ElementAt(0);
+    if (fileInfo) {
+      id =  fileInfo->Id();
+    }
+
+    if (!indexedDB::IndexedDatabaseManager::IsClosed()) {
+      indexedDB::IndexedDatabaseManager::FileMutex().Unlock();
+    }
+  }
+
+  return id;
+}
+
+NS_IMETHODIMP_(void)
+nsDOMFileBase::AddFileInfo(indexedDB::FileInfo* aFileInfo)
+{
+  if (indexedDB::IndexedDatabaseManager::IsClosed()) {
+    NS_ERROR("Shouldn't be called after shutdown!");
+    return;
+  }
+
+  nsRefPtr<indexedDB::FileInfo> fileInfo = aFileInfo;
+
+  MutexAutoLock lock(indexedDB::IndexedDatabaseManager::FileMutex());
+
+  NS_ASSERTION(!mFileInfos.Contains(aFileInfo),
+               "Adding the same file info agan?!");
+
+  nsRefPtr<indexedDB::FileInfo>* element = mFileInfos.AppendElement();
+  element->swap(fileInfo);
+}
+
+NS_IMETHODIMP_(indexedDB::FileInfo*)
+nsDOMFileBase::GetFileInfo(indexedDB::FileManager* aFileManager)
+{
+  if (indexedDB::IndexedDatabaseManager::IsClosed()) {
+    NS_ERROR("Shouldn't be called after shutdown!");
+    return nsnull;
+  }
+
+  // A slice created from a stored file must keep the file info alive.
+  // However, we don't support sharing of slices yet, so the slice must be
+  // copied again. That's why we have to ignore the first file info.
+  PRUint32 startIndex = IsStoredFile() && !IsWholeFile() ? 1 : 0;
+
+  MutexAutoLock lock(indexedDB::IndexedDatabaseManager::FileMutex());
+
+  for (PRUint32 i = startIndex; i < mFileInfos.Length(); i++) {
+    nsRefPtr<indexedDB::FileInfo>& fileInfo = mFileInfos.ElementAt(i);
+    if (fileInfo->Manager() == aFileManager) {
+      return fileInfo;
+    }
+  }
+
+  return nsnull;
+}
+
 NS_IMETHODIMP
 nsDOMFileBase::GetSendInfo(nsIInputStream** aBody,
                            nsACString& aContentType,
@@ -322,14 +392,14 @@ nsDOMFileBase::GetSendInfo(nsIInputStream** aBody,
 }
 
 NS_IMETHODIMP
-nsDOMFileBase::GetMutable(PRBool* aMutable)
+nsDOMFileBase::GetMutable(bool* aMutable)
 {
   *aMutable = !mImmutable;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsDOMFileBase::SetMutable(PRBool aMutable)
+nsDOMFileBase::SetMutable(bool aMutable)
 {
   nsresult rv = NS_OK;
 
@@ -419,7 +489,7 @@ nsDOMFileFile::GetType(nsAString &aType)
     }
 
     AppendUTF8toUTF16(mimeType, mContentType);
-    mContentType.SetIsVoid(PR_FALSE);
+    mContentType.SetIsVoid(false);
   }
 
   aType = mContentType;
@@ -488,19 +558,19 @@ nsDOMFileFile::Initialize(nsISupports* aOwner,
     }
 
     nsCOMPtr<nsILocalFile> localFile;
-    rv = NS_NewLocalFile(xpcomStr, PR_FALSE, getter_AddRefs(localFile));
+    rv = NS_NewLocalFile(xpcomStr, false, getter_AddRefs(localFile));
     NS_ENSURE_SUCCESS(rv, rv);
 
     file = do_QueryInterface(localFile);
     NS_ASSERTION(file, "This should never happen");
   }
 
-  PRBool exists;
+  bool exists;
   rv = file->Exists(&exists);
   NS_ENSURE_SUCCESS(rv, rv);
   NS_ENSURE_TRUE(exists, NS_ERROR_FILE_NOT_FOUND);
 
-  PRBool isDir;
+  bool isDir;
   rv = file->IsDirectory(&isDir);
   NS_ENSURE_SUCCESS(rv, rv);
   NS_ENSURE_FALSE(isDir, NS_ERROR_FILE_IS_DIRECTORY);

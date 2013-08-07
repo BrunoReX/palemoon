@@ -40,10 +40,6 @@ srcdir		= @srcdir@
 VPATH		= @srcdir@
 relativesrcdir  = browser/base/content/test
 
-DIRS += \
-		tabview \
-		$(NULL)
-
 include $(DEPTH)/config/autoconf.mk
 include $(topsrcdir)/config/rules.mk
 
@@ -52,8 +48,6 @@ _TEST_FILES = \
 		feed_discovery.html \
 		test_bug395533.html \
 		bug395533-data.txt \
-		test_contextmenu.html \
-		subtst_contextmenu.html \
 		ctxmenu-image.png \
 		video.ogg \
 		test_offlineNotification.html \
@@ -76,6 +70,14 @@ _TEST_FILES = \
 		gZipOfflineChild.cacheManifest^headers^ \
 		$(NULL)
 
+# test_contextmenu.html is disabled on Linux due to bug 513558
+ifneq (gtk2,$(MOZ_WIDGET_TOOLKIT))
+_TEST_FILES += \
+		test_contextmenu.html \
+		subtst_contextmenu.html \
+		$(NULL)
+endif
+
 # The following tests are disabled because they are unreliable:
 #   browser_bug423833.js is bug 428712
 #   browser_sanitize-download-history.js is bug 432425
@@ -89,7 +91,6 @@ _TEST_FILES = \
 _BROWSER_FILES = \
                  browser_typeAheadFind.js \
                  browser_keywordSearch.js \
-                 browser_NetworkPrioritizer.js \
                  browser_allTabsPanel.js \
                  browser_alltabslistener.js \
                  browser_bug304198.js \
@@ -163,13 +164,16 @@ _BROWSER_FILES = \
                  browser_bug599325.js \
                  browser_bug609700.js \
                  browser_bug616836.js \
+                 browser_bug623155.js \
                  browser_bug623893.js \
                  browser_bug624734.js \
                  browser_bug647886.js \
                  browser_bug655584.js \
                  browser_bug664672.js \
+                 browser_bug710878.js \
                  browser_canonizeURL.js \
                  browser_findbarClose.js \
+                 browser_homeDrop.js \
                  browser_keywordBookmarklets.js \
                  browser_contextSearchTabPosition.js \
                  browser_ctrlTab.js \
@@ -181,6 +185,7 @@ _BROWSER_FILES = \
                  browser_getshortcutoruri.js \
                  browser_hide_removing.js \
                  browser_overflowScroll.js \
+                 browser_locationBarCommand.js \
                  browser_locationBarExternalLoad.js \
                  browser_pageInfo.js \
                  browser_page_style_menu.js \
@@ -209,6 +214,7 @@ _BROWSER_FILES = \
                  browser_tabs_isActive.js \
                  browser_tabs_owner.js \
                  browser_urlbarCopying.js \
+                 browser_urlbarEnter.js \
                  browser_urlbarTrimURLs.js \
                  browser_urlHighlight.js \
                  browser_visibleFindSelection.js \
@@ -248,6 +254,10 @@ _BROWSER_FILES = \
                  test_wyciwyg_copying.html \
                  authenticate.sjs \
                  browser_minimize.js \
+                 browser_aboutSyncProgress.js \
+                 browser_middleMouse_inherit.js \
+                 redirect_bug623155.sjs \
+                 browser_tabDrop.js \
                  $(NULL)
 
 ifneq (cocoa,$(MOZ_WIDGET_TOOLKIT))

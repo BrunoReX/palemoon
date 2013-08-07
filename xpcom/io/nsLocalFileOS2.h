@@ -100,23 +100,23 @@ private:
     nsLocalFile(const nsLocalFile& other);
     ~nsLocalFile() {}
 
-    // cached information can only be used when this is PR_FALSE
-    PRPackedBool mDirty;
+    // cached information can only be used when this is false
+    bool mDirty;
 
     // this string will always be in native format!
     nsCString mWorkingPath;
 
     PRFileInfo64  mFileInfo64;
 
-    void MakeDirty() { mDirty = PR_TRUE; }
+    void MakeDirty() { mDirty = true; }
 
     nsresult Stat();
 
-    nsresult CopyMove(nsIFile *newParentDir, const nsACString &newName, PRBool move);
-    nsresult CopySingleFile(nsIFile *source, nsIFile* dest, const nsACString &newName, PRBool move);
+    nsresult CopyMove(nsIFile *newParentDir, const nsACString &newName, bool move);
+    nsresult CopySingleFile(nsIFile *source, nsIFile* dest, const nsACString &newName, bool move);
 
     nsresult SetModDate(PRInt64 aLastModifiedTime);
-    nsresult AppendNativeInternal(const nsAFlatCString &node, PRBool multipleComponents);
+    nsresult AppendNativeInternal(const nsAFlatCString &node, bool multipleComponents);
 
     nsresult GetEA(const char *eaName, PFEA2LIST pfea2list);
     friend class TypeEaEnumerator;

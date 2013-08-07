@@ -75,7 +75,7 @@ public:
                        const nsString& aAnimationName,
                        PRUint32 aMessage, mozilla::TimeDuration aElapsedTime)
       : mElement(aElement),
-        mEvent(PR_TRUE, aMessage, aAnimationName, aElapsedTime.ToSeconds())
+        mEvent(true, aMessage, aAnimationName, aElapsedTime.ToSeconds())
     {
     }
 
@@ -83,7 +83,7 @@ public:
     // to ourselves in order to work with nsTArray
     AnimationEventInfo(const AnimationEventInfo &aOther)
       : mElement(aOther.mElement),
-        mEvent(PR_TRUE, aOther.mEvent.message,
+        mEvent(true, aOther.mEvent.message,
                aOther.mEvent.animationName, aOther.mEvent.elapsedTime)
     {
     }
@@ -96,6 +96,10 @@ public:
 #ifdef MOZ_XUL
   virtual void RulesMatching(XULTreeRuleProcessorData* aData);
 #endif
+  virtual NS_MUST_OVERRIDE size_t
+    SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const MOZ_OVERRIDE;
+  virtual NS_MUST_OVERRIDE size_t
+    SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const MOZ_OVERRIDE;
 
   // nsARefreshObserver
   virtual void WillRefresh(mozilla::TimeStamp aTime);
@@ -115,7 +119,7 @@ public:
                                    mozilla::dom::Element* aElement);
 
   void KeyframesListIsDirty() {
-    mKeyframesListIsDirty = PR_TRUE;
+    mKeyframesListIsDirty = true;
   }
 
   typedef InfallibleTArray<AnimationEventInfo> EventArray;
@@ -127,12 +131,17 @@ public:
    * accumulate animationstart events at other points when style
    * contexts are created.
    */
-  void DispatchEvents();
+  void DispatchEvents() {
+    // Fast-path the common case: no events
+    if (!mPendingEvents.IsEmpty()) {
+      DoDispatchEvents();
+    }
+  }
 
 private:
   ElementAnimations* GetElementAnimations(mozilla::dom::Element *aElement,
                                           nsCSSPseudoElements::Type aPseudoType,
-                                          PRBool aCreateIfNeeded);
+                                          bool aCreateIfNeeded);
   void BuildAnimations(nsStyleContext* aStyleContext,
                        InfallibleTArray<ElementAnimation>& aAnimations);
   bool BuildSegment(InfallibleTArray<AnimationPropertySegment>& aSegments,
@@ -144,6 +153,9 @@ private:
                                  nsCSSPseudoElements::Type aPseudoType);
 
   nsCSSKeyframesRule* KeyframesRuleFor(const nsSubstring& aName);
+
+  // The guts of DispatchEvents
+  void DoDispatchEvents();
 
   bool mKeyframesListIsDirty;
   nsDataHashtable<nsStringHashKey, nsCSSKeyframesRule*> mKeyframesRules;

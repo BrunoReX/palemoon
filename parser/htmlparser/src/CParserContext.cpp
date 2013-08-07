@@ -51,7 +51,7 @@ CParserContext::CParserContext(CParserContext* aPrevContext,
                                eParserCommands aCommand,
                                nsIRequestObserver* aListener, 
                                eAutoDetectResult aStatus, 
-                               PRBool aCopyUnused)
+                               bool aCopyUnused)
   : mListener(aListener),
     mKey(aKey),
     mPrevContext(aPrevContext),
@@ -61,7 +61,7 @@ CParserContext::CParserContext(CParserContext* aPrevContext,
     mContextType(eCTNone),
     mAutoDetectStatus(aStatus),
     mParserCommand(aCommand),
-    mMultipart(PR_TRUE),
+    mMultipart(true),
     mCopyUnused(aCopyUnused),
     mNumConsumed(0)
 { 

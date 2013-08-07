@@ -55,6 +55,7 @@
 #include "nsBidiKeyboard.h"
 #include "nsNativeKeyBindings.h"
 #include "nsScreenManagerGtk.h"
+#include "nsGTKToolkit.h"
 
 #ifdef NS_PRINTING
 #include "nsPrintOptionsGTK.h"
@@ -107,7 +108,7 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(nsImageToPixbuf)
 
 #ifdef NATIVE_THEME_SUPPORT
 // from nsWindow.cpp
-extern PRBool gDisableNativeTheme;
+extern bool gDisableNativeTheme;
 
 static nsresult
 nsNativeThemeGTKConstructor(nsISupports *aOuter, REFNSIID aIID,
@@ -165,8 +166,8 @@ nsFilePickerConstructor(nsISupports *aOuter, REFNSIID aIID,
     return NS_ERROR_NO_AGGREGATION;
   }
 
-  PRBool allowPlatformPicker =
-      Preferences::GetBool("ui.allow_platform_file_picker", PR_TRUE);
+  bool allowPlatformPicker =
+      Preferences::GetBool("ui.allow_platform_file_picker", true);
 
   nsCOMPtr<nsIFilePicker> picker;
   if (allowPlatformPicker && gtk_check_version(2,6,3) == NULL) {
@@ -339,6 +340,7 @@ nsWidgetGtk2ModuleDtor()
   nsFilePicker::Shutdown();
   nsSound::Shutdown();
   nsWindow::ReleaseGlobals();
+  nsGTKToolkit::Shutdown();
   nsAppShellShutdown();
 }
 

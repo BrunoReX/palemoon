@@ -52,6 +52,7 @@ _TEST_FILES =\
 		test_aria_imgmap.html \
 		test_aria_presentation.html \
 		test_button.xul \
+		test_canvas.html \
 		test_combobox.xul \
 		test_cssoverflow.html \
 		test_dochierarchy.html \
@@ -65,6 +66,7 @@ _TEST_FILES =\
 		test_img.html \
 		test_invalidationlist.html \
 		test_list.html \
+		test_map.html \
 		test_media.html \
 		test_select.html \
 		test_tabbox.xul \

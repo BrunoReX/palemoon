@@ -65,11 +65,9 @@ SDK_XPIDLSRCS =                                 \
 	$(NULL)
 XPIDLSRCS =                                     \
 	nsIDOMDOMStringList.idl			\
-	nsIDOMNameList.idl			\
 	nsIDOMXMLDocument.idl			\
 	nsIDOMUserDataHandler.idl		\
 	nsIDOMNSEditableElement.idl		\
-	nsIDOMNSElement.idl			\
 	nsIDOMNodeSelector.idl			\
 	nsIDOMDOMTokenList.idl			\
 	nsIDOMDOMSettableTokenList.idl	\

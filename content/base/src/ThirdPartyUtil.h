@@ -47,18 +47,17 @@ class nsIURI;
 class nsIChannel;
 class nsIDOMWindow;
 
-class ThirdPartyUtil : public mozIThirdPartyUtil_BRANCH
+class ThirdPartyUtil : public mozIThirdPartyUtil
 {
 public:
   NS_DECL_ISUPPORTS
   NS_DECL_MOZITHIRDPARTYUTIL
-  NS_DECL_MOZITHIRDPARTYUTIL_BRANCH
 
   nsresult Init();
 
 private:
   nsresult IsThirdPartyInternal(const nsCString& aFirstDomain,
-    nsIURI* aSecondURI, PRBool* aResult);
+    nsIURI* aSecondURI, bool* aResult);
   static already_AddRefed<nsIURI> GetURIFromWindow(nsIDOMWindow* aWin);
 
   nsCOMPtr<nsIEffectiveTLDService> mTLDService;

@@ -63,18 +63,26 @@ class nsCxPusher;
 class nsIEventListenerInfo;
 class nsIDocument;
 
-typedef struct {
+struct nsListenerStruct
+{
   nsRefPtr<nsIDOMEventListener> mListener;
   PRUint32                      mEventType;
   nsCOMPtr<nsIAtom>             mTypeAtom;
   PRUint16                      mFlags;
-  PRPackedBool                  mHandlerIsString;
+  bool                          mHandlerIsString;
 
   nsIJSEventListener* GetJSListener() const {
     return (mFlags & NS_PRIV_EVENT_FLAG_SCRIPT) ?
       static_cast<nsIJSEventListener *>(mListener.get()) : nsnull;
   }
-} nsListenerStruct;
+
+  ~nsListenerStruct()
+  {
+    if ((mFlags & NS_PRIV_EVENT_FLAG_SCRIPT) && mListener) {
+      static_cast<nsIJSEventListener*>(mListener.get())->Disconnect();
+    }
+  }
+};
 
 /*
  * Event listener manager
@@ -93,11 +101,11 @@ public:
 
   void AddEventListener(const nsAString& aType,
                         nsIDOMEventListener* aListener,
-                        PRBool aUseCapture,
-                        PRBool aWantsUntrusted);
+                        bool aUseCapture,
+                        bool aWantsUntrusted);
   void RemoveEventListener(const nsAString& aType,
                            nsIDOMEventListener* aListener,
-                           PRBool aUseCapture);
+                           bool aUseCapture);
 
   /**
   * Sets events listeners of all types. 
@@ -121,8 +129,8 @@ public:
   nsresult AddScriptEventListener(nsIAtom *aName,
                                   const nsAString& aFunc,
                                   PRUint32 aLanguage,
-                                  PRBool aDeferCompilation,
-                                  PRBool aPermitUntrustedEvents);
+                                  bool aDeferCompilation,
+                                  bool aPermitUntrustedEvents);
   /**
    * Remove the current "inline" event listener for aName.
    */
@@ -177,13 +185,13 @@ public:
   /**
    * Allows us to quickly determine if we have mutation listeners registered.
    */
-  PRBool HasMutationListeners();
+  bool HasMutationListeners();
 
   /**
    * Allows us to quickly determine whether we have unload or beforeunload
    * listeners registered.
    */
-  PRBool HasUnloadListeners();
+  bool HasUnloadListeners();
 
   /**
    * Returns the mutation bits depending on which mutation listeners are
@@ -195,14 +203,14 @@ public:
   PRUint32 MutationListenerBits();
 
   /**
-   * Returns PR_TRUE if there is at least one event listener for aEventName.
+   * Returns true if there is at least one event listener for aEventName.
    */
-  PRBool HasListenersFor(const nsAString& aEventName);
+  bool HasListenersFor(const nsAString& aEventName);
 
   /**
-   * Returns PR_TRUE if there is at least one event listener.
+   * Returns true if there is at least one event listener.
    */
-  PRBool HasListeners();
+  bool HasListeners();
 
   /**
    * Sets aList to the list of nsIEventListenerInfo objects representing the
@@ -215,22 +223,24 @@ public:
   static void Shutdown();
 
   /**
-   * Returns PR_TRUE if there may be a paint event listener registered,
-   * PR_FALSE if there definitely isn't.
+   * Returns true if there may be a paint event listener registered,
+   * false if there definitely isn't.
    */
-  PRBool MayHavePaintEventListener() { return mMayHavePaintEventListener; }
+  bool MayHavePaintEventListener() { return mMayHavePaintEventListener; }
 
   /**
-   * Returns PR_TRUE if there may be a MozAudioAvailable event listener registered,
-   * PR_FALSE if there definitely isn't.
+   * Returns true if there may be a MozAudioAvailable event listener registered,
+   * false if there definitely isn't.
    */
-  PRBool MayHaveAudioAvailableEventListener() { return mMayHaveAudioAvailableEventListener; }
+  bool MayHaveAudioAvailableEventListener() { return mMayHaveAudioAvailableEventListener; }
 
   /**
-   * Returns PR_TRUE if there may be a touch event listener registered,
-   * PR_FALSE if there definitely isn't.
+   * Returns true if there may be a touch event listener registered,
+   * false if there definitely isn't.
    */
-  PRBool MayHaveTouchEventListener() { return mMayHaveTouchEventListener; }
+  bool MayHaveTouchEventListener() { return mMayHaveTouchEventListener; }
+
+  bool MayHaveMouseEnterLeaveEventListener() { return mMayHaveMouseEnterLeaveEventListener; }
 
   PRInt64 SizeOf() const;
 protected:
@@ -247,7 +257,7 @@ protected:
    * will look for it on mTarget.
    */
   nsresult CompileEventHandlerInternal(nsListenerStruct *aListenerStruct,
-                                       PRBool aNeedsCxPush,
+                                       bool aNeedsCxPush,
                                        const nsAString* aBody);
 
   /**
@@ -262,10 +272,10 @@ protected:
    * any, is returned in aListenerStruct.
    */
   nsresult SetJSEventListener(nsIScriptContext *aContext,
-                              void *aScopeGlobal,
+                              JSObject* aScopeGlobal,
                               nsIAtom* aName,
                               JSObject *aHandler,
-                              PRBool aPermitUntrustedEvents,
+                              bool aPermitUntrustedEvents,
                               nsListenerStruct **aListenerStruct);
 
 public:
@@ -302,7 +312,8 @@ protected:
   PRUint32 mMayHaveSystemGroupListeners : 1;
   PRUint32 mMayHaveAudioAvailableEventListener : 1;
   PRUint32 mMayHaveTouchEventListener : 1;
-  PRUint32 mNoListenerForEvent : 26;
+  PRUint32 mMayHaveMouseEnterLeaveEventListener : 1;
+  PRUint32 mNoListenerForEvent : 25;
 
   nsAutoTObserverArray<nsListenerStruct, 2> mListeners;
   nsISupports*                              mTarget;  //WEAK
@@ -314,5 +325,27 @@ protected:
   friend class nsEventTargetChainItem;
   static PRUint32                           sCreatedCount;
 };
+
+/**
+ * NS_AddSystemEventListener() is a helper function for implementing
+ * nsIDOMEventTarget::AddSystemEventListener().
+ */
+inline nsresult
+NS_AddSystemEventListener(nsIDOMEventTarget* aTarget,
+                          const nsAString& aType,
+                          nsIDOMEventListener *aListener,
+                          bool aUseCapture,
+                          bool aWantsUntrusted)
+{
+  nsEventListenerManager* listenerManager = aTarget->GetListenerManager(true);
+  NS_ENSURE_STATE(listenerManager);
+  PRUint32 flags = NS_EVENT_FLAG_SYSTEM_EVENT;
+  flags |= aUseCapture ? NS_EVENT_FLAG_CAPTURE : NS_EVENT_FLAG_BUBBLE;
+  if (aWantsUntrusted) {
+    flags |= NS_PRIV_EVENT_UNTRUSTED_PERMITTED;
+  }
+  listenerManager->AddEventListenerByType(aListener, aType, flags);
+  return NS_OK;
+}
 
 #endif // nsEventListenerManager_h__

@@ -73,7 +73,7 @@ struct DCFromContext {
              aSurface->GetType() == gfxASurface::SurfaceTypeWin32Printing))
         {
             dc = static_cast<gfxWindowsSurface*>(aSurface.get())->GetDC();
-            needsRelease = PR_FALSE;
+            needsRelease = false;
             SaveDC(dc);
             cairo_scaled_font_t* scaled =
                 cairo_get_scaled_font(aContext->GetCairo());
@@ -82,7 +82,7 @@ struct DCFromContext {
         if (!dc) {
             dc = GetDC(NULL);
             SetGraphicsMode(dc, GM_ADVANCED);
-            needsRelease = PR_TRUE;
+            needsRelease = true;
         }
     }
 
@@ -99,7 +99,7 @@ struct DCFromContext {
     }
 
     HDC dc;
-    PRBool needsRelease;
+    bool needsRelease;
 };
 
 // ClearType parameters set by running ClearType tuner
@@ -131,6 +131,8 @@ public:
       GetScaledFontForFont(gfxFont *aFont);
     virtual already_AddRefed<gfxASurface>
       GetThebesSurfaceForDrawTarget(mozilla::gfx::DrawTarget *aTarget);
+    
+    virtual bool SupportsAzure(mozilla::gfx::BackendType& aBackend);
 
     enum RenderMode {
         /* Use GDI and windows surfaces */
@@ -165,7 +167,7 @@ public:
      * \param aAttemptForce Attempt to force D2D cairo device creation by using
      * cairo device creation routines.
      */
-    void VerifyD2DDevice(PRBool aAttemptForce);
+    void VerifyD2DDevice(bool aAttemptForce);
 
     HDC GetScreenDC() { return mScreenDC; }
 
@@ -177,7 +179,7 @@ public:
 
     nsresult ResolveFontName(const nsAString& aFontName,
                              FontResolverCallback aCallback,
-                             void *aClosure, PRBool& aAborted);
+                             void *aClosure, bool& aAborted);
 
     nsresult GetStandardFamilyName(const nsAString& aFontName, nsAString& aFamilyName);
 
@@ -201,21 +203,21 @@ public:
     /**
      * Check whether format is supported on a platform or not (if unclear, returns true)
      */
-    virtual PRBool IsFontFormatSupported(nsIURI *aFontURI, PRUint32 aFormatFlags);
+    virtual bool IsFontFormatSupported(nsIURI *aFontURI, PRUint32 aFormatFlags);
 
     /* Find a FontFamily/FontEntry object that represents a font on your system given a name */
     gfxFontFamily *FindFontFamily(const nsAString& aName);
     gfxFontEntry *FindFontEntry(const nsAString& aName, const gfxFontStyle& aFontStyle);
 
-    PRBool GetPrefFontEntries(const nsCString& aLangGroup, nsTArray<nsRefPtr<gfxFontEntry> > *array);
+    bool GetPrefFontEntries(const nsCString& aLangGroup, nsTArray<nsRefPtr<gfxFontEntry> > *array);
     void SetPrefFontEntries(const nsCString& aLangGroup, nsTArray<nsRefPtr<gfxFontEntry> >& array);
 
     void ClearPrefFonts() { mPrefFonts.Clear(); }
 
     // ClearType is not always enabled even when available (e.g. Windows XP)
     // if either of these prefs are enabled and apply, use ClearType rendering
-    PRBool UseClearTypeForDownloadableFonts();
-    PRBool UseClearTypeAlways();
+    bool UseClearTypeForDownloadableFonts();
+    bool UseClearTypeAlways();
 
     // OS version in 16.16 major/minor form
     // based on http://msdn.microsoft.com/en-us/library/ms724834(VS.85).aspx
@@ -241,10 +243,10 @@ public:
 
 #ifdef CAIRO_HAS_DWRITE_FONT
     IDWriteFactory *GetDWriteFactory() { return mDWriteFactory; }
-    inline PRBool DWriteEnabled() { return mUseDirectWrite; }
+    inline bool DWriteEnabled() { return mUseDirectWrite; }
     inline DWRITE_MEASURING_MODE DWriteMeasuringMode() { return mMeasuringMode; }
 #else
-    inline PRBool DWriteEnabled() { return PR_FALSE; }
+    inline bool DWriteEnabled() { return false; }
 #endif
 #ifdef CAIRO_HAS_D2D_SURFACE
     cairo_device_t *GetD2DDevice() { return mD2DDevice; }
@@ -256,15 +258,15 @@ public:
 protected:
     RenderMode mRenderMode;
 
-    PRBool mUseClearTypeForDownloadableFonts;
-    PRBool mUseClearTypeAlways;
+    PRInt8 mUseClearTypeForDownloadableFonts;
+    PRInt8 mUseClearTypeAlways;
     HDC mScreenDC;
 
 private:
     void Init();
 
-    PRBool mUseDirectWrite;
-    PRBool mUsingGDIFonts;
+    bool mUseDirectWrite;
+    bool mUsingGDIFonts;
 
 #ifdef CAIRO_HAS_DWRITE_FONT
     nsRefPtr<IDWriteFactory> mDWriteFactory;

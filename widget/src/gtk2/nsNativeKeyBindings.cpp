@@ -36,6 +36,8 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/Util.h"
+
 #include "nsNativeKeyBindings.h"
 #include "nsString.h"
 #include "nsMemory.h"
@@ -46,9 +48,11 @@
 #include <gdk/gdkkeysyms.h>
 #include <gdk/gdk.h>
 
+using namespace mozilla;
+
 static nsINativeKeyBindings::DoCommandCallback gCurrentCallback;
 static void *gCurrentCallbackData;
-static PRBool gHandled;
+static bool gHandled;
 
 // Common GtkEntry and GtkTextView signals
 static void
@@ -56,7 +60,7 @@ copy_clipboard_cb(GtkWidget *w, gpointer user_data)
 {
   gCurrentCallback("cmd_copy", gCurrentCallbackData);
   g_signal_stop_emission_by_name(w, "copy_clipboard");
-  gHandled = PR_TRUE;
+  gHandled = true;
 }
 
 static void
@@ -64,7 +68,7 @@ cut_clipboard_cb(GtkWidget *w, gpointer user_data)
 {
   gCurrentCallback("cmd_cut", gCurrentCallbackData);
   g_signal_stop_emission_by_name(w, "cut_clipboard");
-  gHandled = PR_TRUE;
+  gHandled = true;
 }
 
 // GTK distinguishes between display lines (wrapped, as they appear on the
@@ -92,10 +96,10 @@ delete_from_cursor_cb(GtkWidget *w, GtkDeleteType del_type,
                       gint count, gpointer user_data)
 {
   g_signal_stop_emission_by_name(w, "delete_from_cursor");
-  gHandled = PR_TRUE;
+  gHandled = true;
 
-  PRBool forward = count > 0;
-  if (PRUint32(del_type) >= NS_ARRAY_LENGTH(sDeleteCommands)) {
+  bool forward = count > 0;
+  if (PRUint32(del_type) >= ArrayLength(sDeleteCommands)) {
     // unsupported deletion type
     return;
   }
@@ -184,9 +188,9 @@ move_cursor_cb(GtkWidget *w, GtkMovementStep step, gint count,
                gboolean extend_selection, gpointer user_data)
 {
   g_signal_stop_emission_by_name(w, "move_cursor");
-  gHandled = PR_TRUE;
-  PRBool forward = count > 0;
-  if (PRUint32(step) >= NS_ARRAY_LENGTH(sMoveCommands)) {
+  gHandled = true;
+  bool forward = count > 0;
+  if (PRUint32(step) >= ArrayLength(sMoveCommands)) {
     // unsupported movement type
     return;
   }
@@ -207,7 +211,7 @@ paste_clipboard_cb(GtkWidget *w, gpointer user_data)
 {
   gCurrentCallback("cmd_paste", gCurrentCallbackData);
   g_signal_stop_emission_by_name(w, "paste_clipboard");
-  gHandled = PR_TRUE;
+  gHandled = true;
 }
 
 // GtkTextView-only signals
@@ -216,7 +220,7 @@ select_all_cb(GtkWidget *w, gboolean select, gpointer user_data)
 {
   gCurrentCallback("cmd_selectAll", gCurrentCallbackData);
   g_signal_stop_emission_by_name(w, "select_all");
-  gHandled = PR_TRUE;
+  gHandled = true;
 }
 
 void
@@ -262,14 +266,14 @@ nsNativeKeyBindings::~nsNativeKeyBindings()
 
 NS_IMPL_ISUPPORTS1(nsNativeKeyBindings, nsINativeKeyBindings)
 
-PRBool
+bool
 nsNativeKeyBindings::KeyDown(const nsNativeKeyEvent& aEvent,
                              DoCommandCallback aCallback, void *aCallbackData)
 {
-  return PR_FALSE;
+  return false;
 }
 
-PRBool
+bool
 nsNativeKeyBindings::KeyPress(const nsNativeKeyEvent& aEvent,
                               DoCommandCallback aCallback, void *aCallbackData)
 {
@@ -281,12 +285,14 @@ nsNativeKeyBindings::KeyPress(const nsNativeKeyEvent& aEvent,
     keyCode = DOMKeyCodeToGdkKeyCode(aEvent.keyCode);
 
   if (KeyPressInternal(aEvent, aCallback, aCallbackData, keyCode))
-    return PR_TRUE;
+    return true;
 
   nsKeyEvent *nativeKeyEvent = static_cast<nsKeyEvent*>(aEvent.nativeEvent);
-  if (!nativeKeyEvent || nativeKeyEvent->eventStructType != NS_KEY_EVENT &&
-      nativeKeyEvent->message != NS_KEY_PRESS)
-    return PR_FALSE;
+  if (!nativeKeyEvent ||
+      (nativeKeyEvent->eventStructType != NS_KEY_EVENT &&
+       nativeKeyEvent->message != NS_KEY_PRESS)) {
+    return false;
+  }
 
   for (PRUint32 i = 0; i < nativeKeyEvent->alternativeCharCodes.Length(); ++i) {
     PRUint32 ch = nativeKeyEvent->isShift ?
@@ -295,7 +301,7 @@ nsNativeKeyBindings::KeyPress(const nsNativeKeyEvent& aEvent,
     if (ch && ch != aEvent.charCode) {
       keyCode = gdk_unicode_to_keyval(ch);
       if (KeyPressInternal(aEvent, aCallback, aCallbackData, keyCode))
-        return PR_TRUE;
+        return true;
     }
   }
 
@@ -312,10 +318,10 @@ See bugs 411005 406407
                                     static_cast<GdkEventKey*>(guiEvent->pluginEvent));
 */
 
-  return PR_FALSE;
+  return false;
 }
 
-PRBool
+bool
 nsNativeKeyBindings::KeyPressInternal(const nsNativeKeyEvent& aEvent,
                                       DoCommandCallback aCallback,
                                       void *aCallbackData,
@@ -333,7 +339,7 @@ nsNativeKeyBindings::KeyPressInternal(const nsNativeKeyEvent& aEvent,
   gCurrentCallback = aCallback;
   gCurrentCallbackData = aCallbackData;
 
-  gHandled = PR_FALSE;
+  gHandled = false;
 
   gtk_bindings_activate(GTK_OBJECT(mNativeTarget),
                         aKeyCode, GdkModifierType(modifiers));
@@ -344,9 +350,9 @@ nsNativeKeyBindings::KeyPressInternal(const nsNativeKeyEvent& aEvent,
   return gHandled;
 }
 
-PRBool
+bool
 nsNativeKeyBindings::KeyUp(const nsNativeKeyEvent& aEvent,
                            DoCommandCallback aCallback, void *aCallbackData)
 {
-  return PR_FALSE;
+  return false;
 }

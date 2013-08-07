@@ -100,10 +100,10 @@ function WifiGeoPositionProvider() {
     gTestingEnabled = Services.prefs.getBoolPref("geo.wifi.testing");
   } catch (e) {}
 
-  wifiService = null;
-  timer = null;
-  hasSeenWiFi = false;
-  started = false;
+  this.wifiService = null;
+  this.timer = null;
+  this.hasSeenWiFi = false;
+  this.started = false;
 }
 
 WifiGeoPositionProvider.prototype = {
@@ -218,17 +218,19 @@ WifiGeoPositionProvider.prototype = {
 
     if (accessPoints) {
         providerUrl = providerUrl + accessPoints.sort(sort).map(encode).join("");
-        // max length is 2k.  make sure we are under that
-        let x = providerUrl.length - 2000;
-        if (x >= 0) {
-            // we need to trim
-            let doomed = providerUrl.lastIndexOf("&", 2000);
-            LOG("Doomed:"+doomed);
-            providerUrl = providerUrl.substring(0, doomed);
-        }
     }
 
     providerUrl = encodeURI(providerUrl);
+
+    // max length is 2k.  make sure we are under that
+    let x = providerUrl.length - 2000;
+    if (x >= 0) {
+	// we need to trim
+	let doomed = providerUrl.lastIndexOf("&", 2000);
+	LOG("Doomed:"+doomed);
+	providerUrl = providerUrl.substring(0, doomed);
+    }
+    
     LOG("************************************* Sending request:\n" + providerUrl + "\n");
 
     // send our request to a wifi geolocation network provider:
@@ -239,10 +241,10 @@ WifiGeoPositionProvider.prototype = {
     xhr.mozBackgroundRequest = true;
     xhr.open("GET", providerUrl, false);
     xhr.channel.loadFlags = Ci.nsIChannel.LOAD_ANONYMOUS;
-    xhr.onerror = function(req) {
+    xhr.addEventListener("error", function(req) {
         LOG("onerror: " + req);
-    };
-    xhr.onload = function (req) {  
+    }, false);
+    xhr.addEventListener("load", function (req) {  
         LOG("service returned: " + req.target.responseText);
         response = JSON.parse(req.target.responseText);
         /*
@@ -288,7 +290,7 @@ WifiGeoPositionProvider.prototype = {
               }
           }
         }
-    };
+    }, false);
 
     LOG("************************************* ------>>>> sending.");
     xhr.send(null);

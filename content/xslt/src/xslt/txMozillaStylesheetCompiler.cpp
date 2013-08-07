@@ -112,7 +112,7 @@ public:
 
     // nsIContentSink
     NS_IMETHOD WillParse(void) { return NS_OK; }
-    NS_IMETHOD DidBuildModel(PRBool aTerminated);
+    NS_IMETHOD DidBuildModel(bool aTerminated);
     NS_IMETHOD WillInterrupt(void) { return NS_OK; }
     NS_IMETHOD WillResume(void) { return NS_OK; }
     NS_IMETHOD SetParser(nsIParser* aParser) { return NS_OK; }
@@ -123,7 +123,7 @@ public:
 private:
     nsRefPtr<txStylesheetCompiler> mCompiler;
     nsCOMPtr<nsIStreamListener> mListener;
-    PRPackedBool mCheckedForXML;
+    bool mCheckedForXML;
 
 protected:
     // This exists solely to suppress a warning from nsDerivedSafe
@@ -133,7 +133,7 @@ protected:
 txStylesheetSink::txStylesheetSink(txStylesheetCompiler* aCompiler,
                                    nsIParser* aParser)
     : mCompiler(aCompiler),
-      mCheckedForXML(PR_FALSE)
+      mCheckedForXML(false)
 {
     mListener = do_QueryInterface(aParser);
 }
@@ -234,12 +234,12 @@ NS_IMETHODIMP
 txStylesheetSink::ReportError(const PRUnichar *aErrorText,
                               const PRUnichar *aSourceText,
                               nsIScriptError *aError,
-                              PRBool *_retval)
+                              bool *_retval)
 {
     NS_PRECONDITION(aError && aSourceText && aErrorText, "Check arguments!!!");
 
     // The expat driver should report the error.
-    *_retval = PR_TRUE;
+    *_retval = true;
 
     mCompiler->cancel(NS_ERROR_FAILURE, aErrorText, aSourceText);
 
@@ -247,7 +247,7 @@ txStylesheetSink::ReportError(const PRUnichar *aErrorText,
 }
 
 NS_IMETHODIMP 
-txStylesheetSink::DidBuildModel(PRBool aTerminated)
+txStylesheetSink::DidBuildModel(bool aTerminated)
 {  
     return mCompiler->doneLoading();
 }
@@ -262,7 +262,7 @@ txStylesheetSink::OnDataAvailable(nsIRequest *aRequest, nsISupports *aContext,
         nsCOMPtr<nsIDTD> dtd;
         parser->GetDTD(getter_AddRefs(dtd));
         if (dtd) {
-            mCheckedForXML = PR_TRUE;
+            mCheckedForXML = true;
             if (!(dtd->GetType() & NS_IPARSER_FLAG_XML)) {
                 nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
                 nsAutoString spec;
@@ -315,7 +315,7 @@ txStylesheetSink::OnStartRequest(nsIRequest *aRequest, nsISupports *aContext)
     // sniffing themselves.
     nsCOMPtr<nsIURI> uri;
     channel->GetURI(getter_AddRefs(uri));
-    PRBool sniff;
+    bool sniff;
     if (NS_SUCCEEDED(uri->SchemeIs("file", &sniff)) && sniff &&
         contentType.Equals(UNKNOWN_CONTENT_TYPE)) {
         nsCOMPtr<nsIStreamConverterService> serv =
@@ -340,7 +340,7 @@ NS_IMETHODIMP
 txStylesheetSink::OnStopRequest(nsIRequest *aRequest, nsISupports *aContext,
                                 nsresult aStatusCode)
 {
-    PRBool success = PR_TRUE;
+    bool success = true;
 
     nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aRequest);
     if (httpChannel) {
@@ -499,7 +499,7 @@ txCompileObserver::startLoad(nsIURI* aUri, txStylesheetCompiler* aCompiler,
     if (httpChannel) {
         httpChannel->SetRequestHeader(NS_LITERAL_CSTRING("Accept"),
                                       NS_LITERAL_CSTRING("*/*"),
-                                      PR_FALSE);
+                                      false);
 
         nsCOMPtr<nsIURI> referrerURI;
         aReferrerPrincipal->GetURI(getter_AddRefs(referrerURI));
@@ -523,7 +523,7 @@ txCompileObserver::startLoad(nsIURI* aUri, txStylesheetCompiler* aCompiler,
     // Always install in case of redirects
     nsCOMPtr<nsIStreamListener> listener =
         new nsCORSListenerProxy(sink, aReferrerPrincipal, channel,
-                                PR_FALSE, &rv);
+                                false, &rv);
     NS_ENSURE_TRUE(listener, NS_ERROR_OUT_OF_MEMORY);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -691,7 +691,7 @@ txSyncCompileObserver::loadURI(const nsAString& aUri,
     // make sense.
     nsCOMPtr<nsIDOMDocument> document;
     rv = nsSyncLoadService::LoadDocument(uri, referrerPrincipal, nsnull,
-                                         PR_FALSE, getter_AddRefs(document));
+                                         false, getter_AddRefs(document));
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsCOMPtr<nsIDocument> doc = do_QueryInterface(document);
@@ -720,8 +720,7 @@ TX_CompileStylesheet(nsINode* aNode, txMozillaXSLTProcessor* aProcessor,
                      txStylesheet** aStylesheet)
 {
     // If we move GetBaseURI to nsINode this can be simplified.
-    nsCOMPtr<nsIDocument> doc = aNode->GetOwnerDoc();
-    NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
+    nsCOMPtr<nsIDocument> doc = aNode->OwnerDoc();
 
     nsCOMPtr<nsIURI> uri;
     if (aNode->IsNodeOfType(nsINode::eCONTENT)) {

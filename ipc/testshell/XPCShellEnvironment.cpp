@@ -46,6 +46,7 @@
 #include "base/basictypes.h"
 
 #include "jsapi.h"
+#include "jsdbgapi.h"
 #include "jsprf.h"
 
 #include "xpcpublic.h"
@@ -110,7 +111,7 @@ public:
     XPCShellDirProvider() { }
     ~XPCShellDirProvider() { }
 
-    PRBool SetGREDir(const char *dir);
+    bool SetGREDir(const char *dir);
     void ClearGREDir() { mGREDir = nsnull; }
 
 private:
@@ -333,8 +334,8 @@ Load(JSContext *cx,
             JS_ReportError(cx, "cannot open file '%s' for reading", filename.ptr());
             return JS_FALSE;
         }
-        script = JS_CompileFileHandleForPrincipals(cx, obj, filename.ptr(), file,
-                                                   Environment(cx)->GetPrincipal());
+        script = JS_CompileUTF8FileHandleForPrincipals(cx, obj, filename.ptr(), file,
+                                                       Environment(cx)->GetPrincipal());
         fclose(file);
         if (!script)
             return JS_FALSE;
@@ -388,7 +389,7 @@ DumpXPC(JSContext *cx,
         uintN argc,
         jsval *vp)
 {
-    int32 depth = 2;
+    int32_t depth = 2;
 
     if (argc > 0) {
         if (!JS_ValueToInt32(cx, JS_ARGV(cx, vp)[0], &depth))
@@ -397,7 +398,7 @@ DumpXPC(JSContext *cx,
 
     nsCOMPtr<nsIXPConnect> xpc = do_GetService(nsIXPConnect::GetCID());
     if(xpc)
-        xpc->DebugDump((int16)depth);
+        xpc->DebugDump(int16_t(depth));
     JS_SET_RVAL(cx, vp, JSVAL_VOID);
     return JS_TRUE;
 }
@@ -407,14 +408,9 @@ GC(JSContext *cx,
    uintN argc,
    jsval *vp)
 {
-    JSRuntime *rt;
-    uint32 preBytes, postBytes;
-
-    rt = JS_GetRuntime(cx);
-    preBytes = JS_GetGCParameter(rt, JSGC_BYTES);
     JS_GC(cx);
-    postBytes = JS_GetGCParameter(rt, JSGC_BYTES);
 #ifdef JS_GCMETER
+    JSRuntime *rt = JS_GetRuntime(cx);
     js_DumpGCStats(rt, stdout);
 #endif
     JS_SET_RVAL(cx, vp, JSVAL_VOID);
@@ -429,7 +425,7 @@ GCZeal(JSContext *cx,
 {
   jsval* argv = JS_ARGV(cx, vp);
 
-  uint32 zeal;
+  uint32_t zeal;
   if (!JS_ValueToECMAUint32(cx, argv[0], &zeal))
     return JS_FALSE;
 
@@ -486,7 +482,7 @@ DumpHeap(JSContext *cx,
 
     vp = argv + 3;
     if (argc > 3 && *vp != JSVAL_NULL && *vp != JSVAL_VOID) {
-        uint32 depth;
+        uint32_t depth;
 
         if (!JS_ValueToECMAUint32(cx, *vp, &depth))
             return JS_FALSE;
@@ -623,8 +619,8 @@ ProcessFile(JSContext *cx,
         }
 
         JSScript* script =
-            JS_CompileFileHandleForPrincipals(cx, obj, filename, file,
-                                              env->GetPrincipal());
+            JS_CompileUTF8FileHandleForPrincipals(cx, obj, filename, file,
+                                                  env->GetPrincipal());
         if (script && !env->ShouldCompileOnly())
             (void)JS_ExecuteScript(cx, obj, script, &result);
 
@@ -801,9 +797,9 @@ FullTrustSecMan::CheckFunctionAccess(JSContext * cx,
 NS_IMETHODIMP
 FullTrustSecMan::CanExecuteScripts(JSContext * cx,
                                    nsIPrincipal *principal,
-                                   PRBool *_retval)
+                                   bool *_retval)
 {
-    *_retval = PR_TRUE;
+    *_retval = true;
     return NS_OK;
 }
 
@@ -852,9 +848,9 @@ FullTrustSecMan::RequestCapability(nsIPrincipal *principal,
 
 NS_IMETHODIMP
 FullTrustSecMan::IsCapabilityEnabled(const char *capability,
-                                     PRBool *_retval)
+                                     bool *_retval)
 {
-    *_retval = PR_TRUE;
+    *_retval = true;
     return NS_OK;
 }
 
@@ -894,9 +890,9 @@ FullTrustSecMan::GetObjectPrincipal(JSContext * cx,
 }
 
 NS_IMETHODIMP
-FullTrustSecMan::SubjectPrincipalIsSystem(PRBool *_retval)
+FullTrustSecMan::SubjectPrincipalIsSystem(bool *_retval)
 {
-    *_retval = PR_TRUE;
+    *_retval = true;
     return NS_OK;
 }
 
@@ -910,7 +906,7 @@ FullTrustSecMan::CheckSameOrigin(JSContext * aJSContext,
 NS_IMETHODIMP
 FullTrustSecMan::CheckSameOriginURI(nsIURI *aSourceURI,
                                     nsIURI *aTargetURI,
-                                    PRBool reportError)
+                                    bool reportError)
 {
     return NS_OK;
 }
@@ -933,7 +929,7 @@ FullTrustSecMan::GetChannelPrincipal(nsIChannel *aChannel,
 
 NS_IMETHODIMP
 FullTrustSecMan::IsSystemPrincipal(nsIPrincipal *aPrincipal,
-                                   PRBool *_retval)
+                                   bool *_retval)
 {
     *_retval = aPrincipal == mSystemPrincipal;
     return NS_OK;
@@ -981,7 +977,7 @@ XPCShellDirProvider::Release()
 
 NS_IMPL_QUERY_INTERFACE1(XPCShellDirProvider, nsIDirectoryServiceProvider)
 
-PRBool
+bool
 XPCShellDirProvider::SetGREDir(const char *dir)
 {
     nsresult rv = XRE_GetFileFromPath(dir, getter_AddRefs(mGREDir));
@@ -990,11 +986,11 @@ XPCShellDirProvider::SetGREDir(const char *dir)
 
 NS_IMETHODIMP
 XPCShellDirProvider::GetFile(const char *prop,
-                             PRBool *persistent,
+                             bool *persistent,
                              nsIFile* *result)
 {
     if (mGREDir && !strcmp(prop, NS_GRE_DIR)) {
-        *persistent = PR_TRUE;
+        *persistent = true;
         NS_ADDREF(*result = mGREDir);
         return NS_OK;
     }

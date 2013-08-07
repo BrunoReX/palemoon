@@ -69,7 +69,7 @@
 using namespace mozilla;
 using namespace mozilla::scache;
 
-static PRBool gDisableXULCache = PR_FALSE; // enabled by default
+static bool gDisableXULCache = false; // enabled by default
 static const char kDisableXULCachePref[] = "nglayout.debug.disable_xul_cache";
 static const char kXULCacheInfoKey[] = "nsXULPrototypeCache.startupCache";
 static const char kXULCachePrefix[] = "xulcache";
@@ -133,9 +133,9 @@ nsXULPrototypeCache::GetInstance()
             mozilla::services::GetObserverService();
         if (obsSvc) {
             nsXULPrototypeCache *p = sInstance;
-            obsSvc->AddObserver(p, "chrome-flush-skin-caches", PR_FALSE);
-            obsSvc->AddObserver(p, "chrome-flush-caches", PR_FALSE);
-            obsSvc->AddObserver(p, "startupcache-invalidate", PR_FALSE);
+            obsSvc->AddObserver(p, "chrome-flush-skin-caches", false);
+            obsSvc->AddObserver(p, "chrome-flush-caches", false);
+            obsSvc->AddObserver(p, "startupcache-invalidate", false);
         }
 		
     }
@@ -226,7 +226,7 @@ nsXULPrototypeCache::PutStyleSheet(nsCSSStyleSheet* aStyleSheet)
 }
 
 
-void*
+JSScript*
 nsXULPrototypeCache::GetScript(nsIURI* aURI, PRUint32 *aLangID)
 {
     CacheScriptEntry entry;
@@ -250,7 +250,7 @@ ReleaseScriptObjectCallback(nsIURI* aKey, CacheScriptEntry &aData, void* aClosur
 }
 
 nsresult
-nsXULPrototypeCache::PutScript(nsIURI* aURI, PRUint32 aLangID, void* aScriptObject)
+nsXULPrototypeCache::PutScript(nsIURI* aURI, PRUint32 aLangID, JSScript* aScriptObject)
 {
     CacheScriptEntry existingEntry;
     if (mScriptTable.Get(aURI, &existingEntry)) {
@@ -364,13 +364,13 @@ nsXULPrototypeCache::Flush()
 }
 
 
-PRBool
+bool
 nsXULPrototypeCache::IsEnabled()
 {
     return !gDisableXULCache;
 }
 
-static PRBool gDisableXULDiskCache = PR_FALSE;           // enabled by default
+static bool gDisableXULDiskCache = false;           // enabled by default
 
 void
 nsXULPrototypeCache::AbortCaching()
@@ -463,7 +463,7 @@ nsXULPrototypeCache::GetOutputStream(nsIURI* uri, nsIObjectOutputStream** stream
     nsresult rv;
     nsCOMPtr<nsIObjectOutputStream> objectOutput;
     nsCOMPtr<nsIStorageStream> storageStream;
-    PRBool found = mOutputStreamTable.Get(uri, getter_AddRefs(storageStream));
+    bool found = mOutputStreamTable.Get(uri, getter_AddRefs(storageStream));
     if (found) {
         objectOutput = do_CreateInstance("mozilla.org/binaryoutputstream;1");
         if (!objectOutput) return NS_ERROR_OUT_OF_MEMORY;
@@ -489,7 +489,7 @@ nsXULPrototypeCache::FinishOutputStream(nsIURI* uri)
         return NS_ERROR_NOT_AVAILABLE;
     
     nsCOMPtr<nsIStorageStream> storageStream;
-    PRBool found = mOutputStreamTable.Get(uri, getter_AddRefs(storageStream));
+    bool found = mOutputStreamTable.Get(uri, getter_AddRefs(storageStream));
     if (!found)
         return NS_ERROR_UNEXPECTED;
     nsCOMPtr<nsIOutputStream> outputStream
@@ -516,16 +516,16 @@ nsXULPrototypeCache::FinishOutputStream(nsIURI* uri)
 // We have data if we're in the middle of writing it or we already
 // have it in the cache.
 nsresult
-nsXULPrototypeCache::HasData(nsIURI* uri, PRBool* exists)
+nsXULPrototypeCache::HasData(nsIURI* uri, bool* exists)
 {
     if (mOutputStreamTable.Get(uri, nsnull)) {
-        *exists = PR_TRUE;
+        *exists = true;
         return NS_OK;
     }
     nsCAutoString spec(kXULCachePrefix);
     nsresult rv = PathifyURI(uri, spec);
     if (NS_FAILED(rv)) {
-        *exists = PR_FALSE;
+        *exists = false;
         return NS_OK;
     }
     nsAutoArrayPtr<char> buf;
@@ -539,7 +539,7 @@ nsXULPrototypeCache::HasData(nsIURI* uri, PRBool* exists)
         // this URI.
         StartupCache* sc = StartupCache::GetSingleton();
         if (!sc) {
-            *exists = PR_FALSE;
+            *exists = false;
             return NS_OK;
         }
         rv = sc->GetBuffer(spec.get(), getter_Transfers(buf), &len);
@@ -551,7 +551,7 @@ nsXULPrototypeCache::HasData(nsIURI* uri, PRBool* exists)
 static int
 CachePrefChangedCallback(const char* aPref, void* aClosure)
 {
-    PRBool wasEnabled = !gDisableXULDiskCache;
+    bool wasEnabled = !gDisableXULDiskCache;
     gDisableXULDiskCache =
         Preferences::GetBool(kDisableXULCachePref,
                              gDisableXULDiskCache);

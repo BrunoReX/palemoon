@@ -37,7 +37,7 @@
 
 #include "jstypedarray.h"
 #include "nsAutoPtr.h"
-#include "nsDOMClassInfo.h"
+#include "nsDOMClassInfoID.h"
 #include "nsDOMFile.h"
 #include "nsIMultiplexInputStream.h"
 #include "nsStringStream.h"
@@ -372,7 +372,10 @@ nsDOMBlobBuilder::Append(const jsval& aData, JSContext* aCx)
   // Is it an object?
   if (JSVAL_IS_OBJECT(aData)) {
     JSObject* obj = JSVAL_TO_OBJECT(aData);
-    NS_ASSERTION(obj, "Er, what?");
+    if (!obj) {
+      // We got passed null.  Just do nothing.
+      return NS_OK;
+    }
 
     // Is it a Blob?
     nsCOMPtr<nsIDOMBlob> blob = do_QueryInterface(

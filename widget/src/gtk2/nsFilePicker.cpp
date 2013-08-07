@@ -35,6 +35,8 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/Util.h"
+
 #include <gtk/gtk.h>
 
 #include "nsIFileURL.h"
@@ -58,6 +60,8 @@
 #if (MOZ_PLATFORM_MAEMO == 5)
 #include <hildon-fm-2/hildon/hildon-file-chooser-dialog.h>
 #endif
+
+using namespace mozilla;
 
 #define MAX_PREVIEW_SIZE 180
 
@@ -205,7 +209,7 @@ NS_IMPL_ISUPPORTS1(nsFilePicker, nsIFilePicker)
 nsFilePicker::nsFilePicker()
   : mMode(nsIFilePicker::modeOpen),
     mSelectedType(0),
-    mAllowURLs(PR_FALSE)
+    mAllowURLs(false)
 {
 }
 
@@ -218,7 +222,7 @@ ReadMultipleFiles(gpointer filename, gpointer array)
 {
   nsCOMPtr<nsILocalFile> localfile;
   nsresult rv = NS_NewNativeLocalFile(nsDependentCString(static_cast<char*>(filename)),
-                                      PR_FALSE,
+                                      false,
                                       getter_AddRefs(localfile));
   if (NS_SUCCEEDED(rv)) {
     nsCOMArray<nsILocalFile>& files = *static_cast<nsCOMArray<nsILocalFile>*>(array);
@@ -386,51 +390,6 @@ nsFilePicker::GetFiles(nsISimpleEnumerator **aFiles)
   return NS_ERROR_FAILURE;
 }
 
-PRBool
-confirm_overwrite_file(GtkWidget *parent, nsILocalFile* file)
-{
-  nsCOMPtr<nsIStringBundleService> sbs = do_GetService(NS_STRINGBUNDLE_CONTRACTID);
-  nsCOMPtr<nsIStringBundle> bundle;
-  nsresult rv = sbs->CreateBundle("chrome://global/locale/filepicker.properties",
-                                  getter_AddRefs(bundle));
-  if (NS_FAILED(rv)) {
-    return PR_FALSE;
-  }
-
-  nsAutoString leafName;
-  file->GetLeafName(leafName);
-  const PRUnichar *formatStrings[] =
-  {
-    leafName.get()
-  };
-
-  nsXPIDLString title, message;
-  bundle->GetStringFromName(NS_LITERAL_STRING("confirmTitle").get(),
-                            getter_Copies(title));
-  bundle->FormatStringFromName(NS_LITERAL_STRING("confirmFileReplacing").get(),
-                               formatStrings, NS_ARRAY_LENGTH(formatStrings),
-                               getter_Copies(message));
-
-  GtkWindow *parent_window = GTK_WINDOW(parent);
-  GtkWidget *dialog;
-  
-  dialog = gtk_message_dialog_new(parent_window,
-                                  GTK_DIALOG_DESTROY_WITH_PARENT,
-                                  GTK_MESSAGE_QUESTION,
-                                  GTK_BUTTONS_YES_NO,
-                                  "%s", NS_ConvertUTF16toUTF8(message).get());
-  gtk_window_set_title(GTK_WINDOW(dialog), NS_ConvertUTF16toUTF8(title).get());
-  if (parent_window && parent_window->group) {
-    gtk_window_group_add_window(parent_window->group, GTK_WINDOW(dialog));
-  }
-
-  PRBool result = (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_YES);
-
-  gtk_widget_destroy(dialog);
-
-  return result;
-}
-
 NS_IMETHODIMP
 nsFilePicker::Show(PRInt16 *aReturn)
 {
@@ -548,7 +507,7 @@ nsFilePicker::Show(PRInt16 *aReturn)
     }
   }
 
-  gtk_file_chooser_set_do_overwrite_confirmation(GTK_FILE_CHOOSER(file_chooser), PR_TRUE);
+  gtk_file_chooser_set_do_overwrite_confirmation(GTK_FILE_CHOOSER(file_chooser), TRUE);
   gint response = gtk_dialog_run(GTK_DIALOG(file_chooser));
 
   switch (response) {
@@ -560,7 +519,7 @@ nsFilePicker::Show(PRInt16 *aReturn)
       nsCOMPtr<nsILocalFile> file;
       GetFile(getter_AddRefs(file));
       if (file) {
-        PRBool exists = PR_FALSE;
+        bool exists = false;
         file->Exists(&exists);
         if (exists)
           *aReturn = nsIFilePicker::returnReplace;

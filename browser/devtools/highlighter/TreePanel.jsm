@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
+/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *
@@ -45,9 +45,9 @@ const Cu = Components.utils;
 
 Cu.import("resource:///modules/domplate.jsm");
 Cu.import("resource:///modules/InsideOutBox.jsm");
-Cu.import("resource:///modules/Services.jsm");
+Cu.import("resource://gre/modules/Services.jsm");
 
-var EXPORTED_SYMBOLS = ["TreePanel"];
+var EXPORTED_SYMBOLS = ["TreePanel", "DOMHelpers"];
 
 const INSPECTOR_URI = "chrome://browser/content/inspector.html";
 
@@ -96,6 +96,8 @@ TreePanel.prototype = {
 
     domplateUtils.setDOM(this.window);
 
+    this.DOMHelpers = new DOMHelpers(this.window);
+
     let isOpen = this.isOpen.bind(this);
 
     this.registrationObject = {
@@ -139,6 +141,7 @@ TreePanel.prototype = {
     this.treeLoaded = true;
     this.treeIFrame.addEventListener("click", this.onTreeClick.bind(this), false);
     this.treeIFrame.addEventListener("dblclick", this.onTreeDblClick.bind(this), false);
+    this.treeIFrame.addEventListener("keypress", this.IUI, false);
     delete this.initializingTreePanel;
     Services.obs.notifyObservers(null,
       this.IUI.INSPECTOR_NOTIFICATIONS.TREEPANELREADY, null);
@@ -224,10 +227,19 @@ TreePanel.prototype = {
     treeBox = this.document.createElement("vbox");
     treeBox.id = "inspector-tree-box";
     treeBox.state = "open"; // for the registerTools API.
-    treeBox.minHeight = 10;
+    try {
+      treeBox.height =
+        Services.prefs.getIntPref("devtools.inspector.htmlHeight");
+    } catch(e) {
+      treeBox.height = 112;
+    }
+                      
+    treeBox.minHeight = 64;
     treeBox.flex = 1;
     toolbarParent.insertBefore(treeBox, toolbar);
-    this.createResizer();
+
+    this.IUI.toolbar.setAttribute("treepanel-open", "true");
+
     treeBox.appendChild(this.treeIFrame);
 
     let boundLoadedInitializeTreePanel = function loadedInitializeTreePanel()
@@ -249,28 +261,15 @@ TreePanel.prototype = {
   },
 
   /**
-   * Lame resizer on the toolbar.
-   */
-  createResizer: function TP_createResizer()
-  {
-    let resizer = this.document.createElement("resizer");
-    resizer.id = "inspector-horizontal-splitter";
-    resizer.setAttribute("dir", "top");
-    resizer.flex = 1;
-    resizer.setAttribute("element", "inspector-tree-box");
-    resizer.height = 24;
-    this.IUI.toolbar.appendChild(resizer);
-    this.resizer = resizer;
-  },
-
-  /**
    * Close the TreePanel.
    */
   close: function TP_close()
   {
     if (this.openInDock) {
-      this.IUI.toolbar.removeChild(this.resizer);
+      this.IUI.toolbar.removeAttribute("treepanel-open");
+
       let treeBox = this.container;
+      Services.prefs.setIntPref("devtools.inspector.htmlHeight", treeBox.height);
       let treeBoxParent = treeBox.parentNode;
       treeBoxParent.removeChild(treeBox);
     } else {
@@ -315,93 +314,23 @@ TreePanel.prototype = {
 
   getParentObject: function TP_getParentObject(node)
   {
-    let parentNode = node ? node.parentNode : null;
-
-    if (!parentNode) {
-      // Documents have no parentNode; Attr, Document, DocumentFragment, Entity,
-      // and Notation. top level windows have no parentNode
-      if (node && node == this.window.Node.DOCUMENT_NODE) {
-        // document type
-        if (node.defaultView) {
-          let embeddingFrame = node.defaultView.frameElement;
-          if (embeddingFrame)
-            return embeddingFrame.parentNode;
-        }
-      }
-      // a Document object without a parentNode or window
-      return null;  // top level has no parent
-    }
-
-    if (parentNode.nodeType == this.window.Node.DOCUMENT_NODE) {
-      if (parentNode.defaultView) {
-        return parentNode.defaultView.frameElement;
-      }
-      // parent is document element, but no window at defaultView.
-      return null;
-    }
-
-    if (!parentNode.localName)
-      return null;
-
-    return parentNode;
+    return this.DOMHelpers.getParentObject(node);
   },
 
   getChildObject: function TP_getChildObject(node, index, previousSibling)
   {
-    if (!node)
-      return null;
-
-    if (node.contentDocument) {
-      // then the node is a frame
-      if (index == 0) {
-        return node.contentDocument.documentElement;  // the node's HTMLElement
-      }
-      return null;
-    }
-
-    if (node instanceof this.window.GetSVGDocument) {
-      let svgDocument = node.getSVGDocument();
-      if (svgDocument) {
-        // then the node is a frame
-        if (index == 0) {
-          return svgDocument.documentElement;  // the node's SVGElement
-        }
-        return null;
-      }
-    }
-
-    let child = null;
-    if (previousSibling)  // then we are walking
-      child = this.getNextSibling(previousSibling);
-    else
-      child = this.getFirstChild(node);
-
-    if (this.showTextNodesWithWhitespace)
-      return child;
-
-    for (; child; child = this.getNextSibling(child)) {
-      if (!domplateUtils.isWhitespaceText(child))
-        return child;
-    }
-
-    return null;  // we have no children worth showing.
+    return this.DOMHelpers.getChildObject(node, index, previousSibling,
+                                        this.showTextNodesWithWhitespace);
   },
 
   getFirstChild: function TP_getFirstChild(node)
   {
-    this.treeWalker = node.ownerDocument.createTreeWalker(node,
-      this.window.NodeFilter.SHOW_ALL, null, false);
-    return this.treeWalker.firstChild();
+    return this.DOMHelpers.getFirstChild(node);
   },
 
   getNextSibling: function TP_getNextSibling(node)
   {
-    let next = this.treeWalker.nextSibling();
-
-    if (!next)
-      delete this.treeWalker;
-
-    return next;
+    return this.DOMHelpers.getNextSibling(node);
   },
 
   /////////////////////////////////////////////////////////////////////
@@ -537,6 +466,9 @@ TreePanel.prototype = {
     editorInput.value = aAttrVal;
     editorInput.select();
 
+    // remove tree key navigation events
+    this.treeIFrame.removeEventListener("keypress", this.IUI, false);
+
     // listen for editor specific events
     this.bindEditorEvent(editor, "click", function(aEvent) {
       aEvent.stopPropagation();
@@ -594,8 +526,12 @@ TreePanel.prototype = {
   {
     if (aEvent.which == this.window.KeyEvent.DOM_VK_RETURN) {
       this.saveEditor();
+      aEvent.preventDefault();
+      aEvent.stopPropagation();
     } else if (aEvent.keyCode == this.window.KeyEvent.DOM_VK_ESCAPE) {
       this.closeEditor();
+      aEvent.preventDefault();
+      aEvent.stopPropagation();
     }
   },
 
@@ -625,6 +561,9 @@ TreePanel.prototype = {
     this.editingContext = null;
     this.editingEvents = {};
 
+    // re-add navigation listener
+    this.treeIFrame.addEventListener("keypress", this.IUI, false);
+
     // event notification
     Services.obs.notifyObservers(null, this.IUI.INSPECTOR_NOTIFICATIONS.EDITOR_CLOSED,
                                   null);
@@ -646,6 +585,7 @@ TreePanel.prototype = {
     this.editingContext.attrObj.innerHTML = editorInput.value;
 
     this.IUI.isDirty = true;
+    this.IUI.nodeChanged(this.registrationObject);
 
     // event notification
     Services.obs.notifyObservers(null, this.IUI.INSPECTOR_NOTIFICATIONS.EDITOR_SAVED,
@@ -746,8 +686,10 @@ TreePanel.prototype = {
 
     domplateUtils.setDOM(null);
 
-    delete this.resizer;
-    delete this.treeWalker;
+    if (this.DOMHelpers) {
+      this.DOMHelpers.destroy();
+      delete this.DOMHelpers;
+    }
 
     if (this.treePanelDiv) {
       this.treePanelDiv.ownerPanel = null;
@@ -758,6 +700,7 @@ TreePanel.prototype = {
     }
 
     if (this.treeIFrame) {
+      this.treeIFrame.removeEventListener("keypress", this.IUI, false);
       this.treeIFrame.removeEventListener("dblclick", this.onTreeDblClick, false);
       this.treeIFrame.removeEventListener("click", this.onTreeClick, false);
       let parent = this.treeIFrame.parentNode;
@@ -777,3 +720,122 @@ TreePanel.prototype = {
   }
 };
 
+
+/**
+ * DOMHelpers
+ * Makes DOM traversal easier. Goes through iframes.
+ *
+ * @constructor
+ * @param nsIDOMWindow aWindow
+ *        The content window, owning the document to traverse.
+ */
+function DOMHelpers(aWindow) {
+  this.window = aWindow;
+};
+
+DOMHelpers.prototype = {
+  getParentObject: function Helpers_getParentObject(node)
+  {
+    let parentNode = node ? node.parentNode : null;
+
+    if (!parentNode) {
+      // Documents have no parentNode; Attr, Document, DocumentFragment, Entity,
+      // and Notation. top level windows have no parentNode
+      if (node && node == this.window.Node.DOCUMENT_NODE) {
+        // document type
+        if (node.defaultView) {
+          let embeddingFrame = node.defaultView.frameElement;
+          if (embeddingFrame)
+            return embeddingFrame.parentNode;
+        }
+      }
+      // a Document object without a parentNode or window
+      return null;  // top level has no parent
+    }
+
+    if (parentNode.nodeType == this.window.Node.DOCUMENT_NODE) {
+      if (parentNode.defaultView) {
+        return parentNode.defaultView.frameElement;
+      }
+      // parent is document element, but no window at defaultView.
+      return null;
+    }
+
+    if (!parentNode.localName)
+      return null;
+
+    return parentNode;
+  },
+
+  getChildObject: function Helpers_getChildObject(node, index, previousSibling,
+                                                showTextNodesWithWhitespace)
+  {
+    if (!node)
+      return null;
+
+    if (node.contentDocument) {
+      // then the node is a frame
+      if (index == 0) {
+        return node.contentDocument.documentElement;  // the node's HTMLElement
+      }
+      return null;
+    }
+
+    if (node instanceof this.window.GetSVGDocument) {
+      let svgDocument = node.getSVGDocument();
+      if (svgDocument) {
+        // then the node is a frame
+        if (index == 0) {
+          return svgDocument.documentElement;  // the node's SVGElement
+        }
+        return null;
+      }
+    }
+
+    let child = null;
+    if (previousSibling)  // then we are walking
+      child = this.getNextSibling(previousSibling);
+    else
+      child = this.getFirstChild(node);
+
+    if (showTextNodesWithWhitespace)
+      return child;
+
+    for (; child; child = this.getNextSibling(child)) {
+      if (!this.isWhitespaceText(child))
+        return child;
+    }
+
+    return null;  // we have no children worth showing.
+  },
+
+  getFirstChild: function Helpers_getFirstChild(node)
+  {
+    let SHOW_ALL = Components.interfaces.nsIDOMNodeFilter.SHOW_ALL;
+    this.treeWalker = node.ownerDocument.createTreeWalker(node,
+      SHOW_ALL, null, false);
+    return this.treeWalker.firstChild();
+  },
+
+  getNextSibling: function Helpers_getNextSibling(node)
+  {
+    let next = this.treeWalker.nextSibling();
+
+    if (!next)
+      delete this.treeWalker;
+
+    return next;
+  },
+
+  isWhitespaceText: function Helpers_isWhitespaceText(node)
+  {
+    return node.nodeType == this.window.Node.TEXT_NODE &&
+                            !/[^\s]/.exec(node.nodeValue);
+  },
+
+  destroy: function Helpers_destroy()
+  {
+    delete this.window;
+    delete this.treeWalker;
+  }
+};

@@ -88,7 +88,7 @@ using namespace mozilla;
 #define NS_CONTEXT_MENU_IS_MOUSEUP 1
 #endif
 
-nsXULPopupListener::nsXULPopupListener(nsIDOMElement *aElement, PRBool aIsContext)
+nsXULPopupListener::nsXULPopupListener(nsIDOMElement *aElement, bool aIsContext)
   : mElement(aElement), mPopupContent(nsnull), mIsContext(aIsContext)
 {
 }
@@ -157,13 +157,13 @@ nsXULPopupListener::HandleEvent(nsIDOMEvent* aEvent)
     }
   }
 
-  PRBool preventDefault;
+  bool preventDefault;
   domNSEvent->GetPreventDefault(&preventDefault);
   if (preventDefault && targetNode && mIsContext) {
     // Someone called preventDefault on a context menu.
     // Let's make sure they are allowed to do so.
-    PRBool eventEnabled =
-      Preferences::GetBool("dom.event.contextmenu.enabled", PR_TRUE);
+    bool eventEnabled =
+      Preferences::GetBool("dom.event.contextmenu.enabled", true);
     if (!eventEnabled) {
       // If the target node is for plug-in, we should not open XUL context
       // menu on windowless plug-ins.
@@ -185,7 +185,7 @@ nsXULPopupListener::HandleEvent(nsIDOMEvent* aEvent)
         if (node->NodePrincipal() != system) {
           // This isn't chrome.  Cancel the preventDefault() and
           // let the event go forth.
-          preventDefault = PR_FALSE;
+          preventDefault = false;
         }
       }
     }
@@ -257,7 +257,7 @@ nsXULPopupListener::FireFocusOnTargetContent(nsIDOMNode* aTargetNode)
     if (!targetFrame) return NS_ERROR_FAILURE;
 
     const nsStyleUserInterface* ui = targetFrame->GetStyleUserInterface();
-    PRBool suppressBlur = (ui->mUserFocus == NS_STYLE_USER_FOCUS_IGNORE);
+    bool suppressBlur = (ui->mUserFocus == NS_STYLE_USER_FOCUS_IGNORE);
 
     nsCOMPtr<nsIDOMElement> element;
     nsCOMPtr<nsIContent> newFocus = do_QueryInterface(content);
@@ -266,7 +266,7 @@ nsXULPopupListener::FireFocusOnTargetContent(nsIDOMNode* aTargetNode)
     // Look for the nearest enclosing focusable frame.
     while (currFrame) {
         PRInt32 tabIndexUnused;
-        if (currFrame->IsFocusable(&tabIndexUnused, PR_TRUE)) {
+        if (currFrame->IsFocusable(&tabIndexUnused, true)) {
           newFocus = currFrame->GetContent();
           nsCOMPtr<nsIDOMElement> domElement(do_QueryInterface(newFocus));
           if (domElement) {
@@ -311,7 +311,7 @@ nsXULPopupListener::ClosePopup()
     // fire events during destruction.  
     nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
     if (pm)
-      pm->HidePopup(mPopupContent, PR_FALSE, PR_TRUE, PR_TRUE);
+      pm->HidePopup(mPopupContent, false, true, true);
     mPopupContent = nsnull;  // release the popup
   }
 } // ClosePopup
@@ -442,7 +442,7 @@ nsXULPopupListener::LaunchPopup(nsIDOMEvent* aEvent, nsIContent* aTargetContent)
        (mPopupContent->HasAttr(kNameSpaceID_None, nsGkAtoms::popupanchor) &&
         mPopupContent->HasAttr(kNameSpaceID_None, nsGkAtoms::popupalign)))) {
     pm->ShowPopup(mPopupContent, content, EmptyString(), 0, 0,
-                  PR_FALSE, PR_TRUE, PR_FALSE, aEvent);
+                  false, true, false, aEvent);
   }
   else {
     PRInt32 xPos = 0, yPos = 0;

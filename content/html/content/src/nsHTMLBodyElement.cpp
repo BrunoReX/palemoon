@@ -36,6 +36,9 @@
  * the terms of any one of the MPL, the GPL or the LGPL.
  *
  * ***** END LICENSE BLOCK ***** */
+
+#include "mozilla/Util.h"
+
 #include "nscore.h"
 #include "nsCOMPtr.h"
 #include "nsIDOMHTMLBodyElement.h"
@@ -60,6 +63,8 @@
 #include "jsapi.h"
 
 //----------------------------------------------------------------------
+
+using namespace mozilla;
 
 class nsHTMLBodyElement;
 
@@ -116,15 +121,15 @@ public:
 #undef FORWARDED_EVENT
 #undef EVENT
 
-  virtual PRBool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(PRInt32 aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
-  virtual void UnbindFromTree(PRBool aDeep = PR_TRUE,
-                              PRBool aNullParent = PR_TRUE);
+  virtual void UnbindFromTree(bool aDeep = true,
+                              bool aNullParent = true);
   virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const;
   NS_IMETHOD WalkContentStyleRules(nsRuleWalker* aRuleWalker);
-  NS_IMETHOD_(PRBool) IsAttributeMapped(const nsIAtom* aAttribute) const;
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const;
   virtual already_AddRefed<nsIEditor> GetAssociatedEditor();
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
   virtual nsXPCClassInfo* GetClassInfo();
@@ -333,7 +338,7 @@ NS_IMPL_STRING_ATTR(nsHTMLBodyElement, Link, link)
 NS_IMPL_STRING_ATTR(nsHTMLBodyElement, Text, text)
 NS_IMPL_STRING_ATTR(nsHTMLBodyElement, BgColor, bgcolor)
 
-PRBool
+bool
 nsHTMLBodyElement::ParseAttribute(PRInt32 aNamespaceID,
                                   nsIAtom* aAttribute,
                                   const nsAString& aValue,
@@ -362,7 +367,7 @@ nsHTMLBodyElement::ParseAttribute(PRInt32 aNamespaceID,
 }
 
 void
-nsHTMLBodyElement::UnbindFromTree(PRBool aDeep, PRBool aNullParent)
+nsHTMLBodyElement::UnbindFromTree(bool aDeep, bool aNullParent)
 {
   if (mContentStyleRule) {
     mContentStyleRule->mPart = nsnull;
@@ -434,7 +439,7 @@ nsHTMLBodyElement::WalkContentStyleRules(nsRuleWalker* aRuleWalker)
   nsGenericHTMLElement::WalkContentStyleRules(aRuleWalker);
 
   if (!mContentStyleRule && IsInDoc()) {
-    // XXXbz should this use GetOwnerDoc() or GetCurrentDoc()?
+    // XXXbz should this use OwnerDoc() or GetCurrentDoc()?
     // sXBL/XBL2 issue!
     mContentStyleRule = new BodyRule(this);
     NS_IF_ADDREF(mContentStyleRule);
@@ -445,7 +450,7 @@ nsHTMLBodyElement::WalkContentStyleRules(nsRuleWalker* aRuleWalker)
   return NS_OK;
 }
 
-NS_IMETHODIMP_(PRBool)
+NS_IMETHODIMP_(bool)
 nsHTMLBodyElement::IsAttributeMapped(const nsIAtom* aAttribute) const
 {
   static const MappedAttributeEntry attributes[] = {
@@ -468,7 +473,7 @@ nsHTMLBodyElement::IsAttributeMapped(const nsIAtom* aAttribute) const
     sBackgroundAttributeMap,
   };
 
-  return FindAttributeDependence(aAttribute, map, NS_ARRAY_LENGTH(map));
+  return FindAttributeDependence(aAttribute, map);
 }
 
 already_AddRefed<nsIEditor>
@@ -511,7 +516,7 @@ nsHTMLBodyElement::GetAssociatedEditor()
   NS_IMETHODIMP nsHTMLBodyElement::GetOn##name_(JSContext *cx,      \
                                            jsval *vp) {             \
     /* XXXbz note to self: add tests for this! */                   \
-    nsPIDOMWindow* win = GetOwnerDoc()->GetInnerWindow();           \
+    nsPIDOMWindow* win = OwnerDoc()->GetInnerWindow();           \
     if (win && win->IsInnerWindow()) {                              \
       nsCOMPtr<nsIInlineEventHandlers> ev = do_QueryInterface(win); \
       return ev->GetOn##name_(cx, vp);                              \
@@ -521,7 +526,7 @@ nsHTMLBodyElement::GetAssociatedEditor()
   }                                                                 \
   NS_IMETHODIMP nsHTMLBodyElement::SetOn##name_(JSContext *cx,      \
                                            const jsval &v) {        \
-    nsPIDOMWindow* win = GetOwnerDoc()->GetInnerWindow();           \
+    nsPIDOMWindow* win = OwnerDoc()->GetInnerWindow();           \
     if (win && win->IsInnerWindow()) {                              \
       nsCOMPtr<nsIInlineEventHandlers> ev = do_QueryInterface(win); \
       return ev->SetOn##name_(cx, v);                               \
@@ -531,7 +536,7 @@ nsHTMLBodyElement::GetAssociatedEditor()
 #define WINDOW_EVENT(name_, id_, type_, struct_)                  \
   NS_IMETHODIMP nsHTMLBodyElement::GetOn##name_(JSContext *cx,    \
                                                 jsval *vp) {      \
-    nsPIDOMWindow* win = GetOwnerDoc()->GetInnerWindow();         \
+    nsPIDOMWindow* win = OwnerDoc()->GetInnerWindow();         \
     if (win && win->IsInnerWindow()) {                            \
       return win->GetOn##name_(cx, vp);                           \
     }                                                             \
@@ -540,7 +545,7 @@ nsHTMLBodyElement::GetAssociatedEditor()
   }                                                               \
   NS_IMETHODIMP nsHTMLBodyElement::SetOn##name_(JSContext *cx,    \
                                                 const jsval &v) { \
-    nsPIDOMWindow* win = GetOwnerDoc()->GetInnerWindow();         \
+    nsPIDOMWindow* win = OwnerDoc()->GetInnerWindow();         \
     if (win && win->IsInnerWindow()) {                            \
       return win->SetOn##name_(cx, v);                            \
     }                                                             \

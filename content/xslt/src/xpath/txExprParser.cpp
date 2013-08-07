@@ -68,7 +68,7 @@ txExprParser::createAVT(const nsSubstring& aAttrValue,
     FunctionCall* concat = nsnull;
 
     nsAutoString literalString;
-    PRBool inExpr = PR_FALSE;
+    bool inExpr = false;
     nsSubstring::const_char_iterator iter, start, end, avtStart;
     aAttrValue.BeginReading(iter);
     aAttrValue.EndReading(end);
@@ -98,7 +98,7 @@ txExprParser::createAVT(const nsSubstring& aAttrValue,
                             return NS_ERROR_XPATH_UNBALANCED_CURLY_BRACE;
                         }
 
-                        inExpr = PR_TRUE;
+                        inExpr = true;
                         break;
                     }
                     // We found a second brace, let that be part of the next
@@ -113,7 +113,6 @@ txExprParser::createAVT(const nsSubstring& aAttrValue,
             }
             newExpr = new txLiteralExpr(literalString +
                                         Substring(start, iter));
-            NS_ENSURE_TRUE(newExpr, NS_ERROR_OUT_OF_MEMORY);
         }
         else {
             // Parse expressions, iter is already past the initial '{' when
@@ -125,7 +124,7 @@ txExprParser::createAVT(const nsSubstring& aAttrValue,
                                             getter_Transfers(newExpr));
                     NS_ENSURE_SUCCESS(rv, rv);
 
-                    inExpr = PR_FALSE;
+                    inExpr = false;
                     ++iter; // skip closing '}'
                     break;
                 }
@@ -171,7 +170,6 @@ txExprParser::createAVT(const nsSubstring& aAttrValue,
 
     if (!expr) {
         expr = new txLiteralExpr(EmptyString());
-        NS_ENSURE_TRUE(expr, NS_ERROR_OUT_OF_MEMORY);
     }
 
     *aResult = expr.forget();
@@ -304,7 +302,7 @@ txExprParser::createExpr(txExprLexer& lexer, txIParseContext* aContext,
     *aResult = nsnull;
 
     nsresult rv = NS_OK;
-    MBool done = MB_FALSE;
+    bool done = false;
 
     nsAutoPtr<Expr> expr;
 
@@ -313,9 +311,9 @@ txExprParser::createExpr(txExprLexer& lexer, txIParseContext* aContext,
 
     while (!done) {
 
-        MBool unary = MB_FALSE;
+        PRUint16 negations = 0;
         while (lexer.peek()->mType == Token::SUBTRACTION_OP) {
-            unary = !unary;
+            negations++;
             lexer.nextToken();
         }
 
@@ -324,15 +322,19 @@ txExprParser::createExpr(txExprLexer& lexer, txIParseContext* aContext,
             break;
         }
 
-        if (unary) {
-            Expr* unaryExpr = new UnaryExpr(expr);
-            if (!unaryExpr) {
-                rv = NS_ERROR_OUT_OF_MEMORY;
-                break;
+        if (negations > 0) {
+            if (negations % 2 == 0) {
+                FunctionCall* fcExpr = new txCoreFunctionCall(txCoreFunctionCall::NUMBER);
+                
+                rv = fcExpr->addParam(expr);
+                if (NS_FAILED(rv))
+                    return rv;
+                expr.forget();
+                expr = fcExpr;
             }
-            
-            expr.forget();
-            expr = unaryExpr;
+            else {
+                expr = new UnaryExpr(expr.forget());
+            }
         }
 
         Token* tok = lexer.nextToken();
@@ -347,7 +349,7 @@ txExprParser::createExpr(txExprLexer& lexer, txIParseContext* aContext,
                                       static_cast<Token*>(ops.pop()),
                                       getter_Transfers(expr));
                 if (NS_FAILED(rv)) {
-                    done = PR_TRUE;
+                    done = true;
                     break;
                 }
             }
@@ -356,7 +358,7 @@ txExprParser::createExpr(txExprLexer& lexer, txIParseContext* aContext,
         }
         else {
             lexer.pushBack();
-            done = PR_TRUE;
+            done = true;
         }
     }
 
@@ -401,7 +403,6 @@ txExprParser::createFilterOrStep(txExprLexer& lexer, txIParseContext* aContext,
                                            nspace);
                 NS_ENSURE_SUCCESS(rv, rv);
                 expr = new VariableRefExpr(prefix, lName, nspace);
-                NS_ENSURE_TRUE(expr, NS_ERROR_OUT_OF_MEMORY);
             }
             break;
         case Token::L_PAREN:
@@ -415,12 +416,10 @@ txExprParser::createFilterOrStep(txExprLexer& lexer, txIParseContext* aContext,
             break;
         case Token::LITERAL :
             expr = new txLiteralExpr(tok->Value());
-            NS_ENSURE_TRUE(expr, NS_ERROR_OUT_OF_MEMORY);
             break;
         case Token::NUMBER:
         {
-            expr = new txLiteralExpr(Double::toDouble(tok->Value()));
-            NS_ENSURE_TRUE(expr, NS_ERROR_OUT_OF_MEMORY);
+            expr = new txLiteralExpr(txDouble::toDouble(tok->Value()));
             break;
         }
         default:
@@ -430,7 +429,6 @@ txExprParser::createFilterOrStep(txExprLexer& lexer, txIParseContext* aContext,
 
     if (lexer.peek()->mType == Token::L_BRACKET) {
         nsAutoPtr<FilterExpr> filterExpr(new FilterExpr(expr));
-        NS_ENSURE_TRUE(filterExpr, NS_ERROR_OUT_OF_MEMORY);
 
         expr.forget();
 
@@ -468,7 +466,6 @@ txExprParser::createFunctionCall(txExprLexer& lexer, txIParseContext* aContext,
         txCoreFunctionCall::getTypeFromAtom(lName, type)) {
         // It is a known built-in function.
         fnCall = new txCoreFunctionCall(type);
-        NS_ENSURE_TRUE(fnCall, NS_ERROR_OUT_OF_MEMORY);
     }
 
     // check extension functions and xslt
@@ -484,7 +481,6 @@ txExprParser::createFunctionCall(txExprLexer& lexer, txIParseContext* aContext,
 
             *aResult = new txLiteralExpr(tok->Value() +
                                          NS_LITERAL_STRING(" not implemented."));
-            NS_ENSURE_TRUE(*aResult, NS_ERROR_OUT_OF_MEMORY);
 
             return NS_OK;
         }
@@ -572,14 +568,12 @@ txExprParser::createLocationStep(txExprLexer& lexer, txIParseContext* aContext,
             lexer.nextToken();
             axisIdentifier = LocationStep::PARENT_AXIS;
             nodeTest = new txNodeTypeTest(txNodeTypeTest::NODE_TYPE);
-            NS_ENSURE_TRUE(nodeTest, NS_ERROR_OUT_OF_MEMORY);
             break;
         case Token::SELF_NODE :
             //-- eat token
             lexer.nextToken();
             axisIdentifier = LocationStep::SELF_AXIS;
             nodeTest = new txNodeTypeTest(txNodeTypeTest::NODE_TYPE);
-            NS_ENSURE_TRUE(nodeTest, NS_ERROR_OUT_OF_MEMORY);
             break;
         default:
             break;
@@ -596,7 +590,7 @@ txExprParser::createLocationStep(txExprLexer& lexer, txIParseContext* aContext,
             PRInt32 nspace;
             rv = resolveQName(tok->Value(), getter_AddRefs(prefix),
                               aContext, getter_AddRefs(lName),
-                              nspace, PR_TRUE);
+                              nspace, true);
             NS_ENSURE_SUCCESS(rv, rv);
 
             nodeTest =
@@ -604,7 +598,6 @@ txExprParser::createLocationStep(txExprLexer& lexer, txIParseContext* aContext,
                              axisIdentifier == LocationStep::ATTRIBUTE_AXIS ?
                              static_cast<PRUint16>(txXPathNodeType::ATTRIBUTE_NODE) :
                              static_cast<PRUint16>(txXPathNodeType::ELEMENT_NODE));
-            NS_ENSURE_TRUE(nodeTest, NS_ERROR_OUT_OF_MEMORY);
         }
         else {
             lexer.pushBack();
@@ -614,7 +607,6 @@ txExprParser::createLocationStep(txExprLexer& lexer, txIParseContext* aContext,
     }
     
     nsAutoPtr<LocationStep> lstep(new LocationStep(nodeTest, axisIdentifier));
-    NS_ENSURE_TRUE(lstep, NS_ERROR_OUT_OF_MEMORY);
 
     nodeTest.forget();
 
@@ -690,7 +682,6 @@ txExprParser::createPathExpr(txExprLexer& lexer, txIParseContext* aContext,
         lexer.nextToken();
         if (!isLocationStepToken(lexer.peek())) {
             *aResult = new RootExpr();
-            NS_ENSURE_TRUE(*aResult, NS_ERROR_OUT_OF_MEMORY);
             return NS_OK;
         }
         lexer.pushBack();
@@ -713,16 +704,14 @@ txExprParser::createPathExpr(txExprLexer& lexer, txIParseContext* aContext,
     }
     else {
         expr = new RootExpr();
-        NS_ENSURE_TRUE(expr, NS_ERROR_OUT_OF_MEMORY);
 
 #ifdef TX_TO_STRING
-        static_cast<RootExpr*>(expr.get())->setSerialize(PR_FALSE);
+        static_cast<RootExpr*>(expr.get())->setSerialize(false);
 #endif
     }
     
     // We have a PathExpr containing several steps
     nsAutoPtr<PathExpr> pathExpr(new PathExpr());
-    NS_ENSURE_TRUE(pathExpr, NS_ERROR_OUT_OF_MEMORY);
 
     rv = pathExpr->addExpr(expr, PathExpr::RELATIVE_OP);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -778,7 +767,6 @@ txExprParser::createUnionExpr(txExprLexer& lexer, txIParseContext* aContext,
     }
 
     nsAutoPtr<UnionExpr> unionExpr(new UnionExpr());
-    NS_ENSURE_TRUE(unionExpr, NS_ERROR_OUT_OF_MEMORY);
 
     rv = unionExpr->addExpr(expr);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -799,7 +787,7 @@ txExprParser::createUnionExpr(txExprLexer& lexer, txIParseContext* aContext,
     return NS_OK;
 }
 
-PRBool
+bool
 txExprParser::isLocationStepToken(Token* aToken)
 {
     // We could put these in consecutive order in ExprLexer.h for speed
@@ -929,7 +917,7 @@ nsresult
 txExprParser::resolveQName(const nsAString& aQName,
                            nsIAtom** aPrefix, txIParseContext* aContext,
                            nsIAtom** aLocalName, PRInt32& aNamespace,
-                           PRBool aIsNameTest)
+                           bool aIsNameTest)
 {
     aNamespace = kNameSpaceID_None;
     PRInt32 idx = aQName.FindChar(':');

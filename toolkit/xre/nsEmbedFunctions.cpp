@@ -78,6 +78,7 @@
 
 #include "mozilla/Omnijar.h"
 #if defined(XP_MACOSX)
+#include "nsVersionComparator.h"
 #include "chrome/common/mach_ipc_mac.h"
 #endif
 #include "nsX11ErrorHandler.h"
@@ -113,6 +114,8 @@
 
 using mozilla::_ipdltest::IPDLUnitTestProcessChild;
 #endif  // ifdef MOZ_IPDL_TESTS
+
+using namespace mozilla;
 
 using mozilla::ipc::BrowserProcessSubThread;
 using mozilla::ipc::GeckoChildProcessHost;
@@ -238,7 +241,7 @@ GeckoProcessType
 XRE_StringToChildProcessType(const char* aProcessTypeString)
 {
   for (int i = 0;
-       i < (int) NS_ARRAY_LENGTH(kGeckoProcessTypeString);
+       i < (int) ArrayLength(kGeckoProcessTypeString);
        ++i) {
     if (!strcmp(kGeckoProcessTypeString[i], aProcessTypeString)) {
       return static_cast<GeckoProcessType>(i);
@@ -257,13 +260,13 @@ GeckoProcessType sChildProcessType = GeckoProcessType_Default;
 // FIXME/bug 539522: this out-of-place function is stuck here because
 // IPDL wants access to this crashreporter interface, and
 // crashreporter is built in such a way to make that awkward
-PRBool
+bool
 XRE_TakeMinidumpForChild(PRUint32 aChildPid, nsILocalFile** aDump)
 {
   return CrashReporter::TakeMinidumpForChild(aChildPid, aDump);
 }
 
-PRBool
+bool
 XRE_SetRemoteExceptionHandler(const char* aPipe/*= 0*/)
 {
 #if defined(XP_WIN) || defined(XP_MACOSX)
@@ -361,7 +364,9 @@ XRE_InitChildProcess(int aArgc,
     return 1;
   }
 #endif
-  
+
+  SetupErrorHandling(aArgv[0]);  
+
 #if defined(MOZ_CRASHREPORTER)
   if (aArgc < 1)
     return 1;
@@ -392,8 +397,6 @@ XRE_InitChildProcess(int aArgc,
   gArgv = aArgv;
   gArgc = aArgc;
 
-  SetupErrorHandling(aArgv[0]);
-  
 #if defined(MOZ_WIDGET_GTK2)
   g_thread_init(NULL);
 #endif
@@ -712,16 +715,19 @@ XRE_ShutdownChildProcess()
 }
 
 namespace {
-TestShellParent* gTestShellParent = nsnull;
+ContentParent* gContentParent; //long-lived, manually refcounted
 TestShellParent* GetOrCreateTestShellParent()
 {
-    if (!gTestShellParent) {
-        ContentParent* parent = ContentParent::GetNewOrUsed();
-        NS_ENSURE_TRUE(parent, nsnull);
-        gTestShellParent = parent->CreateTestShell();
-        NS_ENSURE_TRUE(gTestShellParent, nsnull);
+    if (!gContentParent) {
+        NS_ADDREF(gContentParent = ContentParent::GetNewOrUsed());
+    } else if (!gContentParent->IsAlive()) {
+        return nsnull;
     }
-    return gTestShellParent;
+    TestShellParent* tsp = gContentParent->GetTestShellSingleton();
+    if (!tsp) {
+        tsp = gContentParent->CreateTestShell();
+    }
+    return tsp;
 }
 }
 
@@ -734,7 +740,7 @@ XRE_SendTestShellCommand(JSContext* aCx,
     NS_ENSURE_TRUE(tsp, false);
 
     nsDependentJSString command;
-    NS_ENSURE_TRUE(command.init(aCx, aCommand), NS_ERROR_FAILURE);
+    NS_ENSURE_TRUE(command.init(aCx, aCommand), false);
 
     if (!aCallback) {
         return tsp->SendExecuteCommand(command);
@@ -760,10 +766,16 @@ XRE_GetChildGlobalObject(JSContext* aCx, JSObject** aGlobalP)
 bool
 XRE_ShutdownTestShell()
 {
-  if (!gTestShellParent)
-    return true;
-  return static_cast<ContentParent*>(gTestShellParent->Manager())->
-    DestroyTestShell(gTestShellParent);
+    if (!gContentParent) {
+        return true;
+    }
+    bool ret = true;
+    if (gContentParent->IsAlive()) {
+        ret = gContentParent->DestroyTestShell(
+            gContentParent->GetTestShellSingleton());
+    }
+    NS_RELEASE(gContentParent);
+    return ret;
 }
 
 #ifdef MOZ_X11

@@ -65,7 +65,7 @@ public:
                                   nsStyleContext* aContext);
 
   nsDocElementBoxFrame(nsIPresShell* aShell, nsStyleContext* aContext)
-    :nsBoxFrame(aShell, aContext, PR_TRUE) {}
+    :nsBoxFrame(aShell, aContext, true) {}
 
   NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS
@@ -75,11 +75,11 @@ public:
   virtual void AppendAnonymousContentTo(nsBaseContentList& aElements,
                                         PRUint32 aFilter);
 
-  virtual PRBool IsFrameOfType(PRUint32 aFlags) const
+  virtual bool IsFrameOfType(PRUint32 aFlags) const
   {
     // Override nsBoxFrame.
     if (aFlags & (nsIFrame::eReplacedContainsBlock | nsIFrame::eReplaced))
-      return PR_FALSE;
+      return false;
     return nsBoxFrame::IsFrameOfType(aFlags);
   }
 
@@ -143,7 +143,7 @@ nsDocElementBoxFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
   NS_ENSURE_SUCCESS(rv, rv);
 
   mTooltipContent->SetAttr(nsnull, nsGkAtoms::_default,
-                           NS_LITERAL_STRING("true"), PR_FALSE);
+                           NS_LITERAL_STRING("true"), false);
 
   if (!aElements.AppendElement(mTooltipContent))
     return NS_ERROR_OUT_OF_MEMORY;

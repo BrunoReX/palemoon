@@ -134,7 +134,7 @@ protected:
 
     virtual nsresult SetDocLoaderParent(nsDocLoader * aLoader);
 
-    PRBool IsBusy();
+    bool IsBusy();
 
     void Destroy();
     virtual void DestroyChildren();
@@ -185,12 +185,13 @@ protected:
 
     void FireOnLocationChange(nsIWebProgress* aWebProgress,
                               nsIRequest* aRequest,
-                              nsIURI *aUri);
+                              nsIURI *aUri,
+                              PRUint32 aFlags);
 
-    PRBool RefreshAttempted(nsIWebProgress* aWebProgress,
+    bool RefreshAttempted(nsIWebProgress* aWebProgress,
                             nsIURI *aURI,
                             PRInt32 aDelay,
-                            PRBool aSameURI);
+                            bool aSameURI);
 
     // this function is overridden by the docshell, it is provided so that we
     // can pass more information about redirect state (the normal OnStateChange
@@ -210,7 +211,7 @@ protected:
 
     // Inform a parent docloader that aChild is about to call its onload
     // handler.
-    PRBool ChildEnteringOnload(nsIDocumentLoader* aChild) {
+    bool ChildEnteringOnload(nsIDocumentLoader* aChild) {
         // It's ok if we're already in the list -- we'll just be in there twice
         // and then the RemoveObject calls from ChildDoneWithOnload will remove
         // us.
@@ -221,7 +222,7 @@ protected:
     // handler.
     void ChildDoneWithOnload(nsIDocumentLoader* aChild) {
         mChildrenInOnload.RemoveObject(aChild);
-        DocLoaderIsEmpty(PR_TRUE);
+        DocLoaderIsEmpty(true);
     }        
 
 protected:
@@ -261,20 +262,20 @@ protected:
      * from the call to LoadDocument(...) until the OnConnectionsComplete(...)
      * notification is fired...
      */
-    PRPackedBool mIsLoadingDocument;
+    bool mIsLoadingDocument;
 
     /* Flag to indicate that we're in the process of restoring a document. */
-    PRPackedBool mIsRestoringDocument;
+    bool mIsRestoringDocument;
 
     /* Flag to indicate that we're in the process of flushing layout
        under DocLoaderIsEmpty() and should not do another flush. */
-    PRPackedBool mDontFlushLayout;
+    bool mDontFlushLayout;
 
     /* Flag to indicate whether we should consider ourselves as currently
        flushing layout for the purposes of IsBusy. For example, if Stop has
        been called then IsBusy should return false even if we are still
        flushing. */
-    PRPackedBool mIsFlushingLayout;
+    bool mIsFlushingLayout;
 
 private:
     // A list of kids that are in the middle of their onload calls and will let
@@ -288,7 +289,7 @@ private:
     // fact empty.  This method _does_ make sure that layout is flushed if our
     // loadgroup has no active requests before checking for "real" emptiness if
     // aFlushLayout is true.
-    void DocLoaderIsEmpty(PRBool aFlushLayout);
+    void DocLoaderIsEmpty(bool aFlushLayout);
 
     nsListenerInfo *GetListenerInfo(nsIWebProgressListener* aListener);
 

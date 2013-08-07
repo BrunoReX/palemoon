@@ -14,7 +14,8 @@ let histograms = {
   PLACES_SORTED_BOOKMARKS_PERC: function (val) do_check_eq(val, 100),
   PLACES_TAGGED_BOOKMARKS_PERC: function (val) do_check_eq(val, 100),
   PLACES_DATABASE_FILESIZE_MB: function (val) do_check_true(val > 0),
-  PLACES_DATABASE_JOURNALSIZE_MB: function (val) do_check_true(val > 0),
+  // The journal may have been truncated.
+  PLACES_DATABASE_JOURNALSIZE_MB: function (val) do_check_true(val >= 0),
   PLACES_DATABASE_PAGESIZE_B: function (val) do_check_eq(val, 32768),
   PLACES_DATABASE_SIZE_PER_PAGE_B: function (val) do_check_true(val > 0),
   PLACES_EXPIRATION_STEPS_TO_CLEAN: function (val) do_check_true(val > 1),
@@ -64,8 +65,10 @@ function run_test() {
   PlacesUtils.tagging.tagURI(uri, ["tag"]);
   PlacesUtils.bookmarks.setKeywordForBookmark(itemId, "keyword");
 
-  // Test generic database probes.
-  PlacesDBUtils._telemetry();
+  // Request to gather telemetry data.
+  Cc["@mozilla.org/places/categoriesStarter;1"]
+    .getService(Ci.nsIObserver)
+    .observe(null, "gather-telemetry", null);
 
   waitForAsyncUpdates(continue_test);
 }

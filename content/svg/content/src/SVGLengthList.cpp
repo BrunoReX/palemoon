@@ -38,11 +38,11 @@
 #include "SVGAnimatedLengthList.h"
 #include "SVGLength.h"
 #include "nsSVGElement.h"
-#include "nsISVGValueUtils.h"
 #include "nsDOMError.h"
 #include "nsContentUtils.h"
 #include "nsString.h"
 #include "nsSVGUtils.h"
+#include "nsCharSeparatedTokenizer.h"
 #include "string.h"
 
 namespace mozilla {
@@ -86,47 +86,38 @@ SVGLengthList::SetValueFromString(const nsAString& aValue)
 {
   SVGLengthList temp;
 
-  NS_ConvertUTF16toUTF8 value(aValue);
-  char* start = SkipWhitespace(value.BeginWriting());
+  nsCharSeparatedTokenizerTemplate<IsSVGWhitespace>
+    tokenizer(aValue, ',', nsCharSeparatedTokenizer::SEPARATOR_OPTIONAL);
 
-  // We can't use strtok with SVG_COMMA_WSP_DELIM because to correctly handle
-  // invalid input in the form of two commas without a value between them, we
-  // would need to know if strtok overwrote a comma or not.
+  nsCAutoString str;  // outside loop to minimize memory churn
 
-  while (*start != '\0') {
-    int end = strcspn(start, SVG_COMMA_WSP_DELIM);
-    if (end == 0) {
-      // found comma in an invalid location
-      return NS_ERROR_DOM_SYNTAX_ERR;
-    }
+  while (tokenizer.hasMoreTokens()) {
     SVGLength length;
-    if (!length.SetValueFromString(NS_ConvertUTF8toUTF16(start, PRUint32(end)))) {
+    if (!length.SetValueFromString(tokenizer.nextToken())) {
       return NS_ERROR_DOM_SYNTAX_ERR;
     }
     if (!temp.AppendItem(length)) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
-    start = SkipWhitespace(start + end);
-    if (*start == ',') {
-      start = SkipWhitespace(start + 1);
-    }
   }
-
+  if (tokenizer.lastTokenEndedWithSeparator()) {
+    return NS_ERROR_DOM_SYNTAX_ERR; // trailing comma
+  }
   return CopyFrom(temp);
 }
 
-PRBool
+bool
 SVGLengthList::operator==(const SVGLengthList& rhs) const
 {
   if (Length() != rhs.Length()) {
-    return PR_FALSE;
+    return false;
   }
   for (PRUint32 i = 0; i < Length(); ++i) {
     if (!(mLengths[i] == rhs.mLengths[i])) {
-      return PR_FALSE;
+      return false;
     }
   }
-  return PR_TRUE;
+  return true;
 }
 
 } // namespace mozilla

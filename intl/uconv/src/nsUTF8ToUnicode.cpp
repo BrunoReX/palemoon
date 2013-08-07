@@ -97,7 +97,7 @@ NS_IMETHODIMP nsUTF8ToUnicode::Reset()
   mState = 0;     // cached expected number of octets after the current octet
                   // until the beginning of the next UTF8 character sequence
   mBytes = 1;     // cached expected number of octets in the current sequence
-  mFirst = PR_TRUE;
+  mFirst = true;
 
   return NS_OK;
 
@@ -231,19 +231,19 @@ NS_IMETHODIMP nsUTF8ToUnicode::Convert(const char * aSrc,
     mUcs4 = 0;
     mState = 0;
     mBytes = 1;
-    mFirst = PR_FALSE;
+    mFirst = false;
   }
 
   // alias these locally for speed
   PRInt32 mUcs4 = this->mUcs4;
   PRUint8 mState = this->mState;
   PRUint8 mBytes = this->mBytes;
-  PRPackedBool mFirst = this->mFirst;
+  bool mFirst = this->mFirst;
 
-  // Set mFirst to PR_FALSE now so we don't have to every time through the ASCII
+  // Set mFirst to false now so we don't have to every time through the ASCII
   // branch within the loop.
   if (mFirst && aSrcLen && (0 == (0x80 & (*aSrc))))
-    mFirst = PR_FALSE;
+    mFirst = false;
 
   for (in = aSrc; ((in < inend) && (out < outend)); ++in) {
     if (0 == mState) {
@@ -349,7 +349,7 @@ NS_IMETHODIMP nsUTF8ToUnicode::Convert(const char * aSrc,
           mUcs4  = 0;
           mState = 0;
           mBytes = 1;
-          mFirst = PR_FALSE;
+          mFirst = false;
         }
       } else {
         /* ((0xC0 & (*in) != 0x80) && (mState != 0))

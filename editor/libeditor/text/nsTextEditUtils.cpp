@@ -47,7 +47,7 @@
 // Would use NodeIsType and the corresponding atom, but
 // the atom list isn't generationed in a plaintext-only
 // configured build.
-PRBool 
+bool 
 nsTextEditUtils::IsBody(nsIDOMNode *node)
 {
   return nsEditor::NodeIsTypeString(node, NS_LITERAL_STRING("body"));
@@ -58,7 +58,7 @@ nsTextEditUtils::IsBody(nsIDOMNode *node)
 // IsBreak: true if node an html break node
 //                  
 // See previous comment regarding NodeisType
-PRBool 
+bool 
 nsTextEditUtils::IsBreak(nsIDOMNode *node)
 {
   return nsEditor::NodeIsTypeString(node, NS_LITERAL_STRING("br"));
@@ -68,12 +68,12 @@ nsTextEditUtils::IsBreak(nsIDOMNode *node)
 ///////////////////////////////////////////////////////////////////////////
 // IsMozBR: true if node an html br node with type = _moz
 //                  
-PRBool 
+bool 
 nsTextEditUtils::IsMozBR(nsIDOMNode *node)
 {
   NS_PRECONDITION(node, "null node passed to nsHTMLEditUtils::IsMozBR");
-  if (IsBreak(node) && HasMozAttr(node)) return PR_TRUE;
-  return PR_FALSE;
+  if (IsBreak(node) && HasMozAttr(node)) return true;
+  return false;
 }
 
 
@@ -82,7 +82,7 @@ nsTextEditUtils::IsMozBR(nsIDOMNode *node)
 //             (used to indicate the div's and br's we use in
 //              mail compose rules)
 //                  
-PRBool 
+bool 
 nsTextEditUtils::HasMozAttr(nsIDOMNode *node)
 {
   NS_PRECONDITION(node, "null parent passed to nsHTMLEditUtils::HasMozAttr");
@@ -92,9 +92,9 @@ nsTextEditUtils::HasMozAttr(nsIDOMNode *node)
     nsAutoString typeAttrVal;
     nsresult res = elem->GetAttribute(NS_LITERAL_STRING("type"), typeAttrVal);
     if (NS_SUCCEEDED(res) && (typeAttrVal.LowerCaseEqualsLiteral("_moz")))
-      return PR_TRUE;
+      return true;
   }
-  return PR_FALSE;
+  return false;
 }
 
 

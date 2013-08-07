@@ -74,13 +74,11 @@
 #include "nsDragService.h"
 #include "nsGfxCIID.h"
 #include "nsHashKeys.h"
-#include "nsIMenuRollup.h"
 #include "nsIRollupListener.h"
 #include "nsIScreenManager.h"
 #include "nsOS2Uni.h"
 #include "nsTHashtable.h"
-#include "nsToolkit.h"
-#include "nsWidgetAtoms.h"
+#include "nsGkAtoms.h"
 #include "wdgtos2rc.h"
 
 #include "mozilla/Preferences.h"
@@ -185,9 +183,8 @@ using namespace mozilla;
 
 // Rollup Listener - used by nsWindow & os2FrameWindow
 nsIRollupListener*  gRollupListener           = 0;
-nsIMenuRollup*      gMenuRollup               = 0;
 nsIWidget*          gRollupWidget             = 0;
-PRBool              gRollupConsumeRollupEvent = PR_FALSE;
+bool                gRollupConsumeRollupEvent = false;
 
 // Miscellaneous global flags
 PRUint32            gOS2Flags = 0;
@@ -221,10 +218,10 @@ nsWindow::nsWindow() : nsBaseWidget()
   mWindowType         = eWindowType_toplevel;
   mBorderStyle        = eBorderStyle_default;
   mWindowState        = nsWindowState_ePrecreate;
-  mOnDestroyCalled    = PR_FALSE;
-  mIsDestroying       = PR_FALSE;
-  mInSetFocus         = PR_FALSE;
-  mNoPaint            = PR_FALSE;
+  mOnDestroyCalled    = false;
+  mIsDestroying       = false;
+  mInSetFocus         = false;
+  mNoPaint            = false;
   mDragHps            = 0;
   mDragStatus         = 0;
   mClipWnd            = 0;
@@ -248,7 +245,7 @@ nsWindow::~nsWindow()
   //       bind in the current object (ie. as if they weren't virtual).  It
   //       may even be illegal to call them from here.
 
-  mIsDestroying = PR_TRUE;
+  mIsDestroying = true;
 
   if (mCssCursorHPtr) {
     WinDestroyPointer(mCssCursorHPtr);
@@ -312,7 +309,7 @@ void nsWindow::InitGlobals()
   // it scroll messages. Needless to say, no Mozilla window has real scroll
   // bars. So if you have the "os2.trackpoint" preference set, we put an
   // invisible scroll bar on every child window so we can scroll.
-  if (Preferences::GetBool("os2.trackpoint", PR_FALSE)) {
+  if (Preferences::GetBool("os2.trackpoint", false)) {
     gOS2Flags |= kIsTrackPoint;
   }
 }
@@ -336,8 +333,6 @@ NS_METHOD nsWindow::Create(nsIWidget* aParent,
                            const nsIntRect& aRect,
                            EVENT_CALLBACK aHandleEventFunction,
                            nsDeviceContext* aContext,
-                           nsIAppShell* aAppShell,
-                           nsIToolkit* aToolkit,
                            nsWidgetInitData* aInitData)
 {
   mWindowState = nsWindowState_eInCreate;
@@ -360,9 +355,7 @@ NS_METHOD nsWindow::Create(nsIWidget* aParent,
     }
   }
 
-  BaseCreate(aParent, aRect, aHandleEventFunction,
-             aContext, aAppShell, aToolkit, aInitData);
-
+  BaseCreate(aParent, aRect, aHandleEventFunction, aContext, aInitData);
 
 #ifdef DEBUG_FOCUS
   mWindowIdentifier = currentWindowIdentifier;
@@ -375,7 +368,7 @@ NS_METHOD nsWindow::Create(nsIWidget* aParent,
     // be painted because they're always covered by another window.
     if (mWindowType == eWindowType_toplevel ||
         mWindowType == eWindowType_invisible) {
-      mNoPaint = PR_TRUE;
+      mNoPaint = true;
     }
     // Popup windows should not have an nsWindow parent.
     else if (mWindowType == eWindowType_popup) {
@@ -403,7 +396,7 @@ NS_METHOD nsWindow::Create(nsIWidget* aParent,
   SetNSWindowPtr(mWnd, this);
 
   // Finalize the widget creation process.
-  nsGUIEvent event(PR_TRUE, NS_CREATE, this);
+  nsGUIEvent event(true, NS_CREATE, this);
   InitEvent(event);
   DispatchWindowEvent(&event);
 
@@ -491,9 +484,9 @@ NS_METHOD nsWindow::Destroy()
   // the rollup widget, rollup and turn off capture.
   if (this == gRollupWidget) {
     if (gRollupListener) {
-      gRollupListener->Rollup(PR_UINT32_MAX, nsnull);
+      gRollupListener->Rollup(PR_UINT32_MAX);
     }
-    CaptureRollupEvents(nsnull, nsnull, PR_FALSE, PR_TRUE);
+    CaptureRollupEvents(nsnull, false, true);
   }
 
   HWND hMain = GetMainWindow();
@@ -531,7 +524,7 @@ inline nsWindow* nsWindow::GetNSWindowPtr(HWND aWnd)
 //-----------------------------------------------------------------------------
 
 // static
-inline PRBool nsWindow::SetNSWindowPtr(HWND aWnd, nsWindow* aPtr)
+inline bool nsWindow::SetNSWindowPtr(HWND aWnd, nsWindow* aPtr)
 {
   return WinSetWindowPtr(aWnd, QWL_NSWINDOWPTR, aPtr);
 }
@@ -552,7 +545,7 @@ nsIWidget* nsWindow::GetParent()
 
 //-----------------------------------------------------------------------------
 
-NS_METHOD nsWindow::Enable(PRBool aState)
+NS_METHOD nsWindow::Enable(bool aState)
 {
   HWND hMain = GetMainWindow();
   if (hMain) {
@@ -563,7 +556,7 @@ NS_METHOD nsWindow::Enable(PRBool aState)
 
 //-----------------------------------------------------------------------------
 
-NS_METHOD nsWindow::IsEnabled(PRBool* aState)
+NS_METHOD nsWindow::IsEnabled(bool* aState)
 {
   NS_ENSURE_ARG_POINTER(aState);
   HWND hMain = GetMainWindow();
@@ -573,7 +566,7 @@ NS_METHOD nsWindow::IsEnabled(PRBool* aState)
 
 //-----------------------------------------------------------------------------
 
-NS_METHOD nsWindow::Show(PRBool aState)
+NS_METHOD nsWindow::Show(bool aState)
 {
   if (mFrame) {
     return mFrame->Show(aState);
@@ -583,15 +576,15 @@ NS_METHOD nsWindow::Show(PRBool aState)
       // don't try to show new windows (e.g. the Bookmark menu)
       // during a native dragover because they'll remain invisible;
       if (CheckDragStatus(ACTION_SHOW, 0)) {
-        PRBool isVisible;
+        bool isVisible;
         IsVisible(isVisible);
         if (!isVisible) {
-          PlaceBehind(eZPlacementTop, 0, PR_FALSE);
+          PlaceBehind(eZPlacementTop, 0, false);
         }
-        WinShowWindow(mWnd, PR_TRUE);
+        WinShowWindow(mWnd, true);
       }
     } else {
-      WinShowWindow(mWnd, PR_FALSE);
+      WinShowWindow(mWnd, false);
     }
   }
 
@@ -600,23 +593,23 @@ NS_METHOD nsWindow::Show(PRBool aState)
 
 //-----------------------------------------------------------------------------
 
-NS_METHOD nsWindow::IsVisible(PRBool& aState)
+NS_METHOD nsWindow::IsVisible(bool& aState)
 {
-  aState = WinIsWindowVisible(GetMainWindow()) ? PR_TRUE : PR_FALSE;
+  aState = WinIsWindowVisible(GetMainWindow()) ? true : false;
   return NS_OK;
 }
 
 //-----------------------------------------------------------------------------
 
-NS_METHOD nsWindow::SetFocus(PRBool aRaise)
+NS_METHOD nsWindow::SetFocus(bool aRaise)
 {
   // for toplevel windows, this is directed to the client (i.e. mWnd)
   if (mWnd) {
     if (!mInSetFocus) {
       DEBUGFOCUS(SetFocus);
-      mInSetFocus = PR_TRUE;
+      mInSetFocus = true;
       WinSetFocus(HWND_DESKTOP, mWnd);
-      mInSetFocus = PR_FALSE;
+      mInSetFocus = false;
     }
   }
   return NS_OK;
@@ -624,12 +617,12 @@ NS_METHOD nsWindow::SetFocus(PRBool aRaise)
 
 //-----------------------------------------------------------------------------
 
-NS_METHOD nsWindow::Invalidate(const nsIntRect& aRect, PRBool aIsSynchronous)
+NS_METHOD nsWindow::Invalidate(const nsIntRect& aRect, bool aIsSynchronous)
 {
   if (mWnd) {
     RECTL rcl = {aRect.x, aRect.y, aRect.x + aRect.width, aRect.y + aRect.height};
     NS2PM(rcl);
-    WinInvalidateRect(mWnd, &rcl, PR_FALSE);
+    WinInvalidateRect(mWnd, &rcl, false);
 #if 0
     if (aIsSynchronous) {
       Update();
@@ -737,7 +730,7 @@ void nsWindow::FreeNativeData(void* data, PRUint32 aDataType)
 
 //-----------------------------------------------------------------------------
 
-NS_METHOD nsWindow::CaptureMouse(PRBool aCapture)
+NS_METHOD nsWindow::CaptureMouse(bool aCapture)
 {
   if (aCapture) {
     WinSetCapture(HWND_DESKTOP, mWnd);
@@ -749,7 +742,7 @@ NS_METHOD nsWindow::CaptureMouse(PRBool aCapture)
 
 //-----------------------------------------------------------------------------
 
-PRBool nsWindow::HasPendingInputEvent()
+bool nsWindow::HasPendingInputEvent()
 {
   return (WinQueryQueueStatus(HWND_DESKTOP) & (QS_KEY | QS_MOUSE)) != 0;
 }
@@ -776,10 +769,7 @@ NS_METHOD nsWindow::GetBounds(nsIntRect& aRect)
 
 NS_METHOD nsWindow::GetClientBounds(nsIntRect& aRect)
 {
-  aRect.x = 0;
-  aRect.y = 0;
-  aRect.width = mBounds.width;
-  aRect.height = mBounds.height;
+  aRect = mBounds;
   return NS_OK;
 }
 
@@ -832,13 +822,13 @@ NS_METHOD nsWindow::Move(PRInt32 aX, PRInt32 aY)
   if (mFrame) {
     return mFrame->Move(aX, aY);
   }
-  Resize(aX, aY, mBounds.width, mBounds.height, PR_FALSE);
+  Resize(aX, aY, mBounds.width, mBounds.height, false);
   return NS_OK;
 }
 
 //-----------------------------------------------------------------------------
 
-NS_METHOD nsWindow::Resize(PRInt32 aWidth, PRInt32 aHeight, PRBool aRepaint)
+NS_METHOD nsWindow::Resize(PRInt32 aWidth, PRInt32 aHeight, bool aRepaint)
 {
   if (mFrame) {
     return mFrame->Resize(aWidth, aHeight, aRepaint);
@@ -850,7 +840,7 @@ NS_METHOD nsWindow::Resize(PRInt32 aWidth, PRInt32 aHeight, PRBool aRepaint)
 //-----------------------------------------------------------------------------
 
 NS_METHOD nsWindow::Resize(PRInt32 aX, PRInt32 aY,
-                           PRInt32 aWidth, PRInt32 aHeight, PRBool aRepaint)
+                           PRInt32 aWidth, PRInt32 aHeight, bool aRepaint)
 {
   if (mFrame) {
     return mFrame->Resize(aX, aY, aWidth, aHeight, aRepaint);
@@ -897,7 +887,7 @@ NS_METHOD nsWindow::Resize(PRInt32 aX, PRInt32 aY,
 //-----------------------------------------------------------------------------
 
 NS_METHOD nsWindow::PlaceBehind(nsTopLevelWidgetZPlacement aPlacement,
-                                nsIWidget* aWidget, PRBool aActivate)
+                                nsIWidget* aWidget, bool aActivate)
 {
   HWND hBehind = HWND_TOP;
 
@@ -938,7 +928,7 @@ NS_METHOD nsWindow::SetZIndex(PRInt32 aZIndex)
 void nsWindow::ActivatePlugin(HWND aWnd)
 {
   // avoid acting on recursive WM_FOCUSCHANGED msgs
-  static PRBool inPluginActivate = FALSE;
+  static bool inPluginActivate = FALSE;
   if (inPluginActivate) {
     return;
   }
@@ -1153,7 +1143,7 @@ NS_IMETHODIMP nsWindow::SetSizeMode(PRInt32 aMode)
   return mFrame->SetSizeMode(aMode);
 }
 
-NS_IMETHODIMP nsWindow::HideWindowChrome(PRBool aShouldHide)
+NS_IMETHODIMP nsWindow::HideWindowChrome(bool aShouldHide)
 {
   NS_ENSURE_TRUE(mFrame, NS_ERROR_UNEXPECTED);
   return mFrame->HideWindowChrome(aShouldHide);
@@ -1171,7 +1161,7 @@ NS_METHOD nsWindow::SetIcon(const nsAString& aIconSpec)
   return mFrame->SetIcon(aIconSpec);
 }
 
-NS_METHOD nsWindow::ConstrainPosition(PRBool aAllowSlop,
+NS_METHOD nsWindow::ConstrainPosition(bool aAllowSlop,
                                       PRInt32* aX, PRInt32* aY)
 {
   NS_ENSURE_TRUE(mFrame, NS_ERROR_UNEXPECTED);
@@ -1541,9 +1531,8 @@ HBITMAP nsWindow::CreateTransparencyMask(gfxASurface::gfxImageFormat format,
 //=============================================================================
 
 NS_IMETHODIMP nsWindow::CaptureRollupEvents(nsIRollupListener* aListener,
-                                            nsIMenuRollup* aMenuRollup,
-                                            PRBool aDoCapture,
-                                            PRBool aConsumeRollupEvent)
+                                            bool aDoCapture,
+                                            bool aConsumeRollupEvent)
 {
   // We haven't bothered carrying a weak reference to gRollupWidget
   // because we believe lifespan is properly scoped.  The first
@@ -1553,14 +1542,10 @@ NS_IMETHODIMP nsWindow::CaptureRollupEvents(nsIRollupListener* aListener,
     gRollupConsumeRollupEvent = aConsumeRollupEvent;
     NS_IF_RELEASE(gRollupWidget);
     gRollupListener = aListener;
-    NS_IF_RELEASE(gMenuRollup);
-    gMenuRollup = aMenuRollup;
-    NS_IF_ADDREF(aMenuRollup);
     gRollupWidget = this;
     NS_ADDREF(this);
  } else {
     gRollupListener = nsnull;
-    NS_IF_RELEASE(gMenuRollup);
     NS_IF_RELEASE(gRollupWidget);
   }
 
@@ -1570,7 +1555,7 @@ NS_IMETHODIMP nsWindow::CaptureRollupEvents(nsIRollupListener* aListener,
 //-----------------------------------------------------------------------------
 
 // static
-PRBool nsWindow::EventIsInsideWindow(nsWindow* aWindow)
+bool nsWindow::EventIsInsideWindow(nsWindow* aWindow)
 {
   RECTL  rcl;
   POINTL ptl;
@@ -1582,36 +1567,36 @@ PRBool nsWindow::EventIsInsideWindow(nsWindow* aWindow)
     // now make sure that it wasn't one of our children
     if (ptl.x < rcl.xLeft || ptl.x > rcl.xRight ||
         ptl.y > rcl.yTop  || ptl.y < rcl.yBottom) {
-      return PR_FALSE;
+      return false;
     }
   }
 
-  return PR_TRUE;
+  return true;
 }
 
 //-----------------------------------------------------------------------------
 // Handle events that would cause a popup (combobox, menu, etc) to rollup.
 
 // static
-PRBool nsWindow::RollupOnButtonDown(ULONG aMsg)
+bool nsWindow::RollupOnButtonDown(ULONG aMsg)
 {
   // Exit if the event is inside the most recent popup.
   if (EventIsInsideWindow((nsWindow*)gRollupWidget)) {
-    return PR_FALSE;
+    return false;
   }
 
   // See if we're dealing with a menu.  If so, exit if the
   // event was inside a parent of the current submenu.
   PRUint32 popupsToRollup = PR_UINT32_MAX;
 
-  if (gMenuRollup) {
+  if (gRollupListener) {
     nsAutoTArray<nsIWidget*, 5> widgetChain;
-    PRUint32 sameTypeCount = gMenuRollup->GetSubmenuWidgetChain(&widgetChain);
+    PRUint32 sameTypeCount = gRollupListener->GetSubmenuWidgetChain(&widgetChain);
     for (PRUint32 i = 0; i < widgetChain.Length(); ++i) {
       nsIWidget* widget = widgetChain[i];
       if (EventIsInsideWindow((nsWindow*)widget)) {
         if (i < sameTypeCount) {
-          return PR_FALSE;
+          return false;
         }
         popupsToRollup = sameTypeCount;
         break;
@@ -1620,8 +1605,9 @@ PRBool nsWindow::RollupOnButtonDown(ULONG aMsg)
   } // if rollup listener knows about menus
 
   // We only need to deal with the last rollup for left mouse down events.
-  gRollupListener->Rollup(popupsToRollup,
-                          aMsg == WM_BUTTON1DOWN ? &mLastRollup : nsnull);
+  NS_ASSERTION(!mLastRollup, "mLastRollup is null");
+  mLastRollup = gRollupListener->Rollup(popupsToRollup, aMsg == WM_BUTTON1DOWN);
+  NS_IF_ADDREF(mLastRollup);
 
   // If true, the buttondown event won't be passed on to the wndproc.
   return gRollupConsumeRollupEvent;
@@ -1640,9 +1626,9 @@ void nsWindow::RollupOnFocusLost(HWND aFocus)
   }
 
   // Exit if focus was lost to a parent of the current submenu.
-  if (gMenuRollup) {
+  if (gRollupListener) {
     nsAutoTArray<nsIWidget*, 5> widgetChain;
-    gMenuRollup->GetSubmenuWidgetChain(&widgetChain);
+    gRollupListener->GetSubmenuWidgetChain(&widgetChain);
     for (PRUint32 i = 0; i < widgetChain.Length(); ++i) {
       if (((nsWindow*)widgetChain[i])->mWnd == aFocus) {
         return;
@@ -1651,7 +1637,7 @@ void nsWindow::RollupOnFocusLost(HWND aFocus)
   }
 
   // Rollup all popups.
-  gRollupListener->Rollup(PR_UINT32_MAX, nsnull);
+  gRollupListener->Rollup(PR_UINT32_MAX);
   return;
 }
 
@@ -1688,7 +1674,7 @@ MRESULT EXPENTRY fnwpNSWindow(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
       case WM_BUTTON2DOWN:
       case WM_BUTTON3DOWN:
         if (nsWindow::RollupOnButtonDown(msg)) {
-          return (MRESULT)PR_TRUE;
+          return (MRESULT)true;
         }
         break;
 
@@ -1708,7 +1694,7 @@ MRESULT EXPENTRY fnwpNSWindow(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
 
 MRESULT nsWindow::ProcessMessage(ULONG msg, MPARAM mp1, MPARAM mp2)
 {
-  PRBool  isDone = PR_FALSE;
+  bool    isDone = false;
   MRESULT mresult = 0;
 
   switch (msg) {
@@ -1718,17 +1704,17 @@ MRESULT nsWindow::ProcessMessage(ULONG msg, MPARAM mp1, MPARAM mp2)
     case WM_CLOSE:
     case WM_QUIT: {
       mWindowState |= nsWindowState_eClosing;
-      nsGUIEvent event(PR_TRUE, NS_XUL_CLOSE, this);
+      nsGUIEvent event(true, NS_XUL_CLOSE, this);
       InitEvent(event);
       DispatchWindowEvent(&event);
       // abort window closure
-      isDone = PR_TRUE;
+      isDone = true;
       break;
     }
 
     case WM_DESTROY:
       OnDestroy();
-      isDone = PR_TRUE;
+      isDone = true;
       break;
 
     case WM_PAINT:
@@ -1753,7 +1739,7 @@ MRESULT nsWindow::ProcessMessage(ULONG msg, MPARAM mp1, MPARAM mp2)
       // If this msg is forwarded to a popup's owner, Moz will cause the
       // popup to be rolled-up in error when the owner processes the msg.
       if (mWindowType == eWindowType_popup) {
-        isDone = PR_TRUE;
+        isDone = true;
       }
       // there's no need to clear this on button-up
       sLastButton1Down.x = XFROMMP(mp1);
@@ -1771,35 +1757,35 @@ MRESULT nsWindow::ProcessMessage(ULONG msg, MPARAM mp1, MPARAM mp2)
 
     case WM_BUTTON2DOWN:
       WinSetCapture(HWND_DESKTOP, mWnd);
-      isDone = DispatchMouseEvent(NS_MOUSE_BUTTON_DOWN, mp1, mp2, PR_FALSE,
+      isDone = DispatchMouseEvent(NS_MOUSE_BUTTON_DOWN, mp1, mp2, false,
                                   nsMouseEvent::eRightButton);
       break;
 
     case WM_BUTTON2UP:
       WinSetCapture(HWND_DESKTOP, 0);
-      isDone = DispatchMouseEvent(NS_MOUSE_BUTTON_UP, mp1, mp2, PR_FALSE,
+      isDone = DispatchMouseEvent(NS_MOUSE_BUTTON_UP, mp1, mp2, false,
                                   nsMouseEvent::eRightButton);
       break;
 
     case WM_BUTTON2DBLCLK:
       isDone = DispatchMouseEvent(NS_MOUSE_DOUBLECLICK, mp1, mp2,
-                                  PR_FALSE, nsMouseEvent::eRightButton);
+                                  false, nsMouseEvent::eRightButton);
       break;
 
     case WM_BUTTON3DOWN:
       WinSetCapture(HWND_DESKTOP, mWnd);
-      isDone = DispatchMouseEvent(NS_MOUSE_BUTTON_DOWN, mp1, mp2, PR_FALSE,
+      isDone = DispatchMouseEvent(NS_MOUSE_BUTTON_DOWN, mp1, mp2, false,
                                   nsMouseEvent::eMiddleButton);
       break;
 
     case WM_BUTTON3UP:
       WinSetCapture(HWND_DESKTOP, 0);
-      isDone = DispatchMouseEvent(NS_MOUSE_BUTTON_UP, mp1, mp2, PR_FALSE,
+      isDone = DispatchMouseEvent(NS_MOUSE_BUTTON_UP, mp1, mp2, false,
                                   nsMouseEvent::eMiddleButton);
       break;
 
     case WM_BUTTON3DBLCLK:
-      isDone = DispatchMouseEvent(NS_MOUSE_DOUBLECLICK, mp1, mp2, PR_FALSE,
+      isDone = DispatchMouseEvent(NS_MOUSE_DOUBLECLICK, mp1, mp2, false,
                                   nsMouseEvent::eMiddleButton);
       break;
 
@@ -1809,11 +1795,11 @@ MRESULT nsWindow::ProcessMessage(ULONG msg, MPARAM mp1, MPARAM mp2)
         if (hFocus != mWnd) {
           WinSendMsg(hFocus, msg, mp1, mp2);
         } else {
-          isDone = DispatchMouseEvent(NS_CONTEXTMENU, mp1, mp2, PR_TRUE,
+          isDone = DispatchMouseEvent(NS_CONTEXTMENU, mp1, mp2, true,
                                       nsMouseEvent::eLeftButton);
         }
       } else {
-        isDone = DispatchMouseEvent(NS_CONTEXTMENU, mp1, mp2, PR_FALSE,
+        isDone = DispatchMouseEvent(NS_CONTEXTMENU, mp1, mp2, false,
                                     nsMouseEvent::eRightButton);
       }
       break;
@@ -1836,7 +1822,7 @@ MRESULT nsWindow::ProcessMessage(ULONG msg, MPARAM mp1, MPARAM mp2)
       }
 
       // don't propagate mouse move or the OS will change the pointer
-      isDone = PR_TRUE;
+      isDone = true;
       break;
     }
 
@@ -1859,7 +1845,7 @@ MRESULT nsWindow::ProcessMessage(ULONG msg, MPARAM mp1, MPARAM mp2)
           DispatchCommandEvent(appCommand);
           // tell the driver that we handled the event
           mresult = (MRESULT)1;
-          isDone = PR_TRUE;
+          isDone = true;
           break;
       }
       break;
@@ -1896,7 +1882,7 @@ MRESULT nsWindow::ProcessMessage(ULONG msg, MPARAM mp1, MPARAM mp2)
     case DM_RENDERCOMPLETE:
     case DM_DROPHELP:
       OnDragDropMsg(msg, mp1, mp2, mresult);
-      isDone = PR_TRUE;
+      isDone = true;
       break;
   }
 
@@ -1917,12 +1903,12 @@ MRESULT nsWindow::ProcessMessage(ULONG msg, MPARAM mp1, MPARAM mp2)
 
 void nsWindow::OnDestroy()
 {
-  mOnDestroyCalled = PR_TRUE;
+  mOnDestroyCalled = true;
 
   SetNSWindowPtr(mWnd, 0);
   mWnd = 0;
 
-  // release references to context, toolkit, appshell, children
+  // release references to context and children
   nsBaseWidget::OnDestroy();
 
   // dispatching of the event may cause the reference count to drop to 0
@@ -1934,7 +1920,7 @@ void nsWindow::OnDestroy()
   // from the Release() below.  This is very bad...
   if (!(nsWindowState_eDoingDelete & mWindowState)) {
     AddRef();
-    nsGUIEvent event(PR_TRUE, NS_DESTROY, this);
+    nsGUIEvent event(true, NS_DESTROY, this);
     InitEvent(event);
     DispatchWindowEvent(&event);
     Release();
@@ -1948,9 +1934,9 @@ void nsWindow::OnDestroy()
 
 //-----------------------------------------------------------------------------
 
-PRBool nsWindow::OnReposition(PSWP pSwp)
+bool nsWindow::OnReposition(PSWP pSwp)
 {
-  PRBool result = PR_FALSE;
+  bool result = false;
 
   if (pSwp->fl & SWP_MOVE && !(pSwp->fl & SWP_MINIMIZE)) {
     HWND hParent = mParent ? mParent->mWnd : WinQueryWindow(mWnd, QW_PARENT);
@@ -1984,7 +1970,7 @@ PRBool nsWindow::OnReposition(PSWP pSwp)
 
 //-----------------------------------------------------------------------------
 
-PRBool nsWindow::OnPaint()
+bool nsWindow::OnPaint()
 {
   HPS    hPS;
   HPS    hpsDrag;
@@ -2046,7 +2032,7 @@ do {
   }
 
   // Create an event & a Thebes context.
-  nsPaintEvent event(PR_TRUE, NS_PAINT, this);
+  nsPaintEvent event(true, NS_PAINT, this);
   InitEvent(event);
   nsRefPtr<gfxContext> thebesContext = new gfxContext(mThebesSurface);
 
@@ -2147,42 +2133,42 @@ do {
   }
 #endif
 
-  return PR_TRUE;
+  return true;
 }
 
 //-----------------------------------------------------------------------------
 // If MB1 & MB2 are both pressed, perform a copy or paste.
 
-PRBool nsWindow::OnMouseChord(MPARAM mp1, MPARAM mp2)
+bool nsWindow::OnMouseChord(MPARAM mp1, MPARAM mp2)
 {
   if (!isKeyDown(VK_BUTTON1) || !isKeyDown(VK_BUTTON2)) {
-    return PR_FALSE;
+    return false;
   }
 
   // See how far the mouse has moved since MB1-down to determine
   // the operation (this really ought to look for selected content).
-  PRBool isCopy = PR_FALSE;
+  bool isCopy = false;
   if (abs(XFROMMP(mp1) - sLastButton1Down.x) >
         (WinQuerySysValue(HWND_DESKTOP, SV_CXMOTIONSTART) / 2) ||
       abs(YFROMMP(mp1) - sLastButton1Down.y) >
         (WinQuerySysValue(HWND_DESKTOP, SV_CYMOTIONSTART) / 2)) {
-    isCopy = PR_TRUE;
+    isCopy = true;
   }
 
-  nsKeyEvent event(PR_TRUE, NS_KEY_PRESS, this);
+  nsKeyEvent event(true, NS_KEY_PRESS, this);
   nsIntPoint point(0,0);
   InitEvent(event, &point);
 
   event.keyCode     = NS_VK_INSERT;
   if (isCopy) {
-    event.isShift   = PR_FALSE;
-    event.isControl = PR_TRUE;
+    event.isShift   = false;
+    event.isControl = true;
   } else {
-    event.isShift   = PR_TRUE;
-    event.isControl = PR_FALSE;
+    event.isShift   = true;
+    event.isControl = false;
   }
-  event.isAlt       = PR_FALSE;
-  event.isMeta      = PR_FALSE;
+  event.isAlt       = false;
+  event.isMeta      = false;
   event.eventStructType = NS_KEY_EVENT;
   event.charCode    = 0;
 
@@ -2190,13 +2176,13 @@ PRBool nsWindow::OnMouseChord(MPARAM mp1, MPARAM mp2)
   if (SHORT1FROMMP(mp1) & (KC_VIRTUALKEY | KC_KEYUP | KC_LONEKEY)) {
     USHORT usVKey = SHORT2FROMMP(mp2);
     if (usVKey == VK_SHIFT) {
-      event.isShift = PR_TRUE;
+      event.isShift = true;
     }
     if (usVKey == VK_CTRL) {
-      event.isControl = PR_TRUE;
+      event.isControl = true;
     }
     if (usVKey == VK_ALTGRAF || usVKey == VK_ALT) {
-      event.isAlt = PR_TRUE;
+      event.isAlt = true;
     }
   }
 
@@ -2226,7 +2212,7 @@ PRBool nsWindow::OnMouseChord(MPARAM mp1, MPARAM mp2)
 // This method was designed to be totally ignorant of drag and drop.
 // It gives nsIDragSessionOS2 (near) complete control over handling.
 
-PRBool nsWindow::OnDragDropMsg(ULONG msg, MPARAM mp1, MPARAM mp2, MRESULT& mr)
+bool nsWindow::OnDragDropMsg(ULONG msg, MPARAM mp1, MPARAM mp2, MRESULT& mr)
 {
   nsresult rv;
   PRUint32 eventType = 0;
@@ -2296,7 +2282,7 @@ PRBool nsWindow::OnDragDropMsg(ULONG msg, MPARAM mp1, MPARAM mp2, MRESULT& mr)
   // save final drag status
   sDragStatus = mDragStatus = (dragFlags & DND_DragStatus);
 
-  return PR_TRUE;
+  return true;
 }
 
 //-----------------------------------------------------------------------------
@@ -2305,10 +2291,10 @@ PRBool nsWindow::OnDragDropMsg(ULONG msg, MPARAM mp1, MPARAM mp2, MRESULT& mr)
 // that might be a problem;  the method tells it whether to proceed and
 // provides a Drg HPS if the situation calls for one.
 
-PRBool nsWindow::CheckDragStatus(PRUint32 aAction, HPS* aHps)
+bool nsWindow::CheckDragStatus(PRUint32 aAction, HPS* aHps)
 {
-  PRBool rtn    = PR_TRUE;
-  PRBool getHps = PR_FALSE;
+  bool rtn    = true;
+  bool getHps = false;
 
   switch (aAction) {
 
@@ -2316,7 +2302,7 @@ PRBool nsWindow::CheckDragStatus(PRUint32 aAction, HPS* aHps)
     case ACTION_PAINT:
     case ACTION_SCROLL:
       if (sDragStatus & DND_MozDrag) {
-        getHps = PR_TRUE;
+        getHps = true;
       }
       break;
 
@@ -2324,26 +2310,26 @@ PRBool nsWindow::CheckDragStatus(PRUint32 aAction, HPS* aHps)
     case ACTION_DRAW:
       if ((sDragStatus & DND_MozDrag) ||
           (mDragStatus & DND_NativeDrag)) {
-        getHps = PR_TRUE;
+        getHps = true;
       }
       break;
 
     // Show() - don't show popups during a native dragover
     case ACTION_SHOW:
       if ((sDragStatus & (DND_NativeDrag | DND_InDrop)) == DND_NativeDrag) {
-        rtn = PR_FALSE;
+        rtn = false;
       }
       break;
 
     // InitEvent() - use PtrPos while in drag, MsgPos otherwise
     case ACTION_PTRPOS:
       if (!sDragStatus) {
-        rtn = PR_FALSE;
+        rtn = false;
       }
       break;
 
     default:
-      rtn = PR_FALSE;
+      rtn = false;
   }
 
   // If the caller wants an HPS, and the current drag status
@@ -2367,15 +2353,15 @@ PRBool nsWindow::CheckDragStatus(PRUint32 aAction, HPS* aHps)
 // If there's an outstanding drag hps & it matches the one passed in,
 // release it.
 
-PRBool nsWindow::ReleaseIfDragHPS(HPS aHps)
+bool nsWindow::ReleaseIfDragHPS(HPS aHps)
 {
   if (mDragHps && aHps == mDragHps) {
     DrgReleasePS(mDragHps);
     mDragHps = 0;
-    return PR_TRUE;
+    return true;
   }
 
-  return PR_FALSE;
+  return false;
 }
 
 //=============================================================================
@@ -2384,7 +2370,7 @@ PRBool nsWindow::ReleaseIfDragHPS(HPS aHps)
 
 // Figure out which keyboard LEDs are on.
 
-NS_IMETHODIMP nsWindow::GetToggledKeyState(PRUint32 aKeyCode, PRBool* aLEDState)
+NS_IMETHODIMP nsWindow::GetToggledKeyState(PRUint32 aKeyCode, bool* aLEDState)
 {
   PRUint32  vkey;
 
@@ -2401,7 +2387,7 @@ NS_IMETHODIMP nsWindow::GetToggledKeyState(PRUint32 aKeyCode, PRBool* aLEDState)
       vkey = VK_SCRLLOCK;
       break;
     default:
-      *aLEDState = PR_FALSE;
+      *aLEDState = false;
       return NS_OK;
   }
 
@@ -2412,10 +2398,10 @@ NS_IMETHODIMP nsWindow::GetToggledKeyState(PRUint32 aKeyCode, PRBool* aLEDState)
 //-----------------------------------------------------------------------------
 // Prevent PM from translating some keys & key-combos into accelerators.
 
-PRBool nsWindow::OnTranslateAccelerator(PQMSG pQmsg)
+bool nsWindow::OnTranslateAccelerator(PQMSG pQmsg)
 {
   if (pQmsg->msg != WM_CHAR) {
-    return PR_FALSE;
+    return false;
   }
 
   LONG mp1 = (LONG)pQmsg->mp1;
@@ -2426,28 +2412,28 @@ PRBool nsWindow::OnTranslateAccelerator(PQMSG pQmsg)
 
     // standalone F1 & F10
     if (SHORT2FROMMP(mp2) == VK_F1 || SHORT2FROMMP(mp2) == VK_F10) {
-      return (!sca ? PR_TRUE : PR_FALSE);
+      return (!sca ? true : false);
     }
 
     // Shift+Enter
     if (SHORT2FROMMP(mp2) == VK_ENTER) {
-      return (sca == KC_SHIFT ? PR_TRUE : PR_FALSE);
+      return (sca == KC_SHIFT ? true : false);
     }
 
     // Alt+Enter
     if (SHORT2FROMMP(mp2) == VK_NEWLINE) {
-      return (sca == KC_ALT ? PR_TRUE : PR_FALSE);
+      return (sca == KC_ALT ? true : false);
     }
 
     // standalone Alt & AltGraf
     if ((SHORT2FROMMP(mp2) == VK_ALT || SHORT2FROMMP(mp2) == VK_ALTGRAF) &&
         (SHORT1FROMMP(mp1) & (KC_KEYUP | KC_LONEKEY))
                           == (KC_KEYUP | KC_LONEKEY)) {
-      return PR_TRUE;
+      return true;
     }
   }
 
-  return PR_FALSE;
+  return false;
 }
 
 //-----------------------------------------------------------------------------
@@ -2458,9 +2444,9 @@ PRBool nsWindow::OnTranslateAccelerator(PQMSG pQmsg)
 // (besides random bits of javascript) is ender -- see
 // mozilla/editor/base/nsEditorEventListeners.cpp.
 
-PRBool nsWindow::DispatchKeyEvent(MPARAM mp1, MPARAM mp2)
+bool nsWindow::DispatchKeyEvent(MPARAM mp1, MPARAM mp2)
 {
-  nsKeyEvent pressEvent(PR_TRUE, 0, nsnull);
+  nsKeyEvent pressEvent(true, 0, nsnull);
   USHORT fsFlags = SHORT1FROMMP(mp1);
   USHORT usVKey = SHORT2FROMMP(mp2);
   USHORT usChar = SHORT1FROMMP(mp2);
@@ -2470,32 +2456,32 @@ PRBool nsWindow::DispatchKeyEvent(MPARAM mp1, MPARAM mp2)
   // control, & alt events to gecko.
   if (fsFlags & KC_VIRTUALKEY && !(fsFlags & KC_KEYUP) &&
       (usVKey == VK_SHIFT || usVKey == VK_CTRL || usVKey == VK_ALTGRAF)) {
-    return PR_FALSE;
+    return false;
   }
 
   // Workaround bug where using Alt+Esc let an Alt key creep through
   // Only handle alt by itself if the LONEKEY bit is set
   if ((fsFlags & KC_VIRTUALKEY) && (usVKey == VK_ALT) && !usChar &&
       (!(fsFlags & KC_LONEKEY)) && (fsFlags & KC_KEYUP)) {
-    return PR_FALSE;
+    return false;
   }
 
    // Now check if it's a dead-key
   if (fsFlags & KC_DEADKEY) {
-    return PR_TRUE;
+    return true;
   }
 
   // Now dispatch a keyup/keydown event.  This one is *not* meant to
   // have the unicode charcode in.
   nsIntPoint point(0,0);
-  nsKeyEvent event(PR_TRUE, (fsFlags & KC_KEYUP) ? NS_KEY_UP : NS_KEY_DOWN,
+  nsKeyEvent event(true, (fsFlags & KC_KEYUP) ? NS_KEY_UP : NS_KEY_DOWN,
                    this);
   InitEvent(event, &point);
   event.keyCode   = WMChar2KeyCode(mp1, mp2);
-  event.isShift   = (fsFlags & KC_SHIFT) ? PR_TRUE : PR_FALSE;
-  event.isControl = (fsFlags & KC_CTRL) ? PR_TRUE : PR_FALSE;
-  event.isAlt     = (fsFlags & KC_ALT) ? PR_TRUE : PR_FALSE;
-  event.isMeta    = PR_FALSE;
+  event.isShift   = (fsFlags & KC_SHIFT) ? true : false;
+  event.isControl = (fsFlags & KC_CTRL) ? true : false;
+  event.isAlt     = (fsFlags & KC_ALT) ? true : false;
+  event.isMeta    = false;
   event.charCode  = 0;
 
   // Check for a scroll mouse event vs. a keyboard event.  The way we know
@@ -2518,7 +2504,7 @@ PRBool nsWindow::DispatchKeyEvent(MPARAM mp1, MPARAM mp2)
   }
 
   pressEvent = event;
-  PRBool rc = DispatchWindowEvent(&event);
+  bool rc = DispatchWindowEvent(&event);
 
   // Break off now if this was a key-up.
   if (fsFlags & KC_KEYUP) {
@@ -2782,67 +2768,67 @@ NS_IMETHODIMP nsWindow::ReparentNativeWidget(nsIWidget* aNewParent)
 
 //-----------------------------------------------------------------------------
 
-PRBool nsWindow::DispatchWindowEvent(nsGUIEvent* event)
+bool nsWindow::DispatchWindowEvent(nsGUIEvent* event)
 {
   nsEventStatus status;
   DispatchEvent(event, status);
   return (status == nsEventStatus_eConsumeNoDefault);
 }
 
-PRBool nsWindow::DispatchWindowEvent(nsGUIEvent*event, nsEventStatus &aStatus) {
+bool nsWindow::DispatchWindowEvent(nsGUIEvent*event, nsEventStatus &aStatus) {
   DispatchEvent(event, aStatus);
   return (aStatus == nsEventStatus_eConsumeNoDefault);
 }
 
 //-----------------------------------------------------------------------------
 
-PRBool nsWindow::DispatchCommandEvent(PRUint32 aEventCommand)
+bool nsWindow::DispatchCommandEvent(PRUint32 aEventCommand)
 {
   nsCOMPtr<nsIAtom> command;
 
   switch (aEventCommand) {
     case APPCOMMAND_BROWSER_BACKWARD:
-      command = nsWidgetAtoms::Back;
+      command = nsGkAtoms::Back;
       break;
     case APPCOMMAND_BROWSER_FORWARD:
-      command = nsWidgetAtoms::Forward;
+      command = nsGkAtoms::Forward;
       break;
     case APPCOMMAND_BROWSER_REFRESH:
-      command = nsWidgetAtoms::Reload;
+      command = nsGkAtoms::Reload;
       break;
     case APPCOMMAND_BROWSER_STOP:
-      command = nsWidgetAtoms::Stop;
+      command = nsGkAtoms::Stop;
       break;
     default:
-      return PR_FALSE;
+      return false;
   }
 
-  nsCommandEvent event(PR_TRUE, nsWidgetAtoms::onAppCommand, command, this);
+  nsCommandEvent event(true, nsGkAtoms::onAppCommand, command, this);
   InitEvent(event);
   return DispatchWindowEvent(&event);
 }
 
 //-----------------------------------------------------------------------------
 
-PRBool nsWindow::DispatchDragDropEvent(PRUint32 aMsg)
+bool nsWindow::DispatchDragDropEvent(PRUint32 aMsg)
 {
-  nsDragEvent event(PR_TRUE, aMsg, this);
+  nsDragEvent event(true, aMsg, this);
   InitEvent(event);
 
   event.isShift   = isKeyDown(VK_SHIFT);
   event.isControl = isKeyDown(VK_CTRL);
   event.isAlt     = isKeyDown(VK_ALT) || isKeyDown(VK_ALTGRAF);
-  event.isMeta    = PR_FALSE;
+  event.isMeta    = false;
 
   return DispatchWindowEvent(&event);
 }
 
 //-----------------------------------------------------------------------------
 
-PRBool nsWindow::DispatchMoveEvent(PRInt32 aX, PRInt32 aY)
+bool nsWindow::DispatchMoveEvent(PRInt32 aX, PRInt32 aY)
 {
   // Params here are in XP-space for the desktop
-  nsGUIEvent event(PR_TRUE, NS_MOVE, this);
+  nsGUIEvent event(true, NS_MOVE, this);
   nsIntPoint point(aX, aY);
   InitEvent(event, &point);
   return DispatchWindowEvent(&event);
@@ -2850,9 +2836,9 @@ PRBool nsWindow::DispatchMoveEvent(PRInt32 aX, PRInt32 aY)
 
 //-----------------------------------------------------------------------------
 
-PRBool nsWindow::DispatchResizeEvent(PRInt32 aX, PRInt32 aY)
+bool nsWindow::DispatchResizeEvent(PRInt32 aX, PRInt32 aY)
 {
-  nsSizeEvent event(PR_TRUE, NS_SIZE, this);
+  nsSizeEvent event(true, NS_SIZE, this);
   nsIntRect   rect(0, 0, aX, aY);
 
   InitEvent(event);
@@ -2866,12 +2852,12 @@ PRBool nsWindow::DispatchResizeEvent(PRInt32 aX, PRInt32 aY)
 //-----------------------------------------------------------------------------
 // Deal with all sorts of mouse events.
 
-PRBool nsWindow::DispatchMouseEvent(PRUint32 aEventType, MPARAM mp1, MPARAM mp2,
-                                    PRBool aIsContextMenuKey, PRInt16 aButton)
+bool nsWindow::DispatchMouseEvent(PRUint32 aEventType, MPARAM mp1, MPARAM mp2,
+                                    bool aIsContextMenuKey, PRInt16 aButton)
 {
-  NS_ENSURE_TRUE(aEventType, PR_FALSE);
+  NS_ENSURE_TRUE(aEventType, false);
 
-  nsMouseEvent event(PR_TRUE, aEventType, this, nsMouseEvent::eReal,
+  nsMouseEvent event(true, aEventType, this, nsMouseEvent::eReal,
                      aIsContextMenuKey
                      ? nsMouseEvent::eContextMenuKey
                      : nsMouseEvent::eNormal);
@@ -2922,11 +2908,11 @@ PRBool nsWindow::DispatchMouseEvent(PRUint32 aEventType, MPARAM mp1, MPARAM mp2,
     InitEvent(event, &pt);
 
     USHORT usFlags  = SHORT2FROMMP(mp2);
-    event.isShift   = (usFlags & KC_SHIFT) ? PR_TRUE : PR_FALSE;
-    event.isControl = (usFlags & KC_CTRL) ? PR_TRUE : PR_FALSE;
-    event.isAlt     = (usFlags & KC_ALT) ? PR_TRUE : PR_FALSE;
+    event.isShift   = (usFlags & KC_SHIFT) ? true : false;
+    event.isControl = (usFlags & KC_CTRL) ? true : false;
+    event.isAlt     = (usFlags & KC_ALT) ? true : false;
   }
-  event.isMeta = PR_FALSE;
+  event.isMeta = false;
 
   // Dblclicks are used to set the click count, then changed to mousedowns
   if (aEventType == NS_MOUSE_DOUBLECLICK &&
@@ -3007,9 +2993,9 @@ PRBool nsWindow::DispatchMouseEvent(PRUint32 aEventType, MPARAM mp1, MPARAM mp2,
 //-----------------------------------------------------------------------------
 // Signal plugin & top-level window activation.
 
-PRBool nsWindow::DispatchActivationEvent(PRUint32 aEventType)
+bool nsWindow::DispatchActivationEvent(PRUint32 aEventType)
 {
-  nsGUIEvent event(PR_TRUE, aEventType, this);
+  nsGUIEvent event(true, aEventType, this);
 
   // These events should go to their base widget location,
   // not current mouse position.
@@ -3035,15 +3021,15 @@ PRBool nsWindow::DispatchActivationEvent(PRUint32 aEventType)
 
 //-----------------------------------------------------------------------------
 
-PRBool nsWindow::DispatchScrollEvent(ULONG msg, MPARAM mp1, MPARAM mp2)
+bool nsWindow::DispatchScrollEvent(ULONG msg, MPARAM mp1, MPARAM mp2)
 {
-  nsMouseScrollEvent scrollEvent(PR_TRUE, NS_MOUSE_SCROLL, this);
+  nsMouseScrollEvent scrollEvent(true, NS_MOUSE_SCROLL, this);
   InitEvent(scrollEvent);
 
   scrollEvent.isShift     = isKeyDown(VK_SHIFT);
   scrollEvent.isControl   = isKeyDown(VK_CTRL);
   scrollEvent.isAlt       = isKeyDown(VK_ALT) || isKeyDown(VK_ALTGRAF);
-  scrollEvent.isMeta      = PR_FALSE;
+  scrollEvent.isMeta      = false;
   scrollEvent.scrollFlags = (msg == WM_HSCROLL) ?
                             nsMouseScrollEvent::kIsHorizontal :
                             nsMouseScrollEvent::kIsVertical;
@@ -3079,7 +3065,7 @@ PRBool nsWindow::DispatchScrollEvent(ULONG msg, MPARAM mp1, MPARAM mp2)
   }
   DispatchWindowEvent(&scrollEvent);
 
-  return PR_FALSE;
+  return false;
 }
 
 //=============================================================================

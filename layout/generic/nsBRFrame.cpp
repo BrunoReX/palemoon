@@ -57,8 +57,6 @@
 #include "nsFrameSelection.h"
 //END INCLUDES FOR SELECTION
 
-#define BR_USING_CENTERED_FONT_BASELINE NS_FRAME_STATE_BIT(63)
-
 class BRFrame : public nsFrame {
 public:
   NS_DECL_FRAMEARENA_HELPERS
@@ -67,10 +65,10 @@ public:
 
   virtual ContentOffsets CalcContentOffsetsFromFramePoint(nsPoint aPoint);
 
-  virtual PRBool PeekOffsetNoAmount(PRBool aForward, PRInt32* aOffset);
-  virtual PRBool PeekOffsetCharacter(PRBool aForward, PRInt32* aOffset,
-                                     PRBool aRespectClusters = PR_TRUE);
-  virtual PRBool PeekOffsetWord(PRBool aForward, PRBool aWordSelectEatSpace, PRBool aIsKeyboardSelect,
+  virtual bool PeekOffsetNoAmount(bool aForward, PRInt32* aOffset);
+  virtual bool PeekOffsetCharacter(bool aForward, PRInt32* aOffset,
+                                     bool aRespectClusters = true);
+  virtual bool PeekOffsetWord(bool aForward, bool aWordSelectEatSpace, bool aIsKeyboardSelect,
                                 PRInt32* aOffset, PeekWordState* aState);
 
   NS_IMETHOD Reflow(nsPresContext* aPresContext,
@@ -86,7 +84,7 @@ public:
   virtual nsIAtom* GetType() const;
   virtual nscoord GetBaseline() const;
 
-  virtual PRBool IsFrameOfType(PRUint32 aFlags) const
+  virtual bool IsFrameOfType(PRUint32 aFlags) const
   {
     return nsFrame::IsFrameOfType(aFlags & ~(nsIFrame::eReplaced |
                                              nsIFrame::eLineParticipant));
@@ -99,6 +97,8 @@ public:
 protected:
   BRFrame(nsStyleContext* aContext) : nsFrame(aContext) {}
   virtual ~BRFrame();
+
+  nscoord mAscent;
 };
 
 nsIFrame*
@@ -126,7 +126,6 @@ BRFrame::Reflow(nsPresContext* aPresContext,
                        // However, it's not always 0.  See below.
   aMetrics.width = 0;
   aMetrics.ascent = 0;
-  RemoveStateBits(BR_USING_CENTERED_FONT_BASELINE);
 
   // Only when the BR is operating in a line-layout situation will it
   // behave like a BR.
@@ -151,14 +150,14 @@ BRFrame::Reflow(nsPresContext* aPresContext,
       // normal inline frame.  That line-height is used is important
       // here for cases where the line-height is less than 1.
       nsRefPtr<nsFontMetrics> fm;
-      nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm));
+      nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm),
+        nsLayoutUtils::FontSizeInflationFor(aReflowState));
       aReflowState.rendContext->SetFont(fm); // FIXME: maybe not needed?
       if (fm) {
         nscoord logicalHeight = aReflowState.CalcLineHeight();
         aMetrics.height = logicalHeight;
         aMetrics.ascent =
           nsLayoutUtils::GetCenteredFontBaseline(fm, logicalHeight);
-        AddStateBits(BR_USING_CENTERED_FONT_BASELINE);
       }
       else {
         aMetrics.ascent = aMetrics.height = 0;
@@ -181,13 +180,15 @@ BRFrame::Reflow(nsPresContext* aPresContext,
 
     aStatus = NS_INLINE_BREAK | NS_INLINE_BREAK_AFTER |
       NS_INLINE_MAKE_BREAK_TYPE(breakType);
-    ll->SetLineEndsInBR(PR_TRUE);
+    ll->SetLineEndsInBR(true);
   }
   else {
     aStatus = NS_FRAME_COMPLETE;
   }
 
   aMetrics.SetOverflowAreasToDesiredBounds();
+
+  mAscent = aMetrics.ascent;
 
   NS_FRAME_SET_TRUNCATION(aStatus, aReflowState, aMetrics);
   return NS_OK;
@@ -232,18 +233,7 @@ BRFrame::GetType() const
 nscoord
 BRFrame::GetBaseline() const
 {
-  nscoord ascent = 0;
-  nsRefPtr<nsFontMetrics> fm;
-  nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm));
-  if (fm) {
-    nscoord logicalHeight = GetRect().height;
-    if (GetStateBits() & BR_USING_CENTERED_FONT_BASELINE) {
-      ascent = nsLayoutUtils::GetCenteredFontBaseline(fm, logicalHeight);
-    } else {
-      ascent = fm->MaxAscent() + GetUsedBorderAndPadding().top;
-    }
-  }
-  return NS_MIN(mRect.height, ascent);
+  return mAscent;
 }
 
 nsIFrame::ContentOffsets BRFrame::CalcContentOffsetsFromFramePoint(nsPoint aPoint)
@@ -253,41 +243,41 @@ nsIFrame::ContentOffsets BRFrame::CalcContentOffsetsFromFramePoint(nsPoint aPoin
   if (offsets.content) {
     offsets.offset = offsets.content->IndexOf(mContent);
     offsets.secondaryOffset = offsets.offset;
-    offsets.associateWithNext = PR_TRUE;
+    offsets.associateWithNext = true;
   }
   return offsets;
 }
 
-PRBool
-BRFrame::PeekOffsetNoAmount(PRBool aForward, PRInt32* aOffset)
+bool
+BRFrame::PeekOffsetNoAmount(bool aForward, PRInt32* aOffset)
 {
   NS_ASSERTION (aOffset && *aOffset <= 1, "aOffset out of range");
   PRInt32 startOffset = *aOffset;
   // If we hit the end of a BR going backwards, go to its beginning and stay there.
   if (!aForward && startOffset != 0) {
     *aOffset = 0;
-    return PR_TRUE;
+    return true;
   }
   // Otherwise, stop if we hit the beginning, continue (forward) if we hit the end.
   return (startOffset == 0);
 }
 
-PRBool
-BRFrame::PeekOffsetCharacter(PRBool aForward, PRInt32* aOffset,
-                             PRBool aRespectClusters)
+bool
+BRFrame::PeekOffsetCharacter(bool aForward, PRInt32* aOffset,
+                             bool aRespectClusters)
 {
   NS_ASSERTION (aOffset && *aOffset <= 1, "aOffset out of range");
   // Keep going. The actual line jumping will stop us.
-  return PR_FALSE;
+  return false;
 }
 
-PRBool
-BRFrame::PeekOffsetWord(PRBool aForward, PRBool aWordSelectEatSpace, PRBool aIsKeyboardSelect,
+bool
+BRFrame::PeekOffsetWord(bool aForward, bool aWordSelectEatSpace, bool aIsKeyboardSelect,
                         PRInt32* aOffset, PeekWordState* aState)
 {
   NS_ASSERTION (aOffset && *aOffset <= 1, "aOffset out of range");
   // Keep going. The actual line jumping will stop us.
-  return PR_FALSE;
+  return false;
 }
 
 #ifdef ACCESSIBILITY

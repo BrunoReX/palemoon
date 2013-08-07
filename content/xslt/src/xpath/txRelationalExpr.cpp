@@ -45,7 +45,7 @@
 /**
  *  Compares the two ExprResults based on XPath 1.0 Recommendation (section 3.4)
  */
-PRBool
+bool
 RelationalExpr::compareResults(txIEvalContext* aContext, txAExprResult* aLeft,
                                txAExprResult* aRight)
 {
@@ -63,7 +63,7 @@ RelationalExpr::compareResults(txIEvalContext* aContext, txAExprResult* aLeft,
         txNodeSet* nodeSet = static_cast<txNodeSet*>(aLeft);
         nsRefPtr<StringResult> strResult;
         rv = aContext->recycler()->getStringResult(getter_AddRefs(strResult));
-        NS_ENSURE_SUCCESS(rv, PR_FALSE);
+        NS_ENSURE_SUCCESS(rv, false);
 
         PRInt32 i;
         for (i = 0; i < nodeSet->size(); ++i) {
@@ -71,11 +71,11 @@ RelationalExpr::compareResults(txIEvalContext* aContext, txAExprResult* aLeft,
             txXPathNodeUtils::appendNodeValue(nodeSet->get(i),
                                               strResult->mValue);
             if (compareResults(aContext, strResult, aRight)) {
-                return PR_TRUE;
+                return true;
             }
         }
 
-        return PR_FALSE;
+        return false;
     }
 
     // Handle case for Just Right NodeSet
@@ -88,7 +88,7 @@ RelationalExpr::compareResults(txIEvalContext* aContext, txAExprResult* aLeft,
         txNodeSet* nodeSet = static_cast<txNodeSet*>(aRight);
         nsRefPtr<StringResult> strResult;
         rv = aContext->recycler()->getStringResult(getter_AddRefs(strResult));
-        NS_ENSURE_SUCCESS(rv, PR_FALSE);
+        NS_ENSURE_SUCCESS(rv, false);
 
         PRInt32 i;
         for (i = 0; i < nodeSet->size(); ++i) {
@@ -96,16 +96,16 @@ RelationalExpr::compareResults(txIEvalContext* aContext, txAExprResult* aLeft,
             txXPathNodeUtils::appendNodeValue(nodeSet->get(i),
                                               strResult->mValue);
             if (compareResults(aContext, aLeft, strResult)) {
-                return PR_TRUE;
+                return true;
             }
         }
 
-        return PR_FALSE;
+        return false;
     }
 
     // Neither is a NodeSet
     if (mOp == EQUAL || mOp == NOT_EQUAL) {
-        PRBool result;
+        bool result;
         const nsString *lString, *rString;
 
         // If either is a bool, compare as bools.
@@ -174,7 +174,7 @@ RelationalExpr::compareResults(txIEvalContext* aContext, txAExprResult* aLeft,
         }
     }
 
-    return PR_FALSE;
+    return false;
 }
 
 nsresult
@@ -197,7 +197,7 @@ RelationalExpr::evaluate(txIEvalContext* aContext, txAExprResult** aResult)
 
 TX_IMPL_EXPR_STUBS_2(RelationalExpr, BOOLEAN_RESULT, mLeftExpr, mRightExpr)
 
-PRBool
+bool
 RelationalExpr::isSensitiveTo(ContextSensitivity aContext)
 {
     return mLeftExpr->isSensitiveTo(aContext) ||

@@ -55,9 +55,9 @@
 // The debugging version of nsPresArena does not free all the memory it
 // allocated when the arena itself is destroyed.
 #ifdef DEBUG_TRACEMALLOC_PRESARENA
-#define PRESARENA_MUST_FREE_DURING_DESTROY PR_TRUE
+#define PRESARENA_MUST_FREE_DURING_DESTROY true
 #else
-#define PRESARENA_MUST_FREE_DURING_DESTROY PR_FALSE
+#define PRESARENA_MUST_FREE_DURING_DESTROY false
 #endif
 
 class nsPresArena {
@@ -74,7 +74,7 @@ public:
   NS_HIDDEN_(void*) AllocateByCode(nsQueryFrame::FrameIID aCode, size_t aSize);
   NS_HIDDEN_(void)  FreeByCode(nsQueryFrame::FrameIID aCode, void* aPtr);
 
-  PRUint32 Size();
+  size_t SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
 
   /**
    * Get the poison value that can be used to fill a memory space with

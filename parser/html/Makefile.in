@@ -74,6 +74,9 @@ EXPORTS		= \
 		nsHtml5TreeOpStage.h \
 		nsHtml5UTF16Buffer.h \
 		nsHtml5UTF16BufferHSupplement.h \
+		nsHtml5DependentUTF16Buffer.h \
+		nsHtml5OwningUTF16Buffer.h \
+		nsHtml5ViewSourceUtils.h \
 		$(NULL)
 
 CPPSRCS		= \
@@ -86,6 +89,8 @@ CPPSRCS		= \
 		nsHtml5HtmlAttributes.cpp \
 		nsHtml5StackNode.cpp \
 		nsHtml5UTF16Buffer.cpp \
+		nsHtml5DependentUTF16Buffer.cpp \
+		nsHtml5OwningUTF16Buffer.cpp \
 		nsHtml5NamedCharacters.cpp \
 		nsHtml5NamedCharactersAccel.cpp \
 		nsHtml5Tokenizer.cpp \
@@ -103,6 +108,8 @@ CPPSRCS		= \
 		nsHtml5Speculation.cpp \
 		nsHtml5SpeculativeLoad.cpp \
 		nsHtml5SVGLoadDispatcher.cpp \
+		nsHtml5Highlighter.cpp \
+		nsHtml5ViewSourceUtils.cpp \
 		$(NULL)
 
 FORCE_STATIC_LIB = 1

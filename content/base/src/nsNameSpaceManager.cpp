@@ -88,7 +88,7 @@ public:
   {
     return mKey;
   }
-  PRBool KeyEquals(KeyType aKey) const
+  bool KeyEquals(KeyType aKey) const
   {
     return mKey->Equals(*aKey);
   }
@@ -102,7 +102,7 @@ public:
   }
 
   enum { 
-    ALLOW_MEMMOVE = PR_TRUE
+    ALLOW_MEMMOVE = true
   };
 
 private:
@@ -124,7 +124,7 @@ public:
   nsresult GetNameSpaceURI(PRInt32 aNameSpaceID, nsAString& aURI);
   PRInt32 GetNameSpaceID(const nsAString& aURI);
 
-  PRBool HasElementCreator(PRInt32 aNameSpaceID);
+  bool HasElementCreator(PRInt32 aNameSpaceID);
 
 private:
   nsresult AddNameSpace(const nsAString& aURI, const PRInt32 aNameSpaceID);
@@ -224,28 +224,29 @@ NameSpaceManagerImpl::GetNameSpaceID(const nsAString& aURI)
 }
 
 nsresult
-NS_NewElement(nsIContent** aResult, PRInt32 aElementType,
+NS_NewElement(nsIContent** aResult,
               already_AddRefed<nsINodeInfo> aNodeInfo, FromParser aFromParser)
 {
-  if (aElementType == kNameSpaceID_XHTML) {
+  PRInt32 ns = aNodeInfo.get()->NamespaceID();
+  if (ns == kNameSpaceID_XHTML) {
     return NS_NewHTMLElement(aResult, aNodeInfo, aFromParser);
   }
 #ifdef MOZ_XUL
-  if (aElementType == kNameSpaceID_XUL) {
+  if (ns == kNameSpaceID_XUL) {
     return NS_NewXULElement(aResult, aNodeInfo);
   }
 #endif
-  if (aElementType == kNameSpaceID_MathML) {
+  if (ns == kNameSpaceID_MathML) {
     return NS_NewMathMLElement(aResult, aNodeInfo);
   }
-  if (aElementType == kNameSpaceID_SVG) {
+  if (ns == kNameSpaceID_SVG) {
     return NS_NewSVGElement(aResult, aNodeInfo, aFromParser);
   }
-  if (aElementType == kNameSpaceID_XMLEvents) {
+  if (ns == kNameSpaceID_XMLEvents) {
     return NS_NewXMLEventsElement(aResult, aNodeInfo);
   }
 #ifdef MOZ_XTF
-  if (aElementType > kNameSpaceID_LastBuiltin) {
+  if (ns > kNameSpaceID_LastBuiltin) {
     nsIXTFService* xtfService = nsContentUtils::GetXTFService();
     NS_ASSERTION(xtfService, "could not get xtf service");
     if (xtfService &&
@@ -256,7 +257,7 @@ NS_NewElement(nsIContent** aResult, PRInt32 aElementType,
   return NS_NewXMLElement(aResult, aNodeInfo);
 }
 
-PRBool
+bool
 NameSpaceManagerImpl::HasElementCreator(PRInt32 aNameSpaceID)
 {
   return aNameSpaceID == kNameSpaceID_XHTML ||
@@ -266,7 +267,7 @@ NameSpaceManagerImpl::HasElementCreator(PRInt32 aNameSpaceID)
          aNameSpaceID == kNameSpaceID_MathML ||
          aNameSpaceID == kNameSpaceID_SVG ||
          aNameSpaceID == kNameSpaceID_XMLEvents ||
-         PR_FALSE;
+         false;
 }
 
 nsresult NameSpaceManagerImpl::AddNameSpace(const nsAString& aURI,

@@ -117,7 +117,7 @@ struct nsStatusInfo : public PRCList
 struct nsRequestInfo : public PLDHashEntryHdr
 {
   nsRequestInfo(const void *key)
-    : mKey(key), mCurrentProgress(0), mMaxProgress(0), mUploading(PR_FALSE)
+    : mKey(key), mCurrentProgress(0), mMaxProgress(0), mUploading(false)
     , mLastStatus(nsnull)
   {
     MOZ_COUNT_CTOR(nsRequestInfo);
@@ -135,19 +135,19 @@ struct nsRequestInfo : public PLDHashEntryHdr
   const void* mKey; // Must be first for the pldhash stubs to work
   PRInt64 mCurrentProgress;
   PRInt64 mMaxProgress;
-  PRBool mUploading;
+  bool mUploading;
 
   nsAutoPtr<nsStatusInfo> mLastStatus;
 };
 
 
-static PRBool
+static bool
 RequestInfoHashInitEntry(PLDHashTable *table, PLDHashEntryHdr *entry,
                          const void *key)
 {
   // Initialize the entry with placement new
   new (entry) nsRequestInfo(key);
-  return PR_TRUE;
+  return true;
 }
 
 static void
@@ -180,10 +180,10 @@ nsDocLoader::nsDocLoader()
     mCurrentTotalProgress(0),
     mMaxTotalProgress(0),
     mCompletedTotalProgress(0),
-    mIsLoadingDocument(PR_FALSE),
-    mIsRestoringDocument(PR_FALSE),
-    mDontFlushLayout(PR_FALSE),
-    mIsFlushingLayout(PR_FALSE)
+    mIsLoadingDocument(false),
+    mIsRestoringDocument(false),
+    mDontFlushLayout(false),
+    mIsFlushingLayout(false)
 {
 #if defined(PR_LOGGING)
   if (nsnull == gDocLoaderLog) {
@@ -361,7 +361,7 @@ nsDocLoader::Stop(void)
 
   // Don't report that we're flushing layout so IsBusy returns false after a
   // Stop call.
-  mIsFlushingLayout = PR_FALSE;
+  mIsFlushingLayout = false;
 
   // Clear out mChildrenInOnload.  We want to make sure to fire our
   // onload at this point, and there's no issue with mChildrenInOnload
@@ -380,13 +380,13 @@ nsDocLoader::Stop(void)
   // we wouldn't need the call here....
 
   NS_ASSERTION(!IsBusy(), "Shouldn't be busy here");
-  DocLoaderIsEmpty(PR_FALSE);
+  DocLoaderIsEmpty(false);
   
   return rv;
 }       
 
 
-PRBool
+bool
 nsDocLoader::IsBusy()
 {
   nsresult rv;
@@ -402,21 +402,21 @@ nsDocLoader::IsBusy()
   //
 
   if (mChildrenInOnload.Count() || mIsFlushingLayout) {
-    return PR_TRUE;
+    return true;
   }
 
   /* Is this document loader busy? */
   if (!mIsLoadingDocument) {
-    return PR_FALSE;
+    return false;
   }
   
-  PRBool busy;
+  bool busy;
   rv = mLoadGroup->IsPending(&busy);
   if (NS_FAILED(rv)) {
-    return PR_FALSE;
+    return false;
   }
   if (busy) {
-    return PR_TRUE;
+    return true;
   }
 
   /* check its child document loaders... */
@@ -430,10 +430,10 @@ nsDocLoader::IsBusy()
     // This is a safe cast, because we only put nsDocLoader objects into the
     // array
     if (loader && static_cast<nsDocLoader*>(loader)->IsBusy())
-      return PR_TRUE;
+      return true;
   }
 
-  return PR_FALSE;
+  return false;
 }
 
 NS_IMETHODIMP
@@ -535,14 +535,14 @@ nsDocLoader::OnStartRequest(nsIRequest *request, nsISupports *aCtxt)
             count));
   }
 #endif /* PR_LOGGING */
-  PRBool bJustStartedLoading = PR_FALSE;
+  bool bJustStartedLoading = false;
 
   nsLoadFlags loadFlags = 0;
   request->GetLoadFlags(&loadFlags);
 
   if (!mIsLoadingDocument && (loadFlags & nsIChannel::LOAD_DOCUMENT_URI)) {
-      bJustStartedLoading = PR_TRUE;
-      mIsLoadingDocument = PR_TRUE;
+      bJustStartedLoading = true;
+      mIsLoadingDocument = true;
       ClearInternalProgress(); // only clear our progress if we are starting a new load....
   }
 
@@ -617,7 +617,7 @@ nsDocLoader::OnStopRequest(nsIRequest *aRequest,
   }
 #endif
 
-  PRBool bFireTransferring = PR_FALSE;
+  bool bFireTransferring = false;
 
   //
   // Set the Maximum progress to the same value as the current progress.
@@ -666,7 +666,7 @@ nsDocLoader::OnStopRequest(nsIRequest *aRequest,
       //
       if (channel) {
         if (NS_SUCCEEDED(aStatus)) {
-          bFireTransferring = PR_TRUE;
+          bFireTransferring = true;
         }
         //
         // If the request failed (for any reason other than being
@@ -691,7 +691,7 @@ nsDocLoader::OnStopRequest(nsIRequest *aRequest,
                 // established to the server... So, fire the notification
                 // even though a failure occurred later...
                 //
-                bFireTransferring = PR_TRUE;
+                bFireTransferring = true;
               }
             }
           }
@@ -733,7 +733,7 @@ nsDocLoader::OnStopRequest(nsIRequest *aRequest,
   // load.  This will handle removing the request from our hashtable as needed.
   //
   if (mIsLoadingDocument) {
-    DocLoaderIsEmpty(PR_TRUE);
+    DocLoaderIsEmpty(true);
   }
   
   return NS_OK;
@@ -769,7 +769,7 @@ NS_IMETHODIMP nsDocLoader::GetDocumentChannel(nsIChannel ** aChannel)
 }
 
 
-void nsDocLoader::DocLoaderIsEmpty(PRBool aFlushLayout)
+void nsDocLoader::DocLoaderIsEmpty(bool aFlushLayout)
 {
   if (mIsLoadingDocument) {
     /* In the unimagineably rude circumstance that onload event handlers
@@ -802,9 +802,9 @@ void nsDocLoader::DocLoaderIsEmpty(PRBool aFlushLayout)
             flushType = Flush_Layout;
           }
         }
-        mDontFlushLayout = mIsFlushingLayout = PR_TRUE;
+        mDontFlushLayout = mIsFlushingLayout = true;
         doc->FlushPendingNotifications(flushType);
-        mDontFlushLayout = mIsFlushingLayout = PR_FALSE;
+        mDontFlushLayout = mIsFlushingLayout = false;
       }
     }
 
@@ -822,7 +822,7 @@ void nsDocLoader::DocLoaderIsEmpty(PRBool aFlushLayout)
 
       NS_ASSERTION(mDocumentRequest, "No Document Request!");
       mDocumentRequest = 0;
-      mIsLoadingDocument = PR_FALSE;
+      mIsLoadingDocument = false;
 
       // Update the progress status state - the document is done
       mProgressStateFlags = nsIWebProgressListener::STATE_STOP;
@@ -1028,7 +1028,7 @@ nsDocLoader::GetDOMWindow(nsIDOMWindow **aResult)
 }
 
 NS_IMETHODIMP
-nsDocLoader::GetIsLoadingDocument(PRBool *aIsLoadingDocument)
+nsDocLoader::GetIsLoadingDocument(bool *aIsLoadingDocument)
 {
   *aIsLoadingDocument = mIsLoadingDocument;
 
@@ -1175,7 +1175,7 @@ NS_IMETHODIMP nsDocLoader::OnStatus(nsIRequest* aRequest, nsISupports* ctxt,
     nsRequestInfo *info;
     info = GetRequestInfo(aRequest);
     if (info) {
-      PRBool uploading = (aStatus == nsITransport::STATUS_WRITING ||
+      bool uploading = (aStatus == nsITransport::STATUS_WRITING ||
                           aStatus == nsISocketTransport::STATUS_SENDING_TO);
       // If switching from uploading to downloading (or vice versa), then we
       // need to reset our progress counts.  This is designed with HTTP form
@@ -1391,7 +1391,8 @@ void nsDocLoader::DoFireOnStateChange(nsIWebProgress * const aProgress,
 void
 nsDocLoader::FireOnLocationChange(nsIWebProgress* aWebProgress,
                                   nsIRequest* aRequest,
-                                  nsIURI *aUri)
+                                  nsIURI *aUri,
+                                  PRUint32 aFlags)
 {
   /*                                                                           
    * First notify any listeners of the new state info...
@@ -1418,14 +1419,14 @@ nsDocLoader::FireOnLocationChange(nsIWebProgress* aWebProgress,
       continue;
     }
 
-    listener->OnLocationChange(aWebProgress, aRequest, aUri);
+    listener->OnLocationChange(aWebProgress, aRequest, aUri, aFlags);
   }
 
   mListenerInfoList.Compact();
 
   // Pass the notification up to the parent...
   if (mParent) {
-    mParent->FireOnLocationChange(aWebProgress, aRequest, aUri);
+    mParent->FireOnLocationChange(aWebProgress, aRequest, aUri, aFlags);
   }
 }
 
@@ -1470,11 +1471,11 @@ nsDocLoader::FireOnStatusChange(nsIWebProgress* aWebProgress,
   }
 }
 
-PRBool
+bool
 nsDocLoader::RefreshAttempted(nsIWebProgress* aWebProgress,
                               nsIURI *aURI,
                               PRInt32 aDelay,
-                              PRBool aSameURI)
+                              bool aSameURI)
 {
   /*
    * Returns true if the refresh may proceed,
@@ -1485,7 +1486,7 @@ nsDocLoader::RefreshAttempted(nsIWebProgress* aWebProgress,
    * Iterate the elements from back to front so that if items
    * get removed from the list it won't affect our iteration
    */
-  PRBool allowRefresh = PR_TRUE;
+  bool allowRefresh = true;
   PRInt32 count = mListenerInfoList.Count();
 
   while (--count >= 0) {
@@ -1510,7 +1511,7 @@ nsDocLoader::RefreshAttempted(nsIWebProgress* aWebProgress,
     if (!listener2)
       continue;
 
-    PRBool listenerAllowedRefresh;
+    bool listenerAllowedRefresh;
     nsresult listenerRV = listener2->OnRefreshAttempted(
         aWebProgress, aURI, aDelay, aSameURI, &listenerAllowedRefresh);
     if (NS_FAILED(listenerRV))

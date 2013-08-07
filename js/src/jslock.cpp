@@ -44,16 +44,24 @@
  */
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef XP_WIN
+# include "jswin.h"
+#else
+# include <unistd.h>
+#endif
+
 #include "jspubtd.h"
-#include "jsutil.h"
 #include "jstypes.h"
+#include "jsutil.h"
 #include "jsstdint.h"
-#include "jsbit.h"
 #include "jscntxt.h"
 #include "jsgc.h"
 #include "jslock.h"
 #include "jsscope.h"
 #include "jsstr.h"
+
+#include "jsscopeinlines.h"
 
 using namespace js;
 
@@ -73,7 +81,6 @@ extern long __cdecl
 _InterlockedCompareExchange(long *volatile dest, long exchange, long comp);
 JS_END_EXTERN_C
 #pragma intrinsic(_InterlockedCompareExchange)
-
 JS_STATIC_ASSERT(sizeof(jsword) == sizeof(long));
 
 static JS_ALWAYS_INLINE int
@@ -92,11 +99,12 @@ NativeCompareAndSwap(volatile jsword *w, jsword ov, jsword nv)
 }
 
 #elif defined(_MSC_VER) && (defined(_M_AMD64) || defined(_M_X64))
-JS_BEGIN_EXTERN_C
-extern long long __cdecl
-_InterlockedCompareExchange64(long long *volatile dest, long long exchange, long long comp);
-JS_END_EXTERN_C
+/*
+ * Compared with the _InterlockedCompareExchange in the 32 bit case above MSVC
+ * declares _InterlockedCompareExchange64 through <windows.h>.
+ */
 #pragma intrinsic(_InterlockedCompareExchange64)
+JS_STATIC_ASSERT(sizeof(jsword) == sizeof(long long));
 
 static JS_ALWAYS_INLINE int
 NativeCompareAndSwap(volatile jsword *w, jsword ov, jsword nv)
@@ -304,6 +312,23 @@ js_AtomicClearMask(volatile jsword *w, jsword mask)
     } while (!js_CompareAndSwap(w, ov, nv));
 }
 
+unsigned
+js_GetCPUCount()
+{
+    static unsigned ncpus = 0;
+    if (ncpus == 0) {
+# ifdef XP_WIN
+        SYSTEM_INFO sysinfo;
+        GetSystemInfo(&sysinfo);
+        ncpus = unsigned(sysinfo.dwNumberOfProcessors);
+# else
+        long n = sysconf(_SC_NPROCESSORS_ONLN);
+        ncpus = (n > 0) ? unsigned(n) : 1;
+# endif
+    }
+    return ncpus;
+}
+
 #ifndef NSPR_LOCK
 
 struct JSFatLock {
@@ -319,27 +344,27 @@ typedef struct JSFatLockTable {
     JSFatLock   *taken;
 } JSFatLockTable;
 
-#define GLOBAL_LOCK_INDEX(id)   (((uint32)(jsuword)(id)>>2) & global_locks_mask)
+#define GLOBAL_LOCK_INDEX(id)   (((uint32_t)(jsuword)(id)>>2) & global_locks_mask)
 
 static void
 js_Dequeue(JSThinLock *);
 
 static PRLock **global_locks;
-static uint32 global_lock_count = 1;
-static uint32 global_locks_log2 = 0;
-static uint32 global_locks_mask = 0;
+static uint32_t global_lock_count = 1;
+static uint32_t global_locks_log2 = 0;
+static uint32_t global_locks_mask = 0;
 
 static void
 js_LockGlobal(void *id)
 {
-    uint32 i = GLOBAL_LOCK_INDEX(id);
+    uint32_t i = GLOBAL_LOCK_INDEX(id);
     PR_Lock(global_locks[i]);
 }
 
 static void
 js_UnlockGlobal(void *id)
 {
-    uint32 i = GLOBAL_LOCK_INDEX(id);
+    uint32_t i = GLOBAL_LOCK_INDEX(id);
     PR_Unlock(global_locks[i]);
 }
 
@@ -419,15 +444,15 @@ DeleteListOfFatlocks(JSFatLock *m)
 }
 
 static JSFatLockTable *fl_list_table = NULL;
-static uint32          fl_list_table_len = 0;
-static uint32          fl_list_chunk_len = 0;
+static uint32_t        fl_list_table_len = 0;
+static uint32_t        fl_list_chunk_len = 0;
 
 static JSFatLock *
 GetFatlock(void *id)
 {
     JSFatLock *m;
 
-    uint32 i = GLOBAL_LOCK_INDEX(id);
+    uint32_t i = GLOBAL_LOCK_INDEX(id);
     if (fl_list_table[i].free_ == NULL) {
 #ifdef DEBUG
         if (fl_list_table[i].taken)
@@ -449,7 +474,7 @@ GetFatlock(void *id)
 static void
 PutFatlock(JSFatLock *m, void *id)
 {
-    uint32 i;
+    uint32_t i;
     if (m == NULL)
         return;
 
@@ -470,7 +495,7 @@ JSBool
 js_SetupLocks(int listc, int globc)
 {
 #ifndef NSPR_LOCK
-    uint32 i;
+    uint32_t i;
 
     if (global_locks)
         return JS_TRUE;
@@ -480,7 +505,7 @@ js_SetupLocks(int listc, int globc)
     if (globc > 100 || globc < 0)   /* globc == number of global locks */
         printf("Bad number %d in js_SetupLocks()!\n", listc);
 #endif
-    global_locks_log2 = JS_CeilingLog2(globc);
+    global_locks_log2 = JS_CEILING_LOG2W(globc);
     global_locks_mask = JS_BITMASK(global_locks_log2);
     global_lock_count = JS_BIT(global_locks_log2);
     global_locks = (PRLock **) OffTheBooks::malloc_(global_lock_count * sizeof(PRLock*));
@@ -511,7 +536,7 @@ void
 js_CleanupLocks()
 {
 #ifndef NSPR_LOCK
-    uint32 i;
+    uint32_t i;
 
     if (global_locks) {
         for (i = 0; i < global_lock_count; i++)
@@ -739,4 +764,5 @@ js_IsRuntimeLocked(JSRuntime *rt)
     return js_CurrentThreadId() == rt->rtLockOwner;
 }
 #endif /* DEBUG */
+
 #endif /* JS_THREADSAFE */

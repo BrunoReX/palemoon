@@ -38,9 +38,11 @@
 #ifndef nsByteBuffer_h__
 #define nsByteBuffer_h__
 
+#include "mozilla/Attributes.h"
+
 #include "nsIByteBuffer.h"
 
-class ByteBufferImpl : public nsIByteBuffer {
+class ByteBufferImpl MOZ_FINAL : public nsIByteBuffer {
 public:
   ByteBufferImpl(void);
 
@@ -53,7 +55,7 @@ public:
   NS_IMETHOD_(PRUint32) GetLength(void) const;
   NS_IMETHOD_(PRUint32) GetBufferSize(void) const;
   NS_IMETHOD_(char*) GetBuffer() const;
-  NS_IMETHOD_(PRBool) Grow(PRUint32 aNewSize);
+  NS_IMETHOD_(bool) Grow(PRUint32 aNewSize);
   NS_IMETHOD_(PRInt32) Fill(nsresult* aErrorCode, nsIInputStream* aStream,
                             PRUint32 aKeep);
 

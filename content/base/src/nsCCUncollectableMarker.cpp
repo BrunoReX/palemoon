@@ -51,8 +51,11 @@
 #include "nsISHContainer.h"
 #include "nsIWindowWatcher.h"
 #include "mozilla/Services.h"
+#include "nsIXULWindow.h"
+#include "nsIAppShellService.h"
+#include "nsAppShellCID.h"
 
-static PRBool sInited = 0;
+static bool sInited = 0;
 PRUint32 nsCCUncollectableMarker::sGeneration = 0;
 
 NS_IMPL_ISUPPORTS1(nsCCUncollectableMarker, nsIObserver)
@@ -76,13 +79,13 @@ nsCCUncollectableMarker::Init()
   nsresult rv;
 
   // This makes the observer service hold an owning reference to the marker
-  rv = obs->AddObserver(marker, "xpcom-shutdown", PR_FALSE);
+  rv = obs->AddObserver(marker, "xpcom-shutdown", false);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = obs->AddObserver(marker, "cycle-collector-begin", PR_FALSE);
+  rv = obs->AddObserver(marker, "cycle-collector-begin", false);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  sInited = PR_TRUE;
+  sInited = true;
 
   return NS_OK;
 }
@@ -94,9 +97,7 @@ MarkContentViewer(nsIContentViewer* aViewer)
     return;
   }
 
-  nsCOMPtr<nsIDOMDocument> domDoc;
-  aViewer->GetDOMDocument(getter_AddRefs(domDoc));
-  nsCOMPtr<nsIDocument> doc = do_QueryInterface(domDoc);
+  nsIDocument *doc = aViewer->GetDocument();
   if (doc) {
     doc->MarkUncollectableForCCGeneration(nsCCUncollectableMarker::sGeneration);
   }
@@ -153,7 +154,7 @@ MarkDocShell(nsIDocShellTreeNode* aNode)
     history->GetCount(&historyCount);
     for (i = 0; i < historyCount; ++i) {
       nsCOMPtr<nsIHistoryEntry> historyEntry;
-      history->GetEntryAtIndex(i, PR_FALSE, getter_AddRefs(historyEntry));
+      history->GetEntryAtIndex(i, false, getter_AddRefs(historyEntry));
       nsCOMPtr<nsISHEntry> shEntry = do_QueryInterface(historyEntry);
 
       MarkSHEntry(shEntry);
@@ -231,6 +232,19 @@ nsCCUncollectableMarker::Observe(nsISupports* aSubject, const char* aTopic,
     NS_ENSURE_SUCCESS(rv, rv);
 
     MarkWindowList(windowList);
+  }
+
+  nsCOMPtr<nsIAppShellService> appShell = 
+    do_GetService(NS_APPSHELLSERVICE_CONTRACTID);
+  if (appShell) {
+    nsCOMPtr<nsIXULWindow> hw;
+    appShell->GetHiddenWindow(getter_AddRefs(hw));
+    if (hw) {
+      nsCOMPtr<nsIDocShell> shell;
+      hw->GetDocShell(getter_AddRefs(shell));
+      nsCOMPtr<nsIDocShellTreeNode> shellTreeNode = do_QueryInterface(shell);
+      MarkDocShell(shellTreeNode);
+    }
   }
 
   return NS_OK;

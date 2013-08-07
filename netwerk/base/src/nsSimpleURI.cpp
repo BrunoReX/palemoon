@@ -64,8 +64,8 @@ static NS_DEFINE_CID(kSimpleURICID, NS_SIMPLEURI_CID);
 // nsSimpleURI methods:
 
 nsSimpleURI::nsSimpleURI()
-    : mMutable(PR_TRUE),
-      mIsRefValid(PR_FALSE)
+    : mMutable(true),
+      mIsRefValid(false)
 {
 }
 
@@ -91,10 +91,10 @@ nsSimpleURI::Read(nsIObjectInputStream* aStream)
 {
     nsresult rv;
 
-    PRBool isMutable; // (because ReadBoolean doesn't support PRPackedBool*)
+    bool isMutable; // (because ReadBoolean doesn't support bool*)
     rv = aStream->ReadBoolean(&isMutable);
     if (NS_FAILED(rv)) return rv;
-    if (isMutable != PR_TRUE && isMutable != PR_FALSE) {
+    if (isMutable != true && isMutable != false) {
         NS_WARNING("Unexpected boolean value");
         return NS_ERROR_UNEXPECTED;
     }
@@ -106,10 +106,10 @@ nsSimpleURI::Read(nsIObjectInputStream* aStream)
     rv = aStream->ReadCString(mPath);
     if (NS_FAILED(rv)) return rv;
 
-    PRBool isRefValid;
+    bool isRefValid;
     rv = aStream->ReadBoolean(&isRefValid);
     if (NS_FAILED(rv)) return rv;
-    if (isRefValid != PR_TRUE && isRefValid != PR_FALSE) {
+    if (isRefValid != true && isRefValid != false) {
         NS_WARNING("Unexpected boolean value");
         return NS_ERROR_UNEXPECTED;
     }
@@ -153,7 +153,7 @@ nsSimpleURI::Write(nsIObjectOutputStream* aStream)
 ////////////////////////////////////////////////////////////////////////////////
 // nsIIPCSerializable methods:
 
-PRBool
+bool
 nsSimpleURI::Read(const IPC::Message *aMsg, void **aIter)
 {
     bool isMutable, isRefValid;
@@ -161,7 +161,7 @@ nsSimpleURI::Read(const IPC::Message *aMsg, void **aIter)
         !ReadParam(aMsg, aIter, &mScheme) ||
         !ReadParam(aMsg, aIter, &mPath) ||
         !ReadParam(aMsg, aIter, &isRefValid))
-        return PR_FALSE;
+        return false;
 
     mMutable = isMutable;
     mIsRefValid = isRefValid;
@@ -171,7 +171,7 @@ nsSimpleURI::Read(const IPC::Message *aMsg, void **aIter)
     }
     mRef.Truncate(); // invariant: mRef should be empty when it's not valid
 
-    return PR_TRUE;
+    return true;
 }
 
 void
@@ -210,7 +210,7 @@ nsSimpleURI::GetSpecIgnoringRef(nsACString &result)
 }
 
 NS_IMETHODIMP
-nsSimpleURI::GetHasRef(PRBool *result)
+nsSimpleURI::GetHasRef(bool *result)
 {
     *result = mIsRefValid;
     return NS_OK;
@@ -388,7 +388,7 @@ nsSimpleURI::SetPath(const nsACString &path)
     
     PRInt32 hashPos = path.FindChar('#');
     if (hashPos < 0) {
-        mIsRefValid = PR_FALSE;
+        mIsRefValid = false;
         mRef.Truncate(); // invariant: mRef should be empty when it's not valid
         mPath = path;
         return NS_OK;
@@ -420,12 +420,12 @@ nsSimpleURI::SetRef(const nsACString &aRef)
 
     if (aRef.IsEmpty()) {
       // Empty string means to remove ref completely.
-      mIsRefValid = PR_FALSE;
+      mIsRefValid = false;
       mRef.Truncate(); // invariant: mRef should be empty when it's not valid
       return NS_OK;
     }
 
-    mIsRefValid = PR_TRUE;
+    mIsRefValid = true;
 
     // Gracefully skip initial hash
     if (aRef[0] == '#') {
@@ -438,13 +438,13 @@ nsSimpleURI::SetRef(const nsACString &aRef)
 }
 
 NS_IMETHODIMP
-nsSimpleURI::Equals(nsIURI* other, PRBool *result)
+nsSimpleURI::Equals(nsIURI* other, bool *result)
 {
     return EqualsInternal(other, eHonorRef, result);
 }
 
 NS_IMETHODIMP
-nsSimpleURI::EqualsExceptRef(nsIURI* other, PRBool *result)
+nsSimpleURI::EqualsExceptRef(nsIURI* other, bool *result)
 {
     return EqualsInternal(other, eIgnoreRef, result);
 }
@@ -452,7 +452,7 @@ nsSimpleURI::EqualsExceptRef(nsIURI* other, PRBool *result)
 /* virtual */ nsresult
 nsSimpleURI::EqualsInternal(nsIURI* other,
                             nsSimpleURI::RefHandlingEnum refHandlingMode,
-                            PRBool* result)
+                            bool* result)
 {
     NS_ENSURE_ARG_POINTER(other);
     NS_PRECONDITION(result, "null pointer");
@@ -461,7 +461,7 @@ nsSimpleURI::EqualsInternal(nsIURI* other,
     nsresult rv = other->QueryInterface(kThisSimpleURIImplementationCID,
                                         getter_AddRefs(otherUri));
     if (NS_FAILED(rv)) {
-        *result = PR_FALSE;
+        *result = false;
         return NS_OK;
     }
 
@@ -484,7 +484,7 @@ nsSimpleURI::EqualsInternal(nsSimpleURI* otherUri, RefHandlingEnum refHandlingMo
 }
 
 NS_IMETHODIMP
-nsSimpleURI::SchemeIs(const char *i_Scheme, PRBool *o_Equals)
+nsSimpleURI::SchemeIs(const char *i_Scheme, bool *o_Equals)
 {
     NS_ENSURE_ARG_POINTER(o_Equals);
     if (!i_Scheme) return NS_ERROR_NULL_POINTER;
@@ -493,9 +493,9 @@ nsSimpleURI::SchemeIs(const char *i_Scheme, PRBool *o_Equals)
 
     // mScheme is guaranteed to be lower case.
     if (*i_Scheme == *this_scheme || *i_Scheme == (*this_scheme - ('a' - 'A')) ) {
-        *o_Equals = PL_strcasecmp(this_scheme, i_Scheme) ? PR_FALSE : PR_TRUE;
+        *o_Equals = PL_strcasecmp(this_scheme, i_Scheme) ? false : true;
     } else {
-        *o_Equals = PR_FALSE;
+        *o_Equals = false;
     }
 
     return NS_OK;
@@ -642,14 +642,14 @@ nsSimpleURI::GetClassIDNoAlloc(nsCID *aClassIDNoAlloc)
 // nsSimpleURI::nsISimpleURI
 //----------------------------------------------------------------------------
 NS_IMETHODIMP
-nsSimpleURI::GetMutable(PRBool *value)
+nsSimpleURI::GetMutable(bool *value)
 {
     *value = mMutable;
     return NS_OK;
 }
 
 NS_IMETHODIMP
-nsSimpleURI::SetMutable(PRBool value)
+nsSimpleURI::SetMutable(bool value)
 {
     NS_ENSURE_ARG(mMutable || !value);
 

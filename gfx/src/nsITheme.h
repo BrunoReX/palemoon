@@ -110,15 +110,15 @@ public:
                              nsIntMargin* aResult)=0;
 
   /**
-   * This method can return PR_FALSE to indicate that the CSS padding
+   * This method can return false to indicate that the CSS padding
    * value should be used.  Otherwise, it will fill in aResult with the
-   * computed padding, in pixels, and return PR_TRUE.
+   * computed padding, in pixels, and return true.
    *
    * XXXldb This ought to be required to return true for non-containers
    * so that we don't let specified padding that has no effect change
    * the computed padding and potentially the size.
    */
-  virtual PRBool GetWidgetPadding(nsDeviceContext* aContext,
+  virtual bool GetWidgetPadding(nsDeviceContext* aContext,
                                   nsIFrame* aFrame,
                                   PRUint8 aWidgetType,
                                   nsIntMargin* aResult) = 0;
@@ -126,10 +126,10 @@ public:
   /**
    * On entry, *aResult is positioned at 0,0 and sized to the new size
    * of aFrame (aFrame->GetSize() may be stale and should not be used).
-   * This method can return PR_FALSE to indicate that no special
+   * This method can return false to indicate that no special
    * overflow area is required by the native widget. Otherwise it will
    * fill in aResult with the desired overflow area, in appunits, relative
-   * to the frame origin, and return PR_TRUE.
+   * to the frame origin, and return true.
    *
    * This overflow area is used to determine what area needs to be
    * repainted when the widget changes.  However, it does not affect the
@@ -137,11 +137,11 @@ public:
    * words, in layout terms, it affects visual overflow but not
    * scrollable overflow.)
    */
-  virtual PRBool GetWidgetOverflow(nsDeviceContext* aContext,
+  virtual bool GetWidgetOverflow(nsDeviceContext* aContext,
                                    nsIFrame* aFrame,
                                    PRUint8 aWidgetType,
                                    /*INOUT*/ nsRect* aOverflowRect)
-  { return PR_FALSE; }
+  { return false; }
 
   /**
    * Get the minimum border-box size of a widget, in *pixels* (in
@@ -153,7 +153,7 @@ public:
                                   nsIFrame* aFrame,
                                   PRUint8 aWidgetType,
                                   nsIntSize* aResult,
-                                  PRBool* aIsOverridable)=0;
+                                  bool* aIsOverridable)=0;
 
 
   enum Transparency {
@@ -169,30 +169,30 @@ public:
   { return eUnknownTransparency; }
 
   NS_IMETHOD WidgetStateChanged(nsIFrame* aFrame, PRUint8 aWidgetType, 
-                                nsIAtom* aAttribute, PRBool* aShouldRepaint)=0;
+                                nsIAtom* aAttribute, bool* aShouldRepaint)=0;
 
   NS_IMETHOD ThemeChanged()=0;
 
   /**
    * Can the nsITheme implementation handle this widget?
    */
-  virtual PRBool ThemeSupportsWidget(nsPresContext* aPresContext,
+  virtual bool ThemeSupportsWidget(nsPresContext* aPresContext,
                                      nsIFrame* aFrame,
                                      PRUint8 aWidgetType)=0;
 
-  virtual PRBool WidgetIsContainer(PRUint8 aWidgetType)=0;
+  virtual bool WidgetIsContainer(PRUint8 aWidgetType)=0;
 
   /**
    * Does the nsITheme implementation draw its own focus ring for this widget?
    */
-  virtual PRBool ThemeDrawsFocusForWidget(nsPresContext* aPresContext,
+  virtual bool ThemeDrawsFocusForWidget(nsPresContext* aPresContext,
                                           nsIFrame* aFrame,
                                           PRUint8 aWidgetType)=0;
   
   /**
     * Should we insert a dropmarker inside of combobox button?
    */
-  virtual PRBool ThemeNeedsComboboxDropmarker()=0;
+  virtual bool ThemeNeedsComboboxDropmarker()=0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsITheme, NS_ITHEME_IID)

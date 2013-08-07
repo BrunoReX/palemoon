@@ -95,7 +95,7 @@ nsXBLMouseEventHandler::~nsXBLMouseEventHandler()
 {
 }
 
-PRBool
+bool
 nsXBLMouseEventHandler::EventMatched(nsIDOMEvent* aEvent)
 {
   nsCOMPtr<nsIDOMMouseEvent> mouse(do_QueryInterface(aEvent));
@@ -107,7 +107,7 @@ nsXBLKeyEventHandler::nsXBLKeyEventHandler(nsIAtom* aEventType, PRUint8 aPhase,
   : mEventType(aEventType),
     mPhase(aPhase),
     mType(aType),
-    mIsBoundToChrome(PR_FALSE)
+    mIsBoundToChrome(false)
 {
 }
 
@@ -117,29 +117,29 @@ nsXBLKeyEventHandler::~nsXBLKeyEventHandler()
 
 NS_IMPL_ISUPPORTS1(nsXBLKeyEventHandler, nsIDOMEventListener)
 
-PRBool
+bool
 nsXBLKeyEventHandler::ExecuteMatchedHandlers(nsIDOMKeyEvent* aKeyEvent,
                                              PRUint32 aCharCode,
-                                             PRBool aIgnoreShiftKey)
+                                             bool aIgnoreShiftKey)
 {
   nsCOMPtr<nsIDOMNSEvent> domNSEvent = do_QueryInterface(aKeyEvent);
-  PRBool trustedEvent = PR_FALSE;
+  bool trustedEvent = false;
   if (domNSEvent)
     domNSEvent->GetIsTrusted(&trustedEvent);
 
   nsCOMPtr<nsIDOMEventTarget> target;
   aKeyEvent->GetCurrentTarget(getter_AddRefs(target));
 
-  PRBool executed = PR_FALSE;
+  bool executed = false;
   for (PRUint32 i = 0; i < mProtoHandlers.Length(); ++i) {
     nsXBLPrototypeHandler* handler = mProtoHandlers[i];
-    PRBool hasAllowUntrustedAttr = handler->HasAllowUntrustedAttr();
+    bool hasAllowUntrustedAttr = handler->HasAllowUntrustedAttr();
     if ((trustedEvent ||
         (hasAllowUntrustedAttr && handler->AllowUntrustedEvents()) ||
         (!hasAllowUntrustedAttr && !mIsBoundToChrome)) &&
         handler->KeyEventMatched(aKeyEvent, aCharCode, aIgnoreShiftKey)) {
       handler->ExecuteHandler(target, aKeyEvent);
-      executed = PR_TRUE;
+      executed = true;
     }
   }
   return executed;
@@ -167,7 +167,7 @@ nsXBLKeyEventHandler::HandleEvent(nsIDOMEvent* aEvent)
   nsContentUtils::GetAccelKeyCandidates(key, accessKeys);
 
   if (accessKeys.IsEmpty()) {
-    ExecuteMatchedHandlers(key, 0, PR_FALSE);
+    ExecuteMatchedHandlers(key, 0, false);
     return NS_OK;
   }
 

@@ -87,6 +87,16 @@ class JS_PUBLIC_API(AutoEnterFrameCompartment) : public AutoEnterScriptCompartme
 
 } /* namespace JS */
 
+#ifdef DEBUG
+JS_FRIEND_API(void) js_DumpChars(const jschar *s, size_t n);
+JS_FRIEND_API(void) js_DumpString(JSString *str);
+JS_FRIEND_API(void) js_DumpAtom(JSAtom *atom);
+JS_FRIEND_API(void) js_DumpObject(JSObject *obj);
+JS_FRIEND_API(void) js_DumpValue(const js::Value &val);
+JS_FRIEND_API(void) js_DumpId(jsid id);
+JS_FRIEND_API(void) js_DumpStackFrame(JSContext *cx, js::StackFrame *start = NULL);
+#endif
+
 JS_BEGIN_EXTERN_C
 #endif
 
@@ -132,21 +142,10 @@ JS_SetDebugMode(JSContext *cx, JSBool debug);
 extern JS_PUBLIC_API(JSBool)
 JS_SetSingleStepMode(JSContext *cx, JSScript *script, JSBool singleStep);
 
-/*
- * Unexported library-private helper used to unpatch all traps in a script.
- * Returns script->code if script has no traps, else a JS_malloc'ed copy of
- * script->code which the caller must JS_free, or null on JS_malloc OOM.
- */
-extern jsbytecode *
-js_UntrapScriptCode(JSContext *cx, JSScript *script);
-
 /* The closure argument will be marked. */
 extern JS_PUBLIC_API(JSBool)
 JS_SetTrap(JSContext *cx, JSScript *script, jsbytecode *pc,
            JSTrapHandler handler, jsval closure);
-
-extern JS_PUBLIC_API(JSOp)
-JS_GetTrapOpcode(JSContext *cx, JSScript *script, jsbytecode *pc);
 
 extern JS_PUBLIC_API(void)
 JS_ClearTrap(JSContext *cx, JSScript *script, jsbytecode *pc,
@@ -228,6 +227,9 @@ JS_GetFunctionNative(JSContext *cx, JSFunction *fun);
 extern JS_PUBLIC_API(JSPrincipals *)
 JS_GetScriptPrincipals(JSContext *cx, JSScript *script);
 
+extern JS_PUBLIC_API(JSPrincipals *)
+JS_GetScriptOriginPrincipals(JSContext *cx, JSScript *script);
+
 /*
  * Stack Frame Iterator
  *
@@ -262,10 +264,6 @@ JS_GetFramePrincipalArray(JSContext *cx, JSStackFrame *fp);
 extern JS_PUBLIC_API(JSBool)
 JS_IsScriptFrame(JSContext *cx, JSStackFrame *fp);
 
-/* this is deprecated, use JS_GetFrameScopeChain instead */
-extern JS_PUBLIC_API(JSObject *)
-JS_GetFrameObject(JSContext *cx, JSStackFrame *fp);
-
 extern JS_PUBLIC_API(JSObject *)
 JS_GetFrameScopeChain(JSContext *cx, JSStackFrame *fp);
 
@@ -280,6 +278,12 @@ JS_GetFrameFunction(JSContext *cx, JSStackFrame *fp);
 
 extern JS_PUBLIC_API(JSObject *)
 JS_GetFrameFunctionObject(JSContext *cx, JSStackFrame *fp);
+
+JS_PUBLIC_API(JSFunction *)
+JS_GetScriptFunction(JSContext *cx, JSScript *script);
+
+extern JS_PUBLIC_API(JSObject *)
+JS_GetParentOrScopeChain(JSContext *cx, JSObject *obj);
 
 /* XXXrginda Initially published with typo */
 #define JS_IsContructorFrame JS_IsConstructorFrame
@@ -388,9 +392,9 @@ JS_EvaluateInStackFrame(JSContext *cx, JSStackFrame *fp,
 typedef struct JSPropertyDesc {
     jsval           id;         /* primary id, atomized string, or int */
     jsval           value;      /* property value */
-    uint8           flags;      /* flags, see below */
-    uint8           spare;      /* unused */
-    uint16          slot;       /* argument/variable slot */
+    uint8_t         flags;      /* flags, see below */
+    uint8_t         spare;      /* unused */
+    uint16_t        slot;       /* argument/variable slot */
     jsval           alias;      /* alias id if JSPD_ALIAS flag */
 } JSPropertyDesc;
 
@@ -406,7 +410,7 @@ typedef struct JSPropertyDesc {
                                 /* throwing an exception */
 
 typedef struct JSPropertyDescArray {
-    uint32          length;     /* number of elements in array */
+    uint32_t        length;     /* number of elements in array */
     JSPropertyDesc  *array;     /* alloc'd by Get, freed by Put */
 } JSPropertyDescArray;
 
@@ -460,9 +464,7 @@ JS_GetScriptTotalSize(JSContext *cx, JSScript *script);
  * Return true if obj is a "system" object, that is, one created by
  * JS_NewSystemObject with the system flag set and not JS_NewObject.
  *
- * What "system" means is up to the API client, but it can be used to implement
- * access control policies based on script filenames and their prefixes, using
- * JS_FlagScriptFilenamePrefix and JS_GetTopScriptFilenameFlags.
+ * What "system" means is up to the API client.
  */
 extern JS_PUBLIC_API(JSBool)
 JS_IsSystemObject(JSContext *cx, JSObject *obj);
@@ -579,40 +581,20 @@ js_ResumeVtune();
 
 #endif /* MOZ_VTUNE */
 
-#ifdef MOZ_TRACEVIS
-extern JS_FRIEND_API(JSBool)
-js_InitEthogram(JSContext *cx, uintN argc, jsval *vp);
-extern JS_FRIEND_API(JSBool)
-js_ShutdownEthogram(JSContext *cx, uintN argc, jsval *vp);
-#endif /* MOZ_TRACEVIS */
-
-#ifdef MOZ_TRACE_JSCALLS
-typedef void (*JSFunctionCallback)(const JSFunction *fun,
-                                   const JSScript *scr,
-                                   const JSContext *cx,
-                                   int entering);
-
-/*
- * The callback is expected to be quick and noninvasive. It should not
- * trigger interrupts, turn on debugging, or produce uncaught JS
- * exceptions. The state of the stack and registers in the context
- * cannot be relied upon, since this callback may be invoked directly
- * from either JIT. The 'entering' field means we are entering a
- * function if it is positive, leaving a function if it is zero or
- * negative.
- */
-extern JS_PUBLIC_API(void)
-JS_SetFunctionCallback(JSContext *cx, JSFunctionCallback fcb);
-
-extern JS_PUBLIC_API(JSFunctionCallback)
-JS_GetFunctionCallback(JSContext *cx);
-#endif /* MOZ_TRACE_JSCALLS */
-
 extern JS_PUBLIC_API(void)
 JS_DumpBytecode(JSContext *cx, JSScript *script);
 
 extern JS_PUBLIC_API(void)
 JS_DumpCompartmentBytecode(JSContext *cx);
+
+extern JS_PUBLIC_API(void)
+JS_DumpPCCounts(JSContext *cx, JSScript *script);
+
+extern JS_PUBLIC_API(void)
+JS_DumpCompartmentPCCounts(JSContext *cx);
+
+extern JS_PUBLIC_API(JSObject *)
+JS_UnwrapObject(JSObject *obj);
 
 JS_END_EXTERN_C
 

@@ -38,6 +38,8 @@
 
 #define REPTACH_OFFSET_CALL_R11 3
 
+#include "mozilla/Util.h"
+
 namespace JSC {
 
 class MacroAssemblerX86_64 : public MacroAssemblerX86Common {
@@ -124,7 +126,7 @@ public:
 
     Call call()
     {
-        DataLabelPtr label = moveWithPatch(ImmPtr(0), scratchRegister);
+        js::DebugOnly<DataLabelPtr> label = moveWithPatch(ImmPtr(0), scratchRegister);
         Call result = Call(m_assembler.call(scratchRegister), Call::Linkable);
         ASSERT(differenceBetween(label, result) == REPTACH_OFFSET_CALL_R11);
         return result;
@@ -132,7 +134,7 @@ public:
 
     Call tailRecursiveCall()
     {
-        DataLabelPtr label = moveWithPatch(ImmPtr(0), scratchRegister);
+        js::DebugOnly<DataLabelPtr> label = moveWithPatch(ImmPtr(0), scratchRegister);
         Jump newJump = Jump(m_assembler.jmp_r(scratchRegister));
         ASSERT(differenceBetween(label, newJump) == REPTACH_OFFSET_CALL_R11);
         return Call::fromTailJump(newJump);
@@ -141,7 +143,7 @@ public:
     Call makeTailRecursiveCall(Jump oldJump)
     {
         oldJump.link(this);
-        DataLabelPtr label = moveWithPatch(ImmPtr(0), scratchRegister);
+        js::DebugOnly<DataLabelPtr> label = moveWithPatch(ImmPtr(0), scratchRegister);
         Jump newJump = Jump(m_assembler.jmp_r(scratchRegister));
         ASSERT(differenceBetween(label, newJump) == REPTACH_OFFSET_CALL_R11);
         return Call::fromTailJump(newJump);
@@ -427,6 +429,12 @@ public:
     {
         move(ImmPtr(left.m_ptr), scratchRegister);
         return branchPtr(cond, Address(scratchRegister), right);
+    }
+
+    Jump branchPtr(Condition cond, AbsoluteAddress left, ImmPtr right, RegisterID scratch)
+    {
+        move(ImmPtr(left.m_ptr), scratch);
+        return branchPtr(cond, Address(scratch), right);
     }
 
     Jump branchPtr(Condition cond, Address left, RegisterID right)

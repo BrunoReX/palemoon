@@ -67,6 +67,7 @@ nsHTMLSelectListAccessible::
   nsHTMLSelectListAccessible(nsIContent *aContent, nsIWeakReference *aShell) :
   nsAccessibleWrap(aContent, aShell)
 {
+  mFlags |= eListControlAccessible;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -76,19 +77,6 @@ PRUint64
 nsHTMLSelectListAccessible::NativeState()
 {
   PRUint64 state = nsAccessibleWrap::NativeState();
-
-  // As a nsHTMLSelectListAccessible we can have the following states:
-  //   states::MULTISELECTABLE, states::EXTSELECTABLE
-
-  if (state & states::FOCUSED) {
-    // Treat first focusable option node as actual focus, in order
-    // to avoid confusing JAWS, which needs focus on the option
-    nsCOMPtr<nsIContent> focusedOption =
-      nsHTMLSelectOptionAccessible::GetFocusedOption(mContent);
-    if (focusedOption) { // Clear focused state since it is on option
-      state &= ~states::FOCUSED;
-    }
-  }
   if (mContent->HasAttr(kNameSpaceID_None, nsGkAtoms::multiple))
     state |= states::MULTISELECTABLE | states::EXTSELECTABLE;
 
@@ -128,6 +116,50 @@ nsHTMLSelectListAccessible::UnselectAll()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// nsHTMLSelectListAccessible: Widgets
+
+bool
+nsHTMLSelectListAccessible::IsWidget() const
+{
+  return true;
+}
+
+bool
+nsHTMLSelectListAccessible::IsActiveWidget() const
+{
+  return FocusMgr()->HasDOMFocus(mContent);
+}
+
+bool
+nsHTMLSelectListAccessible::AreItemsOperable() const
+{
+  return true;
+}
+
+nsAccessible*
+nsHTMLSelectListAccessible::CurrentItem()
+{
+  nsIListControlFrame* listControlFrame = do_QueryFrame(GetFrame());
+  if (listControlFrame) {
+    nsCOMPtr<nsIContent> activeOptionNode = listControlFrame->GetCurrentOption();
+    if (activeOptionNode) {
+      nsDocAccessible* document = GetDocAccessible();
+      if (document)
+        return document->GetAccessible(activeOptionNode);
+    }
+  }
+  return nsnull;
+}
+
+void
+nsHTMLSelectListAccessible::SetCurrentItem(nsAccessible* aItem)
+{
+  aItem->GetContent()->SetAttr(kNameSpaceID_None,
+                               nsGkAtoms::selected, NS_LITERAL_STRING("true"),
+                               true);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // nsHTMLSelectListAccessible: nsAccessible protected
 
 void
@@ -147,9 +179,8 @@ void
 nsHTMLSelectListAccessible::CacheOptSiblings(nsIContent *aParentContent)
 {
   nsCOMPtr<nsIPresShell> presShell(do_QueryReferent(mWeakShell));
-  PRUint32 numChildren = aParentContent->GetChildCount();
-  for (PRUint32 count = 0; count < numChildren; count ++) {
-    nsIContent *childContent = aParentContent->GetChildAt(count);
+  for (nsIContent* childContent = aParentContent->GetFirstChild(); childContent;
+       childContent = childContent->GetNextSibling()) {
     if (!childContent->IsHTML()) {
       continue;
     }
@@ -206,7 +237,7 @@ nsHTMLSelectOptionAccessible::GetNameInternal(nsAString& aName)
 
   // CASE #2 -- no label parameter, get the first child, 
   // use it if it is a text node
-  nsIContent *text = mContent->GetChildAt(0);
+  nsIContent* text = mContent->GetFirstChild();
   if (!text)
     return NS_OK;
 
@@ -252,34 +283,20 @@ nsHTMLSelectOptionAccessible::NativeState()
 
   PRUint64 selectState = 0;
   nsIContent* selectContent = GetSelectState(&selectState);
-  if (selectState & states::INVISIBLE)
+  if (!selectContent || selectState & states::INVISIBLE)
     return state;
 
-  NS_ENSURE_TRUE(selectContent, NS_ERROR_FAILURE);
-
-  // Is disabled?
-  if (0 == (state & states::UNAVAILABLE)) {
+  // Focusable and selectable
+  if (!(state & states::UNAVAILABLE))
     state |= (states::FOCUSABLE | states::SELECTABLE);
-    // When the list is focused but no option is actually focused,
-    // Firefox draws a focus ring around the first non-disabled option.
-    // We need to indicate states::FOCUSED in that case, because it
-    // prevents JAWS from ignoring the list
-    // GetFocusedOption() ensures that an option node is
-    // returned in this case, as long as some focusable option exists
-    // in the listbox
-    nsCOMPtr<nsIContent> focusedOption = GetFocusedOption(selectContent);
-    if (focusedOption == mContent)
-      state |= states::FOCUSED;
-  }
 
   // Are we selected?
-  PRBool isSelected = PR_FALSE;
+  bool isSelected = false;
   nsCOMPtr<nsIDOMHTMLOptionElement> option(do_QueryInterface(mContent));
   if (option) {
     option->GetSelected(&isSelected);
     if (isSelected)
       state |= states::SELECTED;
-
   }
 
   if (selectState & states::OFFSCREEN) {
@@ -335,18 +352,16 @@ void
 nsHTMLSelectOptionAccessible::GetPositionAndSizeInternal(PRInt32 *aPosInSet,
                                                          PRInt32 *aSetSize)
 {
-  nsIContent *parentContent = mContent->GetParent();
-
   PRInt32 posInSet = 0, setSize = 0;
-  PRBool isContentFound = PR_FALSE;
+  bool isContentFound = false;
 
-  PRUint32 childCount = parentContent->GetChildCount();
-  for (PRUint32 childIdx = 0; childIdx < childCount; childIdx++) {
-    nsIContent *childContent = parentContent->GetChildAt(childIdx);
+  nsIContent* parentContent = mContent->GetParent();
+  for (nsIContent* childContent = parentContent->GetFirstChild(); childContent;
+       childContent = childContent->GetNextSibling()) {
     if (childContent->NodeInfo()->Equals(mContent->NodeInfo())) {
       if (!isContentFound) {
         if (childContent == mContent)
-          isContentFound = PR_TRUE;
+          isContentFound = true;
 
         posInSet++;
       }
@@ -377,66 +392,21 @@ nsHTMLSelectOptionAccessible::ActionCount()
   return 1;
 }
 
-NS_IMETHODIMP nsHTMLSelectOptionAccessible::DoAction(PRUint8 index)
+NS_IMETHODIMP
+nsHTMLSelectOptionAccessible::DoAction(PRUint8 aIndex)
 {
-  if (index == eAction_Select) {   // default action
-    nsCOMPtr<nsIDOMHTMLOptionElement> newHTMLOption(do_QueryInterface(mContent));
-    if (!newHTMLOption) 
-      return NS_ERROR_FAILURE;
-    // Clear old selection
-    nsAccessible* parent = Parent();
-    if (!parent)
-      return NS_OK;
+  if (aIndex != eAction_Select)
+    return NS_ERROR_INVALID_ARG;
 
-    nsCOMPtr<nsIContent> oldHTMLOptionContent =
-      GetFocusedOption(parent->GetContent());
-    nsCOMPtr<nsIDOMHTMLOptionElement> oldHTMLOption =
-      do_QueryInterface(oldHTMLOptionContent);
-    if (oldHTMLOption)
-      oldHTMLOption->SetSelected(PR_FALSE);
-    // Set new selection
-    newHTMLOption->SetSelected(PR_TRUE);
+  if (IsDefunct())
+    return NS_ERROR_FAILURE;
 
-    // If combo box, and open, close it
-    // First, get the <select> widgets list control frame
-    nsIContent *selectContent = mContent;
-    do {
-      selectContent = selectContent->GetParent();
-      nsCOMPtr<nsIDOMHTMLSelectElement> selectControl =
-        do_QueryInterface(selectContent);
-      if (selectControl)
-        break;
-
-    } while (selectContent);
-
-    nsCOMPtr<nsIPresShell> presShell(do_QueryReferent(mWeakShell));
-    nsCOMPtr<nsIDOMHTMLOptionElement> option(do_QueryInterface(mContent));
-
-    if (!selectContent || !presShell || !option)
-      return NS_ERROR_FAILURE;
-
-    nsIFrame *selectFrame = selectContent->GetPrimaryFrame();
-    nsIComboboxControlFrame *comboBoxFrame = do_QueryFrame(selectFrame);
-    if (comboBoxFrame) {
-      nsIFrame *listFrame = comboBoxFrame->GetDropDown();
-      if (comboBoxFrame->IsDroppedDown() && listFrame) {
-        // use this list control frame to roll up the list
-        nsIListControlFrame *listControlFrame = do_QueryFrame(listFrame);
-        if (listControlFrame) {
-          PRInt32 newIndex = 0;
-          option->GetIndex(&newIndex);
-          listControlFrame->ComboboxFinish(newIndex);
-        }
-      }
-    }
-    return NS_OK;
-  }
-
-  return NS_ERROR_INVALID_ARG;
+  DoCommand();
+  return NS_OK;
 }
 
 NS_IMETHODIMP
-nsHTMLSelectOptionAccessible::SetSelected(PRBool aSelect)
+nsHTMLSelectOptionAccessible::SetSelected(bool aSelect)
 {
   if (IsDefunct())
     return NS_ERROR_FAILURE;
@@ -446,113 +416,12 @@ nsHTMLSelectOptionAccessible::SetSelected(PRBool aSelect)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// nsHTMLSelectOptionAccessible: static methods
+// nsHTMLSelectOptionAccessible: Widgets
 
-/**
-  * Helper method for getting the focused DOM Node from our parent(list) node. We
-  *  need to use the frame to get the focused option because for some reason we
-  *  weren't getting the proper notification when the focus changed using the DOM
-  */
-already_AddRefed<nsIContent>
-nsHTMLSelectOptionAccessible::GetFocusedOption(nsIContent *aListNode)
+nsAccessible*
+nsHTMLSelectOptionAccessible::ContainerWidget() const
 {
-  NS_ASSERTION(aListNode, "Called GetFocusedOptionNode without a valid list node");
-
-  nsIFrame *frame = aListNode->GetPrimaryFrame();
-  if (!frame)
-    return nsnull;
-
-  PRInt32 focusedOptionIndex = 0;
-
-  // Get options
-  nsCOMPtr<nsIDOMHTMLSelectElement> selectElement(do_QueryInterface(aListNode));
-  NS_ASSERTION(selectElement, "No select element where it should be");
-
-  nsCOMPtr<nsIDOMHTMLOptionsCollection> options;
-  nsresult rv = selectElement->GetOptions(getter_AddRefs(options));
-  
-  if (NS_SUCCEEDED(rv)) {
-    nsIListControlFrame *listFrame = do_QueryFrame(frame);
-    if (listFrame) {
-      // Get what's focused in listbox by asking frame for "selected item". 
-      // Can't use dom interface for this, because it will always return the first selected item
-      // when there is more than 1 item selected. We need the focused item, not
-      // the first selected item.
-      focusedOptionIndex = listFrame->GetSelectedIndex();
-      if (focusedOptionIndex == -1) {
-        nsCOMPtr<nsIDOMNode> nextOption;
-        while (PR_TRUE) {
-          ++ focusedOptionIndex;
-          options->Item(focusedOptionIndex, getter_AddRefs(nextOption));
-          nsCOMPtr<nsIDOMHTMLOptionElement> optionElement = do_QueryInterface(nextOption);
-          if (!optionElement) {
-            break;
-          }
-          PRBool disabled;
-          optionElement->GetDisabled(&disabled);
-          if (!disabled) {
-            break;
-          }
-        }
-      }
-    }
-    else  // Combo boxes can only have 1 selected option, so they can use the dom interface for this
-      rv = selectElement->GetSelectedIndex(&focusedOptionIndex);
-  }
-
-  // Either use options and focused index, or default return null
-  if (NS_SUCCEEDED(rv) && options && focusedOptionIndex >= 0) {  // Something is focused
-    nsCOMPtr<nsIDOMNode> focusedOptionNode;
-    options->Item(focusedOptionIndex, getter_AddRefs(focusedOptionNode));
-    nsIContent *focusedOption = nsnull;
-    if (focusedOptionNode)
-      CallQueryInterface(focusedOptionNode, &focusedOption);
-    return focusedOption;
-  }
-
-  return nsnull;
-}
-
-void
-nsHTMLSelectOptionAccessible::SelectionChangedIfOption(nsIContent *aPossibleOptionNode)
-{
-  if (!aPossibleOptionNode ||
-      aPossibleOptionNode->Tag() != nsGkAtoms::option ||
-      !aPossibleOptionNode->IsHTML()) {
-    return;
-  }
-
-  nsAccessible *multiSelect =
-    nsAccUtils::GetMultiSelectableContainer(aPossibleOptionNode);
-  if (!multiSelect)
-    return;
-
-  nsAccessible *option = GetAccService()->GetAccessible(aPossibleOptionNode);
-  if (!option)
-    return;
-
-
-  nsRefPtr<AccEvent> selWithinEvent =
-    new AccEvent(nsIAccessibleEvent::EVENT_SELECTION_WITHIN, multiSelect);
-
-  if (!selWithinEvent)
-    return;
-
-  option->GetDocAccessible()->FireDelayedAccessibleEvent(selWithinEvent);
-
-  PRUint64 state = option->State();
-  PRUint32 eventType;
-  if (state & states::SELECTED) {
-    eventType = nsIAccessibleEvent::EVENT_SELECTION_ADD;
-  }
-  else {
-    eventType = nsIAccessibleEvent::EVENT_SELECTION_REMOVE;
-  }
-
-  nsRefPtr<AccEvent> selAddRemoveEvent = new AccEvent(eventType, option);
-
-  if (selAddRemoveEvent)
-    option->GetDocAccessible()->FireDelayedAccessibleEvent(selAddRemoveEvent);
+  return mParent && mParent->IsListControl() ? mParent : nsnull;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -644,6 +513,7 @@ nsHTMLComboboxAccessible::
   nsHTMLComboboxAccessible(nsIContent *aContent, nsIWeakReference *aShell) :
   nsAccessibleWrap(aContent, aShell)
 {
+  mFlags |= eComboboxAccessible;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -718,16 +588,12 @@ nsHTMLComboboxAccessible::NativeState()
 
   nsIFrame *frame = GetBoundsFrame();
   nsIComboboxControlFrame *comboFrame = do_QueryFrame(frame);
-  if (comboFrame && comboFrame->IsDroppedDown()) {
+  if (comboFrame && comboFrame->IsDroppedDown())
     state |= states::EXPANDED;
-  }
-  else {
-    state &= ~states::FOCUSED; // Focus is on an option
+  else
     state |= states::COLLAPSED;
-  }
 
-  state |= states::HASPOPUP | states::FOCUSABLE;
-
+  state |= states::HASPOPUP;
   return state;
 }
 
@@ -740,37 +606,17 @@ nsHTMLComboboxAccessible::Description(nsString& aDescription)
   nsAccessible::Description(aDescription);
   if (!aDescription.IsEmpty())
     return;
-  // Use description of currently focused option
-  nsAccessible *option = GetFocusedOptionAccessible();
+
+  // Otherwise use description of selected option.
+  nsAccessible* option = SelectedOption();
   if (option)
     option->Description(aDescription);
 }
 
-nsAccessible *
-nsHTMLComboboxAccessible::GetFocusedOptionAccessible()
-{
-  if (IsDefunct())
-    return nsnull;
-
-  nsCOMPtr<nsIContent> focusedOption =
-    nsHTMLSelectOptionAccessible::GetFocusedOption(mContent);
-  if (!focusedOption) {
-    return nsnull;
-  }
-
-  return GetAccService()->GetAccessibleInWeakShell(focusedOption,
-                                                   mWeakShell);
-}
-
-/**
-  * MSAA/ATK accessible value != HTML value, especially not in combo boxes.
-  * Our accessible value is the text label for of our ( first ) selected child.
-  * The easiest way to get this is from the first child which is the readonly textfield.
-  */
 NS_IMETHODIMP nsHTMLComboboxAccessible::GetValue(nsAString& aValue)
 {
-  // Use accessible name of currently focused option.
-  nsAccessible *option = GetFocusedOptionAccessible();
+  // Use accessible name of selected option.
+  nsAccessible* option = SelectedOption();
   return option ? option->GetName(aValue) : NS_OK;
 }
 
@@ -780,25 +626,16 @@ nsHTMLComboboxAccessible::ActionCount()
   return 1;
 }
 
-/**
-  * Programmaticaly toggle the combo box
-  */
-NS_IMETHODIMP nsHTMLComboboxAccessible::DoAction(PRUint8 aIndex)
+NS_IMETHODIMP
+nsHTMLComboboxAccessible::DoAction(PRUint8 aIndex)
 {
-  if (aIndex != nsHTMLComboboxAccessible::eAction_Click) {
+  if (aIndex != eAction_Click)
     return NS_ERROR_INVALID_ARG;
-  }
-  nsIFrame *frame = GetFrame();
-  if (!frame) {
-    return NS_ERROR_FAILURE;
-  }
-  nsIComboboxControlFrame *comboFrame = do_QueryFrame(frame);
-  if (!comboFrame) {
-    return NS_ERROR_FAILURE;
-  }
-  // Reverse whether it's dropped down or not
-  comboFrame->ShowDropDown(!comboFrame->IsDroppedDown());
 
+  if (IsDefunct())
+    return NS_ERROR_FAILURE;
+
+  DoCommand();
   return NS_OK;
 }
 
@@ -827,6 +664,66 @@ NS_IMETHODIMP nsHTMLComboboxAccessible::GetActionName(PRUint8 aIndex, nsAString&
     aName.AssignLiteral("open"); 
 
   return NS_OK;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// nsHTMLComboboxAccessible: Widgets
+
+bool
+nsHTMLComboboxAccessible::IsWidget() const
+{
+  return true;
+}
+
+bool
+nsHTMLComboboxAccessible::IsActiveWidget() const
+{
+  return FocusMgr()->HasDOMFocus(mContent);
+}
+
+bool
+nsHTMLComboboxAccessible::AreItemsOperable() const
+{
+  nsIComboboxControlFrame* comboboxFrame = do_QueryFrame(GetFrame());
+  return comboboxFrame && comboboxFrame->IsDroppedDown();
+}
+
+nsAccessible*
+nsHTMLComboboxAccessible::CurrentItem()
+{
+  return AreItemsOperable() ? mListAccessible->CurrentItem() : nsnull;
+}
+
+void
+nsHTMLComboboxAccessible::SetCurrentItem(nsAccessible* aItem)
+{
+  if (AreItemsOperable())
+    mListAccessible->SetCurrentItem(aItem);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// nsHTMLComboboxAccessible: protected
+
+nsAccessible*
+nsHTMLComboboxAccessible::SelectedOption() const
+{
+  nsIFrame* frame = GetFrame();
+  nsIComboboxControlFrame* comboboxFrame = do_QueryFrame(frame);
+  if (!comboboxFrame)
+    return nsnull;
+
+  nsIListControlFrame* listControlFrame =
+    do_QueryFrame(comboboxFrame->GetDropDown());
+  if (listControlFrame) {
+    nsCOMPtr<nsIContent> activeOptionNode = listControlFrame->GetCurrentOption();
+    if (activeOptionNode) {
+      nsDocAccessible* document = GetDocAccessible();
+      if (document)
+        return document->GetAccessible(activeOptionNode);
+    }
+  }
+
+  return nsnull;
 }
 
 
@@ -904,7 +801,7 @@ void nsHTMLComboboxListAccessible::GetBoundsRect(nsRect& aBounds, nsIFrame** aBo
   }
 
   // Get the first option.
-  nsIContent* content = mContent->GetChildAt(0);
+  nsIContent* content = mContent->GetFirstChild();
   if (!content) {
     return;
   }
@@ -917,3 +814,19 @@ void nsHTMLComboboxListAccessible::GetBoundsRect(nsRect& aBounds, nsIFrame** aBo
   *aBoundingFrame = frame->GetParent();
   aBounds = (*aBoundingFrame)->GetRect();
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// nsHTMLComboboxListAccessible: Widgets
+
+bool
+nsHTMLComboboxListAccessible::IsActiveWidget() const
+{
+  return mParent && mParent->IsActiveWidget();
+}
+
+bool
+nsHTMLComboboxListAccessible::AreItemsOperable() const
+{
+  return mParent && mParent->AreItemsOperable();
+}
+

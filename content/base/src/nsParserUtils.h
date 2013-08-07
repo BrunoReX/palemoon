@@ -57,15 +57,15 @@ public:
    * @param aName the name of the attribute to get the value for
    * @param aValue [out] the value for the attribute with name specified in
    *                     aAttribute. Empty if the attribute isn't present.
-   * @return PR_TRUE  if the attribute exists and was successfully parsed.
-   *         PR_FALSE if the attribute doesn't exist, or has a malformed
+   * @return true     if the attribute exists and was successfully parsed.
+   *         false if the attribute doesn't exist, or has a malformed
    *                  value, such as an unknown or unterminated entity.
    */
-  static PRBool
+  static bool
   GetQuotedAttributeValue(const nsString& aSource, nsIAtom *aName,
                           nsAString& aValue);
 
-  static PRBool
+  static bool
   IsJavaScriptLanguage(const nsString& aName, PRUint32 *aVerFlags);
 
   static void

@@ -39,13 +39,18 @@
 #if !defined(nsWebMReader_h_)
 #define nsWebMReader_h_
 
+#include "mozilla/StdInt.h"
+
 #include "nsDeque.h"
 #include "nsBuiltinDecoderReader.h"
 #include "nsWebMBufferedParser.h"
 #include "nsAutoRef.h"
 #include "nestegg/nestegg.h"
+
+#define VPX_DONT_DEFINE_STDINT_TYPES
 #include "vpx/vpx_decoder.h"
 #include "vpx/vp8dx.h"
+
 #ifdef MOZ_TREMOR
 #include "tremor/ivorbiscodec.h"
 #else
@@ -133,21 +138,21 @@ public:
 
   virtual nsresult Init(nsBuiltinDecoderReader* aCloneDonor);
   virtual nsresult ResetDecode();
-  virtual PRBool DecodeAudioData();
+  virtual bool DecodeAudioData();
 
   // If the Theora granulepos has not been captured, it may read several packets
   // until one with a granulepos has been captured, to ensure that all packets
   // read have valid time info.  
-  virtual PRBool DecodeVideoFrame(PRBool &aKeyframeSkip,
+  virtual bool DecodeVideoFrame(bool &aKeyframeSkip,
                                   PRInt64 aTimeThreshold);
 
-  virtual PRBool HasAudio()
+  virtual bool HasAudio()
   {
     NS_ASSERTION(mDecoder->OnDecodeThread(), "Should be on decode thread.");
     return mHasAudio;
   }
 
-  virtual PRBool HasVideo()
+  virtual bool HasVideo()
   {
     NS_ASSERTION(mDecoder->OnDecodeThread(), "Should be on decode thread.");
     return mHasVideo;
@@ -174,17 +179,17 @@ private:
   // Returns an initialized ogg packet with data obtained from the WebM container.
   ogg_packet InitOggPacket(unsigned char* aData,
                            size_t aLength,
-                           PRBool aBOS,
-                           PRBool aEOS,
+                           bool aBOS,
+                           bool aEOS,
                            PRInt64 aGranulepos);
 
   // Decode a nestegg packet of audio data. Push the audio data on the
-  // audio queue. Returns PR_TRUE when there's more audio to decode,
-  // PR_FALSE if the audio is finished, end of file has been reached,
+  // audio queue. Returns true when there's more audio to decode,
+  // false if the audio is finished, end of file has been reached,
   // or an un-recoverable read error has occured. The reader's monitor
   // must be held during this call. This function will free the packet
   // so the caller must not use the packet after calling.
-  PRBool DecodeAudioPacket(nestegg_packet* aPacket, PRInt64 aOffset);
+  bool DecodeAudioPacket(nestegg_packet* aPacket, PRInt64 aOffset);
 
   // Release context and set to null. Called when an error occurs during
   // reading metadata or destruction of the reader itself.
@@ -215,11 +220,11 @@ private:
   PRUint32 mVideoTrack;
   PRUint32 mAudioTrack;
 
-  // Time in microseconds of the start of the first audio sample we've decoded.
+  // Time in microseconds of the start of the first audio frame we've decoded.
   PRInt64 mAudioStartUsec;
 
-  // Number of samples we've decoded since decoding began at mAudioStartMs.
-  PRUint64 mAudioSamples;
+  // Number of audio frames we've decoded since decoding began at mAudioStartMs.
+  PRUint64 mAudioFrames;
 
   // Parser state and computed offset-time mappings.  Shared by multiple
   // readers when decoder has been cloned.  Main thread only.
@@ -233,8 +238,12 @@ private:
   nsIntRect mPicture;
 
   // Booleans to indicate if we have audio and/or video data
-  PRPackedBool mHasVideo;
-  PRPackedBool mHasAudio;
+  bool mHasVideo;
+  bool mHasAudio;
+
+  // Value of the "media.webm.force_stereo_mode" pref, which we need off the
+  // main thread.
+  PRInt32 mForceStereoMode;
 };
 
 #endif

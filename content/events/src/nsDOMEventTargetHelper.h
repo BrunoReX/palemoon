@@ -69,13 +69,13 @@ class nsDOMEventTargetHelper : public nsIDOMEventTarget
 {
 public:
   nsDOMEventTargetHelper() {}
-  virtual ~nsDOMEventTargetHelper() {}
+  virtual ~nsDOMEventTargetHelper();
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(nsDOMEventTargetHelper)
 
   NS_DECL_NSIDOMEVENTTARGET
 
-  PRBool HasListenersFor(const nsAString& aType)
+  bool HasListenersFor(const nsAString& aType)
   {
     return mListenerManager && mListenerManager->HasListenersFor(aType);
   }

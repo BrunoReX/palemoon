@@ -94,7 +94,7 @@ public:
       mData(new ImageCacheEntryData(*toCopy.mData)) {}
   ~ImageCacheEntry() {}
 
-  PRBool KeyEquals(KeyTypePointer key) const
+  bool KeyEquals(KeyTypePointer key) const
   {
     return mData->mImage == key->mImage && mData->mCanvas == key->mCanvas;
   }
@@ -104,7 +104,7 @@ public:
   {
     return (NS_PTR_TO_INT32(key->mImage) ^ NS_PTR_TO_INT32(key->mCanvas)) >> 2;
   }
-  enum { ALLOW_MEMMOVE = PR_TRUE };
+  enum { ALLOW_MEMMOVE = true };
 
   nsAutoPtr<ImageCacheEntryData> mData;
 };

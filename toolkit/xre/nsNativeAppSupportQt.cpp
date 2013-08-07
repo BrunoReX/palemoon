@@ -71,10 +71,10 @@ nsNativeAppSupportQt::displayStateChanged(MeeGo::QmDisplayState::DisplayState st
         os->NotifyObservers(nsnull, "system-display-on", nsnull);
         break;
     case MeeGo::QmDisplayState::Off:
-        os->NotifyObservers(nsnull, "system-display-dimmed", nsnull);
+        os->NotifyObservers(nsnull, "system-display-off", nsnull);
         break;
     case MeeGo::QmDisplayState::Dimmed:
-        os->NotifyObservers(nsnull, "system-display-off", nsnull);
+        os->NotifyObservers(nsnull, "system-display-dimmed", nsnull);
         break;
     default:
         NS_WARNING("Unknown display state");
@@ -111,7 +111,7 @@ void nsNativeAppSupportQt::RefreshStates()
 #endif
 
 NS_IMETHODIMP
-nsNativeAppSupportQt::Start(PRBool* aRetVal)
+nsNativeAppSupportQt::Start(bool* aRetVal)
 {
   NS_ASSERTION(gAppData, "gAppData must not be null.");
 
@@ -123,7 +123,7 @@ nsNativeAppSupportQt::Start(PRBool* aRetVal)
   QTimer::singleShot(0, this, SLOT(RefreshStates()));
 #endif
 
-  *aRetVal = PR_TRUE;
+  *aRetVal = true;
 #ifdef MOZ_ENABLE_LIBCONIC
   g_type_init();
 #endif
@@ -148,7 +148,7 @@ nsNativeAppSupportQt::Start(PRBool* aRetVal)
 
   m_osso_context = osso_initialize(applicationName.get(),
                                    gAppData->version ? gAppData->version : "1.0",
-                                   PR_TRUE,
+                                   true,
                                    nsnull);
 
   /* Check that initilialization was ok */
@@ -161,10 +161,10 @@ nsNativeAppSupportQt::Start(PRBool* aRetVal)
 }
 
 NS_IMETHODIMP
-nsNativeAppSupportQt::Stop(PRBool* aResult)
+nsNativeAppSupportQt::Stop(bool* aResult)
 {
   NS_ENSURE_ARG(aResult);
-  *aResult = PR_TRUE;
+  *aResult = true;
 
 #if (MOZ_PLATFORM_MAEMO == 5)
   if (m_osso_context) {

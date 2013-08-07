@@ -52,6 +52,7 @@ class nsXBLProtoImplField
 {
 public:
   nsXBLProtoImplField(const PRUnichar* aName, const PRUnichar* aReadOnly);
+  nsXBLProtoImplField(const bool aIsReadOnly);
   ~nsXBLProtoImplField();
 
   void AppendFieldText(const nsAString& aText);
@@ -66,7 +67,10 @@ public:
                         JSObject* aBoundNode,
                         nsIPrincipal* aPrincipal,
                         nsIURI* aBindingDocURI,
-                        PRBool* aDidInstall) const;
+                        bool* aDidInstall) const;
+
+  nsresult Read(nsIScriptContext* aContext, nsIObjectInputStream* aStream);
+  nsresult Write(nsIScriptContext* aContext, nsIObjectOutputStream* aStream);
 
   const PRUnichar* GetName() const { return mName; }
 

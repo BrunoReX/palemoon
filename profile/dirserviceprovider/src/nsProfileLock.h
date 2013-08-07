@@ -86,12 +86,12 @@ public:
     /**
      * Unlock a profile directory.  If you're unlocking the directory because
      * the application is in the process of shutting down because of a fatal
-     * signal, set aFatalSignal to PR_TRUE.
+     * signal, set aFatalSignal to true.
      */
-    nsresult                Unlock(PRBool aFatalSignal = PR_FALSE);
+    nsresult                Unlock(bool aFatalSignal = false);
         
 private:
-    PRPackedBool            mHaveLock;
+    bool                    mHaveLock;
 
 #if defined (XP_WIN)
     HANDLE                  mLockFileHandle;
@@ -102,11 +102,11 @@ private:
     struct RemovePidLockFilesExiting {
         RemovePidLockFilesExiting() {}
         ~RemovePidLockFilesExiting() {
-            RemovePidLockFiles(PR_FALSE);
+            RemovePidLockFiles(false);
         }
     };
 
-    static void             RemovePidLockFiles(PRBool aFatalSignal);
+    static void             RemovePidLockFiles(bool aFatalSignal);
     static void             FatalSignalHandler(int signo
 #ifdef SA_SIGINFO
                                                , siginfo_t *info, void *context
@@ -120,7 +120,7 @@ private:
      * @param aHaveFcntlLock if true, we've already acquired an fcntl lock so this
      * lock is merely an "obsolete" lock to keep out old Firefoxes
      */
-    nsresult                LockWithSymlink(const nsACString& lockFilePath, PRBool aHaveFcntlLock);
+    nsresult                LockWithSymlink(const nsACString& lockFilePath, bool aHaveFcntlLock);
 
     char*                   mPidLockFileName;
     int                     mLockFileDesc;

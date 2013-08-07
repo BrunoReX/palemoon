@@ -153,7 +153,7 @@ public:
     // override bounds because the list item focus ring may extend outside
     // the nsSelectsAreaFrame
     nsListControlFrame* listFrame = GetEnclosingListFrame(GetUnderlyingFrame());
-    return listFrame->GetVisualOverflowRect() +
+    return listFrame->GetVisualOverflowRectRelativeToSelf() +
            aBuilder->ToReferenceFrame(listFrame);
   }
   virtual void Paint(nsDisplayListBuilder* aBuilder,
@@ -212,7 +212,7 @@ nsSelectsAreaFrame::Reflow(nsPresContext*           aPresContext,
                "Must have an nsListControlFrame!  Frame constructor is "
                "broken");
   
-  PRBool isInDropdownMode = list->IsInDropDownMode();
+  bool isInDropdownMode = list->IsInDropDownMode();
   
   // See similar logic in nsListControlFrame::Reflow and
   // nsListControlFrame::ReflowAsDropdown.  We need to match it here.
@@ -234,7 +234,7 @@ nsSelectsAreaFrame::Reflow(nsPresContext*           aPresContext,
   // Check whether we need to suppress scrolbar updates.  We want to do that if
   // we're in a possible first pass and our height of a row has changed.
   if (list->MightNeedSecondPass()) {
-    nscoord newHeightOfARow = list->CalcHeightOfARow();
+    nscoord newHeightOfARow = list->CalcHeightOfARow(aReflowState);
     // We'll need a second pass if our height of a row changed.  For
     // comboboxes, we'll also need it if our height changed.  If we're going
     // to do a second pass, suppress scrollbar updates for this pass.
@@ -242,7 +242,7 @@ nsSelectsAreaFrame::Reflow(nsPresContext*           aPresContext,
         (isInDropdownMode && (oldHeight != aDesiredSize.height ||
                               oldHeight != GetSize().height))) {
       mHeightOfARow = newHeightOfARow;
-      list->SetSuppressScrollbarUpdate(PR_TRUE);
+      list->SetSuppressScrollbarUpdate(true);
     }
   }
 

@@ -23,6 +23,7 @@ alloc.h
 alsa/asoundlib.h
 alsa/pcm.h
 alsa/mixer.h
+android/log.h
 ansi_parms.h
 a.out.h
 app/Cursor.h
@@ -333,6 +334,7 @@ jar.h
 JavaControl.h
 JavaEmbedding/JavaControl.h
 JavaVM/jni.h
+jemalloc.h
 JManager.h
 JNIEnvTests.h
 jni.h
@@ -1034,4 +1036,15 @@ shareuiinterface.h
 #if MOZ_NATIVE_LIBVPX==1
 vpx/vpx_decoder.h
 vpx/vp8dx.h
+#endif
+#ifdef XP_WIN
+vpx/vpx_decoder.h
+vpx/vp8dx.h
+sydneyaudio/sydney_audio.h
+vorbis/codec.h
+theora/theoradec.h
+tremor/ivorbiscodec.h
+ogg/ogg.h
+ogg/os_types.h
+nestegg/nestegg.h
 #endif

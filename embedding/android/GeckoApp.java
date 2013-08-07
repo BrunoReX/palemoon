@@ -87,8 +87,10 @@ abstract public class GeckoApp
     public Handler mMainHandler;
     private IntentFilter mConnectivityFilter;
     private BroadcastReceiver mConnectivityReceiver;
+    private BroadcastReceiver mBatteryReceiver;
+    private BroadcastReceiver mSmsReceiver;
 
-    enum LaunchState {PreLaunch, Launching, WaitButton,
+    enum LaunchState {PreLaunch, Launching, WaitForDebugger,
                       Launched, GeckoRunning, GeckoExiting};
     private static LaunchState sLaunchState = LaunchState.PreLaunch;
     private static boolean sTryCatchAttached = false;
@@ -330,7 +332,9 @@ abstract public class GeckoApp
                 } catch (Exception e) {
                     Log.e(LOG_FILE_NAME, "top level exception", e);
                     StringWriter sw = new StringWriter();
-                    e.printStackTrace(new PrintWriter(sw));
+                    PrintWriter pw = new PrintWriter(sw);
+                    e.printStackTrace(pw);
+                    pw.flush();
                     GeckoAppShell.reportJavaCrash(sw.toString());
                 }
             }
@@ -354,7 +358,9 @@ abstract public class GeckoApp
                     } catch (Exception e) {
                         Log.e(LOG_FILE_NAME, "top level exception", e);
                         StringWriter sw = new StringWriter();
-                        e.printStackTrace(new PrintWriter(sw));
+                        PrintWriter pw = new PrintWriter(sw);
+                        e.printStackTrace(pw);
+                        pw.flush();
                         GeckoAppShell.reportJavaCrash(sw.toString());
                     }
                     // resetting this is kinda pointless, but oh well
@@ -403,6 +409,16 @@ abstract public class GeckoApp
         mConnectivityFilter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
         mConnectivityReceiver = new GeckoConnectivityReceiver();
 
+        IntentFilter batteryFilter = new IntentFilter();
+        batteryFilter.addAction(Intent.ACTION_BATTERY_CHANGED);
+        mBatteryReceiver = new GeckoBatteryManager();
+        registerReceiver(mBatteryReceiver, batteryFilter);
+
+        IntentFilter smsFilter = new IntentFilter();
+        smsFilter.addAction("android.provider.Telephony.SMS_RECEIVED");
+        mSmsReceiver = new GeckoSmsManager();
+        registerReceiver(mSmsReceiver, smsFilter);
+
         if (!checkAndSetLaunchState(LaunchState.PreLaunch,
                                     LaunchState.Launching))
             return;
@@ -443,21 +459,19 @@ abstract public class GeckoApp
         }
         final String action = intent.getAction();
         if (ACTION_DEBUG.equals(action) &&
-            checkAndSetLaunchState(LaunchState.Launching, LaunchState.WaitButton)) {
-            final Button launchButton = new Button(this);
-            launchButton.setText("Launch"); // don't need to localize
-            launchButton.setOnClickListener(new Button.OnClickListener() {
-                public void onClick (View v) {
-                    // hide the button so we can't be launched again
-                    mainLayout.removeView(launchButton);
+            checkAndSetLaunchState(LaunchState.Launching, LaunchState.WaitForDebugger)) {
+
+            mMainHandler.postDelayed(new Runnable() {
+                public void run() {
+                    Log.i(LOG_FILE_NAME, "Launching from debug intent after 5s wait");
                     setLaunchState(LaunchState.Launching);
                     launch(null);
                 }
-            });
-            mainLayout.addView(launchButton, 300, 200);
+            }, 1000 * 5 /* 5 seconds */);
+            Log.i(LOG_FILE_NAME, "Intent : ACTION_DEBUG - waiting 5s before launching");
             return;
         }
-        if (checkLaunchState(LaunchState.WaitButton) || launch(intent))
+        if (checkLaunchState(LaunchState.WaitForDebugger) || launch(intent))
             return;
 
         if (Intent.ACTION_MAIN.equals(action)) {
@@ -532,7 +546,6 @@ abstract public class GeckoApp
         // etc., and generally mark the profile as 'clean', and then
         // dirty it again if we get an onResume.
 
-
         GeckoAppShell.sendEventToGecko(new GeckoEvent(GeckoEvent.ACTIVITY_STOPPING));
         super.onStop();
         GeckoAppShell.putChildInBackground();
@@ -558,12 +571,16 @@ abstract public class GeckoApp
     public void onDestroy()
     {
         Log.i(LOG_FILE_NAME, "destroy");
+
         // Tell Gecko to shutting down; we'll end up calling System.exit()
         // in onXreExit.
         if (isFinishing())
             GeckoAppShell.sendEventToGecko(new GeckoEvent(GeckoEvent.ACTIVITY_SHUTDOWN));
 
         super.onDestroy();
+
+        unregisterReceiver(mSmsReceiver);
+        unregisterReceiver(mBatteryReceiver);
     }
 
     @Override
@@ -609,11 +626,6 @@ abstract public class GeckoApp
             // This file may not be there, so just log any errors and move on
             Log.w(LOG_FILE_NAME, "error removing files", ex);
         }
-        unpackFile(zip, buf, null, "application.ini");
-        unpackFile(zip, buf, null, getContentProcessName());
-        try {
-            unpackFile(zip, buf, null, "update.locale");
-        } catch (Exception e) {/* this is non-fatal */}
 
         // copy any .xpi file into an extensions/ directory
         Enumeration<? extends ZipEntry> zipEntries = zip.entries();
@@ -621,16 +633,6 @@ abstract public class GeckoApp
             ZipEntry entry = zipEntries.nextElement();
             if (entry.getName().startsWith("extensions/") && entry.getName().endsWith(".xpi")) {
                 Log.i("GeckoAppJava", "installing extension : " + entry.getName());
-                unpackFile(zip, buf, entry, entry.getName());
-            }
-        }
-
-        // copy any hyphenation dictionaries file into a hyphenation/ directory
-        Enumeration<? extends ZipEntry> hyphenEntries = zip.entries();
-        while (hyphenEntries.hasMoreElements()) {
-            ZipEntry entry = hyphenEntries.nextElement();
-            if (entry.getName().startsWith("hyphenation/")) {
-                Log.i("GeckoAppJava", "installing hyphenation : " + entry.getName());
                 unpackFile(zip, buf, entry, entry.getName());
             }
         }
@@ -691,7 +693,6 @@ abstract public class GeckoApp
         Map<String,String> envMap = System.getenv();
         Set<Map.Entry<String,String>> envSet = envMap.entrySet();
         Iterator<Map.Entry<String,String>> envIter = envSet.iterator();
-        StringBuffer envstr = new StringBuffer();
         int c = 0;
         while (envIter.hasNext()) {
             Map.Entry<String,String> entry = envIter.next();

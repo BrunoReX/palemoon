@@ -39,7 +39,7 @@
 
 #include "nsDOMStringMap.h"
 
-#include "nsDOMClassInfo.h"
+#include "nsDOMClassInfoID.h"
 #include "nsGenericHTMLElement.h"
 #include "nsContentUtils.h"
 
@@ -50,9 +50,12 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsDOMStringMap)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mElement)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsDOMStringMap)
-  // Call back to element to null out weak reference to this object.
-  tmp->mElement->ClearDataset();
-  tmp->mElement = nsnull;
+  // Check that mElement exists in case the unlink code is run more than once.
+  if (tmp->mElement) {
+    // Call back to element to null out weak reference to this object.
+    tmp->mElement->ClearDataset();
+    tmp->mElement = nsnull;
+  }
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsDOMStringMap)
@@ -66,7 +69,7 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(nsDOMStringMap)
 
 nsDOMStringMap::nsDOMStringMap(nsGenericHTMLElement* aElement)
   : mElement(aElement),
-    mRemovingProp(PR_FALSE)
+    mRemovingProp(false)
 {
 }
 
@@ -102,16 +105,16 @@ protected:
 };
 
 /* [notxpcom] boolean hasDataAttr (in DOMString prop); */
-NS_IMETHODIMP_(PRBool) nsDOMStringMap::HasDataAttr(const nsAString& aProp)
+NS_IMETHODIMP_(bool) nsDOMStringMap::HasDataAttr(const nsAString& aProp)
 {
   nsAutoString attr;
   if (!DataPropToAttr(aProp, attr)) {
-    return PR_FALSE;
+    return false;
   }
 
   nsCOMPtr<nsIAtom> attrAtom = do_GetAtom(attr);
   if (!attrAtom) {
-    return PR_FALSE;
+    return false;
   }
 
   return mElement->HasAttr(kNameSpaceID_None, attrAtom);
@@ -124,7 +127,7 @@ NS_IMETHODIMP nsDOMStringMap::GetDataAttr(const nsAString& aProp,
   nsAutoString attr;
 
   if (!DataPropToAttr(aProp, attr)) {
-    aResult.SetIsVoid(PR_TRUE);
+    aResult.SetIsVoid(true);
     return NS_OK;
   }
 
@@ -132,7 +135,7 @@ NS_IMETHODIMP nsDOMStringMap::GetDataAttr(const nsAString& aProp,
   NS_ENSURE_TRUE(attrAtom, NS_ERROR_OUT_OF_MEMORY);
 
   if (!mElement->GetAttr(kNameSpaceID_None, attrAtom, aResult)) {
-    aResult.SetIsVoid(PR_TRUE);
+    aResult.SetIsVoid(true);
     return NS_OK;
   }
 
@@ -146,13 +149,13 @@ NS_IMETHODIMP nsDOMStringMap::SetDataAttr(const nsAString& aProp,
   nsAutoString attr;
   NS_ENSURE_TRUE(DataPropToAttr(aProp, attr), NS_ERROR_DOM_SYNTAX_ERR);
 
-  nsresult rv = nsContentUtils::CheckQName(attr, PR_FALSE);
+  nsresult rv = nsContentUtils::CheckQName(attr, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIAtom> attrAtom = do_GetAtom(attr);
   NS_ENSURE_TRUE(attrAtom, NS_ERROR_OUT_OF_MEMORY);
 
-  return mElement->SetAttr(kNameSpaceID_None, attrAtom, aValue, PR_TRUE);
+  return mElement->SetAttr(kNameSpaceID_None, attrAtom, aValue, true);
 }
 
 /* [notxpcom] void removeDataAttr (in DOMString prop); */
@@ -173,7 +176,7 @@ NS_IMETHODIMP_(void) nsDOMStringMap::RemoveDataAttr(const nsAString& aProp)
     return;
   }
 
-  mElement->UnsetAttr(kNameSpaceID_None, attrAtom, PR_TRUE);
+  mElement->UnsetAttr(kNameSpaceID_None, attrAtom, true);
 }
 
 nsGenericHTMLElement* nsDOMStringMap::GetElement()
@@ -196,7 +199,7 @@ nsresult nsDOMStringMap::RemovePropInternal(nsIAtom* aAttr)
 
   jsval val;
   JSContext* cx = nsContentUtils::GetCurrentJSContext();
-  nsresult rv = nsContentUtils::WrapNative(cx, JS_GetScopeChain(cx),
+  nsresult rv = nsContentUtils::WrapNative(cx, JS_GetGlobalForScopeChain(cx),
                                            this, &val);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -212,11 +215,11 @@ nsresult nsDOMStringMap::RemovePropInternal(nsIAtom* aAttr)
   // RemoveDataAttr
   // ...
   // RemoveProp
-  mRemovingProp = PR_TRUE;
+  mRemovingProp = true;
   jsval dummy;
   JS_DeleteUCProperty2(cx, JSVAL_TO_OBJECT(val), prop.get(), prop.Length(),
                        &dummy);
-  mRemovingProp = PR_FALSE;
+  mRemovingProp = false;
 
   return NS_OK;
 }
@@ -251,7 +254,7 @@ nsresult nsDOMStringMap::GetDataPropList(nsTArray<nsString>& aResult)
  * Converts a dataset property name to the corresponding data attribute name.
  * (ex. aBigFish to data-a-big-fish).
  */
-PRBool nsDOMStringMap::DataPropToAttr(const nsAString& aProp,
+bool nsDOMStringMap::DataPropToAttr(const nsAString& aProp,
                                       nsAString& aResult)
 {
   const PRUnichar* cur = aProp.BeginReading();
@@ -274,7 +277,7 @@ PRBool nsDOMStringMap::DataPropToAttr(const nsAString& aProp,
     if (PRUnichar('-') == *cur && next < end &&
         PRUnichar('a') <= *next && *next <= PRUnichar('z')) {
       // Syntax error if character following "-" is in range "a" to "z".
-      return PR_FALSE;
+      return false;
     }
 
     if (PRUnichar('A') <= *cur && *cur <= PRUnichar('Z')) {
@@ -287,20 +290,20 @@ PRBool nsDOMStringMap::DataPropToAttr(const nsAString& aProp,
   }
 
   aResult.Assign(attr);
-  return PR_TRUE;
+  return true;
 }
 
 /**
  * Converts a data attribute name to the corresponding dataset property name.
  * (ex. data-a-big-fish to aBigFish).
  */
-PRBool nsDOMStringMap::AttrToDataProp(const nsAString& aAttr,
+bool nsDOMStringMap::AttrToDataProp(const nsAString& aAttr,
                                       nsAString& aResult)
 {
   // If the attribute name does not begin with "data-" then it can not be
   // a data attribute.
   if (!StringBeginsWith(aAttr, NS_LITERAL_STRING("data-"))) {
-    return PR_FALSE;
+    return false;
   }
 
   // Start reading attribute from first character after "data-".
@@ -330,5 +333,5 @@ PRBool nsDOMStringMap::AttrToDataProp(const nsAString& aAttr,
   }
 
   aResult.Assign(prop);
-  return PR_TRUE;
+  return true;
 }

@@ -25,6 +25,7 @@
 #   Ben Goodger <ben@mozilla.org>
 #   Jeff Walden <jwalden+code@mit.edu>
 #   Ehsan Akhgari <ehsan.akhgari@gmail.com>
+#   Steffen Wilberg <steffen.wilberg@web.de>
 #
 # Alternatively, the contents of this file may be used under the terms of
 # either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -100,23 +101,15 @@
  
      <!-- Update tab -->
 #ifdef MOZ_UPDATER
-      <preference id="app.update.enabled"              name="app.update.enabled"              type="bool"
-                  onchange="gAdvancedPane.updateAppUpdateItems();
-                            gAdvancedPane.updateAutoItems();
-                            gAdvancedPane.updateModeItems();"/>
-      <preference id="app.update.auto"                 name="app.update.auto"                 type="bool"
-                  onchange="gAdvancedPane.updateAutoItems();
-                            gAdvancedPane.updateModeItems();"/>
-      <preference id="app.update.mode"                 name="app.update.mode"                 type="int"
-                  onchange="gAdvancedPane.updateModeItems();"/>
+      <preference id="app.update.enabled"              name="app.update.enabled"              type="bool"/>
+      <preference id="app.update.auto"                 name="app.update.auto"                 type="bool"/>
+      <preference id="app.update.mode"                 name="app.update.mode"                 type="int"/>
 
       <preference id="app.update.disable_button.showUpdateHistory"
                   name="app.update.disable_button.showUpdateHistory"
                   type="bool"/>
 #endif
 
-      <preference id="extensions.update.enabled"       name="extensions.update.enabled"       type="bool"
-                  onchange="gAdvancedPane.updateAddonUpdateUI();"/>
       <preference id="browser.search.update"           name="browser.search.update"           type="bool"/>
 
       <!-- Encryption tab -->
@@ -241,12 +234,12 @@
             </hbox>
           </groupbox>
 
-          <!-- Cache/Offline apps -->
-          <groupbox id="offlineGroup">
-            <caption label="&offlineStorage.label;"/>
- 
+          <!-- Cache -->
+          <groupbox id="cacheGroup">
+            <caption label="&httpCache.label;"/>
+
             <hbox align="center">
-              <label id="actualCacheSize" flex="1"/>
+              <label id="actualDiskCacheSize" flex="1"/>
               <button id="clearCacheButton" icon="clear"
                       label="&clearCacheNow.label;" accesskey="&clearCacheNow.accesskey;"
                       oncommand="gAdvancedPane.clearCache();"/>
@@ -267,6 +260,18 @@
                        aria-labelledby="useCacheBefore cacheSize useCacheAfter"/>
               <label id="useCacheAfter" flex="1">&limitCacheSizeAfter.label;</label>
             </hbox>
+          </groupbox>
+
+          <!-- Offline apps -->
+          <groupbox id="offlineGroup">
+            <caption label="&offlineStorage2.label;"/>
+
+            <hbox align="center">
+              <label id="actualAppCacheSize" flex="1"/>
+              <button id="clearOfflineAppCacheButton" icon="clear"
+                      label="&clearOfflineAppCacheNow.label;" accesskey="&clearOfflineAppCacheNow.accesskey;"
+                      oncommand="gAdvancedPane.clearOfflineAppCache();"/>
+            </hbox>
             <hbox align="center">
               <checkbox id="offlineNotify" flex="1"
                         label="&offlineNotify.label;" accesskey="&offlineNotify.accesskey;"
@@ -279,7 +284,7 @@
             </hbox>
             <hbox>
               <vbox flex="1">
-                <label id="offlineAppsListLabel">&offlineAppsList.label;</label>
+                <label id="offlineAppsListLabel">&offlineAppsList2.label;</label>
                 <listbox id="offlineAppsList"
                          style="height: &offlineAppsList.height;;"
                          flex="1"
@@ -299,55 +304,47 @@
         </tabpanel>
 
         <!-- Update -->
-        <tabpanel id="updatePanel" orient="vertical" align="start">
-          <label control="autoUpdateGroup">&autoCheck.label;</label>
-          <vbox class="indent" id="autoUpdateGroup" role="group">
+        <tabpanel id="updatePanel" orient="vertical">
 #ifdef MOZ_UPDATER
-            <checkbox id="enableAppUpdate"
-                      label="&enableAppUpdate.label;"
-                      accesskey="&enableAppUpdate.accesskey;"
-                      preference="app.update.enabled"/>
+          <groupbox id="updateApp">
+            <caption label="&updateApp.label;"/>
+            <radiogroup id="updateRadioGroup"
+                        oncommand="gAdvancedPane.updateWritePrefs();">
+              <radio value="auto"
+                     label="&updateAuto.label;"
+                     accesskey="&updateAuto.accesskey;"/>
+              <hbox class="indent">
+                <checkbox id="warnIncompatible"
+                          label="&updateAutoAddonWarn.label;"
+                          accesskey="&updateAutoAddonWarn.accesskey;"
+                          preference="app.update.mode"
+                          onsyncfrompreference="return gAdvancedPane.readAddonWarn();"
+                          onsynctopreference="return gAdvancedPane.writeAddonWarn();"/>
+              </hbox>
+              <radio value="checkOnly"
+                     label="&updateCheck.label;"
+                     accesskey="&updateCheck.accesskey;"/>
+              <radio value="manual"
+                     label="&updateManual.label;"
+                     accesskey="&updateManual.accesskey;"/>
+            </radiogroup>
+
+            <hbox>
+              <button id="showUpdateHistory"
+                      label="&updateHistory.label;"
+                      accesskey="&updateHistory.accesskey;"
+                      preference="app.update.disable_button.showUpdateHistory"
+                      oncommand="gAdvancedPane.showUpdates();"/>
+            </hbox>
+          </groupbox>
 #endif
-            <checkbox id="enableAddonUpdate"
-                      label="&enableAddonsUpdate2.label;"
-                      accesskey="&enableAddonsUpdate2.accesskey;"
-                      preference="extensions.update.enabled"/>
+          <groupbox id="updateOthers">
+            <caption label="&updateOthers.label;"/>
             <checkbox id="enableSearchUpdate"
                       label="&enableSearchUpdate.label;"
                       accesskey="&enableSearchUpdate.accesskey;"
                       preference="browser.search.update"/>
-          </vbox>
-
-#ifdef MOZ_UPDATER
-          <separator id="updateSeparator1"/>
-
-          <label id="updateModeLabel" control="updateMode">&whenUpdatesFound.label;</label>
-          <radiogroup id="updateMode" class="indent"
-                      preference="app.update.auto">
-            <radio id="ask" value="false"
-                   label="&askMe.label;"
-                   accesskey="&askMe.accesskey;"/>
-            <radio id="automatic" value="true"
-                   label="&modeAutomatic.label;"
-                   accesskey="&modeAutomatic.accesskey;"/>
-            <hbox class="indent">
-              <checkbox id="warnIncompatible" 
-                        label="&modeAutoAddonWarn.label;" accesskey="&modeAutoAddonWarn.accesskey;"
-                        preference="app.update.mode"
-                        onsyncfrompreference="return gAdvancedPane.readAddonWarn();"
-                        onsynctopreference="return gAdvancedPane.writeAddonWarn();"/>
-            </hbox>
-          </radiogroup>
-
-          <separator id="updateSeparator2"/>
-
-          <hbox>
-            <button id="showUpdateHistory" 
-                    label="&updateHistory.label;" accesskey="&updateHistory.accesskey;"
-                    preference="app.update.disable_button.showUpdateHistory"
-                    oncommand="gAdvancedPane.showUpdates();"/>
-          </hbox>
-#endif
+          </groupbox>
         </tabpanel>
 
         <!-- Encryption -->

@@ -35,13 +35,6 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-#ifdef MOZ_REQUIRE_CURRENT_SDK
-#undef WINVER
-#define WINVER 0x0500
-#undef _WIN32_WINNT
-#define _WIN32_WINNT 0x500
-#endif
-
 /* -------------------------------------------------------------------
 To Build This:
 
@@ -95,11 +88,6 @@ WIN_LIBS=                                       \
 // This is for extending the dialog
 #include <dlgs.h>
 
-// For PrintDlgEx
-// needed because there are unicode/ansi versions of this routine
-// and we need to make sure we get the correct one.
-#define GetPrintDlgExQuoted "PrintDlgExA"
-
 // Default labels for the radio buttons
 static const char* kAsLaidOutOnScreenStr = "As &laid out on the screen";
 static const char* kTheSelectedFrameStr  = "The selected &frame";
@@ -113,7 +101,7 @@ static const char* kEachFrameSeparately  = "&Each frame separately";
 static UINT gFrameSelectedRadioBtn = 0;
 
 // Indicates whether the native print dialog was successfully extended
-static PRPackedBool gDialogWasExtended     = PR_FALSE;
+static bool gDialogWasExtended     = false;
 
 #define PRINTDLG_PROPERTIES "chrome://global/locale/printdialog.properties"
 
@@ -126,67 +114,54 @@ typedef struct {
   short  mPaperSize; // native enum
   double mWidth;
   double mHeight;
-  PRBool mIsInches;
+  bool mIsInches;
 } NativePaperSizes;
 
 // There are around 40 default print sizes defined by Windows
 const NativePaperSizes kPaperSizes[] = {
-  {DMPAPER_LETTER,    8.5,   11.0,  PR_TRUE},
-  {DMPAPER_LEGAL,     8.5,   14.0,  PR_TRUE},
-  {DMPAPER_A4,        210.0, 297.0, PR_FALSE},
-  {DMPAPER_TABLOID,   11.0,  17.0,  PR_TRUE},
-  {DMPAPER_LEDGER,    17.0,  11.0,  PR_TRUE},
-  {DMPAPER_STATEMENT, 5.5,   8.5,   PR_TRUE},
-  {DMPAPER_EXECUTIVE, 7.25,  10.5,  PR_TRUE},
-  {DMPAPER_A3,        297.0, 420.0, PR_FALSE},
-  {DMPAPER_A5,        148.0, 210.0, PR_FALSE},
-  {DMPAPER_CSHEET,    17.0,  22.0,  PR_TRUE},  
-  {DMPAPER_DSHEET,    22.0,  34.0,  PR_TRUE},  
-  {DMPAPER_ESHEET,    34.0,  44.0,  PR_TRUE},  
-  {DMPAPER_LETTERSMALL, 8.5, 11.0,  PR_TRUE},  
-  {DMPAPER_A4SMALL,   210.0, 297.0, PR_FALSE}, 
-  {DMPAPER_B4,        250.0, 354.0, PR_FALSE}, 
-  {DMPAPER_B5,        182.0, 257.0, PR_FALSE},
-  {DMPAPER_FOLIO,     8.5,   13.0,  PR_TRUE},
-  {DMPAPER_QUARTO,    215.0, 275.0, PR_FALSE},
-  {DMPAPER_10X14,     10.0,  14.0,  PR_TRUE},
-  {DMPAPER_11X17,     11.0,  17.0,  PR_TRUE},
-  {DMPAPER_NOTE,      8.5,   11.0,  PR_TRUE},  
-  {DMPAPER_ENV_9,     3.875, 8.875, PR_TRUE},  
-  {DMPAPER_ENV_10,    40.125, 9.5,  PR_TRUE},  
-  {DMPAPER_ENV_11,    4.5,   10.375, PR_TRUE},  
-  {DMPAPER_ENV_12,    4.75,  11.0,  PR_TRUE},  
-  {DMPAPER_ENV_14,    5.0,   11.5,  PR_TRUE},  
-  {DMPAPER_ENV_DL,    110.0, 220.0, PR_FALSE}, 
-  {DMPAPER_ENV_C5,    162.0, 229.0, PR_FALSE}, 
-  {DMPAPER_ENV_C3,    324.0, 458.0, PR_FALSE}, 
-  {DMPAPER_ENV_C4,    229.0, 324.0, PR_FALSE}, 
-  {DMPAPER_ENV_C6,    114.0, 162.0, PR_FALSE}, 
-  {DMPAPER_ENV_C65,   114.0, 229.0, PR_FALSE}, 
-  {DMPAPER_ENV_B4,    250.0, 353.0, PR_FALSE}, 
-  {DMPAPER_ENV_B5,    176.0, 250.0, PR_FALSE}, 
-  {DMPAPER_ENV_B6,    176.0, 125.0, PR_FALSE}, 
-  {DMPAPER_ENV_ITALY, 110.0, 230.0, PR_FALSE}, 
-  {DMPAPER_ENV_MONARCH,  3.875,  7.5, PR_TRUE},  
-  {DMPAPER_ENV_PERSONAL, 3.625,  6.5, PR_TRUE},  
-  {DMPAPER_FANFOLD_US,   14.875, 11.0, PR_TRUE},  
-  {DMPAPER_FANFOLD_STD_GERMAN, 8.5, 12.0, PR_TRUE},  
-  {DMPAPER_FANFOLD_LGL_GERMAN, 8.5, 13.0, PR_TRUE},  
+  {DMPAPER_LETTER,    8.5,   11.0,  true},
+  {DMPAPER_LEGAL,     8.5,   14.0,  true},
+  {DMPAPER_A4,        210.0, 297.0, false},
+  {DMPAPER_TABLOID,   11.0,  17.0,  true},
+  {DMPAPER_LEDGER,    17.0,  11.0,  true},
+  {DMPAPER_STATEMENT, 5.5,   8.5,   true},
+  {DMPAPER_EXECUTIVE, 7.25,  10.5,  true},
+  {DMPAPER_A3,        297.0, 420.0, false},
+  {DMPAPER_A5,        148.0, 210.0, false},
+  {DMPAPER_CSHEET,    17.0,  22.0,  true},  
+  {DMPAPER_DSHEET,    22.0,  34.0,  true},  
+  {DMPAPER_ESHEET,    34.0,  44.0,  true},  
+  {DMPAPER_LETTERSMALL, 8.5, 11.0,  true},  
+  {DMPAPER_A4SMALL,   210.0, 297.0, false}, 
+  {DMPAPER_B4,        250.0, 354.0, false}, 
+  {DMPAPER_B5,        182.0, 257.0, false},
+  {DMPAPER_FOLIO,     8.5,   13.0,  true},
+  {DMPAPER_QUARTO,    215.0, 275.0, false},
+  {DMPAPER_10X14,     10.0,  14.0,  true},
+  {DMPAPER_11X17,     11.0,  17.0,  true},
+  {DMPAPER_NOTE,      8.5,   11.0,  true},  
+  {DMPAPER_ENV_9,     3.875, 8.875, true},  
+  {DMPAPER_ENV_10,    40.125, 9.5,  true},  
+  {DMPAPER_ENV_11,    4.5,   10.375, true},  
+  {DMPAPER_ENV_12,    4.75,  11.0,  true},  
+  {DMPAPER_ENV_14,    5.0,   11.5,  true},  
+  {DMPAPER_ENV_DL,    110.0, 220.0, false}, 
+  {DMPAPER_ENV_C5,    162.0, 229.0, false}, 
+  {DMPAPER_ENV_C3,    324.0, 458.0, false}, 
+  {DMPAPER_ENV_C4,    229.0, 324.0, false}, 
+  {DMPAPER_ENV_C6,    114.0, 162.0, false}, 
+  {DMPAPER_ENV_C65,   114.0, 229.0, false}, 
+  {DMPAPER_ENV_B4,    250.0, 353.0, false}, 
+  {DMPAPER_ENV_B5,    176.0, 250.0, false}, 
+  {DMPAPER_ENV_B6,    176.0, 125.0, false}, 
+  {DMPAPER_ENV_ITALY, 110.0, 230.0, false}, 
+  {DMPAPER_ENV_MONARCH,  3.875,  7.5, true},  
+  {DMPAPER_ENV_PERSONAL, 3.625,  6.5, true},  
+  {DMPAPER_FANFOLD_US,   14.875, 11.0, true},  
+  {DMPAPER_FANFOLD_STD_GERMAN, 8.5, 12.0, true},  
+  {DMPAPER_FANFOLD_LGL_GERMAN, 8.5, 13.0, true},  
 };
 const PRInt32 kNumPaperSizes = 41;
-
-//----------------------------------------------------------------------------------
-static PRBool 
-CheckForExtendedDialog()
-{
-#ifdef MOZ_REQUIRE_CURRENT_SDK
-  HMODULE lib = GetModuleHandle("comdlg32.dll");
-  if ( lib ) {
-    return GetProcAddress(lib, GetPrintDlgExQuoted);
-  }
-#endif
-  return PR_FALSE;
-}
 
 //----------------------------------------------------------------------------------
 // Map an incoming size to a Windows Native enum in the DevMode
@@ -293,7 +268,7 @@ SetPrintSettingsFromDevMode(nsIPrintSettings* aPrintSettings,
     return NS_ERROR_FAILURE;
   }
 
-  aPrintSettings->SetIsInitializedFromPrinter(PR_TRUE);
+  aPrintSettings->SetIsInitializedFromPrinter(true);
   if (aDevMode->dmFields & DM_ORIENTATION) {
     PRInt32 orientation  = aDevMode->dmOrientation == DMORIENT_PORTRAIT?
                            nsIPrintSettings::kPortraitOrientation:nsIPrintSettings::kLandscapeOrientation;
@@ -316,7 +291,7 @@ SetPrintSettingsFromDevMode(nsIPrintSettings* aPrintSettings,
     }
     aDevMode->dmScale = 100;
     // To turn this on you must change where the mPrt->mShrinkToFit is being set in the DocumentViewer
-    //aPrintSettings->SetShrinkToFit(PR_FALSE);
+    //aPrintSettings->SetShrinkToFit(false);
   }
 
   if (aDevMode->dmFields & DM_PAPERSIZE) {
@@ -330,14 +305,14 @@ SetPrintSettingsFromDevMode(nsIPrintSettings* aPrintSettings,
     }
 
   } else if (aDevMode->dmFields & DM_PAPERLENGTH && aDevMode->dmFields & DM_PAPERWIDTH) {
-    PRBool found = PR_FALSE;
+    bool found = false;
     for (PRInt32 i=0;i<kNumPaperSizes;i++) {
       if (kPaperSizes[i].mPaperSize == aDevMode->dmPaperSize) {
         aPrintSettings->SetPaperSizeType(nsIPrintSettings::kPaperSizeDefined);
         aPrintSettings->SetPaperWidth(kPaperSizes[i].mWidth);
         aPrintSettings->SetPaperHeight(kPaperSizes[i].mHeight);
         aPrintSettings->SetPaperSizeUnit(kPaperSizes[i].mIsInches?nsIPrintSettings::kPaperSizeInches:nsIPrintSettings::kPaperSizeMillimeters);
-        found = PR_TRUE;
+        found = true;
         break;
       }
     }
@@ -424,8 +399,8 @@ static void SetText(HWND             aParent,
 //--------------------------------------------------------
 static void SetRadio(HWND         aParent, 
                      UINT         aId, 
-                     PRBool       aIsSet,
-                     PRBool       isEnabled = PR_TRUE) 
+                     bool         aIsSet,
+                     bool         isEnabled = true) 
 {
   HWND wnd = ::GetDlgItem (aParent, aId);
   if (!wnd) {
@@ -485,7 +460,7 @@ static void GetLocalRect(HWND aWnd, RECT& aRect, HWND aParent)
 
 //--------------------------------------------------------
 // Show or Hide the control
-static void Show(HWND aWnd, PRBool bState)
+static void Show(HWND aWnd, bool bState)
 {
   if (aWnd) {
     ::ShowWindow(aWnd, bState?SW_SHOW:SW_HIDE);
@@ -565,16 +540,16 @@ static void InitializeExtendedDialog(HWND hdlg, PRInt16 aHowToEnableFrameUI)
 
   // Set up radio buttons
   if (aHowToEnableFrameUI == nsIPrintSettings::kFrameEnableAll) {
-    SetRadio(hdlg, rad4, PR_FALSE);  
-    SetRadio(hdlg, rad5, PR_TRUE); 
-    SetRadio(hdlg, rad6, PR_FALSE);
+    SetRadio(hdlg, rad4, false);  
+    SetRadio(hdlg, rad5, true); 
+    SetRadio(hdlg, rad6, false);
     // set default so user doesn't have to actually press on it
     gFrameSelectedRadioBtn = rad5;
 
   } else { // nsIPrintSettings::kFrameEnableAsIsAndEach
-    SetRadio(hdlg, rad4, PR_FALSE);  
-    SetRadio(hdlg, rad5, PR_FALSE, PR_FALSE); 
-    SetRadio(hdlg, rad6, PR_TRUE);
+    SetRadio(hdlg, rad4, false);  
+    SetRadio(hdlg, rad5, false, false); 
+    SetRadio(hdlg, rad6, true);
     // set default so user doesn't have to actually press on it
     gFrameSelectedRadioBtn = rad6;
   }
@@ -724,7 +699,7 @@ static UINT CALLBACK PrintHookProc(HWND hdlg, UINT uiMsg, WPARAM wParam, LPARAM 
     InitializeExtendedDialog(hdlg, howToEnableFrameUI);
 
     // Looks like we were able to extend the dialog
-    gDialogWasExtended = PR_TRUE;
+    gDialogWasExtended = true;
     return TRUE;
   }
   return 0L;
@@ -823,19 +798,19 @@ static void GetDefaultPrinterNameFromGlobalPrinters(nsXPIDLString &printerName)
 
 // Determine whether we have a completely native dialog
 // or whether we cshould extend it
-static PRBool ShouldExtendPrintDialog()
+static bool ShouldExtendPrintDialog()
 {
   nsresult rv;
   nsCOMPtr<nsIPrefService> prefs =
     do_GetService(NS_PREFSERVICE_CONTRACTID, &rv);
-  NS_ENSURE_SUCCESS(rv, PR_TRUE);
+  NS_ENSURE_SUCCESS(rv, true);
   nsCOMPtr<nsIPrefBranch> prefBranch;
   rv = prefs->GetBranch(nsnull, getter_AddRefs(prefBranch));
-  NS_ENSURE_SUCCESS(rv, PR_TRUE);
+  NS_ENSURE_SUCCESS(rv, true);
 
-  PRBool result;
+  bool result;
   rv = prefBranch->GetBoolPref("print.extend_native_print_dialog", &result);
-  NS_ENSURE_SUCCESS(rv, PR_TRUE);
+  NS_ENSURE_SUCCESS(rv, true);
   return result;
 }
 
@@ -848,7 +823,7 @@ ShowNativePrintDialog(HWND              aHWnd,
   //NS_ENSURE_ARG_POINTER(aHWnd);
   NS_ENSURE_ARG_POINTER(aPrintSettings);
 
-  gDialogWasExtended  = PR_FALSE;
+  gDialogWasExtended  = false;
 
   HGLOBAL hGlobalDevMode = NULL;
   HGLOBAL hDevNames      = NULL;
@@ -909,11 +884,12 @@ ShowNativePrintDialog(HWND              aHWnd,
   prntdlg.hDevMode    = hGlobalDevMode;
   prntdlg.hDevNames   = hDevNames;
   prntdlg.hDC         = NULL;
-  prntdlg.Flags       = PD_ALLPAGES | PD_RETURNIC | PD_USEDEVMODECOPIESANDCOLLATE;
+  prntdlg.Flags       = PD_ALLPAGES | PD_RETURNIC | 
+                        PD_USEDEVMODECOPIESANDCOLLATE | PD_COLLATE;
 
   // if there is a current selection then enable the "Selection" radio button
   PRInt16 howToEnableFrameUI = nsIPrintSettings::kFrameEnableNone;
-  PRBool isOn;
+  bool isOn;
   aPrintSettings->GetPrintOptions(nsIPrintSettings::kEnableSelectionRB, &isOn);
   if (!isOn) {
     prntdlg.Flags |= PD_NOSELECTION;
@@ -980,10 +956,10 @@ ShowNativePrintDialog(HWND              aHWnd,
       wchar_t* fileName = &(((wchar_t *)devnames)[devnames->wOutputOffset]);
       NS_ASSERTION(wcscmp(fileName, L"FILE:") == 0, "FileName must be `FILE:`");
       aPrintSettings->SetToFileName(fileName);
-      aPrintSettings->SetPrintToFile(PR_TRUE);
+      aPrintSettings->SetPrintToFile(true);
     } else {
       // clear "print to file" info
-      aPrintSettings->SetPrintToFile(PR_FALSE);
+      aPrintSettings->SetPrintToFile(false);
       aPrintSettings->SetToFileName(nsnull);
     }
 
@@ -1053,9 +1029,9 @@ ShowNativePrintDialog(HWND              aHWnd,
     ::GlobalUnlock(prntdlg.hDevMode);
 
 #if defined(DEBUG_rods) || defined(DEBUG_dcone)
-    PRBool  printSelection = prntdlg.Flags & PD_SELECTION;
-    PRBool  printAllPages  = prntdlg.Flags & PD_ALLPAGES;
-    PRBool  printNumPages  = prntdlg.Flags & PD_PAGENUMS;
+    bool    printSelection = prntdlg.Flags & PD_SELECTION;
+    bool    printAllPages  = prntdlg.Flags & PD_ALLPAGES;
+    bool    printNumPages  = prntdlg.Flags & PD_PAGENUMS;
     PRInt32 fromPageNum    = 0;
     PRInt32 toPageNum      = 0;
 
@@ -1076,357 +1052,13 @@ ShowNativePrintDialog(HWND              aHWnd,
     
   } else {
     ::SetFocus(aHWnd);
-    aPrintSettings->SetIsCancelled(PR_TRUE);
+    aPrintSettings->SetIsCancelled(true);
     if (hGlobalDevMode) ::GlobalFree(hGlobalDevMode);
     return NS_ERROR_ABORT;
   }
 
   return NS_OK;
 }
-
-
-#ifdef MOZ_REQUIRE_CURRENT_SDK
-//------------------------------------------------------------------
-// Callback for Property Sheet
-static BOOL APIENTRY PropSheetCallBack(HWND hdlg, UINT uiMsg, UINT wParam, LONG lParam)
-{
-  if (uiMsg == WM_COMMAND) {
-    UINT id = LOWORD(wParam);
-    if (id == rad4 || id == rad5 || id == rad6) {
-      gFrameSelectedRadioBtn = id;
-      SetRadioOfGroup(hdlg, id);
-    }
-
-  } else if (uiMsg == WM_INITDIALOG) {
-    // Create the groupbox and Radiobuttons on the "Options" Property Sheet
-
-    // We temporarily borrowed the global value for initialization
-    // now clear it before the dialog appears
-    PRInt16 howToEnableFrameUI = gFrameSelectedRadioBtn;
-    // don't add frame options if they would be disabled anyway
-    // because there are no frames
-    if (howToEnableFrameUI == nsIPrintSettings::kFrameEnableNone)
-      return TRUE;
-
-    gFrameSelectedRadioBtn     = 0;
-
-    HINSTANCE hInst = (HINSTANCE)::GetWindowLongPtr(hdlg, GWLP_HINSTANCE);
-    if (hInst == NULL) return 0L;
-
-    // Get default font for the dialog & then its font metrics
-    // we need the text height to determine the height of the radio buttons
-    TEXTMETRIC metrics;
-    HFONT hFont = (HFONT)::SendMessage(hdlg, WM_GETFONT, (WPARAM)0, (LPARAM)0);
-    HDC localDC = ::GetDC(hdlg);
-    ::SelectObject(localDC, (HGDIOBJ)hFont);
-    ::GetTextMetrics(localDC, &metrics);
-    ::ReleaseDC(hdlg, localDC);
-
-    // calculate various different "gaps" for layout purposes
-     RECT dlgr; 
-    ::GetWindowRect(hdlg, &dlgr);
-
-    int horzGap    = 5;                                 // generic horz gap
-    int vertGap    = 5;                                 // generic vert gap
-    int rbGap      = metrics.tmHeight / 2;               // gap between radiobtns
-    int top        = vertGap*2;                            // start at the top
-    int radHgt     = metrics.tmHeight;                   // top of new group box
-    int y          = top;                                // starting pos of first radio
-    int x          = horzGap*2;
-    int rbWidth    = dlgr.right - dlgr.left - (5*horzGap);  
-    int grpWidth   = dlgr.right - dlgr.left - (2*horzGap);  
-
-    nsRect rect;
-
-    // Create and position the radio buttons
-    //
-    // If any one control cannot be created then 
-    // hide the others and bail out
-    //
-    x += horzGap*2;
-    y += vertGap + metrics.tmHeight;
-    rect.SetRect(x, y, rbWidth,radHgt);
-    HWND rad4Wnd = CreateRadioBtn(hInst, hdlg, rad4, kAsLaidOutOnScreenStr, rect);
-    if (rad4Wnd == NULL) return 0L;
-    y += radHgt + rbGap;
-
-    rect.SetRect(x, y, rbWidth, radHgt);
-    HWND rad5Wnd = CreateRadioBtn(hInst, hdlg, rad5, kTheSelectedFrameStr, rect);
-    if (rad5Wnd == NULL) {
-      Show(rad4Wnd, FALSE); // hide
-      return 0L;
-    }
-    y += radHgt + rbGap;
-
-    rect.SetRect(x, y, rbWidth, radHgt);
-    HWND rad6Wnd = CreateRadioBtn(hInst, hdlg, rad6, kEachFrameSeparately, rect);
-    if (rad6Wnd == NULL) {
-      Show(rad4Wnd, FALSE); // hide
-      Show(rad5Wnd, FALSE); // hide
-      return 0L;
-    }
-    y += radHgt + (vertGap*2);
-
-    x -= horzGap*2;
-    // Create and position the group box
-    rect.SetRect (x, top, grpWidth, y-top+1);
-    HWND grpBoxWnd = CreateGroupBox(hInst, hdlg, grp3, NS_LITERAL_STRING("Print Frame"), rect);
-    if (grpBoxWnd == NULL) {
-      Show(rad4Wnd, FALSE); // hide
-      Show(rad5Wnd, FALSE); // hide
-      Show(rad6Wnd, FALSE); // hide
-      return 0L;
-    }
-
-    // localize and initialize the groupbox and radiobuttons
-    InitializeExtendedDialog(hdlg, howToEnableFrameUI);
-
-    // Looks like we were able to extend the dialog
-    gDialogWasExtended = PR_TRUE;
-    return TRUE;
-  }
-  return 0L;
-}
-
-//------------------------------------------------------------------
-// Creates the "Options" Property Sheet
-static HPROPSHEETPAGE ExtendPrintDialog(HWND aHWnd, char* aTitle)
-{
-  // The resource "OPTPROPSHEET" comes out of the widget/build/widget.rc file
-  HINSTANCE hInst = (HINSTANCE)::GetWindowLongPtr(aHWnd, GWLP_HINSTANCE);
-  PROPSHEETPAGE psp;
-  memset(&psp, 0, sizeof(PROPSHEETPAGE));
-  psp.dwSize      = sizeof(PROPSHEETPAGE);
-  psp.dwFlags     = PSP_USETITLE | PSP_PREMATURE;
-  psp.hInstance   = hInst;
-  psp.pszTemplate = "OPTPROPSHEET";
-  psp.pfnDlgProc  = PropSheetCallBack;
-  psp.pszTitle    = aTitle?aTitle:"Options";
-
-  HPROPSHEETPAGE newPropSheet = ::CreatePropertySheetPage(&psp);
-  return newPropSheet;
-
-}
-
-//------------------------------------------------------------------
-// Displays the native Print Dialog
-static nsresult 
-ShowNativePrintDialogEx(HWND              aHWnd,
-                        nsIPrintSettings* aPrintSettings)
-{
-  NS_ENSURE_ARG_POINTER(aHWnd);
-  NS_ENSURE_ARG_POINTER(aPrintSettings);
-
-  gDialogWasExtended  = PR_FALSE;
-
-  // Create a Moveable Memory Object that holds a new DevMode
-  // from the Printer Name
-  // The PRINTDLG.hDevMode requires that it be a moveable memory object
-  // NOTE: We only need to free hGlobalDevMode when the dialog is cancelled
-  // When the user prints, it comes back in the printdlg struct and 
-  // is used and cleaned up later
-  nsXPIDLString printerName;
-  aPrintSettings->GetPrinterName(getter_Copies(printerName));
-  HGLOBAL hGlobalDevMode = NULL;
-  if (!printerName.IsEmpty()) {
-    hGlobalDevMode = CreateGlobalDevModeAndInit(printerName, aPrintSettings);
-  }
-
-  // Prepare to Display the Print Dialog
-  PRINTDLGEX  prntdlg;
-  memset(&prntdlg, 0, sizeof(PRINTDLGEX));
-
-  prntdlg.lStructSize = sizeof(prntdlg);
-  prntdlg.hwndOwner   = aHWnd;
-  prntdlg.hDevMode    = hGlobalDevMode;
-  prntdlg.Flags       = PD_ALLPAGES | PD_RETURNDC | PD_USEDEVMODECOPIESANDCOLLATE |
-                        PD_NOCURRENTPAGE;
-  prntdlg.nStartPage  = START_PAGE_GENERAL;
-
-  // if there is a current selection then enable the "Selection" radio button
-  PRInt16 howToEnableFrameUI = nsIPrintSettings::kFrameEnableNone;
-  if (aPrintSettings != nsnull) {
-    PRBool isOn;
-    aPrintSettings->GetPrintOptions(nsIPrintSettings::kEnableSelectionRB, &isOn);
-    if (!isOn) {
-      prntdlg.Flags |= PD_NOSELECTION;
-    }
-    aPrintSettings->GetHowToEnableFrameUI(&howToEnableFrameUI);
-  }
-
-  // At the moment we can only support one page range
-  // from all the documentation I can find, it appears that this 
-  // will get cleanup automatically when the struct goes away
-  const int kNumPageRanges     = 1;
-  LPPRINTPAGERANGE pPageRanges = (LPPRINTPAGERANGE) GlobalAlloc(GPTR, kNumPageRanges * sizeof(PRINTPAGERANGE));
-  if (!pPageRanges)
-      return E_OUTOFMEMORY;
-
-  prntdlg.nPageRanges    = 0;
-  prntdlg.nMaxPageRanges = kNumPageRanges;
-  prntdlg.lpPageRanges   = pPageRanges;
-  prntdlg.nMinPage       = 1;
-  prntdlg.nMaxPage       = 0xFFFF;
-  prntdlg.nCopies        = 1;
-
-  if (ShouldExtendPrintDialog()) {
-    // lLcalize the Property Sheet (Tab) title
-    nsCAutoString title;
-    nsString optionsStr;
-    if (NS_SUCCEEDED(GetLocalizedString(strBundle, "optionsTitleWindows", optionsStr))) {
-      // Failure here just means a blank string
-      NS_CopyUnicodeToNative(optionsStr, title);
-    }
-
-    // Temporarily borrow this variable for setting up the radiobuttons
-    // if we don't use this, we will need to define a new global var
-    gFrameSelectedRadioBtn = howToEnableFrameUI;
-    HPROPSHEETPAGE psp[1];
-    psp[0] = ExtendPrintDialog(aHWnd, title.get());
-    prntdlg.nPropertyPages      = 1;
-    prntdlg.lphPropertyPages    = psp;
-  }
-
-  HRESULT result = ::PrintDlgEx(&prntdlg);
-
-  if (S_OK == result && (prntdlg.dwResultAction == PD_RESULT_PRINT)) {
-
-    // check to make sure we don't have any NULL pointers
-    NS_ENSURE_TRUE(aPrintSettings && prntdlg.hDevMode, NS_ERROR_FAILURE);
-
-    if (prntdlg.hDevNames == NULL) {
-      ::GlobalFree(hGlobalDevMode);
-      return NS_ERROR_FAILURE;
-    }
-    // Lock the deviceNames and check for NULL
-    DEVNAMES *devnames = (DEVNAMES *)::GlobalLock(prntdlg.hDevNames);
-    if (devnames == NULL) {
-      ::GlobalFree(hGlobalDevMode);
-      return NS_ERROR_FAILURE;
-    }
-
-    char* device = &(((char *)devnames)[devnames->wDeviceOffset]);
-    char* driver = &(((char *)devnames)[devnames->wDriverOffset]);
-
-    // Check to see if the "Print To File" control is checked
-    // then take the name from devNames and set it in the PrintSettings
-    //
-    // NOTE:
-    // As per Microsoft SDK documentation the returned value offset from
-    // devnames->wOutputOffset is either "FILE:" or NULL
-    // if the "Print To File" checkbox is checked it MUST be "FILE:"
-    // We assert as an extra safety check.
-    if (prntdlg.Flags & PD_PRINTTOFILE) {
-      char* fileName = &(((char *)devnames)[devnames->wOutputOffset]);
-      NS_ASSERTION(strcmp(fileName, "FILE:") == 0, "FileName must be `FILE:`");
-      aPrintSettings->SetToFileName(NS_ConvertASCIItoUTF16(fileName).get());
-      aPrintSettings->SetPrintToFile(PR_TRUE);
-    } else {
-      // clear "print to file" info
-      aPrintSettings->SetPrintToFile(PR_FALSE);
-      aPrintSettings->SetToFileName(nsnull);
-    }
-
-    nsCOMPtr<nsIPrintSettingsWin> psWin(do_QueryInterface(aPrintSettings));
-    if (!psWin) {
-      ::GlobalFree(hGlobalDevMode);
-      return NS_ERROR_FAILURE;
-    }
-
-    // Setup local Data members
-    psWin->SetDeviceName(device);
-    psWin->SetDriverName(driver);
-
-#if defined(DEBUG_rods) || defined(DEBUG_dcone)
-    printf("printer: driver %s, device %s  flags: %d\n", driver, device, prntdlg.Flags);
-#endif
-    ::GlobalUnlock(prntdlg.hDevNames);
-
-    // fill the print options with the info from the dialog
-    if (aPrintSettings != nsnull) {
-
-      if (prntdlg.Flags & PD_SELECTION) {
-        aPrintSettings->SetPrintRange(nsIPrintSettings::kRangeSelection);
-
-      } else if (prntdlg.Flags & PD_PAGENUMS) {
-        aPrintSettings->SetPrintRange(nsIPrintSettings::kRangeSpecifiedPageRange);
-        aPrintSettings->SetStartPageRange(pPageRanges->nFromPage);
-        aPrintSettings->SetEndPageRange(pPageRanges->nToPage);
-
-      } else { // (prntdlg.Flags & PD_ALLPAGES)
-        aPrintSettings->SetPrintRange(nsIPrintSettings::kRangeAllPages);
-      }
-
-      if (howToEnableFrameUI != nsIPrintSettings::kFrameEnableNone) {
-        // make sure the dialog got extended
-        if (gDialogWasExtended) {
-          // check to see about the frame radio buttons
-          switch (gFrameSelectedRadioBtn) {
-            case rad4: 
-              aPrintSettings->SetPrintFrameType(nsIPrintSettings::kFramesAsIs);
-              break;
-            case rad5: 
-              aPrintSettings->SetPrintFrameType(nsIPrintSettings::kSelectedFrame);
-              break;
-            case rad6: 
-              aPrintSettings->SetPrintFrameType(nsIPrintSettings::kEachFrameSep);
-              break;
-          } // switch
-        } else {
-          // if it didn't get extended then have it default to printing
-          // each frame separately
-          aPrintSettings->SetPrintFrameType(nsIPrintSettings::kEachFrameSep);
-        }
-      } else {
-        aPrintSettings->SetPrintFrameType(nsIPrintSettings::kNoFrames);
-      }
-    }
-
-    // Unlock DeviceNames
-    ::GlobalUnlock(prntdlg.hDevNames);
-
-    // Transfer the settings from the native data to the PrintSettings
-    LPDEVMODEW devMode = (LPDEVMODEW)::GlobalLock(prntdlg.hDevMode);
-    if (devMode == NULL) {
-      ::GlobalFree(hGlobalDevMode);
-      return NS_ERROR_FAILURE;
-    }
-    psWin->SetDevMode(devMode); // copies DevMode
-    SetPrintSettingsFromDevMode(aPrintSettings, devMode);
-    ::GlobalUnlock(prntdlg.hDevMode);
-
-#if defined(DEBUG_rods) || defined(DEBUG_dcone)
-    PRBool  printSelection = prntdlg.Flags & PD_SELECTION;
-    PRBool  printAllPages  = prntdlg.Flags & PD_ALLPAGES;
-    PRBool  printNumPages  = prntdlg.Flags & PD_PAGENUMS;
-    PRInt32 fromPageNum    = 0;
-    PRInt32 toPageNum      = 0;
-
-    if (printNumPages) {
-      fromPageNum = pPageRanges->nFromPage;
-      toPageNum   = pPageRanges->nToPage;
-    } 
-    if (printSelection) {
-      printf("Printing the selection\n");
-
-    } else if (printAllPages) {
-      printf("Printing all the pages\n");
-
-    } else {
-      printf("Printing from page no. %d to %d\n", fromPageNum, toPageNum);
-    }
-#endif
-    
-  } else {
-    if (hGlobalDevMode) ::GlobalFree(hGlobalDevMode);
-    return NS_ERROR_ABORT;
-  }
-
-  ::GlobalFree(pPageRanges);
-
-  return NS_OK;
-}
-#endif // MOZ_REQUIRE_CURRENT_SDK
 
 //------------------------------------------------------------------
 static void 
@@ -1435,10 +1067,10 @@ PrepareForPrintDialog(nsIWebBrowserPrint* aWebBrowserPrint, nsIPrintSettings* aP
   NS_ASSERTION(aWebBrowserPrint, "Can't be null");
   NS_ASSERTION(aPS, "Can't be null");
 
-  PRBool isFramesetDocument;
-  PRBool isFramesetFrameSelected;
-  PRBool isIFrameSelected;
-  PRBool isRangeSelection;
+  bool isFramesetDocument;
+  bool isFramesetFrameSelected;
+  bool isIFrameSelected;
+  bool isRangeSelection;
 
   aWebBrowserPrint->GetIsFramesetDocument(&isFramesetDocument);
   aWebBrowserPrint->GetIsFramesetFrameSelected(&isFramesetFrameSelected);
@@ -1468,19 +1100,9 @@ nsresult NativeShowPrintDialog(HWND                aHWnd,
                                nsIWebBrowserPrint* aWebBrowserPrint,
                                nsIPrintSettings*   aPrintSettings)
 {
-  nsresult rv = NS_ERROR_FAILURE;
-
   PrepareForPrintDialog(aWebBrowserPrint, aPrintSettings);
 
-#ifdef MOZ_REQUIRE_CURRENT_SDK
-  if (CheckForExtendedDialog()) {
-    rv = ShowNativePrintDialogEx(aHWnd, aPrintSettings);
-  } else {
-    rv = ShowNativePrintDialog(aHWnd, aPrintSettings);
-  }
-#else
-  rv = ShowNativePrintDialog(aHWnd, aPrintSettings);
-#endif
+  nsresult rv = ShowNativePrintDialog(aHWnd, aPrintSettings);
   if (aHWnd) {
     ::DestroyWindow(aHWnd);
   }

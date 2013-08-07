@@ -36,6 +36,8 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/Util.h"
+
 #include "nsSVGLength2.h"
 #include "prdtoa.h"
 #include "nsTextFormatter.h"
@@ -44,10 +46,10 @@
 #include "nsSVGIntegrationUtils.h"
 #include "nsSVGAttrTearoffTable.h"
 #include "nsContentUtils.h" // NS_ENSURE_FINITE
-#ifdef MOZ_SMIL
 #include "nsSMILValue.h"
 #include "nsSMILFloatType.h"
-#endif // MOZ_SMIL
+
+using namespace mozilla;
 
 NS_SVG_VAL_IMPL_CYCLE_COLLECTION(nsSVGLength2::DOMBaseVal, mSVGElement)
 
@@ -108,14 +110,14 @@ static nsSVGAttrTearoffTable<nsSVGLength2, nsIDOMSVGLength>
 
 /* Helper functions */
 
-static PRBool
+static bool
 IsValidUnitType(PRUint16 unit)
 {
   if (unit > nsIDOMSVGLength::SVG_LENGTHTYPE_UNKNOWN &&
       unit <= nsIDOMSVGLength::SVG_LENGTHTYPE_PC)
-    return PR_TRUE;
+    return true;
 
-  return PR_FALSE;
+  return false;
 }
 
 static void
@@ -140,7 +142,7 @@ GetUnitTypeForString(const char* unitStr)
                    
   nsCOMPtr<nsIAtom> unitAtom = do_GetAtom(unitStr);
 
-  for (PRUint32 i = 0 ; i < NS_ARRAY_LENGTH(unitMap) ; i++) {
+  for (PRUint32 i = 0 ; i < ArrayLength(unitMap) ; i++) {
     if (unitMap[i] && *unitMap[i] == unitAtom) {
       return i;
     }
@@ -308,16 +310,14 @@ nsSVGLength2::SetBaseValueInSpecifiedUnits(float aValue,
                                            nsSVGElement *aSVGElement)
 {
   mBaseVal = aValue;
-  mIsBaseSet = PR_TRUE;
+  mIsBaseSet = true;
   if (!mIsAnimated) {
     mAnimVal = mBaseVal;
   }
-#ifdef MOZ_SMIL
   else {
     aSVGElement->AnimationNeedsResample();
   }
-#endif
-  aSVGElement->DidChangeLength(mAttrEnum, PR_TRUE);
+  aSVGElement->DidChangeLength(mAttrEnum, true);
 }
 
 nsresult
@@ -346,17 +346,15 @@ nsSVGLength2::NewValueSpecifiedUnits(PRUint16 unitType,
     return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
 
   mBaseVal = valueInSpecifiedUnits;
-  mIsBaseSet = PR_TRUE;
+  mIsBaseSet = true;
   mSpecifiedUnitType = PRUint8(unitType);
   if (!mIsAnimated) {
     mAnimVal = mBaseVal;
   }
-#ifdef MOZ_SMIL
   else {
     aSVGElement->AnimationNeedsResample();
   }
-#endif
-  aSVGElement->DidChangeLength(mAttrEnum, PR_TRUE);
+  aSVGElement->DidChangeLength(mAttrEnum, true);
   return NS_OK;
 }
 
@@ -405,7 +403,7 @@ nsSVGLength2::DOMAnimVal::~DOMAnimVal()
 nsresult
 nsSVGLength2::SetBaseValueString(const nsAString &aValueAsString,
                                  nsSVGElement *aSVGElement,
-                                 PRBool aDoSetAttr)
+                                 bool aDoSetAttr)
 {
   float value;
   PRUint16 unitType;
@@ -416,16 +414,14 @@ nsSVGLength2::SetBaseValueString(const nsAString &aValueAsString,
   }
   
   mBaseVal = value;
-  mIsBaseSet = PR_TRUE;
+  mIsBaseSet = true;
   mSpecifiedUnitType = PRUint8(unitType);
   if (!mIsAnimated) {
     mAnimVal = mBaseVal;
   }
-#ifdef MOZ_SMIL
   else {
     aSVGElement->AnimationNeedsResample();
   }
-#endif
 
   aSVGElement->DidChangeLength(mAttrEnum, aDoSetAttr);
   return NS_OK;
@@ -456,7 +452,7 @@ nsSVGLength2::SetAnimValueInSpecifiedUnits(float aValue,
                                            nsSVGElement* aSVGElement)
 {
   mAnimVal = aValue;
-  mIsAnimated = PR_TRUE;
+  mIsAnimated = true;
   aSVGElement->DidAnimateLength(mAttrEnum);
 }
 
@@ -489,7 +485,6 @@ nsSVGLength2::DOMAnimatedLength::~DOMAnimatedLength()
   sSVGAnimatedLengthTearoffTable.RemoveTearoff(mVal);
 }
 
-#ifdef MOZ_SMIL
 nsISMILAttr*
 nsSVGLength2::ToSMILAttr(nsSVGElement *aSVGElement)
 {
@@ -500,7 +495,7 @@ nsresult
 nsSVGLength2::SMILLength::ValueFromString(const nsAString& aStr,
                                  const nsISMILAnimationElement* /*aSrcElement*/,
                                  nsSMILValue& aValue,
-                                 PRBool& aPreventCachingOfSandwich) const
+                                 bool& aPreventCachingOfSandwich) const
 {
   float value;
   PRUint16 unitType;
@@ -534,7 +529,7 @@ nsSVGLength2::SMILLength::ClearAnimValue()
 {
   if (mVal->mIsAnimated) {
     mVal->SetAnimValueInSpecifiedUnits(mVal->mBaseVal, mSVGElement);
-    mVal->mIsAnimated = PR_FALSE;
+    mVal->mIsAnimated = false;
   }  
 }
 
@@ -548,4 +543,3 @@ nsSVGLength2::SMILLength::SetAnimValue(const nsSMILValue& aValue)
   }
   return NS_OK;
 }
-#endif // MOZ_SMIL

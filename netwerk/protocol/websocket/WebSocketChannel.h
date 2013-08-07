@@ -67,9 +67,14 @@
 
 namespace mozilla { namespace net {
 
-class nsPostMessage;
+class OutboundMessage;
+class OutboundEnqueuer;
 class nsWSAdmissionManager;
 class nsWSCompression;
+class CallOnMessageAvailable;
+class CallOnStop;
+class CallOnServerClose;
+class CallAcknowledge;
 
 class WebSocketChannel : public BaseWebSocketChannel,
                          public nsIHttpUpgradeListener,
@@ -102,6 +107,7 @@ public:
   NS_IMETHOD Close(PRUint16 aCode, const nsACString & aReason);
   NS_IMETHOD SendMsg(const nsACString &aMsg);
   NS_IMETHOD SendBinaryMsg(const nsACString &aMsg);
+  NS_IMETHOD SendBinaryStream(nsIInputStream *aStream, PRUint32 length);
   NS_IMETHOD GetSecurityInfo(nsISupports **aSecurityInfo);
 
   WebSocketChannel();
@@ -127,10 +133,19 @@ protected:
   virtual ~WebSocketChannel();
 
 private:
-  friend class nsPostMessage;
+  friend class OutboundEnqueuer;
   friend class nsWSAdmissionManager;
+  friend class CallOnMessageAvailable;
+  friend class CallOnStop;
+  friend class CallOnServerClose;
+  friend class CallAcknowledge;
 
-  void SendMsgInternal(nsCString *aMsg, PRInt32 datalen);
+  // Common send code for binary + text msgs
+  nsresult SendMsgCommon(const nsACString *aMsg, bool isBinary,
+                         PRUint32 length, nsIInputStream *aStream = NULL);
+
+  void EnqueueOutgoingMessage(nsDeque &aQueue, OutboundMessage *aMsg);
+
   void PrimeNewOutgoingMessage();
   void GeneratePong(PRUint8 *payload, PRUint32 len);
   void GeneratePing();
@@ -150,53 +165,12 @@ private:
   void EnsureHdrOut(PRUint32 size);
   void ApplyMask(PRUint32 mask, PRUint8 *data, PRUint64 len);
 
-  PRBool   IsPersistentFramePtr();
+  bool     IsPersistentFramePtr();
   nsresult ProcessInput(PRUint8 *buffer, PRUint32 count);
-  PRUint32 UpdateReadBuffer(PRUint8 *buffer, PRUint32 count,
-                            PRUint32 accumulatedFragments);
+  bool UpdateReadBuffer(PRUint8 *buffer, PRUint32 count,
+                        PRUint32 accumulatedFragments,
+                        PRUint32 *available);
 
-  class OutboundMessage
-  {
-  public:
-    OutboundMessage (nsCString *str)
-      : mMsg(str), mIsControl(PR_FALSE), mBinaryLen(-1)
-    { MOZ_COUNT_CTOR(WebSocketOutboundMessage); }
-
-    OutboundMessage (nsCString *str, PRInt32 dataLen)
-      : mMsg(str), mIsControl(PR_FALSE), mBinaryLen(dataLen)
-    { MOZ_COUNT_CTOR(WebSocketOutboundMessage); }
-
-    OutboundMessage ()
-      : mMsg(nsnull), mIsControl(PR_TRUE), mBinaryLen(-1)
-    { MOZ_COUNT_CTOR(WebSocketOutboundMessage); }
-
-    ~OutboundMessage()
-    {
-      MOZ_COUNT_DTOR(WebSocketOutboundMessage);
-      delete mMsg;
-    }
-
-    PRBool IsControl()  { return mIsControl; }
-    const nsCString *Msg()  { return mMsg; }
-    PRInt32 BinaryLen() { return mBinaryLen; }
-    PRInt32 Length()
-    {
-      if (mBinaryLen >= 0)
-        return mBinaryLen;
-      return mMsg ? mMsg->Length() : 0;
-    }
-    PRUint8 *BeginWriting() {
-      return (PRUint8 *)(mMsg ? mMsg->BeginWriting() : nsnull);
-    }
-    PRUint8 *BeginReading() {
-      return (PRUint8 *)(mMsg ? mMsg->BeginReading() : nsnull);
-    }
-
-  private:
-    nsCString *mMsg;
-    PRBool     mIsControl;
-    PRInt32    mBinaryLen;
-  };
 
   nsCOMPtr<nsIEventTarget>                 mSocketThread;
   nsCOMPtr<nsIHttpChannelInternal>         mChannel;
@@ -226,7 +200,7 @@ private:
   const static PRInt32            kLingeringCloseTimeout =   1000;
   const static PRInt32            kLingeringCloseThreshold = 50;
 
-  PRUint32                        mMaxConcurrentConnections;
+  PRInt32                         mMaxConcurrentConnections;
 
   PRUint32                        mRecvdHttpOnStartRequest   : 1;
   PRUint32                        mRecvdHttpUpgradeTransport : 1;
@@ -252,6 +226,12 @@ private:
   nsCString                       mScriptCloseReason;
 
   // These are for the read buffers
+  const static PRUint32 kIncomingBufferInitialSize = 16 * 1024;
+  // We're ok with keeping a buffer this size or smaller around for the life of
+  // the websocket.  If a particular message needs bigger than this we'll
+  // increase the buffer temporarily, then drop back down to this size.
+  const static PRUint32 kIncomingBufferStableSize = 128 * 1024;
+
   PRUint8                        *mFramePtr;
   PRUint8                        *mBuffer;
   PRUint8                         mFragmentOpcode;
@@ -280,7 +260,7 @@ private:
 class WebSocketSSLChannel : public WebSocketChannel
 {
 public:
-    WebSocketSSLChannel() { BaseWebSocketChannel::mEncrypted = PR_TRUE; }
+    WebSocketSSLChannel() { BaseWebSocketChannel::mEncrypted = true; }
 protected:
     virtual ~WebSocketSSLChannel() {}
 };

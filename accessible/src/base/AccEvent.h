@@ -78,9 +78,12 @@ public:
      //    will be emitted.
      eCoalesceFromSameSubtree,
 
-    // eCoalesceFromSameDocument : For events of the same type from the same
-    //    document, only the newest event will be emitted.
-    eCoalesceFromSameDocument,
+    // eCoalesceOfSameType : For events of the same type, only the newest event
+    // will be processed.
+    eCoalesceOfSameType,
+
+    // eCoalesceSelectionChange: coalescence of selection change events.
+    eCoalesceSelectionChange,
 
      // eRemoveDupes : For repeat events, only the newest event in queue
      //    will be emitted.
@@ -103,7 +106,7 @@ public:
   // AccEvent
   PRUint32 GetEventType() const { return mEventType; }
   EEventRule GetEventRule() const { return mEventRule; }
-  PRBool IsFromUserInput() const { return mIsFromUserInput; }
+  bool IsFromUserInput() const { return mIsFromUserInput; }
 
   nsAccessible *GetAccessible();
   nsDocAccessible* GetDocAccessible();
@@ -125,6 +128,7 @@ public:
     eHideEvent,
     eShowEvent,
     eCaretMoveEvent,
+    eSelectionChangeEvent,
     eTableChangeEvent
   };
 
@@ -152,7 +156,7 @@ protected:
    */
   void CaptureIsFromUserInput(EIsFromUserInput aIsFromUserInput);
 
-  PRBool mIsFromUserInput;
+  bool mIsFromUserInput;
   PRUint32 mEventType;
   EEventRule mEventRule;
   nsRefPtr<nsAccessible> mAccessible;
@@ -169,10 +173,10 @@ class AccStateChangeEvent: public AccEvent
 {
 public:
   AccStateChangeEvent(nsAccessible* aAccessible, PRUint64 aState,
-                      PRBool aIsEnabled,
+                      bool aIsEnabled,
                       EIsFromUserInput aIsFromUserInput = eAutoDetect);
 
-  AccStateChangeEvent(nsINode* aNode, PRUint64 aState, PRBool aIsEnabled);
+  AccStateChangeEvent(nsINode* aNode, PRUint64 aState, bool aIsEnabled);
 
   AccStateChangeEvent(nsINode* aNode, PRUint64 aState);
 
@@ -187,11 +191,11 @@ public:
 
   // AccStateChangeEvent
   PRUint64 GetState() const { return mState; }
-  PRBool IsStateEnabled() const { return mIsEnabled; }
+  bool IsStateEnabled() const { return mIsEnabled; }
 
 private:
   PRUint64 mState;
-  PRBool mIsEnabled;
+  bool mIsEnabled;
 };
 
 
@@ -202,7 +206,7 @@ class AccTextChangeEvent: public AccEvent
 {
 public:
   AccTextChangeEvent(nsAccessible* aAccessible, PRInt32 aStart,
-                     const nsAString& aModifiedText, PRBool aIsInserted,
+                     const nsAString& aModifiedText, bool aIsInserted,
                      EIsFromUserInput aIsFromUserInput = eAutoDetect);
 
   // AccEvent
@@ -217,13 +221,13 @@ public:
   // AccTextChangeEvent
   PRInt32 GetStartOffset() const { return mStart; }
   PRUint32 GetLength() const { return mModifiedText.Length(); }
-  PRBool IsTextInserted() const { return mIsInserted; }
+  bool IsTextInserted() const { return mIsInserted; }
   void GetModifiedText(nsAString& aModifiedText)
     { aModifiedText = mModifiedText; }
 
 private:
   PRInt32 mStart;
-  PRBool mIsInserted;
+  bool mIsInserted;
   nsString mModifiedText;
 
   friend class NotificationController;
@@ -321,6 +325,43 @@ public:
 
 private:
   PRInt32 mCaretOffset;
+};
+
+
+/**
+ * Accessible widget selection change event.
+ */
+class AccSelChangeEvent : public AccEvent
+{
+public:
+  enum SelChangeType {
+    eSelectionAdd,
+    eSelectionRemove
+  };
+
+  AccSelChangeEvent(nsAccessible* aWidget, nsAccessible* aItem,
+                    SelChangeType aSelChangeType);
+
+  virtual ~AccSelChangeEvent() { }
+
+  // AccEvent
+  static const EventGroup kEventGroup = eSelectionChangeEvent;
+  virtual unsigned int GetEventGroups() const
+  {
+    return AccEvent::GetEventGroups() | (1U << eSelectionChangeEvent);
+  }
+
+  // AccSelChangeEvent
+  nsAccessible* Widget() const { return mWidget; }
+
+private:
+  nsRefPtr<nsAccessible> mWidget;
+  nsRefPtr<nsAccessible> mItem;
+  SelChangeType mSelChangeType;
+  PRUint32 mPreceedingCount;
+  AccSelChangeEvent* mPackedEvent;
+
+  friend class NotificationController;
 };
 
 

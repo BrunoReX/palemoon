@@ -46,6 +46,7 @@
 #include "nsString.h"
 #include "nsIMM32Handler.h"
 #include "mozilla/widget/AudioSession.h"
+#include "mozilla/HangMonitor.h"
 
 // For skidmark code
 #include <windows.h> 
@@ -78,10 +79,10 @@ using mozilla::crashreporter::LSPAnnotate;
 
 //-------------------------------------------------------------------------
 
-static PRBool PeekUIMessage(MSG* aMsg)
+static bool PeekUIMessage(MSG* aMsg)
 {
   MSG keyMsg, imeMsg, mouseMsg, *pMsg = 0;
-  PRBool haveKeyMsg, haveIMEMsg, haveMouseMsg;
+  bool haveKeyMsg, haveIMEMsg, haveMouseMsg;
 
   haveKeyMsg = ::PeekMessageW(&keyMsg, NULL, WM_KEYFIRST, WM_IME_KEYLAST, PM_NOREMOVE);
   haveIMEMsg = ::PeekMessageW(&imeMsg, NULL, NS_WM_IMEFIRST, NS_WM_IMELAST, PM_NOREMOVE);
@@ -95,7 +96,7 @@ static PRBool PeekUIMessage(MSG* aMsg)
   }
 
   if (pMsg && !nsIMM32Handler::CanOptimizeKeyAndIMEMessages(pMsg)) {
-    return PR_FALSE;
+    return false;
   }
 
   if (haveMouseMsg && (!pMsg || mouseMsg.time < pMsg->time)) {
@@ -103,7 +104,7 @@ static PRBool PeekUIMessage(MSG* aMsg)
   }
 
   if (!pMsg) {
-    return PR_FALSE;
+    return false;
   }
 
   return ::PeekMessageW(aMsg, NULL, pMsg->message, pMsg->message, PM_REMOVE);
@@ -146,10 +147,6 @@ nsAppShell::Init()
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
   sTaskbarButtonCreatedMsg = ::RegisterWindowMessageW(kTaskbarButtonEventId);
   NS_ASSERTION(sTaskbarButtonCreatedMsg, "Could not register taskbar button creation message");
-
-  // Global app registration id for Win7 and up. See
-  // WinTaskbar.cpp for details.
-  mozilla::widget::WinTaskbar::RegisterAppUserModelID();
 #endif
 
   WNDCLASSW wc;
@@ -212,17 +209,17 @@ CollectNewLoadedModules()
 
   // Now walk the module list of the process,
   // and display information about each module
-  PRBool done = !Module32FirstW(hModuleSnap, &module);
+  bool done = !Module32FirstW(hModuleSnap, &module);
   while (!done) {
     NS_LossyConvertUTF16toASCII moduleName(module.szModule);
-    PRBool found = PR_FALSE;
+    bool found = false;
     PRUint32 i;
     for (i = 0; i < NUM_LOADEDMODULEINFO &&
                 sLoadedModules[i].mStartAddr; ++i) {
       if (sLoadedModules[i].mStartAddr == module.modBaseAddr &&
           !strcmp(moduleName.get(),
                   sLoadedModules[i].mName)) {
-        found = PR_TRUE;
+        found = true;
         break;
       }
     }
@@ -260,7 +257,7 @@ nsAppShell::Run(void)
 
   nsresult rv = nsBaseAppShell::Run();
 
-#ifdef MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   mozilla::widget::StopAudioSession();
 #endif
 
@@ -300,9 +297,9 @@ nsAppShell::DoProcessMoreGeckoEvents()
   // gecko events get processed.
   if (mEventloopNestingLevel < 2) {
     OnDispatchedEvent(nsnull);
-    mNativeCallbackPending = PR_FALSE;
+    mNativeCallbackPending = false;
   } else {
-    mNativeCallbackPending = PR_TRUE;
+    mNativeCallbackPending = true;
   }
 }
 
@@ -317,12 +314,12 @@ nsAppShell::ScheduleNativeEventCallback()
   ::PostMessage(mEventWnd, sMsgId, 0, reinterpret_cast<LPARAM>(this));
 }
 
-PRBool
-nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
+bool
+nsAppShell::ProcessNextNativeEvent(bool mayWait)
 {
 #if defined(_MSC_VER) && defined(_M_IX86)
   if (sXPCOMHasLoadedNewDLLs && sLoadedModules) {
-    sXPCOMHasLoadedNewDLLs = PR_FALSE;
+    sXPCOMHasLoadedNewDLLs = false;
     CollectNewLoadedModules();
   }
 #endif
@@ -330,23 +327,25 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
   // Notify ipc we are spinning a (possibly nested) gecko event loop.
   mozilla::ipc::RPCChannel::NotifyGeckoEventDispatch();
 
-  PRBool gotMessage = PR_FALSE;
+  bool gotMessage = false;
 
   do {
     MSG msg;
     // Give priority to keyboard and mouse messages.
     if (PeekUIMessage(&msg) ||
         ::PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
-      gotMessage = PR_TRUE;
+      gotMessage = true;
       if (msg.message == WM_QUIT) {
         ::PostQuitMessage(msg.wParam);
         Exit();
       } else {
+        mozilla::HangMonitor::NotifyActivity();
         ::TranslateMessage(&msg);
         ::DispatchMessageW(&msg);
       }
     } else if (mayWait) {
       // Block and wait for any posted application message
+      mozilla::HangMonitor::Suspend();
       ::WaitMessage();
     }
   } while (!gotMessage && mayWait);

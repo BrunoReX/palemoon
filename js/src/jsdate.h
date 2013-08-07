@@ -44,7 +44,7 @@
 #ifndef jsdate_h___
 #define jsdate_h___
 
-#include "jsobj.h"
+#include "jscntxt.h"
 
 #define HalfTimeDomain  8.64e15
 
@@ -105,7 +105,7 @@ js_DateGetSeconds(JSContext *cx, JSObject* obj);
 extern JS_FRIEND_API(jsdouble)
 js_DateGetMsecSinceEpoch(JSContext *cx, JSObject *obj);
 
-typedef uint32 JSIntervalTime;
+typedef uint32_t JSIntervalTime;
 
 extern JS_FRIEND_API(JSIntervalTime)
 js_IntervalNow();

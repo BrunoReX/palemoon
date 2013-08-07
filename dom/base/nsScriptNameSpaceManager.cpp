@@ -55,6 +55,7 @@
 #include "nsDOMClassInfo.h"
 #include "nsCRT.h"
 #include "nsIObserverService.h"
+#include "mozilla/Services.h"
 
 #define NS_INTERFACE_PREFIX "nsI"
 #define NS_DOM_INTERFACE_PREFIX "nsIDOM"
@@ -77,7 +78,7 @@ GlobalNameHashHashKey(PLDHashTable *table, const void *key)
   return HashString(*str);
 }
 
-static PRBool
+static bool
 GlobalNameHashMatchEntry(PLDHashTable *table, const PLDHashEntryHdr *entry,
                          const void *key)
 {
@@ -117,7 +118,7 @@ GlobalNameHashClearEntry(PLDHashTable *table, PLDHashEntryHdr *entry)
   memset(&e->mGlobalName, 0, sizeof(nsGlobalNameStruct));
 }
 
-static PRBool
+static bool
 GlobalNameHashInitEntry(PLDHashTable *table, PLDHashEntryHdr *entry,
                         const void *key)
 {
@@ -130,7 +131,7 @@ GlobalNameHashInitEntry(PLDHashTable *table, PLDHashEntryHdr *entry,
   // This will set e->mGlobalName.mType to
   // nsGlobalNameStruct::eTypeNotInitialized
   memset(&e->mGlobalName, 0, sizeof(nsGlobalNameStruct));
-  return PR_TRUE;
+  return true;
 }
 
 NS_IMPL_ISUPPORTS2(nsScriptNameSpaceManager,
@@ -138,7 +139,7 @@ NS_IMPL_ISUPPORTS2(nsScriptNameSpaceManager,
                    nsISupportsWeakReference)
 
 nsScriptNameSpaceManager::nsScriptNameSpaceManager()
-  : mIsInitialized(PR_FALSE)
+  : mIsInitialized(false)
 {
   MOZ_COUNT_CTOR(nsScriptNameSpaceManager);
 }
@@ -247,7 +248,7 @@ nsScriptNameSpaceManager::FillHashWithDOMInterfaces()
     return NS_OK;
   }
 
-  PRBool found_old;
+  bool found_old;
   nsCOMPtr<nsIInterfaceInfo> if_info;
   const char *if_name = nsnull;
   const nsIID *iid;
@@ -269,13 +270,13 @@ nsScriptNameSpaceManager::FillHashWithDOMInterfaces()
   }
 
   // Next, look for externally registered DOM interfaces
-  rv = RegisterExternalInterfaces(PR_FALSE);
+  rv = RegisterExternalInterfaces(false);
 
   return rv;
 }
 
 nsresult
-nsScriptNameSpaceManager::RegisterExternalInterfaces(PRBool aAsProto)
+nsScriptNameSpaceManager::RegisterExternalInterfaces(bool aAsProto)
 {
   nsresult rv;
   nsCOMPtr<nsICategoryManager> cm =
@@ -296,7 +297,7 @@ nsScriptNameSpaceManager::RegisterExternalInterfaces(PRBool aAsProto)
   const char* if_name;
   nsCOMPtr<nsISupports> entry;
   nsCOMPtr<nsIInterfaceInfo> if_info;
-  PRBool found_old, dom_prefix;
+  bool found_old, dom_prefix;
 
   while (NS_SUCCEEDED(enumerator->GetNext(getter_AddRefs(entry)))) {
     nsCOMPtr<nsISupportsCString> category(do_QueryInterface(entry));
@@ -368,15 +369,15 @@ nsScriptNameSpaceManager::RegisterExternalInterfaces(PRBool aAsProto)
 nsresult
 nsScriptNameSpaceManager::RegisterInterface(const char* aIfName,
                                             const nsIID *aIfIID,
-                                            PRBool* aFoundOld)
+                                            bool* aFoundOld)
 {
-  *aFoundOld = PR_FALSE;
+  *aFoundOld = false;
 
   nsGlobalNameStruct *s = AddToHash(&mGlobalNames, aIfName);
   NS_ENSURE_TRUE(s, NS_ERROR_OUT_OF_MEMORY);
 
   if (s->mType != nsGlobalNameStruct::eTypeNotInitialized) {
-    *aFoundOld = PR_TRUE;
+    *aFoundOld = true;
 
     return NS_OK;
   }
@@ -448,10 +449,10 @@ nsScriptNameSpaceManager::Init()
   // Initial filling of the has table has been done.
   // Now, listen for changes.
   nsCOMPtr<nsIObserverService> serv = 
-    do_GetService(NS_OBSERVERSERVICE_CONTRACTID);
+    mozilla::services::GetObserverService();
 
   if (serv) {
-    serv->AddObserver(this, NS_XPCOM_CATEGORY_ENTRY_ADDED_OBSERVER_ID, PR_TRUE);
+    serv->AddObserver(this, NS_XPCOM_CATEGORY_ENTRY_ADDED_OBSERVER_ID, true);
   }
 
   return NS_OK;
@@ -544,8 +545,8 @@ nsScriptNameSpaceManager::LookupNavigatorName(const nsAString& aName,
 nsresult
 nsScriptNameSpaceManager::RegisterClassName(const char *aClassName,
                                             PRInt32 aDOMClassInfoID,
-                                            PRBool aPrivileged,
-                                            PRBool aDisabled,
+                                            bool aPrivileged,
+                                            bool aDisabled,
                                             const PRUnichar **aResult)
 {
   if (!nsCRT::IsAscii(aClassName)) {
@@ -581,18 +582,18 @@ nsScriptNameSpaceManager::RegisterClassName(const char *aClassName,
 nsresult
 nsScriptNameSpaceManager::RegisterClassProto(const char *aClassName,
                                              const nsIID *aConstructorProtoIID,
-                                             PRBool *aFoundOld)
+                                             bool *aFoundOld)
 {
   NS_ENSURE_ARG_POINTER(aConstructorProtoIID);
 
-  *aFoundOld = PR_FALSE;
+  *aFoundOld = false;
 
   nsGlobalNameStruct *s = AddToHash(&mGlobalNames, aClassName);
   NS_ENSURE_TRUE(s, NS_ERROR_OUT_OF_MEMORY);
 
   if (s->mType != nsGlobalNameStruct::eTypeNotInitialized &&
       s->mType != nsGlobalNameStruct::eTypeInterface) {
-    *aFoundOld = PR_TRUE;
+    *aFoundOld = true;
 
     return NS_OK;
   }
@@ -633,7 +634,7 @@ nsScriptNameSpaceManager::RegisterDOMCIData(const char *aName,
                                             const nsIID *aProtoChainInterface,
                                             const nsIID **aInterfaces,
                                             PRUint32 aScriptableFlags,
-                                            PRBool aHasClassInterface,
+                                            bool aHasClassInterface,
                                             const nsCID *aConstructorCID)
 {
   const PRUnichar* className;
@@ -744,7 +745,7 @@ nsScriptNameSpaceManager::AddCategoryEntryToHash(nsICategoryManager* aCategoryMa
       if (s->mType == nsGlobalNameStruct::eTypeNotInitialized) {
         s->mAlias = new nsGlobalNameStruct::ConstructorAlias;
         s->mType = nsGlobalNameStruct::eTypeExternalConstructorAlias;
-        s->mChromeOnly = PR_FALSE;
+        s->mChromeOnly = false;
         s->mAlias->mCID = cid;
         AppendASCIItoUTF16(constructorProto, s->mAlias->mProtoName);
         s->mAlias->mProto = nsnull;

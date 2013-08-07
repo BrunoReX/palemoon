@@ -163,26 +163,23 @@ nsHTMLFormatConverter :: AddFlavorToList ( nsISupportsArray* inList, const char*
 // converts from HTML to others.
 //
 NS_IMETHODIMP
-nsHTMLFormatConverter::CanConvert(const char *aFromDataFlavor, const char *aToDataFlavor, PRBool *_retval)
+nsHTMLFormatConverter::CanConvert(const char *aFromDataFlavor, const char *aToDataFlavor, bool *_retval)
 {
   if ( !_retval )
     return NS_ERROR_INVALID_ARG;
 
-    // STRING USE WARNING: reduce conversions here?
-  
-  *_retval = PR_FALSE;
-  nsAutoString fromFlavor; fromFlavor.AssignWithConversion( aFromDataFlavor );
+  *_retval = false;
   if ( !nsCRT::strcmp(aFromDataFlavor, kHTMLMime) ) {
     if ( !nsCRT::strcmp(aToDataFlavor, kHTMLMime) )
-      *_retval = PR_TRUE;
+      *_retval = true;
     else if ( !nsCRT::strcmp(aToDataFlavor, kUnicodeMime) )
-      *_retval = PR_TRUE;
+      *_retval = true;
 #if NOT_NOW
 // pinkerton
 // no one uses this flavor right now, so it's just slowing things down. If anyone cares I
 // can put it back in.
     else if ( toFlavor.Equals(kAOLMailMime) )
-      *_retval = PR_TRUE;
+      *_retval = true;
 #endif
   }
   return NS_OK;
@@ -302,7 +299,7 @@ nsHTMLFormatConverter::ConvertFromHTMLToUnicode(const nsAutoString & aFromStr, n
 
   parser->SetContentSink(sink);
 
-  parser->Parse(aFromStr, 0, NS_LITERAL_CSTRING("text/html"), PR_TRUE, eDTDMode_fragment);
+  parser->Parse(aFromStr, 0, NS_LITERAL_CSTRING("text/html"), true, eDTDMode_fragment);
   
   return NS_OK;
 } // ConvertFromHTMLToUnicode

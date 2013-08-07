@@ -41,11 +41,9 @@
 #include "nsSVGElement.h"
 #include "nsDOMError.h"
 
-#ifdef MOZ_SMIL
 #include "nsISMILAttr.h"
 class nsSMILValue;
 class nsISMILType;
-#endif // MOZ_SMIL
 
 class nsSVGIntegerPair
 {
@@ -60,46 +58,43 @@ public:
     mAnimVal[0] = mBaseVal[0] = aValue1;
     mAnimVal[1] = mBaseVal[1] = aValue2;
     mAttrEnum = aAttrEnum;
-    mIsAnimated = PR_FALSE;
-    mIsBaseSet = PR_FALSE;
+    mIsAnimated = false;
+    mIsBaseSet = false;
   }
 
   nsresult SetBaseValueString(const nsAString& aValue,
-                              nsSVGElement *aSVGElement,
-                              PRBool aDoSetAttr);
+                              nsSVGElement *aSVGElement);
   void GetBaseValueString(nsAString& aValue);
 
-  void SetBaseValue(PRInt32 aValue, PairIndex aIndex, nsSVGElement *aSVGElement, PRBool aDoSetAttr);
-  void SetBaseValues(PRInt32 aValue1, PRInt32 aValue2, nsSVGElement *aSVGElement, PRBool aDoSetAttr);
+  void SetBaseValue(PRInt32 aValue, PairIndex aIndex, nsSVGElement *aSVGElement);
+  void SetBaseValues(PRInt32 aValue1, PRInt32 aValue2, nsSVGElement *aSVGElement);
   PRInt32 GetBaseValue(PairIndex aIndex) const
     { return mBaseVal[aIndex == eFirst ? 0 : 1]; }
   void SetAnimValue(const PRInt32 aValue[2], nsSVGElement *aSVGElement);
   PRInt32 GetAnimValue(PairIndex aIndex) const
     { return mAnimVal[aIndex == eFirst ? 0 : 1]; }
 
-  // Returns PR_TRUE if the animated value of this integer has been explicitly
+  // Returns true if the animated value of this integer has been explicitly
   // set (either by animation, or by taking on the base value which has been
-  // explicitly set by markup or a DOM call), PR_FALSE otherwise.
-  // If this returns PR_FALSE, the animated value is still valid, that is,
+  // explicitly set by markup or a DOM call), false otherwise.
+  // If this returns false, the animated value is still valid, that is,
   // useable, and represents the default base value of the attribute.
-  PRBool IsExplicitlySet() const
+  bool IsExplicitlySet() const
     { return mIsAnimated || mIsBaseSet; }
 
   nsresult ToDOMAnimatedInteger(nsIDOMSVGAnimatedInteger **aResult,
                                 PairIndex aIndex,
                                 nsSVGElement* aSVGElement);
-#ifdef MOZ_SMIL
   // Returns a new nsISMILAttr object that the caller must delete
   nsISMILAttr* ToSMILAttr(nsSVGElement* aSVGElement);
-#endif // MOZ_SMIL
 
 private:
 
   PRInt32 mAnimVal[2];
   PRInt32 mBaseVal[2];
   PRUint8 mAttrEnum; // element specified tracking for attribute
-  PRPackedBool mIsAnimated;
-  PRPackedBool mIsBaseSet;
+  bool mIsAnimated;
+  bool mIsBaseSet;
 
 public:
   struct DOMAnimatedInteger : public nsIDOMSVGAnimatedInteger
@@ -118,7 +113,7 @@ public:
       { *aResult = mVal->GetBaseValue(mIndex); return NS_OK; }
     NS_IMETHOD SetBaseVal(PRInt32 aValue)
       {
-        mVal->SetBaseValue(aValue, mIndex, mSVGElement, PR_TRUE);
+        mVal->SetBaseValue(aValue, mIndex, mSVGElement);
         return NS_OK;
       }
 
@@ -126,15 +121,12 @@ public:
     // need to flush any resample requests to reflect these modifications.
     NS_IMETHOD GetAnimVal(PRInt32* aResult)
     {
-#ifdef MOZ_SMIL
       mSVGElement->FlushAnimations();
-#endif
       *aResult = mVal->GetAnimValue(mIndex);
       return NS_OK;
     }
   };
 
-#ifdef MOZ_SMIL
   struct SMILIntegerPair : public nsISMILAttr
   {
   public:
@@ -151,12 +143,11 @@ public:
     virtual nsresult ValueFromString(const nsAString& aStr,
                                      const nsISMILAnimationElement* aSrcElement,
                                      nsSMILValue& aValue,
-                                     PRBool& aPreventCachingOfSandwich) const;
+                                     bool& aPreventCachingOfSandwich) const;
     virtual nsSMILValue GetBaseValue() const;
     virtual void ClearAnimValue();
     virtual nsresult SetAnimValue(const nsSMILValue& aValue);
   };
-#endif // MOZ_SMIL
 };
 
 #endif //__NS_SVGINTEGERPAIR_H__

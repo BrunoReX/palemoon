@@ -121,7 +121,7 @@ public:
     }
 
     NS_IMETHOD
-    IsNonBlocking(PRBool *aNonBlocking) {
+    IsNonBlocking(bool *aNonBlocking) {
         NS_NOTREACHED("IsNonBlocking");
         return NS_ERROR_NOT_IMPLEMENTED;
     }
@@ -161,12 +161,12 @@ main(int argc, char** argv)
     RETURN_IF_FAILED(rv, "datasource initialization");
 
     // Okay, this should load the XML file...
-    rv = remote->Refresh(PR_FALSE);
+    rv = remote->Refresh(false);
     RETURN_IF_FAILED(rv, "datasource refresh");
 
     // Pump events until the load is finished
     nsCOMPtr<nsIThread> thread = do_GetCurrentThread();
-    PRBool done = PR_FALSE;
+    bool done = false;
     while (!done) {
         NS_ENSURE_STATE(NS_ProcessNextEvent(thread));
         remote->GetLoaded(&done);

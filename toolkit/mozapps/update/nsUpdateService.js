@@ -86,6 +86,8 @@ const PREF_PARTNER_BRANCH                 = "app.partner.";
 const PREF_APP_DISTRIBUTION               = "distribution.id";
 const PREF_APP_DISTRIBUTION_VERSION       = "distribution.version";
 
+const PREF_EM_HOTFIX_ID                   = "extensions.hotfix.id";
+
 const URI_UPDATE_PROMPT_DIALOG  = "chrome://mozapps/content/update/updates.xul";
 const URI_UPDATE_HISTORY_DIALOG = "chrome://mozapps/content/update/history.xul";
 const URI_BRAND_PROPERTIES      = "chrome://branding/locale/brand.properties";
@@ -134,6 +136,7 @@ const STATE_FAILED          = "failed";
 
 // From updater/errors.h:
 const WRITE_ERROR        = 7;
+const UNEXPECTED_ERROR   = 8;
 const ELEVATION_CANCELED = 9;
 
 const CERT_ATTR_CHECK_FAILED_NO_UPDATE  = 100;
@@ -690,17 +693,22 @@ function getLocale() {
   if (gLocale)
     return gLocale;
 
-  var localeFile = FileUtils.getFile(KEY_APPDIR, [FILE_UPDATE_LOCALE]);
-  if (!localeFile.exists())
-    localeFile = FileUtils.getFile(KEY_GRED, [FILE_UPDATE_LOCALE]);
+  for each (res in ['app', 'gre']) {
+    var channel = Services.io.newChannel("resource://" + res + "/" + FILE_UPDATE_LOCALE, null, null);
+    try {
+      var inputStream = channel.open();
+      gLocale = readStringFromInputStream(inputStream);
+    } catch(e) {}
+    if (gLocale)
+      break;
+  }
 
-  if (!localeFile.exists())
+  if (!gLocale)
     throw Components.Exception(FILE_UPDATE_LOCALE + " file doesn't exist in " +
                                "either the " + KEY_APPDIR + " or " + KEY_GRED +
                                " directories", Cr.NS_ERROR_FILE_NOT_FOUND);
 
-  gLocale = readStringFromFile(localeFile);
-  LOG("getLocale - getting locale from file: " + localeFile.path +
+  LOG("getLocale - getting locale from file: " + channel.originalURI.spec +
       ", locale: " + gLocale);
   return gLocale;
 }
@@ -806,6 +814,17 @@ function writeStringToFile(file, text) {
   FileUtils.closeSafeFileOutputStream(fos);
 }
 
+function readStringFromInputStream(inputStream) {
+  var sis = Cc["@mozilla.org/scriptableinputstream;1"].
+            createInstance(Ci.nsIScriptableInputStream);
+  sis.init(inputStream);
+  var text = sis.read(sis.available());
+  sis.close();
+  if (text[text.length - 1] == "\n")
+    text = text.slice(0, -1);
+  return text;
+}
+
 /**
  * Reads a string of text from a file.  A trailing newline will be removed
  * before the result is returned.  This function only works with ASCII text.
@@ -818,14 +837,7 @@ function readStringFromFile(file) {
   var fis = Cc["@mozilla.org/network/file-input-stream;1"].
             createInstance(Ci.nsIFileInputStream);
   fis.init(file, FileUtils.MODE_RDONLY, FileUtils.PERMS_FILE, 0);
-  var sis = Cc["@mozilla.org/scriptableinputstream;1"].
-            createInstance(Ci.nsIScriptableInputStream);
-  sis.init(fis);
-  var text = sis.read(sis.available());
-  sis.close();
-  if (text[text.length - 1] == "\n")
-    text = text.slice(0, -1);
-  return text;
+  return readStringFromInputStream(fis);
 }
 
 /**
@@ -1354,6 +1366,7 @@ UpdateService.prototype = {
                    createInstance(Ci.nsIUpdatePrompt);
 
     update.state = status;
+    this._submitTelemetryPing(status);
     if (status == STATE_SUCCEEDED) {
       update.statusText = gUpdateBundle.GetStringFromName("installSuccess");
 
@@ -1414,6 +1427,31 @@ UpdateService.prototype = {
       update.QueryInterface(Ci.nsIWritablePropertyBag);
       update.setProperty("patchingFailed", oldType);
       prompter.showUpdateError(update);
+    }
+  },
+
+  /**
+   * Submit the results of applying the update via telemetry.
+   *
+   * @param  status
+   *         The status of the update as read from the update.status file
+   */
+  _submitTelemetryPing: function AUS__submitTelemetryPing(status) {
+    try {
+      let parts = status.split(":");
+      if ((parts.length == 1 && status != STATE_SUCCEEDED) ||
+          (parts.length > 1  && parts[0] != STATE_FAILED)) {
+        // we only want to report success or failure
+        return;
+      }
+      let result = 0; // 0 means success
+      if (parts.length > 1) {
+        result = parseInt(parts[1]) || UNEXPECTED_ERROR;
+      }
+      Services.telemetry.getHistogramById("UPDATE_STATUS").add(result);
+    } catch(e) {
+      // Don't allow any exception to be propagated.
+      Components.utils.reportError(e);
     }
   },
 
@@ -1657,6 +1695,11 @@ UpdateService.prototype = {
   },
 
   _checkAddonCompatibility: function AUS__checkAddonCompatibility() {
+    try {
+      var hotfixID = Services.prefs.getCharPref(PREF_EM_HOTFIX_ID);
+    }
+    catch (e) { }
+
     // Get all the installed add-ons
     var self = this;
     AddonManager.getAllAddons(function(addons) {
@@ -1681,9 +1724,10 @@ UpdateService.prototype = {
         // incompatible. If an addon's type equals plugin it is skipped since
         // checking plugins compatibility information isn't supported and
         // getting the scope property of a plugin breaks in some environments
-        // (see bug 566787).
+        // (see bug 566787). The hotfix add-on is also ignored as it shouldn't
+        // block the user from upgrading.
         try {
-          if (addon.type != "plugin" &&
+          if (addon.type != "plugin" && addon.id != hotfixID &&
               !addon.appDisabled && !addon.userDisabled &&
               addon.scope != AddonManager.SCOPE_APPLICATION &&
               addon.isCompatible &&
@@ -2263,9 +2307,9 @@ Checker.prototype = {
     this._request.setRequestHeader("Cache-Control", "no-cache");
 
     var self = this;
-    this._request.onerror     = function(event) { self.onError(event);    };
-    this._request.onload      = function(event) { self.onLoad(event);     };
-    this._request.onprogress  = function(event) { self.onProgress(event); };
+    this._request.addEventListener("error", function(event) { self.onError(event); } ,false);
+    this._request.addEventListener("load", function(event) { self.onLoad(event); }, false);
+    this._request.addEventListener("progress", function(event) { self.onProgress(event); }, false);
 
     LOG("Checker:checkForUpdates - sending request to: " + url);
     this._request.send(null);
@@ -2350,24 +2394,8 @@ Checker.prototype = {
     var prefs = Services.prefs;
     var certs = null;
     if (!prefs.prefHasUserValue(PREF_APP_UPDATE_URL_OVERRIDE) &&
-        getPref("getBoolPref", PREF_APP_UPDATE_CERT_CHECKATTRS, true) &&
-        prefs.getBranch(PREF_APP_UPDATE_CERTS_BRANCH).getChildList("").length) {
-      certs = [];
-      let counter = 1;
-      while (true) {
-        let prefBranchCert = prefs.getBranch(PREF_APP_UPDATE_CERTS_BRANCH +
-                                             counter + ".");
-        let prefCertAttrs = prefBranchCert.getChildList("");
-        if (prefCertAttrs.length == 0)
-          break;
-
-        let certAttrs = {};
-        for each (let prefCertAttr in prefCertAttrs)
-          certAttrs[prefCertAttr] = prefBranchCert.getCharPref(prefCertAttr);
-
-        certs.push(certAttrs);
-        counter++;
-      }
+        getPref("getBoolPref", PREF_APP_UPDATE_CERT_CHECKATTRS, true)) {
+      certs = gCertUtils.readCertPrefs(PREF_APP_UPDATE_CERTS_BRANCH);
     }
 
     try {

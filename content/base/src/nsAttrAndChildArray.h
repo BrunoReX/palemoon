@@ -103,7 +103,6 @@ public:
   PRUint32 AttrCount() const;
   const nsAttrValue* GetAttr(nsIAtom* aLocalName, PRInt32 aNamespaceID = kNameSpaceID_None) const;
   const nsAttrValue* AttrAt(PRUint32 aPos) const;
-  nsresult SetAttr(nsIAtom* aLocalName, const nsAString& aValue);
   nsresult SetAndTakeAttr(nsIAtom* aLocalName, nsAttrValue& aValue);
   nsresult SetAndTakeAttr(nsINodeInfo* aName, nsAttrValue& aValue);
 
@@ -147,7 +146,7 @@ private:
 
   nsresult GetModifiableMapped(nsMappedAttributeElement* aContent,
                                nsHTMLStyleSheet* aSheet,
-                               PRBool aWillAddAttr,
+                               bool aWillAddAttr,
                                nsMappedAttributes** aModifiable);
   nsresult MakeMappedUnique(nsMappedAttributes* aAttributes);
 
@@ -187,8 +186,8 @@ private:
       (aChildCount << ATTRCHILD_ARRAY_ATTR_SLOTS_BITS);
   }
 
-  PRBool GrowBy(PRUint32 aGrowSize);
-  PRBool AddAttrSlot();
+  bool GrowBy(PRUint32 aGrowSize);
+  bool AddAttrSlot();
 
   /**
    * Set *aPos to aChild and update sibling pointers as needed.  aIndex is the

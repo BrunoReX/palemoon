@@ -94,6 +94,7 @@ struct YUVImage {
 union SharedImage {
   SurfaceDescriptor;
   YUVImage;
+  null_t;
 };
 
 struct ThebesBuffer {
@@ -103,32 +104,10 @@ struct ThebesBuffer {
 };
 union OptionalThebesBuffer { ThebesBuffer; null_t; };
 
-// For the "buffer creation" operations, we send an initial front
-// buffer that only contains (transparent) black pixels just so that
-// we can swap it back after the first OpPaint without a special case.
-
-struct OpCreateThebesBuffer {
-  PLayer layer;
-  OptionalThebesBuffer initialFront;
-  nsIntRegion frontValidRegion;
+union CanvasSurface {
+  SurfaceDescriptor;
+  null_t;
 };
-struct OpDestroyThebesFrontBuffer { PLayer layer; };
-
-struct OpCreateCanvasBuffer {
-  PLayer layer;
-  nsIntSize size;
-  SurfaceDescriptor initialFront;
-  bool needYFlip;
-};
-struct OpDestroyCanvasFrontBuffer { PLayer layer; };
-
-struct OpCreateImageBuffer {
-  PLayer layer;
-  nsIntSize size;
-  SharedImage initialFront;
-};
-struct OpDestroyImageFrontBuffer { PLayer layer; };
-
 
 // Change a layer's attributes
 struct CommonLayerAttributes {
@@ -187,7 +166,8 @@ struct OpPaintThebesBuffer {
 
 struct OpPaintCanvas  {
   PLayer layer;
-  SurfaceDescriptor newFrontBuffer;
+  CanvasSurface newFrontBuffer;
+  bool needYFlip;
 };
 
 struct OpPaintImage  {
@@ -203,12 +183,6 @@ union Edit {
   OpCreateImageLayer;
   OpCreateColorLayer;
   OpCreateCanvasLayer;
-  OpCreateCanvasBuffer;
-  OpCreateThebesBuffer;
-  OpCreateImageBuffer;
-  OpDestroyThebesFrontBuffer;
-  OpDestroyCanvasFrontBuffer;
-  OpDestroyImageFrontBuffer;
 
   OpSetLayerAttributes;
 
@@ -224,13 +198,13 @@ union Edit {
 
 
 // Replies to operations
-struct OpBufferSwap   { PLayer layer; SurfaceDescriptor newBackBuffer; };
+struct OpBufferSwap   { PLayer layer; CanvasSurface newBackBuffer; };
 
 struct OpImageSwap { PLayer layer; SharedImage newBackImage; };
 
 struct OpThebesBufferSwap {
   PLayer layer;
-  ThebesBuffer newBackBuffer;
+  OptionalThebesBuffer newBackBuffer;
   nsIntRegion newValidRegion;
   // If the parent took the child's old back buffer and returned its
   // old front buffer, |readOnlyFrontBuffer| may (if non-null) contain

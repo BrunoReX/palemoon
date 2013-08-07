@@ -60,7 +60,7 @@ public:
   already_AddRefed<nsIDocument> GetDocument()
     { nsCOMPtr<nsIDocument> copy = mDocument; return copy.forget(); }
 
-  PRBool GetScriptAccess() { return mScriptAccess; }
+  bool GetScriptAccess() { return mScriptAccess; }
 
   nsIURI* DocumentURI() { return mDocument->GetDocumentURI(); }
 
@@ -68,22 +68,29 @@ public:
   nsresult SetPrototypeBinding(const nsACString& aRef,
                                nsXBLPrototypeBinding* aBinding);
 
+  // This removes the binding without deleting it
+  void RemovePrototypeBinding(const nsACString& aRef);
+
+  nsresult WritePrototypeBindings();
+
   void SetFirstPrototypeBinding(nsXBLPrototypeBinding* aBinding);
   
   void FlushSkinStylesheets();
 
-  PRBool IsChrome() { return mIsChrome; }
+  bool IsChrome() { return mIsChrome; }
 
   // nsIScriptGlobalObjectOwner methods
   virtual nsIScriptGlobalObject* GetScriptGlobalObject();
+
+  static nsresult ReadPrototypeBindings(nsIURI* aURI, nsXBLDocumentInfo** aDocInfo);
 
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(nsXBLDocumentInfo,
                                                          nsIScriptGlobalObjectOwner)
 
 private:
   nsCOMPtr<nsIDocument> mDocument;
-  PRPackedBool mScriptAccess;
-  PRPackedBool mIsChrome;
+  bool mScriptAccess;
+  bool mIsChrome;
   // the binding table owns each nsXBLPrototypeBinding
   nsObjectHashtable* mBindingTable;
   // non-owning pointer to the first binding in the table

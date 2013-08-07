@@ -53,6 +53,8 @@
 #include "nsISerializable.h"
 #include "nsSerializationHelper.h"
 
+#include "mozilla/Telemetry.h"
+
 /******************************************************************************
  *  nsDiskCacheMap
  *****************************************************************************/
@@ -82,7 +84,7 @@ nsDiskCacheMap::Open(nsILocalFile *  cacheDirectory)
     rv = localFile->OpenNSPRFileDesc(PR_RDWR | PR_CREATE_FILE, 00600, &mMapFD);
     NS_ENSURE_SUCCESS(rv, NS_ERROR_FILE_CORRUPTED);
 
-    PRBool cacheFilesExist = CacheFilesExist();
+    bool cacheFilesExist = CacheFilesExist();
     rv = NS_ERROR_FILE_CORRUPTED;  // presume the worst
 
     // check size of map file
@@ -160,21 +162,30 @@ nsDiskCacheMap::Open(nsILocalFile *  cacheDirectory)
     if (NS_FAILED(rv))  goto error_exit;
 
     // set dirty bit and flush header
-    mHeader.mIsDirty    = PR_TRUE;
+    mHeader.mIsDirty    = true;
     rv = FlushHeader();
     if (NS_FAILED(rv))  goto error_exit;
     
+    {
+        // extra scope so the compiler doesn't barf on the above gotos jumping
+        // past this declaration down here
+        PRUint32 overhead =
+            moz_malloc_size_of(mRecordArray, mHeader.mRecordCount * sizeof(nsDiskCacheRecord));
+        mozilla::Telemetry::Accumulate(mozilla::Telemetry::HTTP_DISK_CACHE_OVERHEAD,
+                overhead);
+    }
+
     return NS_OK;
     
 error_exit:
-    (void) Close(PR_FALSE);
+    (void) Close(false);
        
     return rv;
 }
 
 
 nsresult
-nsDiskCacheMap::Close(PRBool flush)
+nsDiskCacheMap::Close(bool flush)
 {
     nsresult  rv = NS_OK;
 
@@ -184,10 +195,10 @@ nsDiskCacheMap::Close(PRBool flush)
         rv = CloseBlockFiles(flush);
         if (NS_SUCCEEDED(rv) && flush && mRecordArray) {
             // write the map records
-            rv = FlushRecords(PR_FALSE);   // don't bother swapping buckets back
+            rv = FlushRecords(false);   // don't bother swapping buckets back
             if (NS_SUCCEEDED(rv)) {
                 // clear dirty bit
-                mHeader.mIsDirty = PR_FALSE;
+                mHeader.mIsDirty = false;
                 rv = FlushHeader();
             }
         }
@@ -243,7 +254,7 @@ nsDiskCacheMap::FlushHeader()
 
 
 nsresult
-nsDiskCacheMap::FlushRecords(PRBool unswap)
+nsDiskCacheMap::FlushRecords(bool unswap)
 {
     if (!mMapFD)  return NS_ERROR_NOT_AVAILABLE;
     
@@ -629,14 +640,14 @@ nsDiskCacheMap::OpenBlockFiles()
     }
     // close all files in case of any error
     if (NS_FAILED(rv)) 
-        (void)CloseBlockFiles(PR_FALSE); // we already have an error to report
+        (void)CloseBlockFiles(false); // we already have an error to report
 
     return rv;
 }
 
 
 nsresult
-nsDiskCacheMap::CloseBlockFiles(PRBool flush)
+nsDiskCacheMap::CloseBlockFiles(bool flush)
 {
     nsresult rv, rv2 = NS_OK;
     for (int i=0; i < kNumBlockFiles; ++i) {
@@ -647,22 +658,22 @@ nsDiskCacheMap::CloseBlockFiles(PRBool flush)
 }
 
 
-PRBool
+bool
 nsDiskCacheMap::CacheFilesExist()
 {
     nsCOMPtr<nsILocalFile> blockFile;
     nsresult rv;
     
     for (int i = 0; i < kNumBlockFiles; ++i) {
-        PRBool exists;
+        bool exists;
         rv = GetBlockFileForIndex(i, getter_AddRefs(blockFile));
-        if (NS_FAILED(rv))  return PR_FALSE;
+        if (NS_FAILED(rv))  return false;
 
         rv = blockFile->Exists(&exists);
-        if (NS_FAILED(rv) || !exists)  return PR_FALSE;
+        if (NS_FAILED(rv) || !exists)  return false;
     }
 
-    return PR_TRUE;
+    return true;
 }
 
 
@@ -709,7 +720,7 @@ nsDiskCacheMap::ReadDiskCacheEntry(nsDiskCacheRecord * record)
         nsCOMPtr<nsILocalFile> file;
         rv = GetLocalFileForDiskCacheRecord(record,
                                             nsDiskCache::kMetaData,
-                                            PR_FALSE,
+                                            false,
                                             getter_AddRefs(file));
         NS_ENSURE_SUCCESS(rv, nsnull);
 
@@ -892,7 +903,7 @@ nsDiskCacheMap::WriteDiskCacheEntry(nsDiskCacheBinding *  binding)
         nsCOMPtr<nsILocalFile> localFile;
         rv = GetLocalFileForDiskCacheRecord(&binding->mRecord,
                                             nsDiskCache::kMetaData,
-                                            PR_TRUE,
+                                            true,
                                             getter_AddRefs(localFile));
         NS_ENSURE_SUCCESS(rv, rv);
         
@@ -989,7 +1000,7 @@ nsDiskCacheMap::DeleteStorage(nsDiskCacheRecord * record)
 
 
 nsresult
-nsDiskCacheMap::DeleteStorage(nsDiskCacheRecord * record, PRBool metaData)
+nsDiskCacheMap::DeleteStorage(nsDiskCacheRecord * record, bool metaData)
 {
     CACHE_LOG_DEBUG(("CACHE: DeleteStorage [%x %u]\n", record->HashNumber(),
         metaData));
@@ -1003,9 +1014,9 @@ nsDiskCacheMap::DeleteStorage(nsDiskCacheRecord * record, PRBool metaData)
         PRUint32  sizeK = metaData ? record->MetaFileSize() : record->DataFileSize();
         // XXX if sizeK == USHRT_MAX, stat file for actual size
 
-        rv = GetFileForDiskCacheRecord(record, metaData, PR_FALSE, getter_AddRefs(file));
+        rv = GetFileForDiskCacheRecord(record, metaData, false, getter_AddRefs(file));
         if (NS_SUCCEEDED(rv)) {
-            rv = file->Remove(PR_FALSE);    // false == non-recursive
+            rv = file->Remove(false);    // false == non-recursive
         }
         DecrementTotalSize(sizeK);
         
@@ -1026,8 +1037,8 @@ nsDiskCacheMap::DeleteStorage(nsDiskCacheRecord * record, PRBool metaData)
 
 nsresult
 nsDiskCacheMap::GetFileForDiskCacheRecord(nsDiskCacheRecord * record,
-                                          PRBool              meta,
-                                          PRBool              createPath,
+                                          bool                meta,
+                                          bool                createPath,
                                           nsIFile **          result)
 {
     if (!mCacheDirectory)  return NS_ERROR_NOT_AVAILABLE;
@@ -1045,7 +1056,7 @@ nsDiskCacheMap::GetFileForDiskCacheRecord(nsDiskCacheRecord * record,
     rv = file->AppendNative(nsPrintfCString("%02X", (hash >> 20) & 0xFF));
     if (NS_FAILED(rv))  return rv;
 
-    PRBool exists;
+    bool exists;
     if (createPath && (NS_FAILED(file->Exists(&exists)) || !exists)) {
         nsCOMPtr<nsILocalFile> localFile = do_QueryInterface(file, &rv);
         rv = localFile->Create(nsIFile::DIRECTORY_TYPE, 0700);
@@ -1067,8 +1078,8 @@ nsDiskCacheMap::GetFileForDiskCacheRecord(nsDiskCacheRecord * record,
 
 nsresult
 nsDiskCacheMap::GetLocalFileForDiskCacheRecord(nsDiskCacheRecord * record,
-                                               PRBool              meta,
-                                               PRBool              createPath,
+                                               bool                meta,
+                                               bool                createPath,
                                                nsILocalFile **     result)
 {
     nsCOMPtr<nsIFile> file;

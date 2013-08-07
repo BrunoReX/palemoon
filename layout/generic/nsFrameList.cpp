@@ -134,7 +134,7 @@ nsFrameList::RemoveFrame(nsIFrame* aFrame)
   }
 }
 
-PRBool
+bool
 nsFrameList::RemoveFrameIfPresent(nsIFrame* aFrame)
 {
   NS_PRECONDITION(aFrame, "null ptr");
@@ -142,10 +142,10 @@ nsFrameList::RemoveFrameIfPresent(nsIFrame* aFrame)
   for (Enumerator e(*this); !e.AtEnd(); e.Next()) {
     if (e.get() == aFrame) {
       RemoveFrame(aFrame);
-      return PR_TRUE;
+      return true;
     }
   }
-  return PR_FALSE;
+  return false;
 }
 
 nsFrameList
@@ -189,16 +189,16 @@ nsFrameList::DestroyFrame(nsIFrame* aFrame)
   aFrame->Destroy();
 }
 
-PRBool
+bool
 nsFrameList::DestroyFrameIfPresent(nsIFrame* aFrame)
 {
   NS_PRECONDITION(aFrame, "null ptr");
 
   if (RemoveFrameIfPresent(aFrame)) {
     aFrame->Destroy();
-    return PR_TRUE;
+    return true;
   }
-  return PR_FALSE;
+  return false;
 }
 
 nsFrameList::Slice
@@ -347,7 +347,7 @@ nsFrameList::IndexOf(nsIFrame* aFrame) const
   return -1;
 }
 
-PRBool
+bool
 nsFrameList::ContainsFrame(const nsIFrame* aFrame) const
 {
   NS_PRECONDITION(aFrame, "null ptr");
@@ -355,11 +355,11 @@ nsFrameList::ContainsFrame(const nsIFrame* aFrame) const
   nsIFrame* frame = mFirstChild;
   while (frame) {
     if (frame == aFrame) {
-      return PR_TRUE;
+      return true;
     }
     frame = frame->GetNextSibling();
   }
-  return PR_FALSE;
+  return false;
 }
 
 PRInt32
@@ -398,17 +398,17 @@ static int CompareByContentOrder(const nsIFrame* aF1, const nsIFrame* aF2)
     }
   }
 
-  NS_ASSERTION(PR_FALSE, "Frames for same content but not in relative flow order");
+  NS_ASSERTION(false, "Frames for same content but not in relative flow order");
   return 0;
 }
 
 class CompareByContentOrderComparator
 {
   public:
-  PRBool Equals(const nsIFrame* aA, const nsIFrame* aB) const {
+  bool Equals(const nsIFrame* aA, const nsIFrame* aB) const {
     return aA == aB;
   }
-  PRBool LessThan(const nsIFrame* aA, const nsIFrame* aB) const {
+  bool LessThan(const nsIFrame* aA, const nsIFrame* aB) const {
     return CompareByContentOrder(aA, aB) < 0;
   }
 };

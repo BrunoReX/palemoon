@@ -198,6 +198,11 @@ else # ! MOZ_DEBUG
 # Used for generating an optimized build with debugging symbols.
 # Used in the Windows nightlies to generate symbols for crash reporting.
 ifdef MOZ_DEBUG_SYMBOLS
+ifeq ($(AS),yasm)
+ASFLAGS += -g cv8
+else
+ASFLAGS += -Zi
+endif
 OS_CXXFLAGS += -Zi -UDEBUG -DNDEBUG
 OS_CFLAGS += -Zi -UDEBUG -DNDEBUG
 ifdef HAVE_64BIT_OS
@@ -238,13 +243,13 @@ endif # MOZ_DEBUG
 # the Makefile wants static CRT linking.
 ifeq ($(MOZ_MEMORY)_$(USE_STATIC_LIBS),1_1)
 # Disable default CRT libs and add the right lib path for the linker
-MOZ_UTILS_LDFLAGS=
+MOZ_GLUE_LDFLAGS=
 endif
 
 endif # WINNT && !GNU_CC
 
-ifndef MOZ_UTILS_PROGRAM_LDFLAGS
-MOZ_UTILS_PROGRAM_LDFLAGS=$(MOZ_UTILS_LDFLAGS)
+ifndef MOZ_GLUE_PROGRAM_LDFLAGS
+MOZ_GLUE_PROGRAM_LDFLAGS=$(MOZ_GLUE_LDFLAGS)
 endif
 
 #

@@ -54,7 +54,7 @@ nsHTMLFieldSetElement::nsHTMLFieldSetElement(already_AddRefed<nsINodeInfo> aNode
   , mFirstLegend(nsnull)
 {
   // <fieldset> is always barred from constraint validation.
-  SetBarredFromConstraintValidation(PR_TRUE);
+  SetBarredFromConstraintValidation(true);
 
   // We start out enabled
   AddStatesSilently(NS_EVENT_STATE_ENABLED);
@@ -63,7 +63,7 @@ nsHTMLFieldSetElement::nsHTMLFieldSetElement(already_AddRefed<nsINodeInfo> aNode
 nsHTMLFieldSetElement::~nsHTMLFieldSetElement()
 {
   PRUint32 length = mDependentElements.Length();
-  for (PRUint32 i=0; i<length; ++i) {
+  for (PRUint32 i = 0; i < length; ++i) {
     mDependentElements[i]->ForgetFieldSet(this);
   }
 }
@@ -109,7 +109,7 @@ nsresult
 nsHTMLFieldSetElement::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
 {
   // Do not process any DOM events if the element is disabled.
-  aVisitor.mCanHandle = PR_FALSE;
+  aVisitor.mCanHandle = false;
   if (IsElementDisabledForEvents(aVisitor.mEvent->message, NULL)) {
     return NS_OK;
   }
@@ -119,16 +119,16 @@ nsHTMLFieldSetElement::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
 
 nsresult
 nsHTMLFieldSetElement::AfterSetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
-                                    const nsAString* aValue, PRBool aNotify)
+                                    const nsAString* aValue, bool aNotify)
 {
   if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::disabled &&
       nsINode::GetFirstChild()) {
     if (!mElements) {
       mElements = new nsContentList(this, MatchListedElements, nsnull, nsnull,
-                                    PR_TRUE);
+                                    true);
     }
 
-    PRUint32 length = mElements->Length(PR_TRUE);
+    PRUint32 length = mElements->Length(true);
     for (PRUint32 i=0; i<length; ++i) {
       static_cast<nsGenericHTMLFormElement*>(mElements->GetNodeAt(i))
         ->FieldSetDisabledChanged(aNotify);
@@ -155,7 +155,7 @@ nsHTMLFieldSetElement::GetType(nsAString& aType)
 }
 
 /* static */
-PRBool
+bool
 nsHTMLFieldSetElement::MatchListedElements(nsIContent* aContent, PRInt32 aNamespaceID,
                                            nsIAtom* aAtom, void* aData)
 {
@@ -169,7 +169,7 @@ nsHTMLFieldSetElement::GetElements(nsIDOMHTMLCollection** aElements)
 {
   if (!mElements) {
     mElements = new nsContentList(this, MatchListedElements, nsnull, nsnull,
-                                  PR_TRUE);
+                                  true);
   }
 
   NS_ADDREF(*aElements = mElements);
@@ -192,7 +192,7 @@ nsHTMLFieldSetElement::SubmitNamesValues(nsFormSubmission* aFormSubmission)
 
 nsresult
 nsHTMLFieldSetElement::InsertChildAt(nsIContent* aChild, PRUint32 aIndex,
-                                     PRBool aNotify)
+                                     bool aNotify)
 {
   bool firstLegendHasChanged = false;
 
@@ -221,7 +221,7 @@ nsHTMLFieldSetElement::InsertChildAt(nsIContent* aChild, PRUint32 aIndex,
 }
 
 nsresult
-nsHTMLFieldSetElement::RemoveChildAt(PRUint32 aIndex, PRBool aNotify)
+nsHTMLFieldSetElement::RemoveChildAt(PRUint32 aIndex, bool aNotify)
 {
   bool firstLegendHasChanged = false;
 
@@ -250,7 +250,7 @@ nsHTMLFieldSetElement::RemoveChildAt(PRUint32 aIndex, PRBool aNotify)
 }
 
 void
-nsHTMLFieldSetElement::NotifyElementsForFirstLegendChange(PRBool aNotify)
+nsHTMLFieldSetElement::NotifyElementsForFirstLegendChange(bool aNotify)
 {
   /**
    * NOTE: this could be optimized if only call when the fieldset is currently
@@ -260,11 +260,11 @@ nsHTMLFieldSetElement::NotifyElementsForFirstLegendChange(PRBool aNotify)
    */
   if (!mElements) {
     mElements = new nsContentList(this, MatchListedElements, nsnull, nsnull,
-                                  PR_TRUE);
+                                  true);
   }
 
-  PRUint32 length = mElements->Length(PR_TRUE);
-  for (PRUint32 i=0; i<length; ++i) {
+  PRUint32 length = mElements->Length(true);
+  for (PRUint32 i = 0; i < length; ++i) {
     static_cast<nsGenericHTMLFormElement*>(mElements->GetNodeAt(i))
       ->FieldSetFirstLegendChanged(aNotify);
   }

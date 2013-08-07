@@ -143,11 +143,12 @@ protected:
                         nsIFrame *aSource,
                         float aGraphicOpacity,
                         const gfxRect *aOverrideBounds);
-  NS_IMETHOD GetPatternFirstChild(nsIFrame **kid);
+  nsIFrame*  GetPatternFirstChild();
   gfxRect    GetPatternRect(const gfxRect &bbox,
                             const gfxMatrix &callerCTM,
                             nsIFrame *aTarget);
-  gfxMatrix  GetPatternMatrix(const gfxRect &bbox,
+  gfxMatrix  GetPatternMatrix(const gfxMatrix &patternTransform,
+                              const gfxRect &bbox,
                               const gfxRect &callerBBox,
                               const gfxMatrix &callerCTM);
   gfxMatrix  ConstructCTM(const gfxRect &callerBBox,
@@ -167,8 +168,8 @@ private:
 
 protected:
   // This flag is used to detect loops in xlink:href processing
-  PRPackedBool                      mLoopFlag;
-  PRPackedBool                      mNoHRefURI;
+  bool                              mLoopFlag;
+  bool                              mNoHRefURI;
 };
 
 #endif

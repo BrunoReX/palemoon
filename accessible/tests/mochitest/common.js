@@ -13,15 +13,13 @@ const nsIAccessibleTextChangeEvent =
 
 const nsIAccessibleStates = Components.interfaces.nsIAccessibleStates;
 const nsIAccessibleRole = Components.interfaces.nsIAccessibleRole;
-const nsIAccessibleTypes = Components.interfaces.nsIAccessibleTypes;
+const nsIAccessibleScrollType = Components.interfaces.nsIAccessibleScrollType;
+const nsIAccessibleCoordinateType = Components.interfaces.nsIAccessibleCoordinateType;
 
 const nsIAccessibleRelation = Components.interfaces.nsIAccessibleRelation;
 
 const nsIAccessNode = Components.interfaces.nsIAccessNode;
 const nsIAccessible = Components.interfaces.nsIAccessible;
-
-const nsIAccessibleCoordinateType =
-      Components.interfaces.nsIAccessibleCoordinateType;
 
 const nsIAccessibleDocument = Components.interfaces.nsIAccessibleDocument;
 const nsIAccessibleApplication = Components.interfaces.nsIAccessibleApplication;
@@ -44,7 +42,7 @@ const nsIDOMDocument = Components.interfaces.nsIDOMDocument;
 const nsIDOMEvent = Components.interfaces.nsIDOMEvent;
 const nsIDOMHTMLDocument = Components.interfaces.nsIDOMHTMLDocument;
 const nsIDOMNode = Components.interfaces.nsIDOMNode;
-const nsIDOMNSHTMLElement = Components.interfaces.nsIDOMNSHTMLElement;
+const nsIDOMHTMLElement = Components.interfaces.nsIDOMHTMLElement;
 const nsIDOMWindow = Components.interfaces.nsIDOMWindow;
 const nsIDOMXULElement = Components.interfaces.nsIDOMXULElement;
 
@@ -52,15 +50,24 @@ const nsIPropertyElement = Components.interfaces.nsIPropertyElement;
 
 ////////////////////////////////////////////////////////////////////////////////
 // OS detect
-const MAC = (navigator.platform.indexOf("Mac") != -1)? true : false;
-const LINUX = (navigator.platform.indexOf("Linux") != -1)? true : false;
-const SOLARIS = (navigator.platform.indexOf("SunOS") != -1)? true : false;
-const WIN = (navigator.platform.indexOf("Win") != -1)? true : false;
+
+const MAC = (navigator.platform.indexOf("Mac") != -1);
+const LINUX = (navigator.platform.indexOf("Linux") != -1);
+const SOLARIS = (navigator.platform.indexOf("SunOS") != -1);
+const WIN = (navigator.platform.indexOf("Win") != -1);
+
+////////////////////////////////////////////////////////////////////////////////
+// Application detect
+// Firefox is assumed by default.
+
+const SEAMONKEY = navigator.userAgent.match(/ SeaMonkey\//);
 
 ////////////////////////////////////////////////////////////////////////////////
 // Accessible general
 
 const STATE_BUSY = nsIAccessibleStates.STATE_BUSY;
+
+const SCROLL_TYPE_ANYWHERE = nsIAccessibleScrollType.SCROLL_TYPE_ANYWHERE;
 
 const kEmbedChar = String.fromCharCode(0xfffc);
 
@@ -69,9 +76,10 @@ const kCircleBulletText = String.fromCharCode(0x25e6) + " ";
 const kSquareBulletText = String.fromCharCode(0x25aa) + " ";
 
 /**
- * nsIAccessibleRetrieval, initialized when test is loaded.
+ * nsIAccessibleRetrieval service.
  */
-var gAccRetrieval = null;
+var gAccRetrieval = Components.classes["@mozilla.org/accessibleRetrieval;1"].
+  getService(nsIAccessibleRetrieval);
 
 /**
  * Invokes the given function when document is loaded and focused. Preferable
@@ -80,14 +88,15 @@ var gAccRetrieval = null;
  *
  * @param aFunc  the function to invoke
  */
-function addA11yLoadEvent(aFunc)
+function addA11yLoadEvent(aFunc, aWindow)
 {
   function waitForDocLoad()
   {
     window.setTimeout(
       function()
       {
-        var accDoc = getAccessible(document);
+        var targetDocument = aWindow ? aWindow.document : document;
+        var accDoc = getAccessible(targetDocument);
         var state = {};
         accDoc.getState(state, {});
         if (state.value & STATE_BUSY)
@@ -99,7 +108,7 @@ function addA11yLoadEvent(aFunc)
     );
   }
 
-  SimpleTest.waitForFocus(waitForDocLoad);
+  SimpleTest.waitForFocus(waitForDocLoad, aWindow);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -589,21 +598,15 @@ function prettyName(aIdentifier)
       msg += "defunct";
     }
 
-    if (acc) {
-      var exp = /native\s*@\s*(0x[a-f0-9]+)/g;
-      var match = exp.exec(acc.valueOf());
-      if (match)
-        msg += ", address: " + match[1];
-      else
-        msg += ", address: " + acc.valueOf();
-    }
+    if (acc)
+      msg += ", address: " + getObjAddress(acc);
     msg += "]";
 
     return msg;
   }
 
   if (aIdentifier instanceof nsIDOMNode)
-    return getNodePrettyName(aIdentifier);
+    return "[ " + getNodePrettyName(aIdentifier) + " ]";
 
   return " '" + aIdentifier + "' ";
 }
@@ -615,27 +618,30 @@ function prettyName(aIdentifier)
 ////////////////////////////////////////////////////////////////////////////////
 // Accessible general
 
-function initialize()
-{
-  gAccRetrieval = Components.classes["@mozilla.org/accessibleRetrieval;1"].
-    getService(nsIAccessibleRetrieval);
-}
-
-addLoadEvent(initialize);
-
 function getNodePrettyName(aNode)
 {
   try {
-    if (aNode.nodeType == nsIDOMNode.DOCUMENT_NODE)
-      return " 'document node' ";
+    var tag = "";
+    if (aNode.nodeType == nsIDOMNode.DOCUMENT_NODE) {
+      tag = "document";
+    } else {
+      tag = aNode.localName;
+      if (aNode.nodeType == nsIDOMNode.ELEMENT_NODE && aNode.hasAttribute("id"))
+        tag += "@id=\"" + aNode.getAttribute("id") + "\"";
+    }
 
-    var name = " '" + aNode.localName;
-    if (aNode.nodeType == nsIDOMNode.ELEMENT_NODE && aNode.hasAttribute("id"))
-      name += "@id='" + aNode.getAttribute("id") + "'";
-
-    name += " node' "
-    return name;
+    return "'" + tag + " node', address: " + getObjAddress(aNode);
   } catch (e) {
     return "' no node info '";
   }
+}
+
+function getObjAddress(aObj)
+{
+  var exp = /native\s*@\s*(0x[a-f0-9]+)/g;
+  var match = exp.exec(aObj.valueOf());
+  if (match)
+    return match[1];
+
+  return aObj.valueOf();
 }

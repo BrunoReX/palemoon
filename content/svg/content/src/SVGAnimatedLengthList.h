@@ -41,9 +41,7 @@
 
 class nsSVGElement;
 
-#ifdef MOZ_SMIL
 #include "nsISMILAttr.h"
-#endif // MOZ_SMIL
 
 namespace mozilla {
 
@@ -96,15 +94,13 @@ public:
   void ClearAnimValue(nsSVGElement *aElement,
                       PRUint32 aAttrEnum);
 
-  PRBool IsAnimating() const {
+  bool IsAnimating() const {
     return !!mAnimVal;
   }
 
-#ifdef MOZ_SMIL
   /// Callers own the returned nsISMILAttr
   nsISMILAttr* ToSMILAttr(nsSVGElement* aSVGElement, PRUint8 aAttrEnum,
-                          PRUint8 aAxis, PRBool aCanZeroPadList);
-#endif // MOZ_SMIL
+                          PRUint8 aAxis, bool aCanZeroPadList);
 
 private:
 
@@ -116,7 +112,6 @@ private:
   SVGLengthList mBaseVal;
   nsAutoPtr<SVGLengthList> mAnimVal;
 
-#ifdef MOZ_SMIL
   struct SMILAnimatedLengthList : public nsISMILAttr
   {
   public:
@@ -124,7 +119,7 @@ private:
                            nsSVGElement* aSVGElement,
                            PRUint8 aAttrEnum,
                            PRUint8 aAxis,
-                           PRBool aCanZeroPadList)
+                           bool aCanZeroPadList)
       : mVal(aVal)
       , mElement(aSVGElement)
       , mAttrEnum(aAttrEnum)
@@ -139,18 +134,17 @@ private:
     nsSVGElement* mElement;
     PRUint8 mAttrEnum;
     PRUint8 mAxis;
-    PRPackedBool mCanZeroPadList; // See SVGLengthListAndInfo::CanZeroPadList
+    bool mCanZeroPadList; // See SVGLengthListAndInfo::CanZeroPadList
 
     // nsISMILAttr methods
     virtual nsresult ValueFromString(const nsAString& aStr,
                                      const nsISMILAnimationElement* aSrcElement,
                                      nsSMILValue& aValue,
-                                     PRBool& aPreventCachingOfSandwich) const;
+                                     bool& aPreventCachingOfSandwich) const;
     virtual nsSMILValue GetBaseValue() const;
     virtual void ClearAnimValue();
     virtual nsresult SetAnimValue(const nsSMILValue& aValue);
   };
-#endif // MOZ_SMIL
 };
 
 } // namespace mozilla

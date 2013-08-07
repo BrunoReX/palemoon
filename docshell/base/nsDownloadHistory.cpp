@@ -68,11 +68,11 @@ nsDownloadHistory::AddDownload(nsIURI *aSource,
   if (!history)
     return NS_ERROR_NOT_AVAILABLE;
 
-  PRBool visited;
+  bool visited;
   nsresult rv = history->IsVisited(aSource, &visited);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = history->AddURI(aSource, PR_FALSE, PR_TRUE, aReferrer);
+  rv = history->AddURI(aSource, false, true, aReferrer);
   NS_ENSURE_SUCCESS(rv, rv);
   
   if (!visited) {

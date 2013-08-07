@@ -77,7 +77,7 @@ static const PRUint32 ASK_BEFORE_ACCEPT = 1;
 static const PRUint32 ACCEPT_SESSION = 2;
 static const PRUint32 ACCEPT_FOR_N_DAYS = 3;
 
-static const PRBool kDefaultPolicy = PR_TRUE;
+static const bool kDefaultPolicy = true;
 static const char kCookiesLifetimePolicy[] = "network.cookie.lifetimePolicy";
 static const char kCookiesLifetimeDays[] = "network.cookie.lifetime.days";
 static const char kCookiesAlwaysAcceptSession[] = "network.cookie.alwaysAcceptSessionCookies";
@@ -89,23 +89,6 @@ static const char kCookiesLifetimeBehavior[] = "network.cookie.lifetime.behavior
 static const char kCookiesAskPermission[] = "network.cookie.warnAboutCookies";
 
 static const char kPermissionType[] = "cookie";
-
-#ifdef MOZ_MAIL_NEWS
-// returns PR_TRUE if URI appears to be the URI of a mailnews protocol
-// XXXbz this should be a protocol flag, not a scheme list, dammit!
-static PRBool
-IsFromMailNews(nsIURI *aURI)
-{
-  static const char *kMailNewsProtocols[] =
-      { "imap", "news", "snews", "mailbox", nsnull };
-  PRBool result;
-  for (const char **p = kMailNewsProtocols; *p; ++p) {
-    if (NS_SUCCEEDED(aURI->SchemeIs(*p, &result)) && result)
-      return PR_TRUE;
-  }
-  return PR_FALSE;
-}
-#endif
 
 NS_IMPL_ISUPPORTS2(nsCookiePermission,
                    nsICookiePermission,
@@ -125,23 +108,23 @@ nsCookiePermission::Init()
   nsCOMPtr<nsIPrefBranch2> prefBranch =
       do_GetService(NS_PREFSERVICE_CONTRACTID);
   if (prefBranch) {
-    prefBranch->AddObserver(kCookiesLifetimePolicy, this, PR_FALSE);
-    prefBranch->AddObserver(kCookiesLifetimeDays, this, PR_FALSE);
-    prefBranch->AddObserver(kCookiesAlwaysAcceptSession, this, PR_FALSE);
+    prefBranch->AddObserver(kCookiesLifetimePolicy, this, false);
+    prefBranch->AddObserver(kCookiesLifetimeDays, this, false);
+    prefBranch->AddObserver(kCookiesAlwaysAcceptSession, this, false);
     PrefChanged(prefBranch, nsnull);
 
     // migration code for original cookie prefs
-    PRBool migrated;
+    bool migrated;
     rv = prefBranch->GetBoolPref(kCookiesPrefsMigrated, &migrated);
     if (NS_FAILED(rv) || !migrated) {
-      PRBool warnAboutCookies = PR_FALSE;
+      bool warnAboutCookies = false;
       prefBranch->GetBoolPref(kCookiesAskPermission, &warnAboutCookies);
 
       // if the user is using ask before accepting, we'll use that
       if (warnAboutCookies)
         prefBranch->SetIntPref(kCookiesLifetimePolicy, ASK_BEFORE_ACCEPT);
         
-      PRBool lifetimeEnabled = PR_FALSE;
+      bool lifetimeEnabled = false;
       prefBranch->GetBoolPref(kCookiesLifetimeEnabled, &lifetimeEnabled);
       
       // if they're limiting lifetime and not using the prompts, use the 
@@ -154,7 +137,7 @@ nsCookiePermission::Init()
         else
           prefBranch->SetIntPref(kCookiesLifetimePolicy, ACCEPT_SESSION);
       }
-      prefBranch->SetBoolPref(kCookiesPrefsMigrated, PR_TRUE);
+      prefBranch->SetBoolPref(kCookiesPrefsMigrated, true);
     }
   }
 
@@ -178,7 +161,7 @@ nsCookiePermission::PrefChanged(nsIPrefBranch *aPrefBranch,
     // save cookie lifetime in seconds instead of days
     mCookiesLifetimeSec = val * 24 * 60 * 60;
 
-  PRBool bval;
+  bool bval;
   if (PREF_CHANGED(kCookiesAlwaysAcceptSession) &&
       NS_SUCCEEDED(aPrefBranch->GetBoolPref(kCookiesAlwaysAcceptSession, &bval)))
     mCookiesAlwaysAcceptSession = bval;
@@ -206,21 +189,22 @@ nsCookiePermission::CanAccess(nsIURI         *aURI,
                               nsIChannel     *aChannel,
                               nsCookieAccess *aResult)
 {
-#ifdef MOZ_MAIL_NEWS
-  // If this URI is a mailnews one (e.g. imap etc), don't allow cookies for
-  // it.
-  if (IsFromMailNews(aURI)) {
+  // Check this protocol doesn't allow cookies
+  bool hasFlags;
+  nsresult rv =
+    NS_URIChainHasFlags(aURI, nsIProtocolHandler::URI_FORBIDS_COOKIE_ACCESS,
+                        &hasFlags);
+  if (NS_FAILED(rv) || hasFlags) {
     *aResult = ACCESS_DENY;
     return NS_OK;
   }
-#endif // MOZ_MAIL_NEWS
 
   // Lazily initialize ourselves
   if (!EnsureInitialized())
     return NS_ERROR_UNEXPECTED;
 
   // finally, check with permission manager...
-  nsresult rv = mPermMgr->TestPermission(aURI, kPermissionType, (PRUint32 *) aResult);
+  rv = mPermMgr->TestPermission(aURI, kPermissionType, (PRUint32 *) aResult);
   if (NS_SUCCEEDED(rv)) {
     switch (*aResult) {
     // if we have one of the publicly-available values, just return it
@@ -248,9 +232,9 @@ NS_IMETHODIMP
 nsCookiePermission::CanSetCookie(nsIURI     *aURI,
                                  nsIChannel *aChannel,
                                  nsICookie2 *aCookie,
-                                 PRBool     *aIsSession,
+                                 bool       *aIsSession,
                                  PRInt64    *aExpiry,
-                                 PRBool     *aResult)
+                                 bool       *aResult)
 {
   NS_ASSERTION(aURI, "null uri");
 
@@ -264,14 +248,14 @@ nsCookiePermission::CanSetCookie(nsIURI     *aURI,
   mPermMgr->TestPermission(aURI, kPermissionType, &perm);
   switch (perm) {
   case nsICookiePermission::ACCESS_SESSION:
-    *aIsSession = PR_TRUE;
+    *aIsSession = true;
 
   case nsIPermissionManager::ALLOW_ACTION: // ACCESS_ALLOW
-    *aResult = PR_TRUE;
+    *aResult = true;
     break;
 
   case nsIPermissionManager::DENY_ACTION:  // ACCESS_DENY
-    *aResult = PR_FALSE;
+    *aResult = false;
     break;
 
   default:
@@ -282,7 +266,7 @@ nsCookiePermission::CanSetCookie(nsIURI     *aURI,
     // now we need to figure out what type of accept policy we're dealing with
     // if we accept cookies normally, just bail and return
     if (mCookiesLifetimePolicy == ACCEPT_NORMALLY) {
-      *aResult = PR_TRUE;
+      *aResult = true;
       return NS_OK;
     }
     
@@ -297,12 +281,12 @@ nsCookiePermission::CanSetCookie(nsIURI     *aURI,
       // accept the cookie and return
       if ((*aIsSession && mCookiesAlwaysAcceptSession) ||
           InPrivateBrowsing()) {
-        *aResult = PR_TRUE;
+        *aResult = true;
         return NS_OK;
       }
       
       // default to rejecting, in case the prompting process fails
-      *aResult = PR_FALSE;
+      *aResult = false;
 
       nsCAutoString hostPort;
       aURI->GetHostPort(hostPort);
@@ -343,7 +327,7 @@ nsCookiePermission::CanSetCookie(nsIURI     *aURI,
       // get some useful information to present to the user:
       // whether a previous cookie already exists, and how many cookies this host
       // has set
-      PRBool foundCookie = PR_FALSE;
+      bool foundCookie = false;
       PRUint32 countFromHost;
       nsCOMPtr<nsICookieManager2> cookieManager = do_GetService(NS_COOKIEMANAGER_CONTRACTID, &rv);
       if (NS_SUCCEEDED(rv)) {
@@ -362,11 +346,11 @@ nsCookiePermission::CanSetCookie(nsIURI     *aURI,
       if (!foundCookie && !*aIsSession && delta <= 0) {
         // the cookie has already expired. accept it, and let the backend figure
         // out it's expired, so that we get correct logging & notifications.
-        *aResult = PR_TRUE;
+        *aResult = true;
         return rv;
       }
 
-      PRBool rememberDecision = PR_FALSE;
+      bool rememberDecision = false;
       PRInt32 dialogRes = nsICookiePromptService::DENY_COOKIE;
       rv = cookiePromptService->CookieDialog(parent, aCookie, hostPort, 
                                              countFromHost, foundCookie,
@@ -375,7 +359,7 @@ nsCookiePermission::CanSetCookie(nsIURI     *aURI,
 
       *aResult = !!dialogRes;
       if (dialogRes == nsICookiePromptService::ACCEPT_SESSION_COOKIE)
-        *aIsSession = PR_TRUE;
+        *aIsSession = true;
 
       if (rememberDecision) {
         switch (dialogRes) {
@@ -401,7 +385,7 @@ nsCookiePermission::CanSetCookie(nsIURI     *aURI,
       if (!*aIsSession && delta > 0) {
         if (mCookiesLifetimePolicy == ACCEPT_SESSION) {
           // limit lifetime to session
-          *aIsSession = PR_TRUE;
+          *aIsSession = true;
         } else if (delta > mCookiesLifetimeSec) {
           // limit lifetime to specified time
           *aExpiry = currentTime + mCookiesLifetimeSec;
@@ -452,7 +436,7 @@ nsCookiePermission::GetOriginatingURI(nsIChannel  *aChannel,
   nsCOMPtr<nsIHttpChannelInternal> httpChannelInternal = do_QueryInterface(aChannel);
   if (httpChannelInternal)
   {
-    PRBool doForce = PR_FALSE;
+    bool doForce = false;
     if (NS_SUCCEEDED(httpChannelInternal->GetForceAllowThirdPartyCookie(&doForce)) && doForce)
     {
       // return the channel's URI (we may not have a window)
@@ -528,7 +512,7 @@ nsCookiePermission::Observe(nsISupports     *aSubject,
 bool
 nsCookiePermission::InPrivateBrowsing()
 {
-  PRBool inPrivateBrowsingMode = PR_FALSE;
+  bool inPrivateBrowsingMode = false;
   if (!mPBService)
     mPBService = do_GetService(NS_PRIVATE_BROWSING_SERVICE_CONTRACTID);
   if (mPBService)

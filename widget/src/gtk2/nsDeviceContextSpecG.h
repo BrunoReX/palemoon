@@ -69,22 +69,21 @@ public:
 
   NS_IMETHOD GetSurfaceForPrinter(gfxASurface **surface);
 
-  NS_IMETHOD Init(nsIWidget *aWidget, nsIPrintSettings* aPS, PRBool aIsPrintPreview);
+  NS_IMETHOD Init(nsIWidget *aWidget, nsIPrintSettings* aPS, bool aIsPrintPreview);
   NS_IMETHOD BeginDocument(PRUnichar * aTitle, PRUnichar * aPrintToFileName, PRInt32 aStartPage, PRInt32 aEndPage);
   NS_IMETHOD EndDocument();
   NS_IMETHOD BeginPage() { return NS_OK; }
   NS_IMETHOD EndPage() { return NS_OK; }
 
   NS_IMETHOD GetPath (const char **aPath);    
-  NS_IMETHOD GetPrintMethod(PrintMethod &aMethod);
   static nsresult GetPrintMethod(const char *aPrinter, PrintMethod &aMethod);
   virtual ~nsDeviceContextSpecGTK();
   
 protected:
   nsCOMPtr<nsIPrintSettings> mPrintSettings;
-  PRPackedBool mToPrinter : 1;      /* If PR_TRUE, print to printer */
-  PRPackedBool mIsPPreview : 1;     /* If PR_TRUE, is print preview */
-  char   mPath[PATH_MAX];     /* If toPrinter = PR_FALSE, dest file */
+  bool mToPrinter : 1;      /* If true, print to printer */
+  bool mIsPPreview : 1;     /* If true, is print preview */
+  char   mPath[PATH_MAX];     /* If toPrinter = false, dest file */
   char   mPrinter[256];       /* Printer name */
   GtkPrintJob*      mPrintJob;
   GtkPrinter*       mGtkPrinter;

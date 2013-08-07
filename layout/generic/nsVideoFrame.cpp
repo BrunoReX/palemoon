@@ -121,11 +121,11 @@ nsVideoFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
     nsCOMPtr<nsIImageLoadingContent> imgContent = do_QueryInterface(mPosterImage);
     NS_ENSURE_TRUE(imgContent, NS_ERROR_FAILURE);
 
-    imgContent->ForceImageState(PR_TRUE, 0);
+    imgContent->ForceImageState(true, 0);
     // And now have it update its internal state
     element->UpdateState(false);
 
-    nsresult res = UpdatePosterSource(PR_FALSE);
+    nsresult res = UpdatePosterSource(false);
     NS_ENSURE_SUCCESS(res,res);
 
     if (!aElements.AppendElement(mPosterImage))
@@ -163,10 +163,10 @@ nsVideoFrame::DestroyFrom(nsIFrame* aDestructRoot)
   nsContainerFrame::DestroyFrom(aDestructRoot);
 }
 
-PRBool
+bool
 nsVideoFrame::IsLeaf() const
 {
-  return PR_TRUE;
+  return true;
 }
 
 // Return the largest rectangle that fits in aRect and has the
@@ -504,7 +504,7 @@ nsSize nsVideoFrame::ComputeSize(nsRenderingContext *aRenderingContext,
                                      nsSize aMargin,
                                      nsSize aBorder,
                                      nsSize aPadding,
-                                     PRBool aShrinkWrap)
+                                     bool aShrinkWrap)
 {
   nsSize size = GetVideoIntrinsicSize(aRenderingContext);
 
@@ -543,31 +543,31 @@ nsSize nsVideoFrame::GetIntrinsicRatio()
   return GetVideoIntrinsicSize(nsnull);
 }
 
-PRBool nsVideoFrame::ShouldDisplayPoster()
+bool nsVideoFrame::ShouldDisplayPoster()
 {
   if (!HasVideoElement())
-    return PR_FALSE;
+    return false;
 
   nsHTMLVideoElement* element = static_cast<nsHTMLVideoElement*>(GetContent());
   if (element->GetPlayedOrSeeked() && HasVideoData())
-    return PR_FALSE;
+    return false;
 
   nsCOMPtr<nsIImageLoadingContent> imgContent = do_QueryInterface(mPosterImage);
-  NS_ENSURE_TRUE(imgContent, PR_FALSE);
+  NS_ENSURE_TRUE(imgContent, false);
 
   nsCOMPtr<imgIRequest> request;
   nsresult res = imgContent->GetRequest(nsIImageLoadingContent::CURRENT_REQUEST,
                                         getter_AddRefs(request));
   if (NS_FAILED(res) || !request) {
-    return PR_FALSE;
+    return false;
   }
 
   PRUint32 status = 0;
   res = request->GetImageStatus(&status);
   if (NS_FAILED(res) || (status & imgIRequest::STATUS_ERROR))
-    return PR_FALSE;
+    return false;
 
-  return PR_TRUE;
+  return true;
 }
 
 nsSize
@@ -610,7 +610,7 @@ nsVideoFrame::GetVideoIntrinsicSize(nsRenderingContext *aRenderingContext)
 }
 
 nsresult
-nsVideoFrame::UpdatePosterSource(PRBool aNotify)
+nsVideoFrame::UpdatePosterSource(bool aNotify)
 {
   NS_ASSERTION(HasVideoElement(), "Only call this on <video> elements.");
   nsHTMLVideoElement* element = static_cast<nsHTMLVideoElement*>(GetContent());
@@ -631,7 +631,7 @@ nsVideoFrame::AttributeChanged(PRInt32 aNameSpaceID,
                                PRInt32 aModType)
 {
   if (aAttribute == nsGkAtoms::poster && HasVideoElement()) {
-    nsresult res = UpdatePosterSource(PR_TRUE);
+    nsresult res = UpdatePosterSource(true);
     NS_ENSURE_SUCCESS(res,res);
   }
   return nsContainerFrame::AttributeChanged(aNameSpaceID,
@@ -639,15 +639,15 @@ nsVideoFrame::AttributeChanged(PRInt32 aNameSpaceID,
                                             aModType);
 }
 
-PRBool nsVideoFrame::HasVideoElement() {
+bool nsVideoFrame::HasVideoElement() {
   nsCOMPtr<nsIDOMHTMLVideoElement> videoDomElement = do_QueryInterface(mContent);
   return videoDomElement != nsnull;
 }
 
-PRBool nsVideoFrame::HasVideoData()
+bool nsVideoFrame::HasVideoData()
 {
   if (!HasVideoElement())
-    return PR_FALSE;
+    return false;
   nsHTMLVideoElement* element = static_cast<nsHTMLVideoElement*>(GetContent());
   nsIntSize size = element->GetVideoSize(nsIntSize(0,0));
   return size != nsIntSize(0,0);

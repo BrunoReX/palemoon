@@ -36,6 +36,8 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/Attributes.h"
+
 #include "nsArrayEnumerator.h"
 
 #include "nsIArray.h"
@@ -44,7 +46,7 @@
 #include "nsCOMArray.h"
 #include "nsCOMPtr.h"
 
-class nsSimpleArrayEnumerator : public nsISimpleEnumerator
+class nsSimpleArrayEnumerator MOZ_FINAL : public nsISimpleEnumerator
 {
 public:
     // nsISupports interface
@@ -69,14 +71,14 @@ protected:
 NS_IMPL_ISUPPORTS1(nsSimpleArrayEnumerator, nsISimpleEnumerator)
 
 NS_IMETHODIMP
-nsSimpleArrayEnumerator::HasMoreElements(PRBool* aResult)
+nsSimpleArrayEnumerator::HasMoreElements(bool* aResult)
 {
     NS_PRECONDITION(aResult != 0, "null ptr");
     if (! aResult)
         return NS_ERROR_NULL_POINTER;
 
     if (!mValueArray) {
-        *aResult = PR_FALSE;
+        *aResult = false;
         return NS_OK;
     }
 
@@ -126,7 +128,7 @@ NS_NewArrayEnumerator(nsISimpleEnumerator* *result,
 // creates a snapshot of the array in question
 // you MUST use NS_NewArrayEnumerator to create this, so that
 // allocation is done correctly
-class nsCOMArrayEnumerator : public nsISimpleEnumerator
+class nsCOMArrayEnumerator MOZ_FINAL : public nsISimpleEnumerator
 {
 public:
     // nsISupports interface
@@ -167,7 +169,7 @@ nsCOMArrayEnumerator::~nsCOMArrayEnumerator()
 }
 
 NS_IMETHODIMP
-nsCOMArrayEnumerator::HasMoreElements(PRBool* aResult)
+nsCOMArrayEnumerator::HasMoreElements(bool* aResult)
 {
     NS_PRECONDITION(aResult != 0, "null ptr");
     if (! aResult)

@@ -40,11 +40,20 @@
 
 #include "nsWinUtils.h"
 
+#include "Compatibility.h"
 #include "nsIWinAccessNode.h"
 #include "nsRootAccessible.h"
 
+#include "mozilla/Preferences.h"
 #include "nsArrayUtils.h"
 #include "nsIDocShellTreeItem.h"
+
+using namespace mozilla;
+using namespace mozilla::a11y;
+
+// Window property used by ipc related code in identifying accessible
+// tab windows.
+const PRUnichar* kPropNameTabContent = L"AccessibleTabWindow";
 
 HRESULT
 nsWinUtils::ConvertToIA2Array(nsIArray *aGeckoArray, IUnknown ***aIA2Array,
@@ -104,11 +113,14 @@ nsWinUtils::MaybeStartWindowEmulation()
 {
   // Register window class that'll be used for document accessibles associated
   // with tabs.
-  if (IsWindowEmulationFor(0)) {
+  if (Compatibility::IsJAWS() || Compatibility::IsWE() ||
+      Compatibility::IsDolphin() ||
+      Preferences::GetBool("browser.tabs.remote")) {
     RegisterNativeWindow(kClassNameTabContent);
     nsAccessNodeWrap::sHWNDCache.Init(4);
     return true;
   }
+
   return false;
 }
 
@@ -117,7 +129,7 @@ nsWinUtils::ShutdownWindowEmulation()
 {
   // Unregister window call that's used for document accessibles associated
   // with tabs.
-  if (IsWindowEmulationFor(0))
+  if (IsWindowEmulationStarted())
     ::UnregisterClassW(kClassNameTabContent, GetModuleHandle(NULL));
 }
 
@@ -149,14 +161,19 @@ nsWinUtils::CreateNativeWindow(LPCWSTR aWindowClass, HWND aParentWnd,
                                int aX, int aY, int aWidth, int aHeight,
                                bool aIsActive)
 {
-  return ::CreateWindowExW(WS_EX_TRANSPARENT, aWindowClass,
-                           L"NetscapeDispatchWnd",
-                           WS_CHILD | (aIsActive ? WS_VISIBLE : 0),
-                           aX, aY, aWidth, aHeight,
-                           aParentWnd,
-                           NULL,
-                           GetModuleHandle(NULL),
-                           NULL);
+  HWND hwnd = ::CreateWindowExW(WS_EX_TRANSPARENT, aWindowClass,
+                                L"NetscapeDispatchWnd",
+                                WS_CHILD | (aIsActive ? WS_VISIBLE : 0),
+                                aX, aY, aWidth, aHeight,
+                                aParentWnd,
+                                NULL,
+                                GetModuleHandle(NULL),
+                                NULL);
+  if (hwnd) {
+    // Mark this window so that ipc related code can identify it.
+    ::SetPropW(hwnd, kPropNameTabContent, (HANDLE)1);
+  }
+  return hwnd;
 }
 
 void
@@ -171,18 +188,4 @@ nsWinUtils::HideNativeWindow(HWND aWnd)
   ::SetWindowPos(aWnd, NULL, 0, 0, 0, 0,
                  SWP_HIDEWINDOW | SWP_NOSIZE | SWP_NOMOVE |
                  SWP_NOZORDER | SWP_NOACTIVATE);
-}
-
-bool
-nsWinUtils::IsWindowEmulationFor(LPCWSTR kModuleHandle)
-{
-#ifdef MOZ_E10S_COMPAT
-  // Window emulation is always enabled in multiprocess Firefox.
-  return kModuleHandle ? ::GetModuleHandleW(kModuleHandle) : true;
-#else
-  return kModuleHandle ? ::GetModuleHandleW(kModuleHandle) :
-    ::GetModuleHandleW(kJAWSModuleHandle) ||
-    ::GetModuleHandleW(kWEModuleHandle)  ||
-    ::GetModuleHandleW(kDolphinModuleHandle);
-#endif
 }

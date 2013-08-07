@@ -41,16 +41,18 @@
 #include "AccessibleApplication.h"
 #include "ISimpleDOMNode_i.c"
 
+#include "Compatibility.h"
 #include "nsAccessibilityService.h"
 #include "nsApplicationAccessibleWrap.h"
 #include "nsCoreUtils.h"
 #include "nsRootAccessible.h"
 #include "nsWinUtils.h"
+#include "Statistics.h"
 
 #include "nsAttrName.h"
 #include "nsIDocument.h"
 #include "nsIDOMNodeList.h"
-#include "nsIDOMNSHTMLElement.h"
+#include "nsIDOMHTMLElement.h"
 #include "nsIFrame.h"
 #include "nsINameSpaceManager.h"
 #include "nsPIDOMWindow.h"
@@ -59,6 +61,7 @@
 #include "mozilla/Preferences.h"
 
 using namespace mozilla;
+using namespace mozilla::a11y;
 
 /// the accessible library and cached methods
 HINSTANCE nsAccessNodeWrap::gmAccLib = nsnull;
@@ -68,19 +71,7 @@ LPFNLRESULTFROMOBJECT nsAccessNodeWrap::gmLresultFromObject = NULL;
 LPFNNOTIFYWINEVENT nsAccessNodeWrap::gmNotifyWinEvent = nsnull;
 LPFNGETGUITHREADINFO nsAccessNodeWrap::gmGetGUIThreadInfo = nsnull;
 
-// Used to determine whether an IAccessible2 compatible screen reader is loaded.
-PRBool nsAccessNodeWrap::gIsIA2Disabled = PR_FALSE;
-
 AccTextChangeEvent* nsAccessNodeWrap::gTextEvent = nsnull;
-
-// Pref to disallow CtrlTab preview functionality if JAWS or Window-Eyes are
-// running.
-#define CTRLTAB_DISALLOW_FOR_SCREEN_READERS_PREF "browser.ctrlTab.disallowForScreenReaders"
-
-
-/* For documentation of the accessibility architecture, 
- * see http://lxr.mozilla.org/seamonkey/source/accessible/accessible-docs.html
- */
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsAccessNodeWrap
@@ -120,11 +111,14 @@ STDMETHODIMP nsAccessNodeWrap::QueryInterface(REFIID iid, void** ppv)
 {
   *ppv = nsnull;
 
-  if (IID_IUnknown == iid || IID_ISimpleDOMNode == iid)
+  if (IID_IUnknown == iid) {
     *ppv = static_cast<ISimpleDOMNode*>(this);
-
-  if (nsnull == *ppv)
+  } else if (IID_ISimpleDOMNode == iid) {
+    statistics::ISimpleDOMUsed();
+    *ppv = static_cast<ISimpleDOMNode*>(this);
+  } else {
     return E_NOINTERFACE;      //iid not supported.
+  }
    
   (reinterpret_cast<IUnknown*>(*ppv))->AddRef(); 
   return S_OK;
@@ -543,12 +537,12 @@ nsAccessNodeWrap::get_innerHTML(BSTR __RPC_FAR *aInnerHTML)
 __try {
   *aInnerHTML = nsnull;
 
-  nsCOMPtr<nsIDOMNSHTMLElement> domNSElement(do_QueryInterface(GetNode()));
-  if (!domNSElement)
+  nsCOMPtr<nsIDOMHTMLElement> htmlElement = do_QueryInterface(GetNode());
+  if (!htmlElement)
     return E_FAIL; // Node already shut down
 
   nsAutoString innerHTML;
-  domNSElement->GetInnerHTML(innerHTML);
+  htmlElement->GetInnerHTML(innerHTML);
   if (innerHTML.IsEmpty())
     return S_FALSE;
 
@@ -608,7 +602,7 @@ void nsAccessNodeWrap::InitAccessibility()
       gmGetGUIThreadInfo = (LPFNGETGUITHREADINFO)GetProcAddress(gmUserLib,"GetGUIThreadInfo");
   }
 
-  DoATSpecificProcessing();
+  Compatibility::Init();
 
   nsWinUtils::MaybeStartWindowEmulation();
 
@@ -666,78 +660,15 @@ GetHRESULT(nsresult aResult)
   }
 }
 
-PRBool nsAccessNodeWrap::IsOnlyMsaaCompatibleJawsPresent()
-{
-  HMODULE jhookhandle = ::GetModuleHandleW(kJAWSModuleHandle);
-  if (!jhookhandle)
-    return PR_FALSE;  // No JAWS, or some other screen reader, use IA2
-
-  PRUnichar fileName[MAX_PATH];
-  ::GetModuleFileNameW(jhookhandle, fileName, MAX_PATH);
-
-  DWORD dummy;
-  DWORD length = ::GetFileVersionInfoSizeW(fileName, &dummy);
-
-  LPBYTE versionInfo = new BYTE[length];
-  ::GetFileVersionInfoW(fileName, 0, length, versionInfo);
-
-  UINT uLen;
-  VS_FIXEDFILEINFO *fixedFileInfo;
-  ::VerQueryValueW(versionInfo, L"\\", (LPVOID*)&fixedFileInfo, &uLen);
-  DWORD dwFileVersionMS = fixedFileInfo->dwFileVersionMS;
-  DWORD dwFileVersionLS = fixedFileInfo->dwFileVersionLS;
-  delete [] versionInfo;
-
-  DWORD dwLeftMost = HIWORD(dwFileVersionMS);
-//  DWORD dwSecondLeft = LOWORD(dwFileVersionMS);
-  DWORD dwSecondRight = HIWORD(dwFileVersionLS);
-//  DWORD dwRightMost = LOWORD(dwFileVersionLS);
-
-  return (dwLeftMost < 8
-          || (dwLeftMost == 8 && dwSecondRight < 2173));
-}
-
-void nsAccessNodeWrap::TurnOffNewTabSwitchingForJawsAndWE()
-{
-  HMODULE srHandle = ::GetModuleHandleW(kJAWSModuleHandle);
-  if (!srHandle) {
-    // No JAWS, try Window-Eyes
-    srHandle = ::GetModuleHandleW(kWEModuleHandle);
-    if (!srHandle) {
-      // no screen reader we're interested in. Bail out.
-      return;
-    }
-  }
-
-  // Check to see if the pref for disallowing CtrlTab is already set.
-  // If so, bail out.
-  // If not, set it.
-  if (Preferences::HasUserValue(CTRLTAB_DISALLOW_FOR_SCREEN_READERS_PREF)) {
-    // This pref has been set before. There is no default for it.
-    // Do nothing further, respect the setting that's there.
-    // That way, if noone touches it, it'll stay on after toggled once.
-    // If someone decided to turn it off, we respect that, too.
-    return;
-  }
-  
-  // Value has never been set, set it.
-  Preferences::SetBool(CTRLTAB_DISALLOW_FOR_SCREEN_READERS_PREF, PR_TRUE);
-}
-
-void nsAccessNodeWrap::DoATSpecificProcessing()
-{
-  if (IsOnlyMsaaCompatibleJawsPresent())
-    // All versions below 8.0.2173 are not compatible
-    gIsIA2Disabled  = PR_TRUE;
-
-  TurnOffNewTabSwitchingForJawsAndWE();
-}
-
 nsRefPtrHashtable<nsVoidPtrHashKey, nsDocAccessible> nsAccessNodeWrap::sHWNDCache;
 
 LRESULT CALLBACK
 nsAccessNodeWrap::WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+  // Note, this window's message handling should not invoke any call that
+  // may result in a cross-process ipc call. Doing so may violate RPC
+  // message semantics.
+
   switch (msg) {
     case WM_GETOBJECT:
     {

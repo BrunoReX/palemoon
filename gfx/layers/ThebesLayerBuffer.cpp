@@ -83,7 +83,7 @@ ThebesLayerBuffer::DrawBufferQuadrant(gfxContext* aTarget,
   aTarget->NewPath();
   aTarget->Rectangle(gfxRect(fillRect.x, fillRect.y,
                              fillRect.width, fillRect.height),
-                     PR_TRUE);
+                     true);
 
   gfxPoint quadrantTranslation(quadrantRect.x, quadrantRect.y);
   nsRefPtr<gfxPattern> pattern = new gfxPattern(mBuffer);
@@ -157,16 +157,16 @@ ThebesLayerBuffer::BeginPaint(ThebesLayer* aLayer, ContentType aContentType,
   PaintState result;
   // We need to disable rotation if we're going to be resampled when
   // drawing, because we might sample across the rotation boundary.
-  PRBool canHaveRotation = !(aFlags & PAINT_WILL_RESAMPLE);
+  bool canHaveRotation = !(aFlags & PAINT_WILL_RESAMPLE);
 
   nsIntRegion validRegion = aLayer->GetValidRegion();
 
   ContentType contentType;
   nsIntRegion neededRegion;
-  PRBool canReuseBuffer;
+  bool canReuseBuffer;
   nsIntRect destBufferRect;
 
-  while (PR_TRUE) {
+  while (true) {
     contentType = aContentType;
     neededRegion = aLayer->GetVisibleRegion();
     canReuseBuffer = mBuffer && BufferSizeOkFor(neededRegion.GetBounds().Size());
@@ -245,7 +245,7 @@ ThebesLayerBuffer::BeginPaint(ThebesLayer* aLayer, ContentType aContentType,
           nsIntRect srcRect(nsIntPoint(0, 0), mBufferRect.Size());
           nsIntPoint dest = mBufferRect.TopLeft() - destBufferRect.TopLeft();
           mBuffer->MovePixels(srcRect, dest);
-          result.mDidSelfCopy = PR_TRUE;
+          result.mDidSelfCopy = true;
           // Don't set destBuffer; we special-case self-copies, and
           // just did the necessary work above.
           mBufferRect = destBufferRect;
@@ -279,7 +279,7 @@ ThebesLayerBuffer::BeginPaint(ThebesLayer* aLayer, ContentType aContentType,
 
   // If we have no buffered data already, then destBuffer will be a fresh buffer
   // and we do not need to clear it below.
-  PRBool isClear = mBuffer == nsnull;
+  bool isClear = mBuffer == nsnull;
 
   if (destBuffer) {
     if (mBuffer) {

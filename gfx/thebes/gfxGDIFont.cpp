@@ -43,6 +43,9 @@
 #include "gfxGDIShaper.h"
 #include "gfxUniscribeShaper.h"
 #include "gfxHarfBuzzShaper.h"
+#ifdef MOZ_GRAPHITE
+#include "gfxGraphiteShaper.h"
+#endif
 #include "gfxWindowsPlatform.h"
 #include "gfxContext.h"
 #include "gfxUnicodeProperties.h"
@@ -69,16 +72,20 @@ GetCairoAntialiasOption(gfxFont::AntialiasOption anAntialiasOption)
 
 gfxGDIFont::gfxGDIFont(GDIFontEntry *aFontEntry,
                        const gfxFontStyle *aFontStyle,
-                       PRBool aNeedsBold,
+                       bool aNeedsBold,
                        AntialiasOption anAAOption)
     : gfxFont(aFontEntry, aFontStyle, anAAOption),
       mFont(NULL),
       mFontFace(nsnull),
-      mScaledFont(nsnull),
       mMetrics(nsnull),
       mSpaceGlyph(0),
       mNeedsBold(aNeedsBold)
 {
+#ifdef MOZ_GRAPHITE
+    if (FontCanSupportGraphite()) {
+        mGraphiteShaper = new gfxGraphiteShaper(this);
+    }
+#endif
     if (FontCanSupportHarfBuzz()) {
         mHarfBuzzShaper = new gfxHarfBuzzShaper(this);
     }
@@ -111,16 +118,16 @@ gfxGDIFont::CopyWithAntialiasOption(AntialiasOption anAAOption)
                           &mStyle, mNeedsBold, anAAOption);
 }
 
-static PRBool
+static bool
 UseUniscribe(gfxTextRun *aTextRun,
              const PRUnichar *aString,
              PRUint32 aRunStart,
              PRUint32 aRunLength)
 {
     PRUint32 flags = aTextRun->GetFlags();
-    PRBool useGDI;
+    bool useGDI;
 
-    PRBool isXP = (gfxWindowsPlatform::WindowsOSVersion() 
+    bool isXP = (gfxWindowsPlatform::WindowsOSVersion() 
                        < gfxWindowsPlatform::kWindowsVista);
 
     // bug 561304 - Uniscribe bug produces bad positioning at certain
@@ -136,30 +143,38 @@ UseUniscribe(gfxTextRun *aTextRun,
         ScriptIsComplex(aString + aRunStart, aRunLength, SIC_COMPLEX) == S_OK;
 }
 
-PRBool
+bool
 gfxGDIFont::InitTextRun(gfxContext *aContext,
                         gfxTextRun *aTextRun,
                         const PRUnichar *aString,
                         PRUint32 aRunStart,
                         PRUint32 aRunLength,
                         PRInt32 aRunScript,
-                        PRBool aPreferPlatformShaping)
+                        bool aPreferPlatformShaping)
 {
     if (!mMetrics) {
         Initialize();
     }
     if (!mIsValid) {
         NS_WARNING("invalid font! expect incorrect text rendering");
-        return PR_FALSE;
+        return false;
     }
 
-    PRBool ok = PR_FALSE;
+    bool ok = false;
 
     // ensure the cairo font is set up, so there's no risk it'll fall back to
     // creating a "toy" font internally (see bug 544617)
     SetupCairoFont(aContext);
 
-    if (mHarfBuzzShaper) {
+#ifdef MOZ_GRAPHITE
+    if (mGraphiteShaper && gfxPlatform::GetPlatform()->UseGraphiteShaping()) {
+        ok = mGraphiteShaper->InitTextRun(aContext, aTextRun, aString,
+                                          aRunStart, aRunLength, 
+                                          aRunScript);
+    }
+#endif
+
+    if (!ok && mHarfBuzzShaper) {
         if (gfxPlatform::GetPlatform()->UseHarfBuzzForScript(aRunScript)) {
             ok = mHarfBuzzShaper->InitTextRun(aContext, aTextRun, aString,
                                               aRunStart, aRunLength, 
@@ -169,7 +184,7 @@ gfxGDIFont::InitTextRun(gfxContext *aContext,
 
     if (!ok) {
         GDIFontEntry *fe = static_cast<GDIFontEntry*>(GetFontEntry());
-        PRBool preferUniscribe =
+        bool preferUniscribe =
             (!fe->IsTrueType() || fe->IsSymbolFont()) && !fe->mForceGDI;
 
         if (preferUniscribe ||
@@ -184,7 +199,7 @@ gfxGDIFont::InitTextRun(gfxContext *aContext,
                                                aRunStart, aRunLength, 
                                                aRunScript);
             if (ok) {
-                return PR_TRUE;
+                return true;
             }
 
             // fallback to GDI shaping
@@ -206,7 +221,7 @@ gfxGDIFont::InitTextRun(gfxContext *aContext,
                                               aRunScript);
 
             if (ok) {
-                return PR_TRUE;
+                return true;
             }
 
             // try Uniscribe if GDI failed
@@ -255,7 +270,7 @@ gfxGDIFont::GetSpaceGlyph()
     return mSpaceGlyph;
 }
 
-PRBool
+bool
 gfxGDIFont::SetupCairoFont(gfxContext *aContext)
 {
     if (!mMetrics) {
@@ -265,10 +280,10 @@ gfxGDIFont::SetupCairoFont(gfxContext *aContext)
         cairo_scaled_font_status(mScaledFont) != CAIRO_STATUS_SUCCESS) {
         // Don't cairo_set_scaled_font as that would propagate the error to
         // the cairo_t, precluding any further drawing.
-        return PR_FALSE;
+        return false;
     }
     cairo_set_scaled_font(aContext->GetCairo(), mScaledFont);
-    return PR_TRUE;
+    return true;
 }
 
 gfxFont::RunMetrics
@@ -342,103 +357,101 @@ gfxGDIFont::Initialize()
     // Get font metrics if size > 0
     if (mAdjustedSize > 0.0) {
 
-      // Get font metrics
-      OUTLINETEXTMETRIC oMetrics;
-      TEXTMETRIC& metrics = oMetrics.otmTextMetrics;
+        OUTLINETEXTMETRIC oMetrics;
+        TEXTMETRIC& metrics = oMetrics.otmTextMetrics;
 
-      if (0 < GetOutlineTextMetrics(dc.GetDC(), sizeof(oMetrics), &oMetrics)) {
-          mMetrics->superscriptOffset = (double)oMetrics.otmptSuperscriptOffset.y;
-          // Some fonts have wrong sign on their subscript offset, bug 410917.
-          mMetrics->subscriptOffset = fabs((double)oMetrics.otmptSubscriptOffset.y);
-          mMetrics->strikeoutSize = (double)oMetrics.otmsStrikeoutSize;
-          mMetrics->strikeoutOffset = (double)oMetrics.otmsStrikeoutPosition;
-          mMetrics->underlineSize = (double)oMetrics.otmsUnderscoreSize;
-          mMetrics->underlineOffset = (double)oMetrics.otmsUnderscorePosition;
+        if (0 < GetOutlineTextMetrics(dc.GetDC(), sizeof(oMetrics), &oMetrics)) {
+            mMetrics->superscriptOffset = (double)oMetrics.otmptSuperscriptOffset.y;
+            // Some fonts have wrong sign on their subscript offset, bug 410917.
+            mMetrics->subscriptOffset = fabs((double)oMetrics.otmptSubscriptOffset.y);
+            mMetrics->strikeoutSize = (double)oMetrics.otmsStrikeoutSize;
+            mMetrics->strikeoutOffset = (double)oMetrics.otmsStrikeoutPosition;
+            mMetrics->underlineSize = (double)oMetrics.otmsUnderscoreSize;
+            mMetrics->underlineOffset = (double)oMetrics.otmsUnderscorePosition;
 
-          const MAT2 kIdentityMatrix = { {0, 1}, {0, 0}, {0, 0}, {0, 1} };
-          GLYPHMETRICS gm;
-          DWORD len = GetGlyphOutlineW(dc.GetDC(), PRUnichar('x'), GGO_METRICS, &gm, 0, nsnull, &kIdentityMatrix);
-          if (len == GDI_ERROR || gm.gmptGlyphOrigin.y <= 0) {
-              // 56% of ascent, best guess for true type
-              mMetrics->xHeight =
-                  ROUND((double)metrics.tmAscent * DEFAULT_XHEIGHT_FACTOR);
-          } else {
-              mMetrics->xHeight = gm.gmptGlyphOrigin.y;
-          }
-          mMetrics->emHeight = metrics.tmHeight - metrics.tmInternalLeading;
-          gfxFloat typEmHeight = (double)oMetrics.otmAscent - (double)oMetrics.otmDescent;
-          mMetrics->emAscent = ROUND(mMetrics->emHeight * (double)oMetrics.otmAscent / typEmHeight);
-          mMetrics->emDescent = mMetrics->emHeight - mMetrics->emAscent;
-          if (oMetrics.otmEMSquare > 0) {
-              mFUnitsConvFactor = float(mAdjustedSize / oMetrics.otmEMSquare);
-          }
-      } else {
-          // Make a best-effort guess at extended metrics
-          // this is based on general typographic guidelines
+            const MAT2 kIdentityMatrix = { {0, 1}, {0, 0}, {0, 0}, {0, 1} };
+            GLYPHMETRICS gm;
+            DWORD len = GetGlyphOutlineW(dc.GetDC(), PRUnichar('x'), GGO_METRICS, &gm, 0, nsnull, &kIdentityMatrix);
+            if (len == GDI_ERROR || gm.gmptGlyphOrigin.y <= 0) {
+                // 56% of ascent, best guess for true type
+                mMetrics->xHeight =
+                    ROUND((double)metrics.tmAscent * DEFAULT_XHEIGHT_FACTOR);
+            } else {
+                mMetrics->xHeight = gm.gmptGlyphOrigin.y;
+            }
+            mMetrics->emHeight = metrics.tmHeight - metrics.tmInternalLeading;
+            gfxFloat typEmHeight = (double)oMetrics.otmAscent - (double)oMetrics.otmDescent;
+            mMetrics->emAscent = ROUND(mMetrics->emHeight * (double)oMetrics.otmAscent / typEmHeight);
+            mMetrics->emDescent = mMetrics->emHeight - mMetrics->emAscent;
+            if (oMetrics.otmEMSquare > 0) {
+                mFUnitsConvFactor = float(mAdjustedSize / oMetrics.otmEMSquare);
+            }
+        } else {
+            // Make a best-effort guess at extended metrics
+            // this is based on general typographic guidelines
+            
+            // GetTextMetrics can fail if the font file has been removed
+            // or corrupted recently.
+            BOOL result = GetTextMetrics(dc.GetDC(), &metrics);
+            if (!result) {
+                NS_WARNING("Missing or corrupt font data, fasten your seatbelt");
+                mIsValid = false;
+                memset(mMetrics, 0, sizeof(*mMetrics));
+                return;
+            }
 
-          // GetTextMetrics can fail if the font file has been removed
-          // or corrupted recently.
-          BOOL result = GetTextMetrics(dc.GetDC(), &metrics);
-          if (!result) {
-              NS_WARNING("Missing or corrupt font data, fasten your seatbelt");
-              mIsValid = PR_FALSE;
-              memset(mMetrics, 0, sizeof(*mMetrics));
-              return;
-          }
+            mMetrics->xHeight =
+                ROUND((float)metrics.tmAscent * DEFAULT_XHEIGHT_FACTOR);
+            mMetrics->superscriptOffset = mMetrics->xHeight;
+            mMetrics->subscriptOffset = mMetrics->xHeight;
+            mMetrics->strikeoutSize = 1;
+            mMetrics->strikeoutOffset = ROUND(mMetrics->xHeight * 0.5f); // 50% of xHeight
+            mMetrics->underlineSize = 1;
+            mMetrics->underlineOffset = -ROUND((float)metrics.tmDescent * 0.30f); // 30% of descent
+            mMetrics->emHeight = metrics.tmHeight - metrics.tmInternalLeading;
+            mMetrics->emAscent = metrics.tmAscent - metrics.tmInternalLeading;
+            mMetrics->emDescent = metrics.tmDescent;
+        }
 
-          mMetrics->xHeight =
-              ROUND((float)metrics.tmAscent * DEFAULT_XHEIGHT_FACTOR);
-          mMetrics->superscriptOffset = mMetrics->xHeight;
-          mMetrics->subscriptOffset = mMetrics->xHeight;
-          mMetrics->strikeoutSize = 1;
-          mMetrics->strikeoutOffset = ROUND(mMetrics->xHeight * 0.5f); // 50% of xHeight
-          mMetrics->underlineSize = 1;
-          mMetrics->underlineOffset = -ROUND((float)metrics.tmDescent * 0.30f); // 30% of descent
-          mMetrics->emHeight = metrics.tmHeight - metrics.tmInternalLeading;
-          mMetrics->emAscent = metrics.tmAscent - metrics.tmInternalLeading;
-          mMetrics->emDescent = metrics.tmDescent;
-      }
+        mMetrics->internalLeading = metrics.tmInternalLeading;
+        mMetrics->externalLeading = metrics.tmExternalLeading;
+        mMetrics->maxHeight = metrics.tmHeight;
+        mMetrics->maxAscent = metrics.tmAscent;
+        mMetrics->maxDescent = metrics.tmDescent;
+        mMetrics->maxAdvance = metrics.tmMaxCharWidth;
+        mMetrics->aveCharWidth = NS_MAX<gfxFloat>(1, metrics.tmAveCharWidth);
+        // The font is monospace when TMPF_FIXED_PITCH is *not* set!
+        // See http://msdn2.microsoft.com/en-us/library/ms534202(VS.85).aspx
+        if (!(metrics.tmPitchAndFamily & TMPF_FIXED_PITCH)) {
+            mMetrics->maxAdvance = mMetrics->aveCharWidth;
+        }
 
-      mMetrics->internalLeading = metrics.tmInternalLeading;
-      mMetrics->externalLeading = metrics.tmExternalLeading;
-      mMetrics->maxHeight = metrics.tmHeight;
-      mMetrics->maxAscent = metrics.tmAscent;
-      mMetrics->maxDescent = metrics.tmDescent;
-      mMetrics->maxAdvance = metrics.tmMaxCharWidth;
-      mMetrics->aveCharWidth = NS_MAX<gfxFloat>(1, metrics.tmAveCharWidth);
-      // The font is monospace when TMPF_FIXED_PITCH is *not* set!
-      // See http://msdn2.microsoft.com/en-us/library/ms534202(VS.85).aspx
-      if (!(metrics.tmPitchAndFamily & TMPF_FIXED_PITCH)) {
-          mMetrics->maxAdvance = mMetrics->aveCharWidth;
-      }
+        // Cache the width of a single space.
+        SIZE size;
+        GetTextExtentPoint32W(dc.GetDC(), L" ", 1, &size);
+        mMetrics->spaceWidth = ROUND(size.cx);
 
-      // Cache the width of a single space.
-      SIZE size;
-      GetTextExtentPoint32W(dc.GetDC(), L" ", 1, &size);
-      mMetrics->spaceWidth = ROUND(size.cx);
+        // Cache the width of digit zero.
+        // XXX MSDN (http://msdn.microsoft.com/en-us/library/ms534223.aspx)
+        // does not say what the failure modes for GetTextExtentPoint32 are -
+        // is it safe to assume it will fail iff the font has no '0'?
+        if (GetTextExtentPoint32W(dc.GetDC(), L"0", 1, &size)) {
+            mMetrics->zeroOrAveCharWidth = ROUND(size.cx);
+        } else {
+            mMetrics->zeroOrAveCharWidth = mMetrics->aveCharWidth;
+        }
 
-      // Cache the width of digit zero.
-      // XXX MSDN (http://msdn.microsoft.com/en-us/library/ms534223.aspx)
-      // does not say what the failure modes for GetTextExtentPoint32 are -
-      // is it safe to assume it will fail iff the font has no '0'?
-      if (GetTextExtentPoint32W(dc.GetDC(), L"0", 1, &size)) {
-          mMetrics->zeroOrAveCharWidth = ROUND(size.cx);
-      } else {
-          mMetrics->zeroOrAveCharWidth = mMetrics->aveCharWidth;
-      }
+        mSpaceGlyph = 0;
+        if (metrics.tmPitchAndFamily & TMPF_TRUETYPE) {
+            WORD glyph;
+            DWORD ret = GetGlyphIndicesW(dc.GetDC(), L" ", 1, &glyph,
+                                         GGI_MARK_NONEXISTING_GLYPHS);
+            if (ret != GDI_ERROR && glyph != 0xFFFF) {
+                mSpaceGlyph = glyph;
+            }
+        }
 
-      mSpaceGlyph = 0;
-      if (metrics.tmPitchAndFamily & TMPF_TRUETYPE) {
-          WORD glyph;
-          DWORD ret = GetGlyphIndicesW(dc.GetDC(), L" ", 1, &glyph,
-                                       GGI_MARK_NONEXISTING_GLYPHS);
-          if (ret != GDI_ERROR && glyph != 0xFFFF) {
-              mSpaceGlyph = glyph;
-          }
-      }
-
-      SanitizeMetrics(mMetrics, GetFontEntry()->mIsBadUnderlineFont);
-
+        SanitizeMetrics(mMetrics, GetFontEntry()->mIsBadUnderlineFont);
     }
 
     mFontFace = cairo_win32_font_face_create_for_logfontw_hfont(&logFont,
@@ -466,9 +479,9 @@ gfxGDIFont::Initialize()
                 mScaledFont ? cairo_scaled_font_status(mScaledFont) : 0);
         NS_WARNING(warnBuf);
 #endif
-        mIsValid = PR_FALSE;
+        mIsValid = false;
     } else {
-        mIsValid = PR_TRUE;
+        mIsValid = true;
     }
 
 #if 0
@@ -490,13 +503,13 @@ gfxGDIFont::FillLogFont(LOGFONTW& aLogFont, gfxFloat aSize)
     GDIFontEntry *fe = static_cast<GDIFontEntry*>(GetFontEntry());
 
     PRUint16 weight = mNeedsBold ? 700 : fe->Weight();
-    PRBool italic = (mStyle.style & (FONT_STYLE_ITALIC | FONT_STYLE_OBLIQUE));
+    bool italic = (mStyle.style & (FONT_STYLE_ITALIC | FONT_STYLE_OBLIQUE));
 
     // if user font, disable italics/bold if defined to be italics/bold face
     // this avoids unwanted synthetic italics/bold
     if (fe->mIsUserFont) {
         if (fe->IsItalic())
-            italic = PR_FALSE; // avoid synthetic italic
+            italic = false; // avoid synthetic italic
         if (fe->IsBold() || !mNeedsBold) {
             // avoid GDI synthetic bold which occurs when weight
             // specified is >= font data weight + 200
@@ -505,7 +518,7 @@ gfxGDIFont::FillLogFont(LOGFONTW& aLogFont, gfxFloat aSize)
     }
 
     fe->FillLogFont(&aLogFont, italic, weight, aSize, 
-                    (mAntialiasOption == kAntialiasSubpixel) ? PR_TRUE : PR_FALSE);
+                    (mAntialiasOption == kAntialiasSubpixel) ? true : false);
 }
 
 PRInt32

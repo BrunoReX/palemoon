@@ -86,8 +86,8 @@ nsStructuredCloneContainer::InitFromVariant(nsIVariant *aData, JSContext *aCx)
   nsCxPusher cxPusher;
   cxPusher.Push(aCx);
 
-  PRUint64* jsBytes = nsnull;
-  PRBool success = JS_WriteStructuredClone(aCx, jsData, &jsBytes, &mSize,
+  uint64_t* jsBytes = nsnull;
+  bool success = JS_WriteStructuredClone(aCx, jsData, &jsBytes, &mSize,
                                            nsnull, nsnull);
   NS_ENSURE_STATE(success);
   NS_ENSURE_STATE(jsBytes);
@@ -148,7 +148,7 @@ nsStructuredCloneContainer::DeserializeToVariant(JSContext *aCx,
 
   // Deserialize to a jsval.
   jsval jsStateObj;
-  PRBool success = JS_ReadStructuredClone(aCx, mData, mSize, mVersion,
+  bool success = JS_ReadStructuredClone(aCx, mData, mSize, mVersion,
                                           &jsStateObj, nsnull, nsnull);
   NS_ENSURE_STATE(success);
 

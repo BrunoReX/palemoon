@@ -38,6 +38,9 @@
 #include "gfxDWriteFonts.h"
 #include "gfxDWriteShaper.h"
 #include "gfxHarfBuzzShaper.h"
+#ifdef MOZ_GRAPHITE
+#include "gfxGraphiteShaper.h"
+#endif
 #include "gfxDWriteFontList.h"
 #include "gfxContext.h"
 #include <dwrite.h>
@@ -117,16 +120,15 @@ UsingClearType()
 // gfxDWriteFont
 gfxDWriteFont::gfxDWriteFont(gfxFontEntry *aFontEntry,
                              const gfxFontStyle *aFontStyle,
-                             PRBool aNeedsBold,
+                             bool aNeedsBold,
                              AntialiasOption anAAOption)
     : gfxFont(aFontEntry, aFontStyle, anAAOption)
     , mCairoFontFace(nsnull)
-    , mCairoScaledFont(nsnull)
     , mMetrics(nsnull)
-    , mNeedsOblique(PR_FALSE)
+    , mNeedsOblique(false)
     , mNeedsBold(aNeedsBold)
-    , mUseSubpixelPositions(PR_FALSE)
-    , mAllowManualShowGlyphs(PR_TRUE)
+    , mUseSubpixelPositions(false)
+    , mAllowManualShowGlyphs(true)
 {
     gfxDWriteFontEntry *fe =
         static_cast<gfxDWriteFontEntry*>(aFontEntry);
@@ -136,7 +138,7 @@ gfxDWriteFont::gfxDWriteFont(gfxFontEntry *aFontEntry,
         !fe->IsItalic()) {
             // For this we always use the font_matrix for uniformity. Not the
             // DWrite simulation.
-            mNeedsOblique = PR_TRUE;
+            mNeedsOblique = true;
     }
     if (aNeedsBold) {
         sims |= DWRITE_FONT_SIMULATIONS_BOLD;
@@ -145,11 +147,17 @@ gfxDWriteFont::gfxDWriteFont(gfxFontEntry *aFontEntry,
     rv = fe->CreateFontFace(getter_AddRefs(mFontFace), sims);
 
     if (NS_FAILED(rv)) {
-        mIsValid = PR_FALSE;
+        mIsValid = false;
         return;
     }
 
     ComputeMetrics(anAAOption);
+
+#ifdef MOZ_GRAPHITE
+    if (FontCanSupportGraphite()) {
+        mGraphiteShaper = new gfxGraphiteShaper(this);
+    }
+#endif
 
     if (FontCanSupportHarfBuzz()) {
         mHarfBuzzShaper = new gfxHarfBuzzShaper(this);
@@ -161,8 +169,8 @@ gfxDWriteFont::~gfxDWriteFont()
     if (mCairoFontFace) {
         cairo_font_face_destroy(mCairoFontFace);
     }
-    if (mCairoScaledFont) {
-        cairo_scaled_font_destroy(mCairoScaledFont);
+    if (mScaledFont) {
+        cairo_scaled_font_destroy(mScaledFont);
     }
     delete mMetrics;
 }
@@ -186,22 +194,22 @@ gfxDWriteFont::GetMetrics()
     return *mMetrics;
 }
 
-PRBool
+bool
 gfxDWriteFont::GetFakeMetricsForArialBlack(DWRITE_FONT_METRICS *aFontMetrics)
 {
     gfxFontStyle style(mStyle);
     style.weight = 700;
-    PRBool needsBold;
+    bool needsBold;
     gfxFontEntry *fe = mFontEntry->Family()->FindFontForStyle(style, needsBold);
     if (!fe || fe == mFontEntry) {
-        return PR_FALSE;
+        return false;
     }
 
     nsRefPtr<gfxFont> font = fe->FindOrMakeFont(&style, needsBold);
     gfxDWriteFont *dwFont = static_cast<gfxDWriteFont*>(font.get());
     dwFont->mFontFace->GetMetrics(aFontMetrics);
 
-    return PR_TRUE;
+    return true;
 }
 
 void
@@ -230,7 +238,7 @@ gfxDWriteFont::ComputeMetrics(AntialiasOption anAAOption)
          GetMeasuringMode() == DWRITE_MEASURING_MODE_NATURAL) ||
         anAAOption == gfxFont::kAntialiasSubpixel)
     {
-        mUseSubpixelPositions = PR_TRUE;
+        mUseSubpixelPositions = true;
         // note that this may be reset to FALSE if we determine that a bitmap
         // strike is going to be used
     }
@@ -239,13 +247,13 @@ gfxDWriteFont::ComputeMetrics(AntialiasOption anAAOption)
         static_cast<gfxDWriteFontEntry*>(mFontEntry.get());
     if (fe->IsCJKFont() && HasBitmapStrikeForSize(NS_lround(mAdjustedSize))) {
         mAdjustedSize = NS_lround(mAdjustedSize);
-        mUseSubpixelPositions = PR_FALSE;
+        mUseSubpixelPositions = false;
         // if we have bitmaps, we need to tell Cairo NOT to use subpixel AA,
         // to avoid the manual-subpixel codepath in cairo-d2d-surface.cpp
         // which fails to render bitmap glyphs (see bug 626299).
         // This option will be passed to the cairo_dwrite_scaled_font_t
         // after creation.
-        mAllowManualShowGlyphs = PR_FALSE;
+        mAllowManualShowGlyphs = false;
     }
 
     mMetrics = new gfxFont::Metrics;
@@ -411,7 +419,7 @@ struct BitmapScaleTable {
     PRUint8           substitutePpemY;
 };
 
-PRBool
+bool
 gfxDWriteFont::HasBitmapStrikeForSize(PRUint32 aSize)
 {
     PRUint8 *tableData;
@@ -423,10 +431,10 @@ gfxDWriteFont::HasBitmapStrikeForSize(PRUint32 aSize)
                                    (const void**)&tableData, &len,
                                    &tableContext, &exists);
     if (FAILED(hr)) {
-        return PR_FALSE;
+        return false;
     }
 
-    PRBool hasStrike = PR_FALSE;
+    bool hasStrike = false;
     // not really a loop, but this lets us use 'break' to skip out of the block
     // as soon as we know the answer, and skips it altogether if the table is
     // not present
@@ -465,7 +473,7 @@ gfxDWriteFont::HasBitmapStrikeForSize(PRUint32 aSize)
     mFontFace->ReleaseFontTable(tableContext);
 
     if (hasStrike) {
-        return PR_TRUE;
+        return true;
     }
 
     // if we didn't find a real strike, check if the font calls for scaling
@@ -474,7 +482,7 @@ gfxDWriteFont::HasBitmapStrikeForSize(PRUint32 aSize)
                                     (const void**)&tableData, &len,
                                     &tableContext, &exists);
     if (FAILED(hr)) {
-        return PR_FALSE;
+        return false;
     }
 
     while (exists) {
@@ -496,7 +504,7 @@ gfxDWriteFont::HasBitmapStrikeForSize(PRUint32 aSize)
             reinterpret_cast<const BitmapScaleTable*>(hdr + 1);
         for (PRUint32 i = 0; i < numSizes; ++i, ++scaleTable) {
             if (scaleTable->ppemX == aSize && scaleTable->ppemY == aSize) {
-                hasStrike = PR_TRUE;
+                hasStrike = true;
                 break;
             }
         }
@@ -520,20 +528,20 @@ gfxDWriteFont::GetSpaceGlyph()
     return glyph;
 }
 
-PRBool
+bool
 gfxDWriteFont::SetupCairoFont(gfxContext *aContext)
 {
     cairo_scaled_font_t *scaledFont = CairoScaledFont();
     if (cairo_scaled_font_status(scaledFont) != CAIRO_STATUS_SUCCESS) {
         // Don't cairo_set_scaled_font as that would propagate the error to
         // the cairo_t, precluding any further drawing.
-        return PR_FALSE;
+        return false;
     }
     cairo_set_scaled_font(aContext->GetCairo(), scaledFont);
-    return PR_TRUE;
+    return true;
 }
 
-PRBool
+bool
 gfxDWriteFont::IsValid()
 {
     return mFontFace != NULL;
@@ -562,7 +570,7 @@ gfxDWriteFont::CairoFontFace()
 cairo_scaled_font_t *
 gfxDWriteFont::CairoScaledFont()
 {
-    if (!mCairoScaledFont) {
+    if (!mScaledFont) {
         cairo_matrix_t sizeMatrix;
         cairo_matrix_t identityMatrix;
 
@@ -589,27 +597,27 @@ gfxDWriteFont::CairoScaledFont()
                 GetCairoAntialiasOption(mAntialiasOption));
         }
 
-        mCairoScaledFont = cairo_scaled_font_create(CairoFontFace(),
+        mScaledFont = cairo_scaled_font_create(CairoFontFace(),
                                                     &sizeMatrix,
                                                     &identityMatrix,
                                                     fontOptions);
         cairo_font_options_destroy(fontOptions);
 
-        cairo_dwrite_scaled_font_allow_manual_show_glyphs(mCairoScaledFont,
+        cairo_dwrite_scaled_font_allow_manual_show_glyphs(mScaledFont,
                                                           mAllowManualShowGlyphs);
 
         gfxDWriteFontEntry *fe =
             static_cast<gfxDWriteFontEntry*>(mFontEntry.get());
-        cairo_dwrite_scaled_font_set_force_GDI_classic(mCairoScaledFont,
+        cairo_dwrite_scaled_font_set_force_GDI_classic(mScaledFont,
                                                        GetForceGDIClassic());
     }
 
     NS_ASSERTION(mAdjustedSize == 0.0 ||
-                 cairo_scaled_font_status(mCairoScaledFont) 
+                 cairo_scaled_font_status(mScaledFont) 
                    == CAIRO_STATUS_SUCCESS,
                  "Failed to make scaled font");
 
-    return mCairoScaledFont;
+    return mScaledFont;
 }
 
 gfxFont::RunMetrics
@@ -693,7 +701,7 @@ gfxDWriteFont::GetFontTable(PRUint32 aTag)
     return nsnull;
 }
 
-PRBool
+bool
 gfxDWriteFont::ProvidesGlyphWidths()
 {
     return !mUseSubpixelPositions ||

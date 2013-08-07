@@ -68,12 +68,12 @@ protected:
     *               locally (ie not transferred with roaming profiles)
     */
    NS_METHOD            GetProductDirectory(nsILocalFile **aLocalFile,
-                                            PRBool aLocal = PR_FALSE);
+                                            bool aLocal = false);
    NS_METHOD            GetDefaultUserProfileRoot(nsILocalFile **aLocalFile,
-                                                  PRBool aLocal = PR_FALSE);
+                                                  bool aLocal = false);
 
-#if defined(XP_MACOSX)
-   static PRBool        IsOSXLeopard();
+#if defined(MOZ_WIDGET_COCOA)
+   static bool          IsOSXLeopard();
 #endif
 
    nsCOMPtr<nsILocalFile> mMozBinDirectory;

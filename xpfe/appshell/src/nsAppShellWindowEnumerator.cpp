@@ -35,9 +35,10 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "nsAppShellWindowEnumerator.h"
+
 #include "nsIContentViewer.h"
 #include "nsIDocShell.h"
-#include "nsIDocumentViewer.h"
 #include "nsIDocument.h"
 #include "nsIDOMDocument.h"
 #include "nsIDOMElement.h"
@@ -47,7 +48,6 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIXULWindow.h"
 
-#include "nsAppShellWindowEnumerator.h"
 #include "nsWindowMediator.h"
 
 //
@@ -83,7 +83,7 @@ nsCOMPtr<nsIDOMNode> GetDOMNodeFromDocShell(nsIDocShell *aShell)
       nsCOMPtr<nsIDOMElement> element;
       domdoc->GetDocumentElement(getter_AddRefs(element));
       if (element)
-        node = do_QueryInterface(element);
+        node = element;
     }
   }
 
@@ -119,7 +119,7 @@ void GetWindowType(nsIXULWindow* aWindow, nsString &outType)
 nsWindowInfo::nsWindowInfo(nsIXULWindow* inWindow, PRInt32 inTimeStamp) :
   mWindow(inWindow),mTimeStamp(inTimeStamp),mZLevel(nsIXULWindow::normalZ)
 {
-  ReferenceSelf(PR_TRUE, PR_TRUE);
+  ReferenceSelf(true, true);
 }
 
 nsWindowInfo::~nsWindowInfo()
@@ -128,7 +128,7 @@ nsWindowInfo::~nsWindowInfo()
 
 // return true if the window described by this WindowInfo has a type
 // equal to the given type
-PRBool nsWindowInfo::TypeEquals(const nsAString &aType)
+bool nsWindowInfo::TypeEquals(const nsAString &aType)
 { 
   nsAutoString rtnString;
   GetWindowType(mWindow, rtnString);
@@ -162,7 +162,7 @@ void nsWindowInfo::InsertAfter(nsWindowInfo *inOlder , nsWindowInfo *inHigher)
 }
 
 // remove the struct from its linked lists
-void nsWindowInfo::Unlink(PRBool inAge, PRBool inZ)
+void nsWindowInfo::Unlink(bool inAge, bool inZ)
 {
   if (inAge) {
     mOlder->mYounger = mYounger;
@@ -176,7 +176,7 @@ void nsWindowInfo::Unlink(PRBool inAge, PRBool inZ)
 }
 
 // initialize the struct to be a valid linked list of one element
-void nsWindowInfo::ReferenceSelf(PRBool inAge, PRBool inZ)
+void nsWindowInfo::ReferenceSelf(bool inAge, bool inZ)
 {
   if (inAge) {
     mYounger = this;
@@ -217,12 +217,12 @@ void nsAppShellWindowEnumerator::AdjustInitialPosition()
     mCurrentPosition = FindNext();
 }
 
-NS_IMETHODIMP nsAppShellWindowEnumerator::HasMoreElements(PRBool *retval)
+NS_IMETHODIMP nsAppShellWindowEnumerator::HasMoreElements(bool *retval)
 {
   if (!retval)
     return NS_ERROR_INVALID_ARG;
 
-  *retval = mCurrentPosition ? PR_TRUE : PR_FALSE;
+  *retval = mCurrentPosition ? true : false;
   return NS_OK;
 }
 
@@ -312,7 +312,7 @@ nsWindowInfo *nsASDOMWindowEarlyToLateEnumerator::FindNext()
 {
   nsWindowInfo *info,
                *listEnd;
-  PRBool        allWindows = mType.IsEmpty();
+  bool          allWindows = mType.IsEmpty();
 
   // see nsXULWindowEarlyToLateEnumerator::FindNext
   if (!mCurrentPosition)
@@ -351,7 +351,7 @@ nsWindowInfo *nsASXULWindowEarlyToLateEnumerator::FindNext()
 {
   nsWindowInfo *info,
                *listEnd;
-  PRBool        allWindows = mType.IsEmpty();
+  bool          allWindows = mType.IsEmpty();
 
   /* mCurrentPosition null is assumed to mean that the enumerator has run
      its course and is now basically useless. It could also be interpreted
@@ -396,7 +396,7 @@ nsWindowInfo *nsASDOMWindowFrontToBackEnumerator::FindNext()
 {
   nsWindowInfo *info,
                *listEnd;
-  PRBool        allWindows = mType.IsEmpty();
+  bool          allWindows = mType.IsEmpty();
 
   // see nsXULWindowEarlyToLateEnumerator::FindNext
   if (!mCurrentPosition)
@@ -435,7 +435,7 @@ nsWindowInfo *nsASXULWindowFrontToBackEnumerator::FindNext()
 {
   nsWindowInfo *info,
                *listEnd;
-  PRBool        allWindows = mType.IsEmpty();
+  bool          allWindows = mType.IsEmpty();
 
   // see nsXULWindowEarlyToLateEnumerator::FindNext
   if (!mCurrentPosition)
@@ -475,7 +475,7 @@ nsWindowInfo *nsASDOMWindowBackToFrontEnumerator::FindNext()
 {
   nsWindowInfo *info,
                *listEnd;
-  PRBool        allWindows = mType.IsEmpty();
+  bool          allWindows = mType.IsEmpty();
 
   // see nsXULWindowEarlyToLateEnumerator::FindNext
   if (!mCurrentPosition)
@@ -517,7 +517,7 @@ nsWindowInfo *nsASXULWindowBackToFrontEnumerator::FindNext()
 {
   nsWindowInfo *info,
                *listEnd;
-  PRBool        allWindows = mType.IsEmpty();
+  bool          allWindows = mType.IsEmpty();
 
   // see nsXULWindowEarlyToLateEnumerator::FindNext
   if (!mCurrentPosition)

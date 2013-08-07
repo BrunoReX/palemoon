@@ -59,7 +59,7 @@ NS_NewGridRowLeafFrame(nsIPresShell* aPresShell,
     return nsnull;
   }
   
-  return new (aPresShell) nsGridRowLeafFrame(aPresShell, aContext, PR_FALSE,
+  return new (aPresShell) nsGridRowLeafFrame(aPresShell, aContext, false,
                                              layout);
 }
 
@@ -85,7 +85,7 @@ nsGridRowLeafFrame::GetBorderAndPadding(nsMargin& aBorderAndPadding)
   if (!grid) 
     return rv;
 
-  PRBool isHorizontal = IsHorizontal();
+  bool isHorizontal = IsHorizontal();
 
   nsBoxLayoutState state(PresContext());
 

@@ -123,7 +123,7 @@ NS_GetMainThread(nsIThread **result)
 #ifndef MOZILLA_INTERNAL_API
 bool NS_IsMainThread()
 {
-  PRBool result = PR_FALSE;
+  bool result = false;
   nsCOMPtr<nsIThreadManager> mgr =
     do_GetService(NS_THREADMANAGER_CONTRACTID);
   if (mgr)
@@ -140,7 +140,7 @@ NS_IsMainThread()
 #elif !defined(NS_TLS)
 bool NS_IsMainThread()
 {
-  PRBool result = PR_FALSE;
+  bool result = false;
   nsThreadManager::get()->nsThreadManager::GetIsMainThread(&result);
   return bool(result);
 }
@@ -191,8 +191,8 @@ NS_ProcessPendingEvents(nsIThread *thread, PRIntervalTime timeout)
 
   PRIntervalTime start = PR_IntervalNow();
   for (;;) {
-    PRBool processedEvent;
-    rv = thread->ProcessNextEvent(PR_FALSE, &processedEvent);
+    bool processedEvent;
+    rv = thread->ProcessNextEvent(false, &processedEvent);
     if (NS_FAILED(rv) || !processedEvent)
       break;
     if (PR_IntervalNow() - start > timeout)
@@ -202,14 +202,14 @@ NS_ProcessPendingEvents(nsIThread *thread, PRIntervalTime timeout)
 }
 #endif // XPCOM_GLUE_AVOID_NSPR
 
-inline PRBool
+inline bool
 hasPendingEvents(nsIThread *thread)
 {
-  PRBool val;
+  bool val;
   return NS_SUCCEEDED(thread->HasPendingEvents(&val)) && val;
 }
 
-PRBool
+bool
 NS_HasPendingEvents(nsIThread *thread)
 {
   if (!thread) {
@@ -219,29 +219,29 @@ NS_HasPendingEvents(nsIThread *thread)
     return hasPendingEvents(current);
 #else
     thread = NS_GetCurrentThread();
-    NS_ENSURE_TRUE(thread, PR_FALSE);
+    NS_ENSURE_TRUE(thread, false);
 #endif
   }
   return hasPendingEvents(thread);
 }
 
-PRBool
-NS_ProcessNextEvent(nsIThread *thread, PRBool mayWait)
+bool
+NS_ProcessNextEvent(nsIThread *thread, bool mayWait)
 {
 #ifdef MOZILLA_INTERNAL_API
   if (!thread) {
     thread = NS_GetCurrentThread();
-    NS_ENSURE_TRUE(thread, PR_FALSE);
+    NS_ENSURE_TRUE(thread, false);
   }
 #else
   nsCOMPtr<nsIThread> current;
   if (!thread) {
     NS_GetCurrentThread(getter_AddRefs(current));
-    NS_ENSURE_TRUE(current, PR_FALSE);
+    NS_ENSURE_TRUE(current, false);
     thread = current.get();
   }
 #endif
-  PRBool val;
+  bool val;
   return NS_SUCCEEDED(thread->ProcessNextEvent(mayWait, &val)) && val;
 }
 

@@ -41,7 +41,6 @@
 
 #include <string.h>
 #include "jsapi.h"
-#include "jsarena.h"
 #include "jsarray.h"
 #include "jsatom.h"
 #include "jsbool.h"
@@ -51,19 +50,19 @@
 #include "jsiter.h"
 #include "jsnum.h"
 #include "jsobj.h"
+#include "json.h"
 #include "jsonparser.h"
 #include "jsprf.h"
-#include "jsscan.h"
 #include "jsstr.h"
 #include "jstypes.h"
 #include "jsstdint.h"
 #include "jsutil.h"
 #include "jsxml.h"
-#include "jsvector.h"
 
-#include "json.h"
+#include "frontend/TokenStream.h"
 
 #include "jsatominlines.h"
+#include "jsboolinlines.h"
 #include "jsinferinlines.h"
 #include "jsobjinlines.h"
 #include "jsstrinlines.h"
@@ -93,7 +92,7 @@ js_json_parse(JSContext *cx, uintN argc, Value *vp)
     /* Step 1. */
     JSLinearString *linear;
     if (argc >= 1) {
-        JSString *str = js_ValueToString(cx, vp[2]);
+        JSString *str = ToString(cx, vp[2]);
         if (!str)
             return false;
         linear = str->ensureLinear(cx);
@@ -194,13 +193,12 @@ Quote(JSContext *cx, StringBuffer &sb, JSString *str)
                          : 't';
            if (!sb.append('\\') || !sb.append(abbrev))
                return false;
-           mark = i + 1;
         } else {
             JS_ASSERT(c < ' ');
             if (!sb.append("\\u00"))
                 return false;
             JS_ASSERT((c >> 4) < 10);
-            uint8 x = c >> 4, y = c % 16;
+            uint8_t x = c >> 4, y = c % 16;
             if (!sb.append('0' + x) || !sb.append(y < 10 ? '0' + y : 'a' + (y - 10)))
                 return false;
         }
@@ -235,19 +233,19 @@ class StringifyContext
     const StringBuffer &gap;
     JSObject * const replacer;
     const AutoIdVector &propertyList;
-    uint32 depth;
+    uint32_t depth;
     HashSet<JSObject *> objectStack;
 };
 
 static JSBool Str(JSContext *cx, const Value &v, StringifyContext *scx);
 
 static JSBool
-WriteIndent(JSContext *cx, StringifyContext *scx, uint32 limit)
+WriteIndent(JSContext *cx, StringifyContext *scx, uint32_t limit)
 {
     if (!scx->gap.empty()) {
         if (!scx->sb.append('\n'))
             return JS_FALSE;
-        for (uint32 i = 0; i < limit; i++) {
+        for (uint32_t i = 0; i < limit; i++) {
             if (!scx->sb.append(scx->gap.begin(), scx->gap.end()))
                 return JS_FALSE;
         }
@@ -286,9 +284,9 @@ class KeyStringifier {
 };
 
 template<>
-class KeyStringifier<uint32> {
+class KeyStringifier<uint32_t> {
   public:
-    static JSString *toString(JSContext *cx, uint32 index) {
+    static JSString *toString(JSContext *cx, uint32_t index) {
         return IndexToString(cx, index);
     }
 };
@@ -345,7 +343,6 @@ PreprocessValue(JSContext *cx, JSObject *holder, KeyType key, Value *vp, Stringi
                 return false;
         }
 
-        LeaveTrace(cx);
         InvokeArgsGuard args;
         if (!cx->stack.pushInvokeArgs(cx, 2, &args))
             return false;
@@ -362,20 +359,20 @@ PreprocessValue(JSContext *cx, JSObject *holder, KeyType key, Value *vp, Stringi
 
     /* Step 4. */
     if (vp->isObject()) {
-        JSObject *obj = &vp->toObject();
-        Class *clasp = obj->getClass();
-        if (clasp == &NumberClass) {
+        JSObject &obj = vp->toObject();
+        if (ObjectClassIs(obj, ESClass_Number, cx)) {
             double d;
             if (!ToNumber(cx, *vp, &d))
                 return false;
             vp->setNumber(d);
-        } else if (clasp == &StringClass) {
-            JSString *str = js_ValueToString(cx, *vp);
+        } else if (ObjectClassIs(obj, ESClass_String, cx)) {
+            JSString *str = ToStringSlow(cx, *vp);
             if (!str)
                 return false;
             vp->setString(str);
-        } else if (clasp == &BooleanClass) {
-            *vp = obj->getPrimitiveThis();
+        } else if (ObjectClassIs(obj, ESClass_Boolean, cx)) {
+            if (!BooleanGetPrimitiveValue(cx, obj, vp))
+                return false;
             JS_ASSERT(vp->isBoolean());
         }
     }
@@ -516,7 +513,7 @@ JA(JSContext *cx, JSObject *obj, StringifyContext *scx)
 
         /* Steps 7-10. */
         Value outputValue;
-        for (uint32 i = 0; i < length; i++) {
+        for (uint32_t i = 0; i < length; i++) {
             /*
              * Steps 8a-8c.  Again note how the call to the spec's Str method
              * is broken up into getting the property, running it past toJSON
@@ -601,10 +598,14 @@ Str(JSContext *cx, const Value &v, StringifyContext *scx)
 
     /* Step 10. */
     JS_ASSERT(v.isObject());
-    JSBool ok;
+    JSObject *obj = &v.toObject();
 
     scx->depth++;
-    ok = (JS_IsArrayObject(cx, &v.toObject()) ? JA : JO)(cx, &v.toObject(), scx);
+    JSBool ok;
+    if (ObjectClassIs(v.toObject(), ESClass_Array, cx))
+        ok = JA(cx, obj, scx);
+    else
+        ok = JO(cx, obj, scx);
     scx->depth--;
 
     return ok;
@@ -619,7 +620,7 @@ js_Stringify(JSContext *cx, Value *vp, JSObject *replacer, Value space, StringBu
     if (replacer) {
         if (replacer->isCallable()) {
             /* Step 4a(i): use replacer to transform values.  */
-        } else if (JS_IsArrayObject(cx, replacer)) {
+        } else if (ObjectClassIs(*replacer, ESClass_Array, cx)) {
             /*
              * Step 4b: The spec algorithm is unhelpfully vague about the exact
              * steps taken when the replacer is an array, regarding the exact
@@ -680,7 +681,9 @@ js_Stringify(JSContext *cx, Value *vp, JSObject *replacer, Value space, StringBu
                         id = js_CheckForStringIndex(id);
                     }
                 } else if (v.isString() ||
-                           (v.isObject() && (v.toObject().isString() || v.toObject().isNumber())))
+                           (v.isObject() &&
+                            (ObjectClassIs(v.toObject(), ESClass_String, cx) ||
+                             ObjectClassIs(v.toObject(), ESClass_Number, cx))))
                 {
                     /* Step 4b(iv)(3), 4b(iv)(5). */
                     if (!js_ValueToStringId(cx, v, &id))
@@ -706,13 +709,13 @@ js_Stringify(JSContext *cx, Value *vp, JSObject *replacer, Value space, StringBu
     /* Step 5. */
     if (space.isObject()) {
         JSObject &spaceObj = space.toObject();
-        if (spaceObj.isNumber()) {
+        if (ObjectClassIs(spaceObj, ESClass_Number, cx)) {
             jsdouble d;
             if (!ToNumber(cx, space, &d))
                 return false;
             space = NumberValue(d);
-        } else if (spaceObj.isString()) {
-            JSString *str = js_ValueToString(cx, space);
+        } else if (ObjectClassIs(spaceObj, ESClass_String, cx)) {
+            JSString *str = ToStringSlow(cx, space);
             if (!str)
                 return false;
             space = StringValue(str);
@@ -726,7 +729,7 @@ js_Stringify(JSContext *cx, Value *vp, JSObject *replacer, Value space, StringBu
         jsdouble d;
         JS_ALWAYS_TRUE(ToInteger(cx, space, &d));
         d = JS_MIN(10, d);
-        if (d >= 1 && !gap.appendN(' ', uint32(d)))
+        if (d >= 1 && !gap.appendN(' ', uint32_t(d)))
             return false;
     } else if (space.isString()) {
         /* Step 7. */
@@ -783,12 +786,14 @@ Walk(JSContext *cx, JSObject *holder, jsid name, const Value &reviver, Value *vp
     if (val.isObject()) {
         JSObject *obj = &val.toObject();
 
+        /* 'val' must have been produced by the JSON parser, so not a proxy. */
+        JS_ASSERT(!obj->isProxy());
         if (obj->isArray()) {
             /* Step 2a(ii). */
-            jsuint length = obj->getArrayLength();
+            uint32_t length = obj->getArrayLength();
 
             /* Step 2a(i), 2a(iii-iv). */
-            for (jsuint i = 0; i < length; i++) {
+            for (uint32_t i = 0; i < length; i++) {
                 jsid id;
                 if (!IndexToId(cx, i, &id))
                     return false;
@@ -811,11 +816,11 @@ Walk(JSContext *cx, JSObject *holder, jsid name, const Value &reviver, Value *vp
                  */
                 if (newElement.isUndefined()) {
                     /* Step 2a(iii)(2). */
-                    JS_ALWAYS_TRUE(array_deleteProperty(cx, obj, id, &newElement, false));
+                    JS_ALWAYS_TRUE(array_deleteElement(cx, obj, i, &newElement, false));
                 } else {
                     /* Step 2a(iii)(3). */
-                    JS_ALWAYS_TRUE(array_defineProperty(cx, obj, id, &newElement, JS_PropertyStub,
-                                                        JS_StrictPropertyStub, JSPROP_ENUMERATE));
+                    JS_ALWAYS_TRUE(array_defineElement(cx, obj, i, &newElement, JS_PropertyStub,
+                                                       JS_StrictPropertyStub, JSPROP_ENUMERATE));
                 }
             }
         } else {
@@ -854,7 +859,6 @@ Walk(JSContext *cx, JSObject *holder, jsid name, const Value &reviver, Value *vp
     if (!key)
         return false;
 
-    LeaveTrace(cx);
     InvokeArgsGuard args;
     if (!cx->stack.pushInvokeArgs(cx, 2, &args))
         return false;
@@ -878,11 +882,8 @@ Revive(JSContext *cx, const Value &reviver, Value *vp)
     if (!obj)
         return false;
 
-    AutoObjectRooter tvr(cx, obj);
-    if (!obj->defineProperty(cx, ATOM_TO_JSID(cx->runtime->atomState.emptyAtom),
-                             *vp, NULL, NULL, JSPROP_ENUMERATE)) {
+    if (!obj->defineProperty(cx, cx->runtime->atomState.emptyAtom, *vp))
         return false;
-    }
 
     return Walk(cx, obj, ATOM_TO_JSID(cx->runtime->atomState.emptyAtom), reviver, vp);
 }
@@ -928,7 +929,7 @@ static JSFunctionSpec json_static_methods[] = {
 JSObject *
 js_InitJSONClass(JSContext *cx, JSObject *obj)
 {
-    JSObject *JSON = NewNonFunction<WithProto::Class>(cx, &JSONClass, NULL, obj);
+    JSObject *JSON = NewObjectWithClassProto(cx, &JSONClass, NULL, obj);
     if (!JSON || !JSON->setSingletonType(cx))
         return NULL;
 

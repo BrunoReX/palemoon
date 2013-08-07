@@ -42,7 +42,7 @@
 #include "nsCExternalHandlerService.h"
 #include "nsComponentManagerUtils.h"
 #include "nsCOMPtr.h"
-#include "nsDOMClassInfo.h"
+#include "nsDOMClassInfoID.h"
 #include "nsDOMError.h"
 #include "nsIDOMFile.h"
 #include "nsICharsetAlias.h"
@@ -242,7 +242,7 @@ FileReaderSyncPrivate::GuessCharset(nsIInputStream *aStream,
   if (detector) {
     detector->Init(this);
 
-    PRBool done;
+    bool done;
     PRUint32 numRead;
     do {
       char readBuf[4096];

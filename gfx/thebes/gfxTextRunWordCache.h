@@ -105,6 +105,18 @@ public:
      */
     static void Flush();
 
+    /**
+     * This adds the storage used for each textRun to the total, and sets the
+     * TEXT_RUN_MEMORY_ACCOUNTED flag to avoid double- accounting. (Runs with
+     * this flag already set will be skipped.)
+     */
+    static size_t MaybeSizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf);
+
+    /**
+     * This clears the TEXT_RUN_MEMORY_ACCOUNTED flag on each textRun found.
+     */
+    static void ResetSizeOfAccountingFlags();
+
 protected:
     friend class gfxPlatform;
 

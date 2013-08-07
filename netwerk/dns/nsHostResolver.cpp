@@ -65,6 +65,8 @@
 #include "nsURLHelper.h"
 
 #include "mozilla/FunctionTimer.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/Telemetry.h"
 
 using namespace mozilla;
 
@@ -151,11 +153,11 @@ public:
     {
     }
 
-    PRBool Reset()
+    bool Reset()
     {
         // reset no more than once per second
         if (PR_IntervalToSeconds(PR_IntervalNow() - mLastReset) < 1)
-            return PR_FALSE;
+            return false;
 
         LOG(("calling res_ninit\n"));
 
@@ -182,10 +184,10 @@ nsHostRecord::nsHostRecord(const nsHostKey *key)
     , addr_info_gencnt(0)
     , addr_info(nsnull)
     , addr(nsnull)
-    , negative(PR_FALSE)
-    , resolving(PR_FALSE)
-    , onQueue(PR_FALSE)
-    , usingAnyThread(PR_FALSE)
+    , negative(false)
+    , resolving(false)
+    , onQueue(false)
+    , usingAnyThread(false)
 {
     host = ((char *) this) + sizeof(nsHostRecord);
     memcpy((char *) host, key->host, strlen(key->host) + 1);
@@ -218,7 +220,7 @@ nsHostRecord::~nsHostRecord()
         free(addr);
 }
 
-PRBool
+bool
 nsHostRecord::Blacklisted(PRNetAddr *aQuery)
 {
     // must call locked
@@ -226,11 +228,11 @@ nsHostRecord::Blacklisted(PRNetAddr *aQuery)
 
     // skip the string conversion for the common case of no blacklist
     if (!mBlacklistedItems.Length())
-        return PR_FALSE;
+        return false;
     
     char buf[64];
     if (PR_NetAddrToString(aQuery, buf, sizeof(buf)) != PR_SUCCESS)
-        return PR_FALSE;
+        return false;
 
     nsDependentCString strQuery(buf);
     LOG(("nsHostRecord::Blacklisted() query %s\n", buf));
@@ -238,10 +240,10 @@ nsHostRecord::Blacklisted(PRNetAddr *aQuery)
     for (PRUint32 i = 0; i < mBlacklistedItems.Length(); i++)
         if (mBlacklistedItems.ElementAt(i).Equals(strQuery)) {
             LOG(("nsHostRecord::Blacklisted() %s blacklist confirmed\n", buf));
-            return PR_TRUE;
+            return true;
         }
 
-    return PR_FALSE;
+    return false;
 }
 
 void
@@ -279,7 +281,7 @@ HostDB_HashKey(PLDHashTable *table, const void *key)
     return PL_DHashStringKey(table, hk->host) ^ RES_KEY_FLAGS(hk->flags) ^ hk->af;
 }
 
-static PRBool
+static bool
 HostDB_MatchEntry(PLDHashTable *table,
                   const PLDHashEntryHdr *entry,
                   const void *key)
@@ -331,14 +333,14 @@ HostDB_ClearEntry(PLDHashTable *table,
     NS_RELEASE(he->rec);
 }
 
-static PRBool
+static bool
 HostDB_InitEntry(PLDHashTable *table,
                  PLDHashEntryHdr *entry,
                  const void *key)
 {
     nsHostDBEnt *he = static_cast<nsHostDBEnt *>(entry);
     nsHostRecord::Create(static_cast<const nsHostKey *>(key), &he->rec);
-    return PR_TRUE;
+    return true;
 }
 
 static PLDHashTableOps gHostDB_ops =
@@ -365,9 +367,11 @@ HostDB_RemoveEntry(PLDHashTable *table,
 //----------------------------------------------------------------------------
 
 nsHostResolver::nsHostResolver(PRUint32 maxCacheEntries,
-                               PRUint32 maxCacheLifetime)
+                               PRUint32 maxCacheLifetime,
+                               PRUint32 lifetimeGracePeriod)
     : mMaxCacheEntries(maxCacheEntries)
     , mMaxCacheLifetime(maxCacheLifetime)
+    , mGracePeriod(lifetimeGracePeriod)
     , mLock("nsHostResolver.mLock")
     , mIdleThreadCV(mLock, "nsHostResolver.mIdleThreadCV")
     , mNumIdleThreads(0)
@@ -375,7 +379,7 @@ nsHostResolver::nsHostResolver(PRUint32 maxCacheEntries,
     , mActiveAnyThreadCount(0)
     , mEvictionQSize(0)
     , mPendingCount(0)
-    , mShutdown(PR_TRUE)
+    , mShutdown(true)
 {
     mCreationTime = PR_Now();
     PR_INIT_CLIST(&mHighQ);
@@ -399,7 +403,7 @@ nsHostResolver::Init()
 
     PL_DHashTableInit(&mDB, &gHostDB_ops, nsnull, sizeof(nsHostDBEnt), 0);
 
-    mShutdown = PR_FALSE;
+    mShutdown = false;
 
 #if defined(HAVE_RES_NINIT)
     // We want to make sure the system is using the correct resolver settings,
@@ -444,7 +448,7 @@ nsHostResolver::Shutdown()
     {
         MutexAutoLock lock(mLock);
         
-        mShutdown = PR_TRUE;
+        mShutdown = true;
 
         MoveCList(mHighQ, pendingQHigh);
         MoveCList(mMediumQ, pendingQMed);
@@ -489,19 +493,19 @@ nsHostResolver::Shutdown()
 #endif
 }
 
-static inline PRBool
+static inline bool
 IsHighPriority(PRUint16 flags)
 {
     return !(flags & (nsHostResolver::RES_PRIORITY_LOW | nsHostResolver::RES_PRIORITY_MEDIUM));
 }
 
-static inline PRBool
+static inline bool
 IsMediumPriority(PRUint16 flags)
 {
     return flags & nsHostResolver::RES_PRIORITY_MEDIUM;
 }
 
-static inline PRBool
+static inline bool
 IsLowPriority(PRUint16 flags)
 {
     return flags & nsHostResolver::RES_PRIORITY_LOW;
@@ -564,21 +568,41 @@ nsHostResolver::ResolveHost(const char            *host,
             // do we have a cached result that we can reuse?
             else if (!(flags & RES_BYPASS_CACHE) &&
                      he->rec->HasResult() &&
-                     NowInMinutes() <= he->rec->expiration) {
+                     NowInMinutes() <= he->rec->expiration + mGracePeriod) {
+                        
                 LOG(("using cached record\n"));
                 // put reference to host record on stack...
                 result = he->rec;
+                Telemetry::Accumulate(Telemetry::DNS_LOOKUP_METHOD, METHOD_HIT);
+
+                // For entries that are in the grace period, or all cached
+                // negative entries, use the cache but start a new lookup in
+                // the background
+                if (((NowInMinutes() > he->rec->expiration) ||
+                     he->rec->negative) && !he->rec->resolving) {
+                    LOG(("Using %s cache entry but starting async renewal",
+                         he->rec->negative ? "negative" :"positive"));
+                    IssueLookup(he->rec);
+
+                    if (!he->rec->negative) {
+                        // negative entries are constantly being refreshed, only
+                        // track positive grace period induced renewals
+                        Telemetry::Accumulate(Telemetry::DNS_LOOKUP_METHOD,
+                                              METHOD_RENEWAL);
+                    }
+                }
+                
                 if (he->rec->negative) {
+                    Telemetry::Accumulate(Telemetry::DNS_LOOKUP_METHOD,
+                                          METHOD_NEGATIVE_HIT);
                     status = NS_ERROR_UNKNOWN_HOST;
-                    if (!he->rec->resolving) 
-                        // return the cached failure to the caller, but try and refresh
-                        // the record in the background
-                        IssueLookup(he->rec);
                 }
             }
             // if the host name is an IP address literal and has been parsed,
             // go ahead and use it.
             else if (he->rec->addr) {
+                Telemetry::Accumulate(Telemetry::DNS_LOOKUP_METHOD,
+                                      METHOD_LITERAL);
                 result = he->rec;
             }
             // try parsing the host name as an IP address literal to short
@@ -593,11 +617,15 @@ nsHostResolver::ResolveHost(const char            *host,
                 else
                     memcpy(he->rec->addr, &tempAddr, sizeof(PRNetAddr));
                 // put reference to host record on stack...
+                Telemetry::Accumulate(Telemetry::DNS_LOOKUP_METHOD,
+                                      METHOD_LITERAL);
                 result = he->rec;
             }
             else if (mPendingCount >= MAX_NON_PRIORITY_REQUESTS &&
                      !IsHighPriority(flags) &&
                      !he->rec->resolving) {
+                Telemetry::Accumulate(Telemetry::DNS_LOOKUP_METHOD,
+                                      METHOD_OVERFLOW);
                 // This is a lower priority request and we are swamped, so refuse it.
                 rv = NS_ERROR_DNS_LOOKUP_QUEUE_FULL;
             }
@@ -609,10 +637,17 @@ nsHostResolver::ResolveHost(const char            *host,
                 if (!he->rec->resolving) {
                     he->rec->flags = flags;
                     rv = IssueLookup(he->rec);
+                    Telemetry::Accumulate(Telemetry::DNS_LOOKUP_METHOD,
+                                          METHOD_NETWORK_FIRST);
                     if (NS_FAILED(rv))
                         PR_REMOVE_AND_INIT_LINK(callback);
+                    else
+                        LOG(("dns lookup blocking pending getaddrinfo query"));
                 }
                 else if (he->rec->onQueue) {
+                    Telemetry::Accumulate(Telemetry::DNS_LOOKUP_METHOD,
+                                          METHOD_NETWORK_SHARED);
+
                     // Consider the case where we are on a pending queue of 
                     // lower priority than the request is being made at.
                     // In that case we should upgrade to the higher queue.
@@ -729,8 +764,8 @@ nsHostResolver::IssueLookup(nsHostRecord *rec)
         PR_APPEND_LINK(rec, &mLowQ);
     mPendingCount++;
     
-    rec->resolving = PR_TRUE;
-    rec->onQueue = PR_TRUE;
+    rec->resolving = true;
+    rec->onQueue = true;
 
     rv = ConditionallyCreateThread(rec);
     
@@ -749,13 +784,13 @@ nsHostResolver::DeQueue(PRCList &aQ, nsHostRecord **aResult)
     *aResult = static_cast<nsHostRecord *>(aQ.next);
     PR_REMOVE_AND_INIT_LINK(*aResult);
     mPendingCount--;
-    (*aResult)->onQueue = PR_FALSE;
+    (*aResult)->onQueue = false;
 }
 
-PRBool
+bool
 nsHostResolver::GetHostToLookup(nsHostRecord **result)
 {
-    PRBool timedOut = PR_FALSE;
+    bool timedOut = false;
     PRIntervalTime epoch, now, timeout;
     
     MutexAutoLock lock(mLock);
@@ -768,22 +803,22 @@ nsHostResolver::GetHostToLookup(nsHostRecord **result)
         
         if (!PR_CLIST_IS_EMPTY(&mHighQ)) {
             DeQueue (mHighQ, result);
-            return PR_TRUE;
+            return true;
         }
 
         if (mActiveAnyThreadCount < HighThreadThreshold) {
             if (!PR_CLIST_IS_EMPTY(&mMediumQ)) {
                 DeQueue (mMediumQ, result);
                 mActiveAnyThreadCount++;
-                (*result)->usingAnyThread = PR_TRUE;
-                return PR_TRUE;
+                (*result)->usingAnyThread = true;
+                return true;
             }
             
             if (!PR_CLIST_IS_EMPTY(&mLowQ)) {
                 DeQueue (mLowQ, result);
                 mActiveAnyThreadCount++;
-                (*result)->usingAnyThread = PR_TRUE;
-                return PR_TRUE;
+                (*result)->usingAnyThread = true;
+                return true;
             }
         }
         
@@ -804,7 +839,7 @@ nsHostResolver::GetHostToLookup(nsHostRecord **result)
         now = PR_IntervalNow();
         
         if ((PRIntervalTime)(now - epoch) >= timeout)
-            timedOut = PR_TRUE;
+            timedOut = true;
         else {
             // It is possible that PR_WaitCondVar() was interrupted and returned early,
             // in which case we will loop back and re-enter it. In that case we want to
@@ -816,7 +851,7 @@ nsHostResolver::GetHostToLookup(nsHostRecord **result)
     
     // tell thread to exit...
     mThreadCount--;
-    return PR_FALSE;
+    return false;
 }
 
 void
@@ -846,17 +881,17 @@ nsHostResolver::OnLookupComplete(nsHostRecord *rec, nsresult status, PRAddrInfo 
         rec->expiration = NowInMinutes();
         if (result) {
             rec->expiration += mMaxCacheLifetime;
-            rec->negative = PR_FALSE;
+            rec->negative = false;
         }
         else {
             rec->expiration += 1;                 /* one minute for negative cache */
-            rec->negative = PR_TRUE;
+            rec->negative = true;
         }
-        rec->resolving = PR_FALSE;
+        rec->resolving = false;
         
         if (rec->usingAnyThread) {
             mActiveAnyThreadCount--;
-            rec->usingAnyThread = PR_FALSE;
+            rec->usingAnyThread = false;
         }
 
         if (rec->addr_info && !mShutdown) {
@@ -871,6 +906,14 @@ nsHostResolver::OnLookupComplete(nsHostRecord *rec, nsresult status, PRAddrInfo 
                     static_cast<nsHostRecord *>(PR_LIST_HEAD(&mEvictionQ));
                 PR_REMOVE_AND_INIT_LINK(head);
                 PL_DHashTableOperate(&mDB, (nsHostKey *) head, PL_DHASH_REMOVE);
+
+                if (!head->negative) {
+                    // record the age of the entry upon eviction.
+                    PRUint32 age =
+                        NowInMinutes() - (head->expiration - mMaxCacheLifetime);
+                    Telemetry::Accumulate(Telemetry::DNS_CLEANUP_AGE, age);
+                }
+
                 // release reference to rec owned by mEvictionQ
                 NS_RELEASE(head);
             }
@@ -910,14 +953,32 @@ nsHostResolver::ThreadFunc(void *arg)
         if (!(rec->flags & RES_CANON_NAME))
             flags |= PR_AI_NOCANONNAME;
 
+        TimeStamp startTime = TimeStamp::Now();
+
         ai = PR_GetAddrInfoByName(rec->host, rec->af, flags);
 #if defined(RES_RETRY_ON_FAILURE)
         if (!ai && rs.Reset())
             ai = PR_GetAddrInfoByName(rec->host, rec->af, flags);
 #endif
 
+        TimeDuration elapsed = TimeStamp::Now() - startTime;
+        PRUint32 millis = static_cast<PRUint32>(elapsed.ToMilliseconds());
+
         // convert error code to nsresult.
-        nsresult status = ai ? NS_OK : NS_ERROR_UNKNOWN_HOST;
+        nsresult status;
+        if (ai) {
+            status = NS_OK;
+
+            Telemetry::Accumulate(!rec->addr_info_gencnt ?
+                                    Telemetry::DNS_LOOKUP_TIME :
+                                    Telemetry::DNS_RENEWAL_TIME,
+                                  millis);
+        }
+        else {
+            status = NS_ERROR_UNKNOWN_HOST;
+            Telemetry::Accumulate(Telemetry::DNS_FAILED_LOOKUP_TIME, millis);
+        }
+        
         resolver->OnLookupComplete(rec, status, ai);
         LOG(("lookup complete for %s ...\n", rec->host));
     }
@@ -930,6 +991,7 @@ nsHostResolver::ThreadFunc(void *arg)
 nsresult
 nsHostResolver::Create(PRUint32         maxCacheEntries,
                        PRUint32         maxCacheLifetime,
+                       PRUint32         lifetimeGracePeriod,
                        nsHostResolver **result)
 {
 #if defined(PR_LOGGING)
@@ -938,7 +1000,8 @@ nsHostResolver::Create(PRUint32         maxCacheEntries,
 #endif
 
     nsHostResolver *res = new nsHostResolver(maxCacheEntries,
-                                             maxCacheLifetime);
+                                             maxCacheLifetime,
+                                             lifetimeGracePeriod);
     if (!res)
         return NS_ERROR_OUT_OF_MEMORY;
     NS_ADDREF(res);

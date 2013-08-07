@@ -95,11 +95,9 @@ NS_INTERFACE_MAP_END
 nsIDOMSVGLength*
 DOMSVGLengthList::GetItemWithoutAddRef(PRUint32 aIndex)
 {
-#ifdef MOZ_SMIL
   if (IsAnimValList()) {
     Element()->FlushAnimations();
   }
-#endif
   if (aIndex < Length()) {
     EnsureItemAt(aIndex);
     return mItems[aIndex];
@@ -146,7 +144,7 @@ DOMSVGLengthList::InternalListLengthWillChange(PRUint32 aNewLength)
 }
 
 SVGLengthList&
-DOMSVGLengthList::InternalList()
+DOMSVGLengthList::InternalList() const
 {
   SVGAnimatedLengthList *alist = Element()->GetAnimatedLengthList(AttrEnum());
   return IsAnimValList() && alist->mAnimVal ? *alist->mAnimVal : alist->mBaseVal;
@@ -158,11 +156,9 @@ DOMSVGLengthList::InternalList()
 NS_IMETHODIMP
 DOMSVGLengthList::GetNumberOfItems(PRUint32 *aNumberOfItems)
 {
-#ifdef MOZ_SMIL
   if (IsAnimValList()) {
     Element()->FlushAnimations();
   }
-#endif
   *aNumberOfItems = Length();
   return NS_OK;
 }
@@ -182,12 +178,10 @@ DOMSVGLengthList::Clear()
 
     mItems.Clear();
     InternalList().Clear();
-    Element()->DidChangeLengthList(AttrEnum(), PR_TRUE);
-#ifdef MOZ_SMIL
+    Element()->DidChangeLengthList(AttrEnum(), true);
     if (mAList->IsAnimating()) {
       Element()->AnimationNeedsResample();
     }
-#endif
   }
   return NS_OK;
 }
@@ -275,12 +269,10 @@ DOMSVGLengthList::InsertItemBefore(nsIDOMSVGLength *newItem,
 
   UpdateListIndicesFromIndex(mItems, index + 1);
 
-  Element()->DidChangeLengthList(AttrEnum(), PR_TRUE);
-#ifdef MOZ_SMIL
+  Element()->DidChangeLengthList(AttrEnum(), true);
   if (mAList->IsAnimating()) {
     Element()->AnimationNeedsResample();
   }
-#endif
   *_retval = domItem.forget().get();
   return NS_OK;
 }
@@ -319,12 +311,10 @@ DOMSVGLengthList::ReplaceItem(nsIDOMSVGLength *newItem,
   // would end up reading bad data from InternalList()!
   domItem->InsertingIntoList(this, AttrEnum(), index, IsAnimValList());
 
-  Element()->DidChangeLengthList(AttrEnum(), PR_TRUE);
-#ifdef MOZ_SMIL
+  Element()->DidChangeLengthList(AttrEnum(), true);
   if (mAList->IsAnimating()) {
     Element()->AnimationNeedsResample();
   }
-#endif
   NS_ADDREF(*_retval = domItem.get());
   return NS_OK;
 }
@@ -360,12 +350,10 @@ DOMSVGLengthList::RemoveItem(PRUint32 index,
 
   UpdateListIndicesFromIndex(mItems, index);
 
-  Element()->DidChangeLengthList(AttrEnum(), PR_TRUE);
-#ifdef MOZ_SMIL
+  Element()->DidChangeLengthList(AttrEnum(), true);
   if (mAList->IsAnimating()) {
     Element()->AnimationNeedsResample();
   }
-#endif
   return NS_OK;
 }
 

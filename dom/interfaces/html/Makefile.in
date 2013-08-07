@@ -121,9 +121,6 @@ SDK_XPIDLSRCS =					\
 XPIDLSRCS = 					\
 	nsIDOMHTMLCanvasElement.idl		\
 	nsIDOMHTMLUnknownElement.idl \
-	nsIDOMNSHTMLElement.idl			\
-	nsIDOMNSHTMLFrameElement.idl		\
-	nsIDOMNSHTMLOptionCollectn.idl		\
 	$(NULL)
 
 include $(topsrcdir)/config/rules.mk

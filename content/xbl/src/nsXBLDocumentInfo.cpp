@@ -56,7 +56,13 @@
 #include "nsDOMJSUtils.h"
 #include "mozilla/Services.h"
 #include "xpcpublic.h"
- 
+#include "mozilla/scache/StartupCache.h"
+#include "mozilla/scache/StartupCacheUtils.h"
+
+using namespace mozilla::scache;
+
+static const char kXBLCachePrefix[] = "xblcache";
+
 static NS_DEFINE_CID(kDOMScriptObjectFactoryCID, NS_DOM_SCRIPT_OBJECT_FACTORY_CID);
 
 // An XBLDocumentInfo object has a special context associated with it which we can use to pre-compile 
@@ -77,7 +83,7 @@ public:
   virtual nsIScriptContext *GetContext();
   virtual JSObject *GetGlobalJSObject();
   virtual void OnFinalize(JSObject* aObject);
-  virtual void SetScriptsEnabled(PRBool aEnabled, PRBool aFireTimeouts);
+  virtual void SetScriptsEnabled(bool aEnabled, bool aFireTimeouts);
 
   // nsIScriptObjectPrincipal methods
   virtual nsIPrincipal* GetPrincipal();
@@ -95,7 +101,6 @@ protected:
 
   void SetContext(nsIScriptContext *aContext);
   nsIScriptContext *GetScriptContext(PRUint32 language);
-  void *GetScriptGlobal(PRUint32 language);
 
   nsCOMPtr<nsIScriptContext> mScriptContext;
   JSObject *mJSObject;    // XXX JS language rabies bigotry badness
@@ -183,12 +188,13 @@ nsXBLDocGlobalObject_resolve(JSContext *cx, JSObject *obj, jsid id)
 
 JSClass nsXBLDocGlobalObject::gSharedGlobalClass = {
     "nsXBLPrototypeScript compilation scope",
-    JSCLASS_HAS_PRIVATE | JSCLASS_PRIVATE_IS_NSISUPPORTS | JSCLASS_GLOBAL_FLAGS,
+    XPCONNECT_GLOBAL_FLAGS,
     JS_PropertyStub,  JS_PropertyStub,
     nsXBLDocGlobalObject_getProperty, nsXBLDocGlobalObject_setProperty,
     JS_EnumerateStub, nsXBLDocGlobalObject_resolve,
     JS_ConvertStub, nsXBLDocGlobalObject_finalize,
-    NULL, nsXBLDocGlobalObject_checkAccess
+    NULL, nsXBLDocGlobalObject_checkAccess, NULL, NULL, NULL, NULL,
+    TraceXPCGlobal
 };
 
 //----------------------------------------------------------------------
@@ -266,7 +272,7 @@ nsXBLDocGlobalObject::SetContext(nsIScriptContext *aScriptContext)
   nsresult rv;
   rv = aScriptContext->InitContext();
   NS_WARN_IF_FALSE(NS_SUCCEEDED(rv), "Script Language's InitContext failed");
-  aScriptContext->SetGCOnDestruction(PR_FALSE);
+  aScriptContext->SetGCOnDestruction(false);
   aScriptContext->DidInitializeContext();
   // and we set up our global manually
   mScriptContext = aScriptContext;
@@ -288,14 +294,6 @@ nsXBLDocGlobalObject::GetScriptContext(PRUint32 language)
   return GetContext();
 }
 
-void *
-nsXBLDocGlobalObject::GetScriptGlobal(PRUint32 language)
-{
-  // This impl still assumes JS
-  NS_ENSURE_TRUE(language==nsIProgrammingLanguage::JAVASCRIPT, nsnull);
-  return GetGlobalJSObject();
-}
-
 nsresult
 nsXBLDocGlobalObject::EnsureScriptEnvironment(PRUint32 aLangID)
 {
@@ -313,9 +311,7 @@ nsXBLDocGlobalObject::EnsureScriptEnvironment(PRUint32 aLangID)
   nsCOMPtr<nsIScriptRuntime> scriptRuntime;
   rv = NS_GetScriptRuntimeByID(aLangID, getter_AddRefs(scriptRuntime));
   NS_ENSURE_SUCCESS(rv, rv);
-  nsCOMPtr<nsIScriptContext> newCtx;
-  rv = scriptRuntime->CreateContext(getter_AddRefs(newCtx));
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsCOMPtr<nsIScriptContext> newCtx = scriptRuntime->CreateContext();
   rv = SetScriptContext(aLangID, newCtx);
 
   JSContext *cx = mScriptContext->GetNativeContext();
@@ -389,7 +385,7 @@ nsXBLDocGlobalObject::OnFinalize(JSObject* aObject)
 }
 
 void
-nsXBLDocGlobalObject::SetScriptsEnabled(PRBool aEnabled, PRBool aFireTimeouts)
+nsXBLDocGlobalObject::SetScriptsEnabled(bool aEnabled, bool aFireTimeouts)
 {
     // We don't care...
 }
@@ -418,17 +414,17 @@ nsXBLDocGlobalObject::GetPrincipal()
   return document->NodePrincipal();
 }
 
-static PRBool IsChromeURI(nsIURI* aURI)
+static bool IsChromeURI(nsIURI* aURI)
 {
-  PRBool isChrome = PR_FALSE;
+  bool isChrome = false;
   if (NS_SUCCEEDED(aURI->SchemeIs("chrome", &isChrome)))
       return isChrome;
-  return PR_FALSE;
+  return false;
 }
 
 /* Implementation file */
 
-static PRBool
+static bool
 TraverseProtos(nsHashKey *aKey, void *aData, void* aClosure)
 {
   nsCycleCollectionTraversalCallback *cb = 
@@ -438,7 +434,7 @@ TraverseProtos(nsHashKey *aKey, void *aData, void* aClosure)
   return kHashEnumerateNext;
 }
 
-static PRBool
+static bool
 UnlinkProtoJSObjects(nsHashKey *aKey, void *aData, void* aClosure)
 {
   nsXBLPrototypeBinding *proto = static_cast<nsXBLPrototypeBinding*>(aData);
@@ -452,7 +448,7 @@ struct ProtoTracer
   void *mClosure;
 };
 
-static PRBool
+static bool
 TraceProtos(nsHashKey *aKey, void *aData, void* aClosure)
 {
   ProtoTracer* closure = static_cast<ProtoTracer*>(aClosure);
@@ -495,8 +491,8 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(nsXBLDocumentInfo)
 
 nsXBLDocumentInfo::nsXBLDocumentInfo(nsIDocument* aDocument)
   : mDocument(aDocument),
-    mScriptAccess(PR_TRUE),
-    mIsChrome(PR_FALSE),
+    mScriptAccess(true),
+    mIsChrome(false),
     mBindingTable(nsnull),
     mFirstBinding(nsnull)
 {
@@ -506,11 +502,11 @@ nsXBLDocumentInfo::nsXBLDocumentInfo(nsIDocument* aDocument)
     nsCOMPtr<nsIXULChromeRegistry> reg =
       mozilla::services::GetXULChromeRegistryService();
     if (reg) {
-      PRBool allow = PR_TRUE;
+      bool allow = true;
       reg->AllowScriptsForPackage(uri, &allow);
       mScriptAccess = allow;
     }
-    mIsChrome = PR_TRUE;
+    mIsChrome = true;
   }
 }
 
@@ -544,12 +540,12 @@ nsXBLDocumentInfo::GetPrototypeBinding(const nsACString& aRef)
   return static_cast<nsXBLPrototypeBinding*>(mBindingTable->Get(&key));
 }
 
-static PRBool
+static bool
 DeletePrototypeBinding(nsHashKey* aKey, void* aData, void* aClosure)
 {
   nsXBLPrototypeBinding* binding = static_cast<nsXBLPrototypeBinding*>(aData);
   delete binding;
-  return PR_TRUE;
+  return true;
 }
 
 nsresult
@@ -570,16 +566,148 @@ nsXBLDocumentInfo::SetPrototypeBinding(const nsACString& aRef, nsXBLPrototypeBin
 }
 
 void
+nsXBLDocumentInfo::RemovePrototypeBinding(const nsACString& aRef)
+{
+  if (mBindingTable) {
+    // Use a flat string to avoid making a copy.
+    const nsPromiseFlatCString& flat = PromiseFlatCString(aRef);
+    nsCStringKey key(flat);
+    mBindingTable->Remove(&key);
+  }
+}
+
+// Callback to enumerate over the bindings from this document and write them
+// out to the cache.
+bool
+WriteBinding(nsHashKey *aKey, void *aData, void* aClosure)
+{
+  nsXBLPrototypeBinding* binding = static_cast<nsXBLPrototypeBinding *>(aData);
+  binding->Write((nsIObjectOutputStream*)aClosure);
+
+  return kHashEnumerateNext;
+}
+
+// static
+nsresult
+nsXBLDocumentInfo::ReadPrototypeBindings(nsIURI* aURI, nsXBLDocumentInfo** aDocInfo)
+{
+  *aDocInfo = nsnull;
+
+  nsCAutoString spec(kXBLCachePrefix);
+  nsresult rv = PathifyURI(aURI, spec);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  StartupCache* startupCache = StartupCache::GetSingleton();
+  NS_ENSURE_TRUE(startupCache, NS_ERROR_FAILURE);
+
+  nsAutoArrayPtr<char> buf;
+  PRUint32 len;
+  rv = startupCache->GetBuffer(spec.get(), getter_Transfers(buf), &len);
+  // GetBuffer will fail if the binding is not in the cache.
+  if (NS_FAILED(rv))
+    return rv;
+
+  nsCOMPtr<nsIObjectInputStream> stream;
+  rv = NewObjectInputStreamFromBuffer(buf, len, getter_AddRefs(stream));
+  NS_ENSURE_SUCCESS(rv, rv);
+  buf.forget();
+
+  // The file compatibility.ini stores the build id. This is checked in
+  // nsAppRunner.cpp and will delete the cache if a different build is
+  // present. However, we check that the version matches here to be safe. 
+  PRUint32 version;
+  rv = stream->Read32(&version);
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (version != XBLBinding_Serialize_Version) {
+    // The version that exists is different than expected, likely created with a
+    // different build, so invalidate the cache.
+    startupCache->InvalidateCache();
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  nsCOMPtr<nsIPrincipal> principal;
+  nsContentUtils::GetSecurityManager()->
+    GetSystemPrincipal(getter_AddRefs(principal));
+
+  nsCOMPtr<nsIDOMDocument> domdoc;
+  rv = NS_NewXBLDocument(getter_AddRefs(domdoc), aURI, nsnull, principal);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIDocument> doc = do_QueryInterface(domdoc);
+  nsRefPtr<nsXBLDocumentInfo> docInfo = NS_NewXBLDocumentInfo(doc);
+
+  while (1) {
+    PRUint8 flags;
+    nsresult rv = stream->Read8(&flags);
+    NS_ENSURE_SUCCESS(rv, rv);
+    if (flags == XBLBinding_Serialize_NoMoreBindings)
+      break;
+
+    nsXBLPrototypeBinding* binding = new nsXBLPrototypeBinding();
+    rv = binding->Read(stream, docInfo, doc, flags);
+    if (NS_FAILED(rv)) {
+      delete binding;
+      return rv;
+    }
+  }
+
+  docInfo.swap(*aDocInfo);
+  return NS_OK;
+}
+
+nsresult
+nsXBLDocumentInfo::WritePrototypeBindings()
+{
+  // Only write out bindings with the system principal
+  if (!nsContentUtils::IsSystemPrincipal(mDocument->NodePrincipal()))
+    return NS_OK;
+
+  nsCAutoString spec(kXBLCachePrefix);
+  nsresult rv = PathifyURI(DocumentURI(), spec);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  StartupCache* startupCache = StartupCache::GetSingleton();
+  NS_ENSURE_TRUE(startupCache, rv);
+
+  nsCOMPtr<nsIObjectOutputStream> stream;
+  nsCOMPtr<nsIStorageStream> storageStream;
+  rv = NewObjectOutputWrappedStorageStream(getter_AddRefs(stream),
+                                           getter_AddRefs(storageStream),
+                                           true);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = stream->Write32(XBLBinding_Serialize_Version);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (mBindingTable)
+    mBindingTable->Enumerate(WriteBinding, stream);
+
+  // write a end marker at the end
+  rv = stream->Write8(XBLBinding_Serialize_NoMoreBindings);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  stream->Close();
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  PRUint32 len;
+  nsAutoArrayPtr<char> buf;
+  rv = NewBufferFromStorageStream(storageStream, getter_Transfers(buf), &len);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return startupCache->PutBuffer(spec.get(), buf, len);
+}
+
+void
 nsXBLDocumentInfo::SetFirstPrototypeBinding(nsXBLPrototypeBinding* aBinding)
 {
   mFirstBinding = aBinding;
 }
 
-PRBool FlushScopedSkinSheets(nsHashKey* aKey, void* aData, void* aClosure)
+bool FlushScopedSkinSheets(nsHashKey* aKey, void* aData, void* aClosure)
 {
   nsXBLPrototypeBinding* proto = (nsXBLPrototypeBinding*)aData;
   proto->FlushSkinSheets();
-  return PR_TRUE;
+  return true;
 }
 
 void

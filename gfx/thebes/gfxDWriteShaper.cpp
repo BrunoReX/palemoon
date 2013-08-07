@@ -46,7 +46,7 @@
 
 #define MAX_RANGE_LENGTH 25000
 
-PRBool
+bool
 gfxDWriteShaper::InitTextRun(gfxContext *aContext,
                              gfxTextRun *aTextRun,
                              const PRUnichar *aString,
@@ -71,7 +71,7 @@ gfxDWriteShaper::InitTextRun(gfxContext *aContext,
     hr = gfxWindowsPlatform::GetPlatform()->GetDWriteFactory()->
         CreateTextAnalyzer(getter_AddRefs(analyzer));
     if (FAILED(hr)) {
-        return PR_FALSE;
+        return false;
     }
 
     /**
@@ -81,7 +81,7 @@ gfxDWriteShaper::InitTextRun(gfxContext *aContext,
      * TODO: Figure out what exactly is going on, and what is a safe number, and 
      * why.
      */
-    PRBool result = PR_TRUE;
+    bool result = true;
     UINT32 rangeOffset = 0;
     while (rangeOffset < aRunLength) {
         PRUint32 rangeLen = NS_MIN<PRUint32>(aRunLength - rangeOffset,
@@ -121,7 +121,7 @@ gfxDWriteShaper::InitTextRun(gfxContext *aContext,
 
         if (FAILED(hr)) {
             NS_WARNING("Analyzer failed to generate results.");
-            result = PR_FALSE;
+            result = false;
             break;
         }
 
@@ -162,7 +162,7 @@ trymoreglyphs:
         }
         if (FAILED(hr)) {
             NS_WARNING("Analyzer failed to get glyphs.");
-            result = PR_FALSE;
+            result = false;
             break;
         }
 
@@ -219,7 +219,7 @@ trymoreglyphs:
         }
         if (FAILED(hr)) {
             NS_WARNING("Analyzer failed to get glyph placements.");
-            result = PR_FALSE;
+            result = false;
             break;
         }
 
@@ -230,7 +230,7 @@ trymoreglyphs:
             PRUint32 absC = rangeStart + c;
 
             if (c > 0 && k == clusters[c - 1]) {
-                g.SetComplex(aTextRun->IsClusterStart(absC), PR_FALSE, 0);
+                g.SetComplex(aTextRun->IsClusterStart(absC), false, 0);
                 aTextRun->SetGlyphs(absC, g, nsnull);
                 // This is a cluster continuation. No glyph here.
                 continue;
@@ -288,7 +288,7 @@ trymoreglyphs:
                 aTextRun->SetGlyphs(
                     absC,
                     g.SetComplex(aTextRun->IsClusterStart(absC),
-                                 PR_TRUE,
+                                 true,
                                  glyphCount),
                     detailedGlyphs.Elements());
             }

@@ -44,6 +44,7 @@
 #include "nsThreadManager.h"
 #include "nsThreadUtils.h"
 #include "prmem.h"
+#include "sampler.h"
 
 using mozilla::TimeDuration;
 using mozilla::TimeStamp;
@@ -127,7 +128,7 @@ NS_IMETHODIMP_(nsrefcnt) nsTimerImpl::Release(void)
   // non-mTimers-element strong refs to stay alive.
 
   if (count == 1 && mArmed) {
-    mCanceled = PR_TRUE;
+    mCanceled = true;
 
     NS_ASSERTION(gThread, "An armed timer exists after the thread timer stopped.");
     if (NS_SUCCEEDED(gThread->RemoveTimer(this)))
@@ -140,9 +141,9 @@ NS_IMETHODIMP_(nsrefcnt) nsTimerImpl::Release(void)
 nsTimerImpl::nsTimerImpl() :
   mClosure(nsnull),
   mCallbackType(CALLBACK_TYPE_UNKNOWN),
-  mFiring(PR_FALSE),
-  mArmed(PR_FALSE),
-  mCanceled(PR_FALSE),
+  mFiring(false),
+  mArmed(false),
+  mCanceled(false),
   mGeneration(0),
   mDelay(0)
 {
@@ -221,7 +222,8 @@ nsresult nsTimerImpl::InitCommon(PRUint32 aType, PRUint32 aDelay)
    */
   if (mArmed)
     gThread->RemoveTimer(this);
-  mCanceled = PR_FALSE;
+  mCanceled = false;
+  mTimeout = TimeStamp();
   mGeneration = PR_ATOMIC_INCREMENT(&gGenerator);
 
   mType = (PRUint8)aType;
@@ -275,7 +277,7 @@ NS_IMETHODIMP nsTimerImpl::Init(nsIObserver *aObserver,
 
 NS_IMETHODIMP nsTimerImpl::Cancel()
 {
-  mCanceled = PR_TRUE;
+  mCanceled = true;
 
   if (gThread)
     gThread->RemoveTimer(this);
@@ -375,6 +377,8 @@ void nsTimerImpl::Fire()
   if (mCanceled)
     return;
 
+  SAMPLE_LABEL("Timer", "Fire");
+
   TimeStamp now = TimeStamp::Now();
 #ifdef DEBUG_TIMERS
   if (PR_LOG_TEST(gTimerLog, PR_LOG_DEBUG)) {
@@ -407,7 +411,7 @@ void nsTimerImpl::Fire()
 
   if (mCallbackType == CALLBACK_TYPE_INTERFACE)
     mTimerCallbackWhileFiring = mCallback.i;
-  mFiring = PR_TRUE;
+  mFiring = true;
   
   // Handle callbacks that re-init the timer, but avoid leaking.
   // See bug 330128.
@@ -448,7 +452,7 @@ void nsTimerImpl::Fire()
       NS_RELEASE(callback.o);
   }
 
-  mFiring = PR_FALSE;
+  mFiring = false;
   mTimerCallbackWhileFiring = nsnull;
 
 #ifdef DEBUG_TIMERS

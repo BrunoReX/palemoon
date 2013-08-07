@@ -38,10 +38,8 @@
 #include "DOMSVGAnimatedNumberList.h"
 #include "nsSVGElement.h"
 #include "nsSVGAttrTearoffTable.h"
-#ifdef MOZ_SMIL
 #include "nsSMILValue.h"
 #include "SVGNumberListSMILType.h"
-#endif // MOZ_SMIL
 
 namespace mozilla {
 
@@ -69,7 +67,7 @@ SVGAnimatedNumberList::SetBaseValueString(const nsAString& aValue)
   // nsSVGElement::ParseAttribute under nsGenericElement::SetAttr,
   // which takes care of notifying.
 
-  mIsBaseSet = PR_TRUE;
+  mIsBaseSet = true;
   rv = mBaseVal.CopyFrom(newBaseValue);
   if (NS_FAILED(rv) && domWrapper) {
     // Attempting to increase mBaseVal's length failed - reduce domWrapper
@@ -89,7 +87,7 @@ SVGAnimatedNumberList::ClearBaseValue(PRUint32 aAttrEnum)
     domWrapper->InternalBaseValListWillChangeTo(SVGNumberList());
   }
   mBaseVal.Clear();
-  mIsBaseSet = PR_FALSE;
+  mIsBaseSet = false;
   // Caller notifies
 }
 
@@ -151,7 +149,6 @@ SVGAnimatedNumberList::ClearAnimValue(nsSVGElement *aElement,
   aElement->DidAnimateNumberList(aAttrEnum);
 }
 
-#ifdef MOZ_SMIL
 nsISMILAttr*
 SVGAnimatedNumberList::ToSMILAttr(nsSVGElement *aSVGElement,
                                   PRUint8 aAttrEnum)
@@ -164,7 +161,7 @@ SVGAnimatedNumberList::
   SMILAnimatedNumberList::ValueFromString(const nsAString& aStr,
                                const nsISMILAnimationElement* /*aSrcElement*/,
                                nsSMILValue& aValue,
-                               PRBool& aPreventCachingOfSandwich) const
+                               bool& aPreventCachingOfSandwich) const
 {
   nsSMILValue val(&SVGNumberListSMILType::sSingleton);
   SVGNumberListAndInfo *nlai = static_cast<SVGNumberListAndInfo*>(val.mU.mPtr);
@@ -173,7 +170,7 @@ SVGAnimatedNumberList::
     nlai->SetInfo(mElement);
     aValue.Swap(val);
   }
-  aPreventCachingOfSandwich = PR_FALSE;
+  aPreventCachingOfSandwich = false;
   return rv;
 }
 
@@ -215,6 +212,5 @@ SVGAnimatedNumberList::SMILAnimatedNumberList::ClearAnimValue()
     mVal->ClearAnimValue(mElement, mAttrEnum);
   }
 }
-#endif // MOZ_SMIL
 
 } // namespace mozilla

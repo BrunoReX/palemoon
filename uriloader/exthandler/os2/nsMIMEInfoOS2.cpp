@@ -73,7 +73,7 @@ static const PRUnichar table[] =
     '4','5','6','7','8','9'};
 
 // reduces overhead by preventing calls to nsRwsService when it isn't present
-static PRBool sUseRws = PR_TRUE;
+static bool sUseRws = true;
 
 //------------------------------------------------------------------------
 
@@ -167,7 +167,7 @@ NS_IMETHODIMP nsMIMEInfoOS2::LaunchWithFile(nsIFile *aFile)
       if (appHandle) {
         nsCOMPtr<nsIRwsService> rwsSvc(do_GetService("@mozilla.org/rwsos2;1"));
         if (!rwsSvc) {
-          sUseRws = PR_FALSE;
+          sUseRws = false;
         } else {
           // this call is identical to dropping the file on a program's icon;
           // it ensures filenames with multiple dots are handled correctly
@@ -210,7 +210,7 @@ NS_IMETHODIMP nsMIMEInfoOS2::LaunchWithFile(nsIFile *aFile)
   if (sUseRws) {
     nsCOMPtr<nsIRwsService> rwsSvc(do_GetService("@mozilla.org/rwsos2;1"));
     if (!rwsSvc) {
-      sUseRws = PR_FALSE;
+      sUseRws = false;
     } else {
       rv = rwsSvc->OpenWithAppPath(filePath.get(), appPath.get());
     }
@@ -222,7 +222,7 @@ NS_IMETHODIMP nsMIMEInfoOS2::LaunchWithFile(nsIFile *aFile)
     if (NS_FAILED(rv = process->Init(application)))
       return rv;
     const char *strPath = filePath.get();
-    return process->Run(PR_FALSE, &strPath, 1);
+    return process->Run(false, &strPath, 1);
   }
 
   return rv;
@@ -232,7 +232,7 @@ NS_IMETHODIMP nsMIMEInfoOS2::LaunchWithFile(nsIFile *aFile)
 
 // if there's a description, there's a handler (which may be the WPS)
 
-NS_IMETHODIMP nsMIMEInfoOS2::GetHasDefaultHandler(PRBool *_retval)
+NS_IMETHODIMP nsMIMEInfoOS2::GetHasDefaultHandler(bool *_retval)
 {
   *_retval = !mDefaultAppDescription.IsEmpty();
   return NS_OK;
@@ -374,7 +374,7 @@ nsresult nsMIMEInfoOS2::LoadUriInternal(nsIURI *aURL)
   NS_NAMED_LITERAL_CSTRING(msgid, "%msgid%");
   NS_NAMED_LITERAL_CSTRING(channel, "%channel%");
 
-  PRBool replaced = PR_FALSE;
+  bool replaced = false;
   if (applicationName.IsEmpty() && parameters.IsEmpty()) {
     /* Put application name in parameters */
     applicationName.Append(prefString);
@@ -394,7 +394,7 @@ nsresult nsMIMEInfoOS2::LoadUriInternal(nsIURI *aURL)
         NS_UnescapeURL(uURL);
         uURL.Cut(0, uProtocol.Length()+1);
         parameters.Replace(pos, url.Length(), uURL);
-        replaced = PR_TRUE;
+        replaced = true;
       }
     } else {
       /* port */
@@ -450,47 +450,47 @@ nsresult nsMIMEInfoOS2::LoadUriInternal(nsIURI *aURL)
   PRInt32 pos;
   pos = parameters.Find(url.get());
   if (pos != kNotFound) {
-    replaced = PR_TRUE;
+    replaced = true;
     parameters.Replace(pos, url.Length(), uURL);
   }
   pos = parameters.Find(username.get());
   if (pos != kNotFound) {
-    replaced = PR_TRUE;
+    replaced = true;
     parameters.Replace(pos, username.Length(), uUsername);
   }
   pos = parameters.Find(password.get());
   if (pos != kNotFound) {
-    replaced = PR_TRUE;
+    replaced = true;
     parameters.Replace(pos, password.Length(), uPassword);
   }
   pos = parameters.Find(host.get());
   if (pos != kNotFound) {
-    replaced = PR_TRUE;
+    replaced = true;
     parameters.Replace(pos, host.Length(), uHost);
   }
   pos = parameters.Find(port.get());
   if (pos != kNotFound) {
-    replaced = PR_TRUE;
+    replaced = true;
     parameters.Replace(pos, port.Length(), uPort);
   }
   pos = parameters.Find(email.get());
   if (pos != kNotFound) {
-    replaced = PR_TRUE;
+    replaced = true;
     parameters.Replace(pos, email.Length(), uEmail);
   }
   pos = parameters.Find(group.get());
   if (pos != kNotFound) {
-    replaced = PR_TRUE;
+    replaced = true;
     parameters.Replace(pos, group.Length(), uGroup);
   }
   pos = parameters.Find(msgid.get());
   if (pos != kNotFound) {
-    replaced = PR_TRUE;
+    replaced = true;
     parameters.Replace(pos, msgid.Length(), uEmail);
   }
   pos = parameters.Find(channel.get());
   if (pos != kNotFound) {
-    replaced = PR_TRUE;
+    replaced = true;
     parameters.Replace(pos, channel.Length(), uGroup);
   }
   // If no replacement variable was used, the user most likely uses the WPS URL
@@ -509,7 +509,7 @@ nsresult nsMIMEInfoOS2::LoadUriInternal(nsIURI *aURL)
   PRInt32 numParams = 1;
 
   nsCOMPtr<nsILocalFile> application;
-  rv = NS_NewNativeLocalFile(nsDependentCString(applicationName.get()), PR_FALSE, getter_AddRefs(application));
+  rv = NS_NewNativeLocalFile(nsDependentCString(applicationName.get()), false, getter_AddRefs(application));
   if (NS_FAILED(rv)) {
      /* Maybe they didn't qualify the name - search path */
      char szAppPath[CCHMAXPATH];
@@ -517,11 +517,11 @@ nsresult nsMIMEInfoOS2::LoadUriInternal(nsIURI *aURL)
                                "PATH", applicationName.get(),
                                szAppPath, sizeof(szAppPath));
      if (rc == NO_ERROR) {
-       rv = NS_NewNativeLocalFile(nsDependentCString(szAppPath), PR_FALSE, getter_AddRefs(application));
+       rv = NS_NewNativeLocalFile(nsDependentCString(szAppPath), false, getter_AddRefs(application));
      }
      if (NS_FAILED(rv) || (rc != NO_ERROR)) {
        /* Try just launching it with COMSPEC */
-       rv = NS_NewNativeLocalFile(nsDependentCString(getenv("COMSPEC")), PR_FALSE, getter_AddRefs(application));
+       rv = NS_NewNativeLocalFile(nsDependentCString(getenv("COMSPEC")), false, getter_AddRefs(application));
        if (NS_FAILED(rv)) {
          return rv;
        }
@@ -538,7 +538,7 @@ nsresult nsMIMEInfoOS2::LoadUriInternal(nsIURI *aURL)
   if (NS_FAILED(rv = process->Init(application)))
      return rv;
 
-  if (NS_FAILED(rv = process->Run(PR_FALSE, params, numParams)))
+  if (NS_FAILED(rv = process->Run(false, params, numParams)))
     return rv;
 
   return NS_OK;

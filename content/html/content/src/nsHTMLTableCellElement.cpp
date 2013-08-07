@@ -34,6 +34,9 @@
  * the terms of any one of the MPL, the GPL or the LGPL.
  *
  * ***** END LICENSE BLOCK ***** */
+
+#include "mozilla/Util.h"
+
 #include "nsIDOMHTMLTableCellElement.h"
 #include "nsIDOMHTMLTableRowElement.h"
 #include "nsHTMLTableElement.h"
@@ -48,6 +51,8 @@
 #include "nsRuleWalker.h"
 #include "nsIDocument.h"
 #include "celldata.h"
+
+using namespace mozilla;
 
 class nsHTMLTableCellElement : public nsGenericHTMLElement,
                                public nsIDOMHTMLTableCellElement
@@ -71,22 +76,21 @@ public:
   // nsIDOMHTMLTableCellElement
   NS_DECL_NSIDOMHTMLTABLECELLELEMENT
 
-  virtual PRBool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(PRInt32 aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
   virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const;
   NS_IMETHOD WalkContentStyleRules(nsRuleWalker* aRuleWalker);
-  NS_IMETHOD_(PRBool) IsAttributeMapped(const nsIAtom* aAttribute) const;
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const;
 
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
 
   virtual nsXPCClassInfo* GetClassInfo();
 protected:
-  // This does not return a nsresult since all we care about is if we
-  // found the row element that this cell is in or not.
-  void GetRow(nsIDOMHTMLTableRowElement** aRow);
-  nsIContent * GetTable();
+  nsHTMLTableElement* GetTable() const;
+
+  already_AddRefed<nsIDOMHTMLTableRowElement> GetRow() const;
 };
 
 
@@ -122,40 +126,40 @@ NS_IMPL_ELEMENT_CLONE(nsHTMLTableCellElement)
 
 
 // protected method
-void
-nsHTMLTableCellElement::GetRow(nsIDOMHTMLTableRowElement** aRow)
+already_AddRefed<nsIDOMHTMLTableRowElement>
+nsHTMLTableCellElement::GetRow() const
 {
-  *aRow = nsnull;
-
-  nsCOMPtr<nsIDOMNode> rowNode;
-  GetParentNode(getter_AddRefs(rowNode));
-
-  if (rowNode) {
-    CallQueryInterface(rowNode, aRow);
-  }
+  nsCOMPtr<nsIDOMHTMLTableRowElement> row = do_QueryInterface(GetParent());
+  return row.forget();
 }
 
 // protected method
-nsIContent*
-nsHTMLTableCellElement::GetTable()
+nsHTMLTableElement*
+nsHTMLTableCellElement::GetTable() const
 {
-  nsIContent *result = nsnull;
-
   nsIContent *parent = GetParent();
-  if (parent) {  // GetParent() should be a row
-    nsIContent* section = parent->GetParent();
-    if (section) {
-      if (section->IsHTML() &&
-          section->NodeInfo()->Equals(nsGkAtoms::table)) {
-        // XHTML, without a row group
-        result = section;
-      } else {
-        // we have a row group.
-        result = section->GetParent();
-      }
-    }
+  if (!parent) {
+    return nsnull;
   }
-  return result;
+
+  // parent should be a row.
+  nsIContent* section = parent->GetParent();
+  if (!section) {
+    return nsnull;
+  }
+
+  if (section->IsHTML(nsGkAtoms::table)) {
+    // XHTML, without a row group.
+    return static_cast<nsHTMLTableElement*>(section);
+  }
+
+  // We have a row group.
+  nsIContent* result = section->GetParent();
+  if (result && result->IsHTML(nsGkAtoms::table)) {
+    return static_cast<nsHTMLTableElement*>(result);
+  }
+
+  return nsnull;
 }
 
 NS_IMETHODIMP
@@ -163,10 +167,7 @@ nsHTMLTableCellElement::GetCellIndex(PRInt32* aCellIndex)
 {
   *aCellIndex = -1;
 
-  nsCOMPtr<nsIDOMHTMLTableRowElement> row;
-
-  GetRow(getter_AddRefs(row));
-
+  nsCOMPtr<nsIDOMHTMLTableRowElement> row = GetRow();
   if (!row) {
     return NS_OK;
   }
@@ -182,16 +183,13 @@ nsHTMLTableCellElement::GetCellIndex(PRInt32* aCellIndex)
   PRUint32 numCells;
   cells->GetLength(&numCells);
 
-  PRBool found = PR_FALSE;
-  PRUint32 i;
-
-  for (i = 0; (i < numCells) && !found; i++) {
+  for (PRUint32 i = 0; i < numCells; i++) {
     nsCOMPtr<nsIDOMNode> node;
     cells->Item(i, getter_AddRefs(node));
 
     if (node.get() == static_cast<nsIDOMNode *>(this)) {
       *aCellIndex = i;
-      found = PR_TRUE;
+      break;
     }
   }
 
@@ -205,13 +203,12 @@ nsHTMLTableCellElement::WalkContentStyleRules(nsRuleWalker* aRuleWalker)
   nsresult rv = nsGenericHTMLElement::WalkContentStyleRules(aRuleWalker);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsIContent* node = GetTable();
-  if (node && node->IsHTML(nsGkAtoms::table)) {
-    nsHTMLTableElement* table = static_cast<nsHTMLTableElement*>(node);
+  if (nsHTMLTableElement* table = GetTable()) {
     nsMappedAttributes* tableInheritedAttributes =
       table->GetAttributesMappedForCell();
-    if (tableInheritedAttributes)
+    if (tableInheritedAttributes) {
       aRuleWalker->Forward(tableInheritedAttributes);
+    }
   }
   return NS_OK;
 }
@@ -237,10 +234,7 @@ nsHTMLTableCellElement::GetAlign(nsAString& aValue)
 {
   if (!GetAttr(kNameSpaceID_None, nsGkAtoms::align, aValue)) {
     // There's no align attribute, ask the row for the alignment.
-
-    nsCOMPtr<nsIDOMHTMLTableRowElement> row;
-    GetRow(getter_AddRefs(row));
-
+    nsCOMPtr<nsIDOMHTMLTableRowElement> row = GetRow();
     if (row) {
       return row->GetAlign(aValue);
     }
@@ -252,7 +246,7 @@ nsHTMLTableCellElement::GetAlign(nsAString& aValue)
 NS_IMETHODIMP
 nsHTMLTableCellElement::SetAlign(const nsAString& aValue)
 {
-  return SetAttr(kNameSpaceID_None, nsGkAtoms::align, aValue, PR_TRUE);
+  return SetAttr(kNameSpaceID_None, nsGkAtoms::align, aValue, true);
 }
 
 
@@ -264,7 +258,7 @@ static const nsAttrValue::EnumTable kCellScopeTable[] = {
   { 0 }
 };
 
-PRBool
+bool
 nsHTMLTableCellElement::ParseAttribute(PRInt32 aNamespaceID,
                                        nsIAtom* aAttribute,
                                        const nsAString& aValue,
@@ -279,24 +273,24 @@ nsHTMLTableCellElement::ParseAttribute(PRInt32 aNamespaceID,
       return aResult.ParseIntWithBounds(aValue, 0);
     }
     if (aAttribute == nsGkAtoms::colspan) {
-      PRBool res = aResult.ParseIntWithBounds(aValue, -1);
+      bool res = aResult.ParseIntWithBounds(aValue, -1);
       if (res) {
         PRInt32 val = aResult.GetIntegerValue();
         // reset large colspan values as IE and opera do
         // quirks mode does not honor the special html 4 value of 0
         if (val > MAX_COLSPAN || val < 0 ||
-            (0 == val && InNavQuirksMode(GetOwnerDoc()))) {
+            (0 == val && InNavQuirksMode(OwnerDoc()))) {
           aResult.SetTo(1);
         }
       }
       return res;
     }
     if (aAttribute == nsGkAtoms::rowspan) {
-      PRBool res = aResult.ParseIntWithBounds(aValue, -1, MAX_ROWSPAN);
+      bool res = aResult.ParseIntWithBounds(aValue, -1, MAX_ROWSPAN);
       if (res) {
         PRInt32 val = aResult.GetIntegerValue();
         // quirks mode does not honor the special html 4 value of 0
-        if (val < 0 || (0 == val && InNavQuirksMode(GetOwnerDoc()))) {
+        if (val < 0 || (0 == val && InNavQuirksMode(OwnerDoc()))) {
           aResult.SetTo(1);
         }
       }
@@ -315,7 +309,7 @@ nsHTMLTableCellElement::ParseAttribute(PRInt32 aNamespaceID,
       return aResult.ParseColor(aValue);
     }
     if (aAttribute == nsGkAtoms::scope) {
-      return aResult.ParseEnumValue(aValue, kCellScopeTable, PR_FALSE);
+      return aResult.ParseEnumValue(aValue, kCellScopeTable, false);
     }
     if (aAttribute == nsGkAtoms::valign) {
       return ParseTableVAlignValue(aValue, aResult);
@@ -401,7 +395,7 @@ void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
   nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aData);
 }
 
-NS_IMETHODIMP_(PRBool)
+NS_IMETHODIMP_(bool)
 nsHTMLTableCellElement::IsAttributeMapped(const nsIAtom* aAttribute) const
 {
   static const MappedAttributeEntry attributes[] = {
@@ -427,7 +421,7 @@ nsHTMLTableCellElement::IsAttributeMapped(const nsIAtom* aAttribute) const
     sBackgroundAttributeMap,
   };
 
-  return FindAttributeDependence(aAttribute, map, NS_ARRAY_LENGTH(map));
+  return FindAttributeDependence(aAttribute, map);
 }
 
 nsMapRuleToAttributesFunc

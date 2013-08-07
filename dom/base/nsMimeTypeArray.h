@@ -58,7 +58,7 @@ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIDOMMIMETYPEARRAY
 
-  nsresult Refresh();
+  void Refresh();
 
   nsIDOMMimeType* GetItemAt(PRUint32 aIndex, nsresult* aResult);
   nsIDOMMimeType* GetNamedItem(const nsAString& aName, nsresult* aResult);
@@ -100,7 +100,7 @@ protected:
   // have been looked up before. The number of items in mMimeTypeArray should
   // thus always be equal to or higher than mPluginMimeTypeCount.
   nsCOMArray<nsIDOMMimeType> mMimeTypeArray;
-  PRBool mInited;
+  bool mInited;
 };
 
 class nsMimeType : public nsIDOMMimeType

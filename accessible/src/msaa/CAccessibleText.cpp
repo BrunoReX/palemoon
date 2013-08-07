@@ -95,7 +95,7 @@ __try {
 
   PRInt32 startOffset = 0, endOffset = 0;
   nsCOMPtr<nsIPersistentProperties> attributes;
-  nsresult rv = textAcc->GetTextAttributes(PR_TRUE, aOffset,
+  nsresult rv = textAcc->GetTextAttributes(true, aOffset,
                                            &startOffset, &endOffset,
                                            getter_AddRefs(attributes));
   if (NS_FAILED(rv))
@@ -176,6 +176,8 @@ __try {
   *aNSelections = 0;
 
   nsRefPtr<nsHyperTextAccessible> textAcc(do_QueryObject(this));
+  if (textAcc->IsDefunct())
+    return E_FAIL;
 
   PRInt32 selCount = 0;
   nsresult rv = textAcc->GetSelectionCount(&selCount);
@@ -499,7 +501,7 @@ STDMETHODIMP
 CAccessibleText::get_newText(IA2TextSegment *aNewText)
 {
 __try {
-  return GetModifiedText(PR_TRUE, aNewText);
+  return GetModifiedText(true, aNewText);
 
 } __except(nsAccessNodeWrap::FilterA11yExceptions(::GetExceptionCode(), GetExceptionInformation())) { }
   return E_FAIL;
@@ -509,7 +511,7 @@ STDMETHODIMP
 CAccessibleText::get_oldText(IA2TextSegment *aOldText)
 {
 __try {
-  return GetModifiedText(PR_FALSE, aOldText);
+  return GetModifiedText(false, aOldText);
 
 } __except(nsAccessNodeWrap::FilterA11yExceptions(::GetExceptionCode(), GetExceptionInformation())) { }
   return E_FAIL;
@@ -518,7 +520,7 @@ __try {
 // CAccessibleText
 
 HRESULT
-CAccessibleText::GetModifiedText(PRBool aGetInsertedText,
+CAccessibleText::GetModifiedText(bool aGetInsertedText,
                                  IA2TextSegment *aText)
 {
   PRUint32 startOffset = 0, endOffset = 0;

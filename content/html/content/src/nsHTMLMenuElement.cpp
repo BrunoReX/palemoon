@@ -36,7 +36,6 @@
 
 #include "nsHTMLMenuElement.h"
 
-#include "nsIDOMNSHTMLElement.h"
 #include "nsIDOMHTMLMenuItemElement.h"
 #include "nsXULContextMenuBuilder.h"
 #include "nsGUIEvent.h"
@@ -114,7 +113,7 @@ nsHTMLMenuElement::SendShowEvent()
     return NS_ERROR_FAILURE;
   }
 
-  nsEvent event(PR_TRUE, NS_SHOW_EVENT);
+  nsEvent event(true, NS_SHOW_EVENT);
   event.flags |= NS_EVENT_FLAG_CANT_CANCEL | NS_EVENT_FLAG_CANT_BUBBLE;
 
   nsCOMPtr<nsIPresShell> shell = document->GetShell();
@@ -160,15 +159,15 @@ nsHTMLMenuElement::Build(nsIMenuBuilder* aBuilder)
 }
 
 
-PRBool
+bool
 nsHTMLMenuElement::ParseAttribute(PRInt32 aNamespaceID,
                                   nsIAtom* aAttribute,
                                   const nsAString& aValue,
                                   nsAttrValue& aResult)
 {
   if (aNamespaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::type) {
-    PRBool success = aResult.ParseEnumValue(aValue, kMenuTypeTable,
-                                            PR_FALSE);
+    bool success = aResult.ParseEnumValue(aValue, kMenuTypeTable,
+                                            false);
     if (success) {
       mType = aResult.GetEnumValue();
     } else {
@@ -200,17 +199,14 @@ nsHTMLMenuElement::BuildSubmenu(const nsAString& aLabel,
 }
 
 // static
-PRBool
+bool
 nsHTMLMenuElement::CanLoadIcon(nsIContent* aContent, const nsAString& aIcon)
 {
   if (aIcon.IsEmpty()) {
-    return PR_FALSE;
+    return false;
   }
 
-  nsIDocument* doc = aContent->GetOwnerDoc();
-  if (!doc) {
-    return PR_FALSE;
-  }
+  nsIDocument* doc = aContent->OwnerDoc();
 
   nsCOMPtr<nsIURI> baseURI = aContent->GetBaseURI();
   nsCOMPtr<nsIURI> uri;
@@ -218,7 +214,7 @@ nsHTMLMenuElement::CanLoadIcon(nsIContent* aContent, const nsAString& aIcon)
                                             baseURI);
 
   if (!uri) {
-    return PR_FALSE;
+    return false;
   }
 
   return nsContentUtils::CanLoadImage(uri, aContent, doc,

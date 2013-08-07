@@ -54,7 +54,7 @@ class nsDOMCloseEvent : public nsDOMEvent,
 public:
   nsDOMCloseEvent(nsPresContext* aPresContext, nsEvent* aEvent)
     : nsDOMEvent(aPresContext, aEvent),
-    mWasClean(PR_FALSE),
+    mWasClean(false),
     mReasonCode(1005) {}
                      
   NS_DECL_ISUPPORTS_INHERITED
@@ -64,8 +64,11 @@ public:
 
   NS_DECL_NSIDOMCLOSEEVENT
 
+  virtual const nsIID& EventInitIID() { return NS_GET_IID(nsICloseEventInit); }
+  virtual nsresult InitFromCtor(const nsAString& aType, nsISupports* aDict,
+                                JSContext* aCx, JSObject* aObj);
 private:
-  PRBool mWasClean;
+  bool mWasClean;
   PRUint16 mReasonCode;
   nsString mReason;
 };

@@ -58,6 +58,8 @@ public:
   NS_IMETHOD OnStopContainer(imgIRequest *request, imgIContainer *image);
   NS_IMETHOD OnStopDecode(imgIRequest *request, nsresult status,
                           const PRUnichar *statusArg);
+  NS_IMETHOD OnImageIsAnimated(imgIRequest* aRequest);
+
   // imgIContainerObserver (override nsStubImageDecoderObserver)
   NS_IMETHOD FrameChanged(imgIContainer *aContainer,
                           const nsIntRect *aDirtyRect);
@@ -122,6 +124,8 @@ public:
   NS_IMETHOD OnStopDecode(imgIRequest *request,
                           nsresult status,
                           const PRUnichar *statusArg);
+  NS_IMETHOD OnImageIsAnimated(imgIRequest* aRequest);
+
   NS_IMETHOD FrameChanged(imgIContainer *aContainer,
                           const nsIntRect *aDirtyRect);
 
@@ -142,13 +146,17 @@ private:
   nsSize mIntrinsicSize;
   nsSize mImageSize;
 
+  // Boolean variable to determine if the current image request has been
+  // registered with the refresh driver.
+  bool mRequestRegistered;
+
   nsCOMPtr<imgIRequest> mImageRequest;
   nsCOMPtr<imgIDecoderObserver> mListener;
 
   PRInt32 mLoadFlags;
 
-  PRPackedBool mUseSrcAttr; ///< Whether or not the image src comes from an attribute.
-  PRPackedBool mSuppressStyleCheck;
+  bool mUseSrcAttr; ///< Whether or not the image src comes from an attribute.
+  bool mSuppressStyleCheck;
 }; // class nsImageBoxFrame
 
 #endif /* nsImageBoxFrame_h___ */

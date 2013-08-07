@@ -53,8 +53,6 @@ MOZILLA_INTERNAL_API = 1
 #
 CPPSRCS = $(error XPTCall not implemented on this platform!)
 
-# Force use of PIC
-FORCE_USE_PIC	= 1
 
 ifeq ($(OS_ARCH),SunOS)
 ifneq (86,$(findstring 86,$(OS_TEST)))
@@ -341,9 +339,6 @@ endif
 ifeq ($(OS_ARCH),Darwin)
 ifeq ($(TARGET_CPU), powerpc)
 ASFLAGS		+= -x assembler-with-cpp   # assumes $(AS) == $(CC)
-ifdef HAVE_GCC3_ABI
-ASFLAGS		+= -DHAVE_GCC3_ABI
-endif
 CPPSRCS		:= xptcinvoke_ppc_rhapsody.cpp xptcstubs_ppc_rhapsody.cpp
 ASFILES		:= xptcinvoke_asm_ppc_rhapsody.s xptcstubs_asm_ppc_darwin.s
 endif
@@ -367,11 +362,7 @@ endif
 ifeq ($(OS_ARCH),Linux)
 ifneq (,$(findstring sparc,$(OS_TEST)))
 CPPSRCS		:= xptcinvoke_sparc_solaris.cpp xptcstubs_sparc_solaris.cpp
-ifdef HAVE_GCC3_ABI
 ASFILES		:= xptcinvoke_asm_sparc_linux_GCC3.s xptcstubs_asm_sparc_solaris.s
-else
-ASFILES		:= xptcinvoke_asm_sparc_linux.s xptcstubs_asm_sparc_solaris.s
-endif
 endif
 endif
 #
@@ -408,11 +399,7 @@ CPPSRCS		:= xptcinvoke_sparc_solaris.cpp xptcstubs_sparc_solaris.cpp
 endif
 
 ifeq ($(GNU_CC),1)
-ifdef HAVE_GCC3_ABI
 ASFILES		:= xptcinvoke_asm_sparc_solaris_GCC3.s xptcstubs_asm_sparc_solaris.s
-else
-ASFILES		:= xptcinvoke_asm_sparc_solaris_GCC.s xptcstubs_asm_sparc_solaris.s
-endif
 else
 
 ifdef HAVE_64BIT_OS

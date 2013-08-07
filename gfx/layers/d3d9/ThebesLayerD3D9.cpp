@@ -36,6 +36,10 @@
  * ***** END LICENSE BLOCK ***** */
 
 #include "mozilla/layers/PLayers.h"
+
+/* This must occur *after* layers/PLayers.h to avoid typedefs conflicts. */
+#include "mozilla/Util.h"
+
 #include "mozilla/layers/ShadowLayers.h"
 #include "ShadowBufferD3D9.h"
 
@@ -316,7 +320,7 @@ ThebesLayerD3D9::GetLayer()
   return this;
 }
 
-PRBool
+bool
 ThebesLayerD3D9::IsEmpty()
 {
   return !mTexture;
@@ -475,11 +479,11 @@ ThebesLayerD3D9::DrawRegion(nsIntRegion &aRegion, SurfaceMode aMode,
         FillSurface(onBlack, aRegion, bounds.TopLeft(), gfxRGBA(0.0, 0.0, 0.0, 1.0));
         FillSurface(onWhite, aRegion, bounds.TopLeft(), gfxRGBA(1.0, 1.0, 1.0, 1.0));
         gfxASurface* surfaces[2] = { onBlack.get(), onWhite.get() };
-        destinationSurface = new gfxTeeSurface(surfaces, NS_ARRAY_LENGTH(surfaces));
+        destinationSurface = new gfxTeeSurface(surfaces, ArrayLength(surfaces));
         // Using this surface as a source will likely go horribly wrong, since
         // only the onBlack surface will really be used, so alpha information will
         // be incorrect.
-        destinationSurface->SetAllowUseAsSource(PR_FALSE);
+        destinationSurface->SetAllowUseAsSource(false);
       }
       break;
     }
@@ -596,15 +600,26 @@ ThebesLayerD3D9::CreateNewTextures(const gfxIntSize &aSize,
 
   mTexture = nsnull;
   mTextureOnWhite = nsnull;
-  device()->CreateTexture(aSize.width, aSize.height, 1,
-                          D3DUSAGE_RENDERTARGET,
-                          aMode != SURFACE_SINGLE_CHANNEL_ALPHA ? D3DFMT_X8R8G8B8 : D3DFMT_A8R8G8B8,
-                          D3DPOOL_DEFAULT, getter_AddRefs(mTexture), NULL);
+  HRESULT hr = device()->CreateTexture(aSize.width, aSize.height, 1,
+                                       D3DUSAGE_RENDERTARGET,
+                                       aMode != SURFACE_SINGLE_CHANNEL_ALPHA ? D3DFMT_X8R8G8B8 : D3DFMT_A8R8G8B8,
+                                       D3DPOOL_DEFAULT, getter_AddRefs(mTexture), NULL);
+  if (FAILED(hr)) {
+    ReportFailure(NS_LITERAL_CSTRING("ThebesLayerD3D9::CreateNewTextures(): Failed to create texture"),
+                  hr);
+    return;
+  }
+
   if (aMode == SURFACE_COMPONENT_ALPHA) {
-    device()->CreateTexture(aSize.width, aSize.height, 1,
-                            D3DUSAGE_RENDERTARGET,
-                            D3DFMT_X8R8G8B8,
-                            D3DPOOL_DEFAULT, getter_AddRefs(mTextureOnWhite), NULL);
+    hr = device()->CreateTexture(aSize.width, aSize.height, 1,
+                                 D3DUSAGE_RENDERTARGET,
+                                 D3DFMT_X8R8G8B8,
+                                 D3DPOOL_DEFAULT, getter_AddRefs(mTextureOnWhite), NULL);
+    if (FAILED(hr)) {
+      ReportFailure(NS_LITERAL_CSTRING("ThebesLayerD3D9::CreateNewTextures(): Failed to create texture (2)"),
+                    hr);
+      return;
+    }
   }
 }
 
@@ -619,25 +634,17 @@ ShadowThebesLayerD3D9::~ShadowThebesLayerD3D9()
 {}
 
 void
-ShadowThebesLayerD3D9::SetFrontBuffer(const OptionalThebesBuffer& aNewFront,
-                                     const nsIntRegion& aValidRegion)
+ShadowThebesLayerD3D9::Swap(const ThebesBuffer& aNewFront,
+                           const nsIntRegion& aUpdatedRegion,
+                           OptionalThebesBuffer* aNewBack,
+                           nsIntRegion* aNewBackValidRegion,
+                           OptionalThebesBuffer* aReadOnlyFront,
+                           nsIntRegion* aFrontUpdatedRegion)
 {
   if (!mBuffer) {
     mBuffer = new ShadowBufferD3D9(this);
   }
 
-  NS_ASSERTION(OptionalThebesBuffer::Tnull_t == aNewFront.type(),
-               "Only one system-memory buffer expected");
-}
-
-void
-ShadowThebesLayerD3D9::Swap(const ThebesBuffer& aNewFront,
-                           const nsIntRegion& aUpdatedRegion,
-                           ThebesBuffer* aNewBack,
-                           nsIntRegion* aNewBackValidRegion,
-                           OptionalThebesBuffer* aReadOnlyFront,
-                           nsIntRegion* aFrontUpdatedRegion)
-{
   if (mBuffer) {
     nsRefPtr<gfxASurface> surf = ShadowLayerForwarder::OpenDescriptor(aNewFront.buffer());
     mBuffer->Upload(surf, GetVisibleRegion().GetBounds());
@@ -667,7 +674,7 @@ ShadowThebesLayerD3D9::GetLayer()
   return this;
 }
 
-PRBool
+bool
 ShadowThebesLayerD3D9::IsEmpty()
 {
   return !mBuffer;

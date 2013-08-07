@@ -199,16 +199,16 @@ nsPrintingPromptService::ShowProgress(nsIDOMWindow*            parent,
                                       nsIWebBrowserPrint*      webBrowserPrint,    // ok to be null
                                       nsIPrintSettings*        printSettings,      // ok to be null
                                       nsIObserver*             openDialogObserver, // ok to be null
-                                      PRBool                   isForPrinting,
+                                      bool                     isForPrinting,
                                       nsIWebProgressListener** webProgressListener,
                                       nsIPrintProgressParams** printProgressParams,
-                                      PRBool*                  notifyOnOpen)
+                                      bool*                  notifyOnOpen)
 {
     NS_ENSURE_ARG(webProgressListener);
     NS_ENSURE_ARG(printProgressParams);
     NS_ENSURE_ARG(notifyOnOpen);
 
-    *notifyOnOpen = PR_FALSE;
+    *notifyOnOpen = false;
     if (mPrintProgress) {
         *webProgressListener = nsnull;
         *printProgressParams = nsnull;
@@ -338,7 +338,7 @@ nsPrintingPromptService::OnStateChange(nsIWebProgress *aWebProgress, nsIRequest 
         mWebProgressListener->OnStateChange(aWebProgress, aRequest, aStateFlags, aStatus);
         if (mPrintProgress) 
         {
-            mPrintProgress->CloseProgressDialog(PR_TRUE);
+            mPrintProgress->CloseProgressDialog(true);
         }
         mPrintProgress       = nsnull;
         mWebProgressListener = nsnull;
@@ -357,13 +357,13 @@ nsPrintingPromptService::OnProgressChange(nsIWebProgress *aWebProgress, nsIReque
   return NS_ERROR_FAILURE;
 }
 
-/* void onLocationChange (in nsIWebProgress aWebProgress, in nsIRequest aRequest, in nsIURI location); */
+/* void onLocationChange (in nsIWebProgress aWebProgress, in nsIRequest aRequest, in nsIURI location, in unsigned long aFlags); */
 NS_IMETHODIMP 
-nsPrintingPromptService::OnLocationChange(nsIWebProgress *aWebProgress, nsIRequest *aRequest, nsIURI *location)
+nsPrintingPromptService::OnLocationChange(nsIWebProgress *aWebProgress, nsIRequest *aRequest, nsIURI *location, PRUint32 aFlags)
 {
   if (mWebProgressListener) 
   {
-      return mWebProgressListener->OnLocationChange(aWebProgress, aRequest, location);
+      return mWebProgressListener->OnLocationChange(aWebProgress, aRequest, location, aFlags);
   }
   return NS_ERROR_FAILURE;
 }

@@ -54,7 +54,7 @@ nsTransformedTextRun::Create(const gfxTextRunFactory::Parameters* aParams,
                              gfxFontGroup* aFontGroup,
                              const PRUnichar* aString, PRUint32 aLength,
                              const PRUint32 aFlags, nsStyleContext** aStyles,
-                             PRBool aOwnsFactory)
+                             bool aOwnsFactory)
 {
   NS_ASSERTION(!(aFlags & gfxTextRunFactory::TEXT_IS_8BIT),
                "didn't expect text to be marked as 8-bit here");
@@ -74,36 +74,58 @@ nsTransformedTextRun::Create(const gfxTextRunFactory::Parameters* aParams,
 
 void
 nsTransformedTextRun::SetCapitalization(PRUint32 aStart, PRUint32 aLength,
-                                        PRPackedBool* aCapitalization,
+                                        bool* aCapitalization,
                                         gfxContext* aRefContext)
 {
   if (mCapitalize.IsEmpty()) {
     if (!mCapitalize.AppendElements(GetLength()))
       return;
-    memset(mCapitalize.Elements(), 0, GetLength()*sizeof(PRPackedBool));
+    memset(mCapitalize.Elements(), 0, GetLength()*sizeof(bool));
   }
-  memcpy(mCapitalize.Elements() + aStart, aCapitalization, aLength*sizeof(PRPackedBool));
-  mNeedsRebuild = PR_TRUE;
+  memcpy(mCapitalize.Elements() + aStart, aCapitalization, aLength*sizeof(bool));
+  mNeedsRebuild = true;
 }
 
-PRBool
+bool
 nsTransformedTextRun::SetPotentialLineBreaks(PRUint32 aStart, PRUint32 aLength,
                                              PRUint8* aBreakBefore,
                                              gfxContext* aRefContext)
 {
-  PRBool changed = gfxTextRun::SetPotentialLineBreaks(aStart, aLength,
+  bool changed = gfxTextRun::SetPotentialLineBreaks(aStart, aLength,
       aBreakBefore, aRefContext);
   if (changed) {
-    mNeedsRebuild = PR_TRUE;
+    mNeedsRebuild = true;
   }
   return changed;
+}
+
+size_t
+nsTransformedTextRun::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf)
+{
+  size_t total = gfxTextRun::SizeOfExcludingThis(aMallocSizeOf);
+  total += mStyles.SizeOfExcludingThis(aMallocSizeOf);
+  total += mCapitalize.SizeOfExcludingThis(aMallocSizeOf);
+  if (mOwnsFactory) {
+    // It's not worth the effort to get all the sub-class cases right for a
+    // small size in the fallback case.  So we use a |computedSize| of 0, which
+    // disables any usable vs. computedSize checking done by aMallocSizeOf.
+    total += aMallocSizeOf(mFactory, 0);
+  }
+  return total;
+}
+
+size_t
+nsTransformedTextRun::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf)
+{
+  return aMallocSizeOf(this, sizeof(nsTransformedTextRun)) +
+         SizeOfExcludingThis(aMallocSizeOf);
 }
 
 nsTransformedTextRun*
 nsTransformingTextRunFactory::MakeTextRun(const PRUnichar* aString, PRUint32 aLength,
                                           const gfxTextRunFactory::Parameters* aParams,
                                           gfxFontGroup* aFontGroup, PRUint32 aFlags,
-                                          nsStyleContext** aStyles, PRBool aOwnsFactory)
+                                          nsStyleContext** aStyles, bool aOwnsFactory)
 {
   return nsTransformedTextRun::Create(aParams, this, aFontGroup,
                                       aString, aLength, aFlags, aStyles, aOwnsFactory);
@@ -113,7 +135,7 @@ nsTransformedTextRun*
 nsTransformingTextRunFactory::MakeTextRun(const PRUint8* aString, PRUint32 aLength,
                                           const gfxTextRunFactory::Parameters* aParams,
                                           gfxFontGroup* aFontGroup, PRUint32 aFlags,
-                                          nsStyleContext** aStyles, PRBool aOwnsFactory)
+                                          nsStyleContext** aStyles, bool aOwnsFactory)
 {
   // We'll only have a Unicode code path to minimize the amount of code needed
   // for these rarely used features
@@ -144,7 +166,7 @@ nsTransformingTextRunFactory::MakeTextRun(const PRUint8* aString, PRUint32 aLeng
  */
 static void
 MergeCharactersInTextRun(gfxTextRun* aDest, gfxTextRun* aSrc,
-                         PRPackedBool* aCharsToMerge)
+                         bool* aCharsToMerge)
 {
   aDest->ResetGlyphRuns();
 
@@ -154,11 +176,11 @@ MergeCharactersInTextRun(gfxTextRun* aDest, gfxTextRun* aSrc,
   while (iter.NextRun()) {
     gfxTextRun::GlyphRun* run = iter.GetGlyphRun();
     nsresult rv = aDest->AddGlyphRun(run->mFont, run->mMatchType,
-                                     offset, PR_FALSE);
+                                     offset, false);
     if (NS_FAILED(rv))
       return;
 
-    PRBool anyMissing = PR_FALSE;
+    bool anyMissing = false;
     PRUint32 mergeRunStart = iter.GetStringStart();
     PRUint32 k;
     for (k = iter.GetStringStart(); k < iter.GetStringEnd(); ++k) {
@@ -174,7 +196,7 @@ MergeCharactersInTextRun(gfxTextRun* aDest, gfxTextRun* aSrc,
         }
       } else {
         if (g.IsMissing()) {
-          anyMissing = PR_TRUE;
+          anyMissing = true;
           glyphs.Clear();
         }
         if (g.GetGlyphCount() > 0) {
@@ -205,14 +227,14 @@ MergeCharactersInTextRun(gfxTextRun* aDest, gfxTextRun* aSrc,
         if (anyMissing) {
           g.SetMissing(glyphs.Length());
         } else {
-          g.SetComplex(PR_TRUE, PR_TRUE, glyphs.Length());
+          g.SetComplex(true, true, glyphs.Length());
         }
         aDest->SetGlyphs(offset, g, glyphs.Elements());
         ++offset;
       }
 
       glyphs.Clear();
-      anyMissing = PR_FALSE;
+      anyMissing = false;
       mergeRunStart = k + 1;
     }
     NS_ASSERTION(glyphs.Length() == 0,
@@ -257,18 +279,18 @@ nsFontVariantTextRunFactory::RebuildTextRun(nsTransformedTextRun* aTextRun,
   if (!inner.get())
     return;
 
-  nsCaseTransformTextRunFactory uppercaseFactory(nsnull, PR_TRUE);
+  nsCaseTransformTextRunFactory uppercaseFactory(nsnull, true);
 
   aTextRun->ResetGlyphRuns();
 
   PRUint32 runStart = 0;
-  PRBool runIsLowercase = PR_FALSE;
+  bool runIsLowercase = false;
   nsAutoTArray<nsStyleContext*,50> styleArray;
   nsAutoTArray<PRUint8,50> canBreakBeforeArray;
 
   PRUint32 i;
   for (i = 0; i <= length; ++i) {
-    PRBool isLowercase = PR_FALSE;
+    bool isLowercase = false;
     if (i < length) {
       // Characters that aren't the start of a cluster are ignored here. They
       // get added to whatever lowercase/non-lowercase run we're in.
@@ -293,7 +315,7 @@ nsFontVariantTextRunFactory::RebuildTextRun(nsTransformedTextRun* aTextRun,
 
       if (runIsLowercase) {
         transformedChild = uppercaseFactory.MakeTextRun(str + runStart, i - runStart,
-            &innerParams, smallFont, flags, styleArray.Elements(), PR_FALSE);
+            &innerParams, smallFont, flags, styleArray.Elements(), false);
         child = transformedChild;
       } else {
         cachedChild =
@@ -336,7 +358,7 @@ nsCaseTransformTextRunFactory::RebuildTextRun(nsTransformedTextRun* aTextRun,
   nsRefPtr<nsStyleContext>* styles = aTextRun->mStyles.Elements();
 
   nsAutoString convertedString;
-  nsAutoTArray<PRPackedBool,50> charsToMergeArray;
+  nsAutoTArray<bool,50> charsToMergeArray;
   nsAutoTArray<nsStyleContext*,50> styleArray;
   nsAutoTArray<PRUint8,50> canBreakBeforeArray;
   PRUint32 extraCharsCount = 0;
@@ -345,13 +367,13 @@ nsCaseTransformTextRunFactory::RebuildTextRun(nsTransformedTextRun* aTextRun,
   for (i = 0; i < length; ++i) {
     PRUnichar ch = str[i];
 
-    charsToMergeArray.AppendElement(PR_FALSE);
+    charsToMergeArray.AppendElement(false);
     styleArray.AppendElement(styles[i]);
     canBreakBeforeArray.AppendElement(aTextRun->CanBreakLineBefore(i));
 
     PRUint8 style = mAllUppercase ? NS_STYLE_TEXT_TRANSFORM_UPPERCASE
       : styles[i]->GetStyleText()->mTextTransform;
-    PRBool extraChar = PR_FALSE;
+    bool extraChar = false;
 
     switch (style) {
     case NS_STYLE_TEXT_TRANSFORM_LOWERCASE:
@@ -360,7 +382,7 @@ nsCaseTransformTextRunFactory::RebuildTextRun(nsTransformedTextRun* aTextRun,
     case NS_STYLE_TEXT_TRANSFORM_UPPERCASE:
       if (ch == SZLIG) {
         convertedString.Append('S');
-        extraChar = PR_TRUE;
+        extraChar = true;
         ch = 'S';
       } else {
         ch = ToUpperCase(ch);
@@ -370,7 +392,7 @@ nsCaseTransformTextRunFactory::RebuildTextRun(nsTransformedTextRun* aTextRun,
       if (i < aTextRun->mCapitalize.Length() && aTextRun->mCapitalize[i]) {
         if (ch == SZLIG) {
           convertedString.Append('S');
-          extraChar = PR_TRUE;
+          extraChar = true;
           ch = 'S';
         } else {
           ch = ToTitleCase(ch);
@@ -384,9 +406,9 @@ nsCaseTransformTextRunFactory::RebuildTextRun(nsTransformedTextRun* aTextRun,
     convertedString.Append(ch);
     if (extraChar) {
       ++extraCharsCount;
-      charsToMergeArray.AppendElement(PR_TRUE);
+      charsToMergeArray.AppendElement(true);
       styleArray.AppendElement(styles[i]);
-      canBreakBeforeArray.AppendElement(PR_FALSE);
+      canBreakBeforeArray.AppendElement(false);
     }
   }
 
@@ -402,7 +424,7 @@ nsCaseTransformTextRunFactory::RebuildTextRun(nsTransformedTextRun* aTextRun,
   if (mInnerTransformingTextRunFactory) {
     transformedChild = mInnerTransformingTextRunFactory->MakeTextRun(
         convertedString.BeginReading(), convertedString.Length(),
-        &innerParams, fontGroup, flags, styleArray.Elements(), PR_FALSE);
+        &innerParams, fontGroup, flags, styleArray.Elements(), false);
     child = transformedChild.get();
   } else {
     cachedChild = gfxTextRunCache::MakeTextRun(

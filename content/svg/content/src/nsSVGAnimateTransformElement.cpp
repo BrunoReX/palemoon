@@ -70,7 +70,7 @@ public:
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
 
   // nsGenericElement specializations
-  PRBool ParseAttribute(PRInt32 aNamespaceID,
+  bool ParseAttribute(PRInt32 aNamespaceID,
                         nsIAtom* aAttribute,
                         const nsAString& aValue,
                         nsAttrValue& aResult);
@@ -107,7 +107,7 @@ nsSVGAnimateTransformElement::nsSVGAnimateTransformElement(already_AddRefed<nsIN
 {
 }
 
-PRBool
+bool
 nsSVGAnimateTransformElement::ParseAttribute(PRInt32 aNamespaceID,
                                              nsIAtom* aAttribute,
                                              const nsAString& aValue,
@@ -123,9 +123,9 @@ nsSVGAnimateTransformElement::ParseAttribute(PRInt32 aNamespaceID,
         atom != nsGkAtoms::rotate &&
         atom != nsGkAtoms::skewX &&
         atom != nsGkAtoms::skewY) {
-      ReportAttributeParseFailure(GetOwnerDoc(), aAttribute, aValue);
+      ReportAttributeParseFailure(OwnerDoc(), aAttribute, aValue);
     }
-    return PR_TRUE;
+    return true;
   }
 
   return nsSVGAnimateTransformElementBase::ParseAttribute(aNamespaceID, 

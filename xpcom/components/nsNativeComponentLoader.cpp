@@ -83,6 +83,8 @@
 #define IMPLEMENT_BREAK_AFTER_LOAD
 #endif
 
+using namespace mozilla;
+
 static PRLogModuleInfo *nsNativeModuleLoaderLog =
     PR_NewLogModule("nsNativeModuleLoader");
 
@@ -110,7 +112,7 @@ class LoadModuleMainThreadRunnable : public nsRunnable
 {
 public:
     LoadModuleMainThreadRunnable(nsNativeModuleLoader* loader,
-                                 nsILocalFile* file)
+                                 FileLocation &file)
         : mLoader(loader)
         , mFile(file)
         , mResult(NULL)
@@ -123,13 +125,18 @@ public:
     }
 
     nsRefPtr<nsNativeModuleLoader> mLoader;
-    nsCOMPtr<nsILocalFile> mFile;
+    FileLocation mFile;
     const mozilla::Module* mResult;
 };
 
 const mozilla::Module*
-nsNativeModuleLoader::LoadModule(nsILocalFile* aFile)
+nsNativeModuleLoader::LoadModule(FileLocation &aFile)
 {
+    if (aFile.IsZip()) {
+        NS_ERROR("Binary components cannot be loaded from JARs");
+        return NULL;
+    }
+    nsCOMPtr<nsILocalFile> file = aFile.GetBaseFile();
     nsresult rv;
 
     if (!NS_IsMainThread()) {
@@ -140,14 +147,14 @@ nsNativeModuleLoader::LoadModule(nsILocalFile* aFile)
         return r->mResult;
     }
 
-    nsCOMPtr<nsIHashable> hashedFile(do_QueryInterface(aFile));
+    nsCOMPtr<nsIHashable> hashedFile(do_QueryInterface(file));
     if (!hashedFile) {
         NS_ERROR("nsIFile is not nsIHashable");
         return NULL;
     }
 
     nsCAutoString filePath;
-    aFile->GetNativePath(filePath);
+    file->GetNativePath(filePath);
 
     NativeLoadData data;
 
@@ -161,7 +168,7 @@ nsNativeModuleLoader::LoadModule(nsILocalFile* aFile)
 
     // We haven't loaded this module before
 
-    rv = aFile->Load(&data.library);
+    rv = file->Load(&data.library);
 
     if (NS_FAILED(rv)) {
         char errorMsg[1024] = "<unknown; can't get error from NSPR>";
@@ -177,14 +184,14 @@ nsNativeModuleLoader::LoadModule(nsILocalFile* aFile)
 
 #ifdef IMPLEMENT_BREAK_AFTER_LOAD
     nsCAutoString leafName;
-    aFile->GetNativeLeafName(leafName);
+    file->GetNativeLeafName(leafName);
 
     char *env = getenv("XPCOM_BREAK_ON_LOAD");
     char *blist;
     if (env && *env && (blist = strdup(env))) {
         char *nextTok = blist;
         while (char *token = NS_strtok(":", &nextTok)) {
-            if (leafName.Find(token, PR_TRUE) != kNotFound) {
+            if (leafName.Find(token, true) != kNotFound) {
                 NS_BREAK();
             }
         }
@@ -214,13 +221,6 @@ nsNativeModuleLoader::LoadModule(nsILocalFile* aFile)
     return data.module;
 }
 
-const mozilla::Module*
-nsNativeModuleLoader::LoadModuleFromJAR(nsILocalFile* aJARFile, const nsACString &aPath)
-{
-    NS_ERROR("Binary components cannot be loaded from JARs");
-    return NULL;
-}
-
 PLDHashOperator
 nsNativeModuleLoader::ReleaserFunc(nsIHashable* aHashedFile,
                                    NativeLoadData& aLoadData, void*)
@@ -244,7 +244,7 @@ nsNativeModuleLoader::UnloaderFunc(nsIHashable* aHashedFile,
     }
 
 #ifdef NS_BUILD_REFCNT_LOGGING
-    nsTraceRefcntImpl::SetActivityIsLegal(PR_FALSE);
+    nsTraceRefcntImpl::SetActivityIsLegal(false);
 #endif
 
 #if 0
@@ -255,7 +255,7 @@ nsNativeModuleLoader::UnloaderFunc(nsIHashable* aHashedFile,
 #endif
 
 #ifdef NS_BUILD_REFCNT_LOGGING
-    nsTraceRefcntImpl::SetActivityIsLegal(PR_TRUE);
+    nsTraceRefcntImpl::SetActivityIsLegal(true);
 #endif
 
     return PL_DHASH_REMOVE;

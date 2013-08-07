@@ -62,7 +62,7 @@ ExternalHelperAppParent::ExternalHelperAppParent(
     const IPC::URI& uri,
     const PRInt64& aContentLength)
   : mURI(uri)
-  , mPending(PR_FALSE)
+  , mPending(false)
   , mLoadFlags(0)
   , mStatus(NS_OK)
   , mContentLength(aContentLength)
@@ -73,7 +73,7 @@ void
 ExternalHelperAppParent::Init(ContentParent *parent,
                               const nsCString& aMimeContentType,
                               const nsCString& aContentDispositionHeader,
-                              const PRBool& aForceSave,
+                              const bool& aForceSave,
                               const IPC::URI& aReferrer)
 {
   nsHashPropertyBag::Init();
@@ -96,7 +96,7 @@ bool
 ExternalHelperAppParent::RecvOnStartRequest(const nsCString& entityID)
 {
   mEntityID = entityID;
-  mPending = PR_TRUE;
+  mPending = true;
   mStatus = mListener->OnStartRequest(this, nsnull);
   return true;
 }
@@ -121,7 +121,7 @@ ExternalHelperAppParent::RecvOnDataAvailable(const nsCString& data,
 bool
 ExternalHelperAppParent::RecvOnStopRequest(const nsresult& code)
 {
-  mPending = PR_FALSE;
+  mPending = false;
   mListener->OnStopRequest(this, nsnull,
                            (NS_SUCCEEDED(code) && NS_FAILED(mStatus)) ? mStatus : code);
   unused << Send__delete__(this);
@@ -144,7 +144,7 @@ ExternalHelperAppParent::GetName(nsACString& aResult)
 }
 
 NS_IMETHODIMP
-ExternalHelperAppParent::IsPending(PRBool *aResult)
+ExternalHelperAppParent::IsPending(bool *aResult)
 {
   *aResult = mPending;
   return NS_OK;
@@ -382,7 +382,7 @@ ExternalHelperAppParent::GetPartID(PRUint32* aPartID)
 }
 
 NS_IMETHODIMP
-ExternalHelperAppParent::GetIsLastPart(PRBool* aIsLastPart)
+ExternalHelperAppParent::GetIsLastPart(bool* aIsLastPart)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }

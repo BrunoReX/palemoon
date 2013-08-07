@@ -56,9 +56,9 @@ public:
   CanvasLayerD3D9(LayerManagerD3D9 *aManager)
     : CanvasLayer(aManager, NULL)
     , LayerD3D9(aManager)
-    , mDataIsPremultiplied(PR_FALSE)
-    , mNeedsYFlip(PR_FALSE)
-    , mHasAlpha(PR_TRUE)
+    , mDataIsPremultiplied(false)
+    , mNeedsYFlip(false)
+    , mHasAlpha(true)
   {
       mImplData = static_cast<LayerD3D9*>(this);
       aManager->deviceManager()->mLayersWithResources.AppendElement(this);
@@ -85,12 +85,13 @@ protected:
   nsRefPtr<gfxASurface> mSurface;
   nsRefPtr<GLContext> mGLContext;
   nsRefPtr<IDirect3DTexture9> mTexture;
+  RefPtr<gfx::DrawTarget> mDrawTarget;
 
   PRUint32 mCanvasFramebuffer;
 
-  PRPackedBool mDataIsPremultiplied;
-  PRPackedBool mNeedsYFlip;
-  PRPackedBool mHasAlpha;
+  bool mDataIsPremultiplied;
+  bool mNeedsYFlip;
+  bool mHasAlpha;
 };
 
 // NB: eventually we'll have separate shadow canvas2d and shadow
@@ -105,14 +106,13 @@ public:
 
   // CanvasLayer impl
   virtual void Initialize(const Data& aData);
-  virtual void Init(const SurfaceDescriptor& aNewFront, const nsIntSize& aSize, bool needYFlip);
-
   // This isn't meaningful for shadow canvas.
   virtual void Updated(const nsIntRect&) {}
 
   // ShadowCanvasLayer impl
-  virtual void Swap(const SurfaceDescriptor& aNewFront,
-                    SurfaceDescriptor* aNewBack);
+  virtual void Swap(const CanvasSurface& aNewFront,
+                    bool needYFlip,
+                    CanvasSurface* aNewBack);
   virtual void DestroyFrontBuffer();
   virtual void Disconnect();
 
@@ -125,7 +125,9 @@ public:
   virtual void LayerManagerDestroyed();
 
 private:
-  PRPackedBool mNeedsYFlip;
+  virtual void Init(bool needYFlip);
+
+  bool mNeedsYFlip;
   nsRefPtr<ShadowBufferD3D9> mBuffer;
 };
 

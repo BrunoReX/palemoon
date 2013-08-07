@@ -45,9 +45,6 @@
 #include "gfxRect.h"
 #include "nsFont.h"
 
-// cairo doesn't support invert
-// #define GFX_HAS_INVERT
-
 // XXX fold this into nsStyleContext and group by nsStyleXXX struct
 
 // Indices into border/padding/margin arrays
@@ -235,9 +232,6 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 // See nsStyleColor
 #define NS_STYLE_COLOR_MOZ_USE_TEXT_COLOR 1
 #define NS_STYLE_COLOR_INHERIT_FROM_BODY  2  /* Can't come from CSS directly */
-#ifdef GFX_HAS_INVERT
-#define NS_STYLE_COLOR_INVERT             3
-#endif
 
 // See nsStyleColor
 #define NS_COLOR_CURRENTCOLOR                   -1
@@ -273,6 +267,12 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_BG_CLIP_BORDER           0
 #define NS_STYLE_BG_CLIP_PADDING          1
 #define NS_STYLE_BG_CLIP_CONTENT          2
+// A magic value that we use for our "pretend that background-clip is
+// 'padding' when we have a solid border" optimization.  This isn't
+// actually equal to NS_STYLE_BG_CLIP_PADDING because using that
+// causes antialiasing seams between the background and border.  This
+// is a backend-only value.
+#define NS_STYLE_BG_CLIP_MOZ_ALMOST_PADDING 127
 
 // See nsStyleBackground
 #define NS_STYLE_BG_INLINE_POLICY_EACH_BOX      0
@@ -388,7 +388,7 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_CURSOR_EW_RESIZE               35
 #define NS_STYLE_CURSOR_NONE                    36
 
-// See nsStyleDisplay
+// See nsStyleVisibility
 #define NS_STYLE_DIRECTION_LTR                  0
 #define NS_STYLE_DIRECTION_RTL                  1
 #define NS_STYLE_DIRECTION_INHERIT              2
@@ -596,7 +596,7 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 // See nsStyleMargin
 #define NS_STYLE_MARGIN_SIZE_AUTO               0
 
-// See nsStyleDisplay
+// See nsStyleVisibility
 #define NS_STYLE_POINTER_EVENTS_NONE            0
 #define NS_STYLE_POINTER_EVENTS_VISIBLEPAINTED  1
 #define NS_STYLE_POINTER_EVENTS_VISIBLEFILL     2
@@ -689,7 +689,7 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_VERTICAL_ALIGN_BOTTOM               18
 #define NS_STYLE_VERTICAL_ALIGN_MIDDLE_WITH_BASELINE 19
 
-// See nsStyleDisplay
+// See nsStyleVisibility
 #define NS_STYLE_VISIBILITY_HIDDEN              0
 #define NS_STYLE_VISIBILITY_VISIBLE             1
 #define NS_STYLE_VISIBILITY_COLLAPSE            2
@@ -714,12 +714,18 @@ static inline mozilla::css::Side operator++(mozilla::css::Side& side, int) {
 #define NS_STYLE_HYPHENS_AUTO                   2
 
 // See nsStyleText
+#define NS_STYLE_TEXT_SIZE_ADJUST_NONE          0
+#define NS_STYLE_TEXT_SIZE_ADJUST_AUTO          1
+
+// See nsStyleText
 #define NS_STYLE_LINE_HEIGHT_BLOCK_HEIGHT       0
 
 // See nsStyleText
-#define NS_STYLE_UNICODE_BIDI_NORMAL            0
-#define NS_STYLE_UNICODE_BIDI_EMBED             1
-#define NS_STYLE_UNICODE_BIDI_OVERRIDE          2
+#define NS_STYLE_UNICODE_BIDI_NORMAL            0x0
+#define NS_STYLE_UNICODE_BIDI_EMBED             0x1
+#define NS_STYLE_UNICODE_BIDI_ISOLATE           0x2
+#define NS_STYLE_UNICODE_BIDI_OVERRIDE          0x4
+#define NS_STYLE_UNICODE_BIDI_PLAINTEXT         0x8
 
 // See nsStyleTable (here for HTML 4.0 for now, should probably change to side flags)
 #define NS_STYLE_TABLE_FRAME_NONE               0

@@ -43,9 +43,9 @@
 #include "nscore.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
+#include "nsIFile.h"
+#include "nsZipArchive.h"
 
-class nsIFile;
-class nsZipArchive;
 class nsIURI;
 
 namespace mozilla {
@@ -68,7 +68,7 @@ static nsZipArchive *sReader[2];
 /**
  * Has Omnijar::Init() been called?
  */
-static PRPackedBool sInitialized;
+static bool sInitialized;
 
 public:
 enum Type {
@@ -80,7 +80,7 @@ enum Type {
  * Returns whether SetBase has been called at least once with
  * a valid nsIFile
  */
-static inline PRPackedBool
+static inline bool
 IsInitialized()
 {
     return sInitialized;
@@ -109,15 +109,15 @@ static inline already_AddRefed<nsIFile>
 GetPath(Type aType)
 {
     NS_ABORT_IF_FALSE(IsInitialized(), "Omnijar not initialized");
-    NS_IF_ADDREF(sPath[aType]);
-    return sPath[aType];
+    nsCOMPtr<nsIFile> path = sPath[aType];
+    return path.forget();
 }
 
 /**
  * Returns whether GRE or APP use an omni.jar. Returns PR_False for
  * APP when using an omni.jar in the unified case.
  */
-static inline PRBool
+static inline bool
 HasOmnijar(Type aType)
 {
     NS_ABORT_IF_FALSE(IsInitialized(), "Omnijar not initialized");
@@ -128,18 +128,19 @@ HasOmnijar(Type aType)
  * Returns a nsZipArchive pointer for the omni.jar file for GRE or
  * APP. Returns nsnull in the same cases GetPath() would.
  */
-static inline nsZipArchive *
+static inline already_AddRefed<nsZipArchive>
 GetReader(Type aType)
 {
     NS_ABORT_IF_FALSE(IsInitialized(), "Omnijar not initialized");
-    return sReader[aType];
+    nsRefPtr<nsZipArchive> reader = sReader[aType];
+    return reader.forget();
 }
 
 /**
  * Returns a nsZipArchive pointer for the given path IAOI the given
  * path is the omni.jar for either GRE or APP.
  */
-static nsZipArchive *GetReader(nsIFile *aPath);
+static already_AddRefed<nsZipArchive> GetReader(nsIFile *aPath);
 
 /**
  * Returns the URI string corresponding to the omni.jar or directory

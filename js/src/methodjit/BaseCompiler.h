@@ -41,7 +41,6 @@
 #define jsjaeger_compilerbase_h__
 
 #include "jscntxt.h"
-#include "jstl.h"
 #include "assembler/assembler/MacroAssembler.h"
 #include "assembler/assembler/LinkBuffer.h"
 #include "assembler/assembler/RepatchBuffer.h"
@@ -76,6 +75,7 @@ struct MacroAssemblerTypedefs {
     typedef JSC::RepatchBuffer RepatchBuffer;
     typedef JSC::CodeLocationLabel CodeLocationLabel;
     typedef JSC::CodeLocationDataLabel32 CodeLocationDataLabel32;
+    typedef JSC::CodeLocationDataLabelPtr CodeLocationDataLabelPtr;
     typedef JSC::CodeLocationJump CodeLocationJump;
     typedef JSC::CodeLocationCall CodeLocationCall;
     typedef JSC::CodeLocationInstruction CodeLocationInstruction;
@@ -149,6 +149,7 @@ class LinkerHelper : public JSC::LinkBuffer
         // on any failure.
         JSScript *script = cx->fp()->script();
         JSC::ExecutableAllocator *allocator = script->compartment()->jaegerCompartment()->execAlloc();
+        allocator->setDestroyCallback(Probes::discardExecutableRegion);
         JSC::ExecutablePool *pool;
         m_code = executableAllocAndCopy(masm, allocator, &pool);
         if (!m_code) {
@@ -159,9 +160,12 @@ class LinkerHelper : public JSC::LinkBuffer
         return pool;
     }
 
-    JSC::CodeLocationLabel finalize() {
+    JSC::CodeLocationLabel finalize(VMFrame &f) {
         masm.finalize(*this);
-        return finalizeCodeAddendum();
+        JSC::CodeLocationLabel label = finalizeCodeAddendum();
+        Probes::registerICCode(f.cx, f.jit(), f.script(), f.pc(),
+                               label.executableAddress(), masm.size());
+        return label;
     }
 
     void maybeLink(MaybeJump jump, JSC::CodeLocationLabel label) {
@@ -206,7 +210,7 @@ class NativeStubLinker : public LinkerHelper
 
 bool
 NativeStubEpilogue(VMFrame &f, Assembler &masm, NativeStubLinker::FinalJump *result,
-                   int32 initialFrameDepth, int32 vpOffset,
+                   int32_t initialFrameDepth, int32_t vpOffset,
                    MaybeRegisterID typeReg, MaybeRegisterID dataReg);
 
 /*

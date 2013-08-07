@@ -66,12 +66,12 @@ class nsWifiListener
   nsWifiListener(nsIWifiListener* aListener)
   {
     mListener = aListener;
-    mHasSentData = PR_FALSE;
+    mHasSentData = false;
   }
   ~nsWifiListener() {}
 
   nsCOMPtr<nsIWifiListener> mListener;
-  PRBool mHasSentData;
+  bool mHasSentData;
 };
 
 class nsWifiMonitor : nsIRunnable, nsIWifiMonitor, nsIObserver
@@ -95,9 +95,9 @@ class nsWifiMonitor : nsIRunnable, nsIWifiMonitor, nsIObserver
 #endif
 
   nsresult CallWifiListeners(const nsCOMArray<nsWifiAccessPoint> &aAccessPoints,
-                             PRBool aAccessPointsChanged);
+                             bool aAccessPointsChanged);
 
-  PRBool mKeepGoing;
+  bool mKeepGoing;
   nsCOMPtr<nsIThread> mThread;
 
   nsTArray<nsWifiListener> mListeners;

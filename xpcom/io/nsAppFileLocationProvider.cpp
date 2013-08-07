@@ -119,14 +119,14 @@ NS_IMPL_THREADSAFE_ISUPPORTS2(nsAppFileLocationProvider, nsIDirectoryServiceProv
 //*****************************************************************************
 
 NS_IMETHODIMP
-nsAppFileLocationProvider::GetFile(const char *prop, PRBool *persistent, nsIFile **_retval)
+nsAppFileLocationProvider::GetFile(const char *prop, bool *persistent, nsIFile **_retval)
 {
     nsCOMPtr<nsILocalFile>  localFile;
     nsresult rv = NS_ERROR_FAILURE;
 
     NS_ENSURE_ARG(prop);
     *_retval = nsnull;
-    *persistent = PR_TRUE;
+    *persistent = true;
 
 #ifdef MOZ_WIDGET_COCOA
     FSRef fileRef;
@@ -174,7 +174,7 @@ nsAppFileLocationProvider::GetFile(const char *prop, PRBool *persistent, nsIFile
     }
     else if (nsCRT::strcmp(prop, NS_APP_USER_PROFILES_LOCAL_ROOT_DIR) == 0)
     {
-        rv = GetDefaultUserProfileRoot(getter_AddRefs(localFile), PR_TRUE);
+        rv = GetDefaultUserProfileRoot(getter_AddRefs(localFile), true);
     }
     else if (nsCRT::strcmp(prop, NS_APP_RES_DIR) == 0)
     {
@@ -198,7 +198,7 @@ nsAppFileLocationProvider::GetFile(const char *prop, PRBool *persistent, nsIFile
     else if (nsCRT::strcmp(prop, NS_MACOSX_USER_PLUGIN_DIR) == 0)
     {
         if (::FSFindFolder(kUserDomain, kInternetPlugInFolderType, false, &fileRef) == noErr) {
-            rv = NS_NewLocalFileWithFSRef(&fileRef, PR_TRUE, getter_AddRefs(macFile));
+            rv = NS_NewLocalFileWithFSRef(&fileRef, true, getter_AddRefs(macFile));
             if (NS_SUCCEEDED(rv))
                 localFile = macFile;
         }
@@ -206,7 +206,7 @@ nsAppFileLocationProvider::GetFile(const char *prop, PRBool *persistent, nsIFile
     else if (nsCRT::strcmp(prop, NS_MACOSX_LOCAL_PLUGIN_DIR) == 0)
     {
         if (::FSFindFolder(kLocalDomain, kInternetPlugInFolderType, false, &fileRef) == noErr) {
-            rv = NS_NewLocalFileWithFSRef(&fileRef, PR_TRUE, getter_AddRefs(macFile));
+            rv = NS_NewLocalFileWithFSRef(&fileRef, true, getter_AddRefs(macFile));
             if (NS_SUCCEEDED(rv))
                 localFile = macFile;
         }
@@ -215,7 +215,7 @@ nsAppFileLocationProvider::GetFile(const char *prop, PRBool *persistent, nsIFile
     {
       static const char *const java2PluginDirPath =
         "/System/Library/Java/Support/Deploy.bundle/Contents/Resources/";
-      rv = NS_NewNativeLocalFile(nsDependentCString(java2PluginDirPath), PR_TRUE, getter_AddRefs(localFile));
+      rv = NS_NewNativeLocalFile(nsDependentCString(java2PluginDirPath), true, getter_AddRefs(localFile));
     }
 #else
     else if (nsCRT::strcmp(prop, NS_ENV_PLUGINS_DIR) == 0)
@@ -224,24 +224,33 @@ nsAppFileLocationProvider::GetFile(const char *prop, PRBool *persistent, nsIFile
                  "Use nsAppFileLocationProvider::GetFiles(...).");
         const char *pathVar = PR_GetEnv("MOZ_PLUGIN_PATH");
         if (pathVar && *pathVar)
-            rv = NS_NewNativeLocalFile(nsDependentCString(pathVar), PR_TRUE, getter_AddRefs(localFile));
+            rv = NS_NewNativeLocalFile(nsDependentCString(pathVar), true,
+                                       getter_AddRefs(localFile));
     }
     else if (nsCRT::strcmp(prop, NS_USER_PLUGINS_DIR) == 0)
     {
+#ifdef ENABLE_SYSTEM_EXTENSION_DIRS
         rv = GetProductDirectory(getter_AddRefs(localFile));
         if (NS_SUCCEEDED(rv))
             rv = localFile->AppendRelativeNativePath(PLUGINS_DIR_NAME);
+#else
+        rv = NS_ERROR_FAILURE;
+#endif
     }
 #ifdef XP_UNIX
     else if (nsCRT::strcmp(prop, NS_SYSTEM_PLUGINS_DIR) == 0) {
-        static const char *const sysLPlgDir = 
+#ifdef ENABLE_SYSTEM_EXTENSION_DIRS
+        static const char *const sysLPlgDir =
 #if defined(HAVE_USR_LIB64_DIR) && defined(__LP64__)
           "/usr/lib64/mozilla/plugins";
 #else
           "/usr/lib/mozilla/plugins";
 #endif
         rv = NS_NewNativeLocalFile(nsDependentCString(sysLPlgDir),
-                                   PR_FALSE, getter_AddRefs(localFile));
+                                   false, getter_AddRefs(localFile));
+#else
+        rv = NS_ERROR_FAILURE;
+#endif
     }
 #endif
 #endif
@@ -316,12 +325,12 @@ NS_METHOD nsAppFileLocationProvider::CloneMozBinDirectory(nsILocalFile **aLocalF
 // WIN    : <Application Data folder on user's machine>\Mozilla
 // Mac    : :Documents:Mozilla:
 //----------------------------------------------------------------------------------------
-NS_METHOD nsAppFileLocationProvider::GetProductDirectory(nsILocalFile **aLocalFile, PRBool aLocal)
+NS_METHOD nsAppFileLocationProvider::GetProductDirectory(nsILocalFile **aLocalFile, bool aLocal)
 {
     NS_ENSURE_ARG_POINTER(aLocalFile);
 
     nsresult rv;
-    PRBool exists;
+    bool exists;
     nsCOMPtr<nsILocalFile> localDir;
 
 #if defined(MOZ_WIDGET_COCOA)
@@ -329,7 +338,7 @@ NS_METHOD nsAppFileLocationProvider::GetProductDirectory(nsILocalFile **aLocalFi
     OSType folderType = aLocal ? (OSType) kCachedDataFolderType : (OSType) kDomainLibraryFolderType;
     OSErr err = ::FSFindFolder(kUserDomain, folderType, kCreateFolder, &fsRef);
     if (err) return NS_ERROR_FAILURE;
-    NS_NewLocalFile(EmptyString(), PR_TRUE, getter_AddRefs(localDir));
+    NS_NewLocalFile(EmptyString(), true, getter_AddRefs(localDir));
     if (!localDir) return NS_ERROR_FAILURE;
     nsCOMPtr<nsILocalFileMac> localDirMac(do_QueryInterface(localDir));
     rv = localDirMac->InitWithFSRef(&fsRef);
@@ -346,17 +355,9 @@ NS_METHOD nsAppFileLocationProvider::GetProductDirectory(nsILocalFile **aLocalFi
     if (NS_FAILED(rv)) return rv;
     const char* prop = aLocal ? NS_WIN_LOCAL_APPDATA_DIR : NS_WIN_APPDATA_DIR;
     rv = directoryService->Get(prop, NS_GET_IID(nsILocalFile), getter_AddRefs(localDir));
-    if (NS_SUCCEEDED(rv))
-        rv = localDir->Exists(&exists);
-    if (NS_FAILED(rv) || !exists)
-    {
-        // On some Win95 machines, NS_WIN_APPDATA_DIR does not exist - revert to NS_WIN_WINDOWS_DIR
-        localDir = nsnull;
-        rv = directoryService->Get(NS_WIN_WINDOWS_DIR, NS_GET_IID(nsILocalFile), getter_AddRefs(localDir));
-    }
     if (NS_FAILED(rv)) return rv;
 #elif defined(XP_UNIX)
-    rv = NS_NewNativeLocalFile(nsDependentCString(PR_GetEnv("HOME")), PR_TRUE, getter_AddRefs(localDir));
+    rv = NS_NewNativeLocalFile(nsDependentCString(PR_GetEnv("HOME")), true, getter_AddRefs(localDir));
     if (NS_FAILED(rv)) return rv;
 #else
 #error dont_know_how_to_get_product_dir_on_your_platform
@@ -385,7 +386,7 @@ NS_METHOD nsAppFileLocationProvider::GetProductDirectory(nsILocalFile **aLocalFi
 // WIN    : <Application Data folder on user's machine>\Mozilla\Profiles
 // Mac    : :Documents:Mozilla:Profiles:
 //----------------------------------------------------------------------------------------
-NS_METHOD nsAppFileLocationProvider::GetDefaultUserProfileRoot(nsILocalFile **aLocalFile, PRBool aLocal)
+NS_METHOD nsAppFileLocationProvider::GetDefaultUserProfileRoot(nsILocalFile **aLocalFile, bool aLocal)
 {
     NS_ENSURE_ARG_POINTER(aLocalFile);
 
@@ -400,7 +401,7 @@ NS_METHOD nsAppFileLocationProvider::GetDefaultUserProfileRoot(nsILocalFile **aL
     rv = localDir->AppendRelativeNativePath(NS_LITERAL_CSTRING("Profiles"));
     if (NS_FAILED(rv)) return rv;
 
-    PRBool exists;
+    bool exists;
     rv = localDir->Exists(&exists);
     if (NS_SUCCEEDED(rv) && !exists)
         rv = localDir->Create(nsIFile::DIRECTORY_TYPE, 0775);
@@ -433,15 +434,15 @@ class nsAppDirectoryEnumerator : public nsISimpleEnumerator
     {
     }
 
-    NS_IMETHOD HasMoreElements(PRBool *result) 
+    NS_IMETHOD HasMoreElements(bool *result) 
     {
         while (!mNext && *mCurrentKey)
         {
-            PRBool dontCare;
+            bool dontCare;
             nsCOMPtr<nsIFile> testFile;
             (void)mProvider->GetFile(*mCurrentKey++, &dontCare, getter_AddRefs(testFile));
             // Don't return a file which does not exist.
-            PRBool exists;
+            bool exists;
             if (testFile && NS_SUCCEEDED(testFile->Exists(&exists)) && exists)
                 mNext = testFile;
         }
@@ -454,7 +455,7 @@ class nsAppDirectoryEnumerator : public nsISimpleEnumerator
         NS_ENSURE_ARG_POINTER(result);
         *result = nsnull;
 
-        PRBool hasMore;
+        bool hasMore;
         HasMoreElements(&hasMore);
         if (!hasMore)
             return NS_ERROR_FAILURE;
@@ -506,7 +507,7 @@ class nsPathsDirectoryEnumerator : public nsAppDirectoryEnumerator
     {
     }
 
-    NS_IMETHOD HasMoreElements(PRBool *result) 
+    NS_IMETHOD HasMoreElements(bool *result) 
     {
         if (mEndPath)
             while (!mNext && *mEndPath)
@@ -520,19 +521,19 @@ class nsPathsDirectoryEnumerator : public nsAppDirectoryEnumerator
 
                 nsCOMPtr<nsILocalFile> localFile;
                 NS_NewNativeLocalFile(Substring(pathVar, mEndPath),
-                                      PR_TRUE,
+                                      true,
                                       getter_AddRefs(localFile));
                 if (*mEndPath == PATH_SEPARATOR)
                     ++mEndPath;
                 // Don't return a "file" (directory) which does not exist.
-                PRBool exists;
+                bool exists;
                 if (localFile &&
                     NS_SUCCEEDED(localFile->Exists(&exists)) &&
                     exists)
                     mNext = localFile;
             }
         if (mNext)
-            *result = PR_TRUE;
+            *result = true;
         else
             nsAppDirectoryEnumerator::HasMoreElements(result);
 
@@ -593,8 +594,8 @@ nsAppFileLocationProvider::GetFiles(const char *prop, nsISimpleEnumerator **_ret
     return rv;
 }
 
-#if defined(XP_MACOSX)
-PRBool
+#if defined(MOZ_WIDGET_COCOA)
+bool
 nsAppFileLocationProvider::IsOSXLeopard()
 {
     static SInt32 version = 0;

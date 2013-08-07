@@ -47,7 +47,7 @@
 #include "nsIScrollable.h"
 #include "nsIWebBrowserChrome.h"
 #include "nsIDOMWindow.h"
-#include "nsDOMClassInfo.h"
+#include "nsDOMClassInfoID.h"
 
 //
 //  Basic (virtual) BarProp class implementation
@@ -78,9 +78,9 @@ NS_IMPL_ADDREF(nsBarProp)
 NS_IMPL_RELEASE(nsBarProp)
 
 NS_IMETHODIMP
-nsBarProp::GetVisibleByFlag(PRBool *aVisible, PRUint32 aChromeFlag)
+nsBarProp::GetVisibleByFlag(bool *aVisible, PRUint32 aChromeFlag)
 {
-  *aVisible = PR_FALSE;
+  *aVisible = false;
 
   nsCOMPtr<nsIWebBrowserChrome> browserChrome = GetBrowserChrome();
   NS_ENSURE_TRUE(browserChrome, NS_OK);
@@ -90,18 +90,18 @@ nsBarProp::GetVisibleByFlag(PRBool *aVisible, PRUint32 aChromeFlag)
   NS_ENSURE_SUCCESS(browserChrome->GetChromeFlags(&chromeFlags),
                     NS_ERROR_FAILURE);
   if (chromeFlags & aChromeFlag)
-    *aVisible = PR_TRUE;
+    *aVisible = true;
 
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsBarProp::SetVisibleByFlag(PRBool aVisible, PRUint32 aChromeFlag)
+nsBarProp::SetVisibleByFlag(bool aVisible, PRUint32 aChromeFlag)
 {
   nsCOMPtr<nsIWebBrowserChrome> browserChrome = GetBrowserChrome();
   NS_ENSURE_TRUE(browserChrome, NS_OK);
 
-  PRBool enabled = PR_FALSE;
+  bool enabled = false;
 
   nsCOMPtr<nsIScriptSecurityManager>
            securityManager(do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID));
@@ -151,14 +151,14 @@ nsMenubarProp::~nsMenubarProp()
 }
 
 NS_IMETHODIMP
-nsMenubarProp::GetVisible(PRBool *aVisible)
+nsMenubarProp::GetVisible(bool *aVisible)
 {
   return nsBarProp::GetVisibleByFlag(aVisible,
                                      nsIWebBrowserChrome::CHROME_MENUBAR);
 }
 
 NS_IMETHODIMP
-nsMenubarProp::SetVisible(PRBool aVisible)
+nsMenubarProp::SetVisible(bool aVisible)
 {
   return nsBarProp::SetVisibleByFlag(aVisible,
                                      nsIWebBrowserChrome::CHROME_MENUBAR);
@@ -178,14 +178,14 @@ nsToolbarProp::~nsToolbarProp()
 }
 
 NS_IMETHODIMP
-nsToolbarProp::GetVisible(PRBool *aVisible)
+nsToolbarProp::GetVisible(bool *aVisible)
 {
   return nsBarProp::GetVisibleByFlag(aVisible,
                                      nsIWebBrowserChrome::CHROME_TOOLBAR);
 }
 
 NS_IMETHODIMP
-nsToolbarProp::SetVisible(PRBool aVisible)
+nsToolbarProp::SetVisible(bool aVisible)
 {
   return nsBarProp::SetVisibleByFlag(aVisible,
                                      nsIWebBrowserChrome::CHROME_TOOLBAR);
@@ -205,7 +205,7 @@ nsLocationbarProp::~nsLocationbarProp()
 }
 
 NS_IMETHODIMP
-nsLocationbarProp::GetVisible(PRBool *aVisible)
+nsLocationbarProp::GetVisible(bool *aVisible)
 {
   return
     nsBarProp::GetVisibleByFlag(aVisible,
@@ -213,7 +213,7 @@ nsLocationbarProp::GetVisible(PRBool *aVisible)
 }
 
 NS_IMETHODIMP
-nsLocationbarProp::SetVisible(PRBool aVisible)
+nsLocationbarProp::SetVisible(bool aVisible)
 {
   return
     nsBarProp::SetVisibleByFlag(aVisible,
@@ -234,7 +234,7 @@ nsPersonalbarProp::~nsPersonalbarProp()
 }
 
 NS_IMETHODIMP
-nsPersonalbarProp::GetVisible(PRBool *aVisible)
+nsPersonalbarProp::GetVisible(bool *aVisible)
 {
   return
     nsBarProp::GetVisibleByFlag(aVisible,
@@ -242,7 +242,7 @@ nsPersonalbarProp::GetVisible(PRBool *aVisible)
 }
 
 NS_IMETHODIMP
-nsPersonalbarProp::SetVisible(PRBool aVisible)
+nsPersonalbarProp::SetVisible(bool aVisible)
 {
   return
     nsBarProp::SetVisibleByFlag(aVisible,
@@ -263,14 +263,14 @@ nsStatusbarProp::~nsStatusbarProp()
 }
 
 NS_IMETHODIMP
-nsStatusbarProp::GetVisible(PRBool *aVisible)
+nsStatusbarProp::GetVisible(bool *aVisible)
 {
   return nsBarProp::GetVisibleByFlag(aVisible,
                                      nsIWebBrowserChrome::CHROME_STATUSBAR);
 }
 
 NS_IMETHODIMP
-nsStatusbarProp::SetVisible(PRBool aVisible)
+nsStatusbarProp::SetVisible(bool aVisible)
 {
   return nsBarProp::SetVisibleByFlag(aVisible,
                                      nsIWebBrowserChrome::CHROME_STATUSBAR);
@@ -290,9 +290,9 @@ nsScrollbarsProp::~nsScrollbarsProp()
 }
 
 NS_IMETHODIMP
-nsScrollbarsProp::GetVisible(PRBool *aVisible)
+nsScrollbarsProp::GetVisible(bool *aVisible)
 {
-  *aVisible = PR_TRUE; // one assumes
+  *aVisible = true; // one assumes
 
   nsCOMPtr<nsIDOMWindow> domwin(do_QueryReferent(mDOMWindowWeakref));
   if (domwin) { // dom window not deleted
@@ -308,7 +308,7 @@ nsScrollbarsProp::GetVisible(PRBool *aVisible)
                     nsIScrollable::ScrollOrientation_X, &prefValue);
 
       if (prefValue == nsIScrollable::Scrollbar_Never)
-        *aVisible = PR_FALSE;
+        *aVisible = false;
     }
   }
 
@@ -316,9 +316,9 @@ nsScrollbarsProp::GetVisible(PRBool *aVisible)
 }
 
 NS_IMETHODIMP
-nsScrollbarsProp::SetVisible(PRBool aVisible)
+nsScrollbarsProp::SetVisible(bool aVisible)
 {
-  PRBool   enabled = PR_FALSE;
+  bool     enabled = false;
 
   nsCOMPtr<nsIScriptSecurityManager>
            securityManager(do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID));

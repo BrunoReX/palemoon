@@ -39,6 +39,7 @@
  * ***** END LICENSE BLOCK ***** */
 
 #include "ParseMaps-inl.h"
+#include "jscompartment.h"
 
 using namespace js;
 
@@ -49,8 +50,8 @@ ParseMapPool::checkInvariants()
      * Having all values be of the same size permits us to easily reuse the
      * allocated space for each of the map types.
      */
-    JS_STATIC_ASSERT(sizeof(JSDefinition *) == sizeof(jsatomid));
-    JS_STATIC_ASSERT(sizeof(JSDefinition *) == sizeof(DefnOrHeader));
+    JS_STATIC_ASSERT(sizeof(Definition *) == sizeof(jsatomid));
+    JS_STATIC_ASSERT(sizeof(Definition *) == sizeof(DefnOrHeader));
     JS_STATIC_ASSERT(sizeof(AtomDefnMap::Entry) == sizeof(AtomIndexMap::Entry));
     JS_STATIC_ASSERT(sizeof(AtomDefnMap::Entry) == sizeof(AtomDOHMap::Entry));
     JS_STATIC_ASSERT(sizeof(AtomMapT::Entry) == sizeof(AtomDOHMap::Entry));
@@ -123,19 +124,18 @@ DumpAtomDefnMap(const AtomDefnMapPtr &map)
 #endif
 
 AtomDeclNode *
-AtomDecls::allocNode(JSDefinition *defn)
+AtomDecls::allocNode(Definition *defn)
 {
-    AtomDeclNode *p;
-    JS_ARENA_ALLOCATE_TYPE(p, AtomDeclNode, &cx->tempPool);
+    AtomDeclNode *p = cx->tempLifoAlloc().new_<AtomDeclNode>(defn);
     if (!p) {
         js_ReportOutOfMemory(cx);
         return NULL;
     }
-    return new (p) AtomDeclNode(defn);
+    return p;
 }
 
 bool
-AtomDecls::addShadow(JSAtom *atom, JSDefinition *defn)
+AtomDecls::addShadow(JSAtom *atom, Definition *defn)
 {
     AtomDeclNode *node = allocNode(defn);
     if (!node)
@@ -177,7 +177,7 @@ AtomDecls::lastAsNode(DefnOrHeader *doh)
 }
 
 bool
-AtomDecls::addHoist(JSAtom *atom, JSDefinition *defn)
+AtomDecls::addHoist(JSAtom *atom, Definition *defn)
 {
     AtomDeclNode *node = allocNode(defn);
     if (!node)

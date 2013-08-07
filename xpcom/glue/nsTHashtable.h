@@ -83,7 +83,7 @@ PL_DHashStubEnumRemove(PLDHashTable    *table,
  *     ~EntryType();
  *
  *     // KeyEquals(): does this entry match this key?
- *     PRBool KeyEquals(KeyTypePointer aKey) const;
+ *     bool KeyEquals(KeyTypePointer aKey) const;
  *
  *     // KeyToPointer(): Convert KeyType to KeyTypePointer
  *     static KeyTypePointer KeyToPointer(KeyType aKey);
@@ -120,15 +120,15 @@ public:
    * Initialize the table.  This function must be called before any other
    * class operations.  This can fail due to OOM conditions.
    * @param initSize the initial number of buckets in the hashtable, default 16
-   * @return PR_TRUE if the class was initialized properly.
+   * @return true if the class was initialized properly.
    */
-  PRBool Init(PRUint32 initSize = PL_DHASH_MIN_SIZE);
+  bool Init(PRUint32 initSize = PL_DHASH_MIN_SIZE);
 
   /**
    * Check whether the table has been initialized. This can be useful for static hashtables.
    * @return the initialization state of the class.
    */
-  PRBool IsInitialized() const { return !!mTable.entrySize; }
+  bool IsInitialized() const { return !!mTable.entrySize; }
 
   /**
    * Return the generation number for the table. This increments whenever
@@ -251,6 +251,40 @@ public:
     PL_DHashTableEnumerate(&mTable, PL_DHashStubEnumRemove, nsnull);
   }
 
+  /**
+   * client must provide a <code>SizeOfEntryExcludingThisFun</code> function for
+   *   SizeOfExcludingThis.
+   * @param     aEntry the entry being enumerated
+   * @param     mallocSizeOf the function used to measure heap-allocated blocks
+   * @param     arg passed unchanged from <code>SizeOf{In,Ex}cludingThis</code>
+   * @return    summed size of the things pointed to by the entries
+   */
+  typedef size_t (* SizeOfEntryExcludingThisFun)(EntryType* aEntry,
+                                                 nsMallocSizeOfFun mallocSizeOf,
+                                                 void *arg);
+
+  /**
+   * Measure the size of the table's entry storage, and if
+   * |sizeOfEntryExcludingThis| is non-NULL, measure the size of things pointed
+   * to by entries.
+   * 
+   * @param     sizeOfEntryExcludingThis the
+   *            <code>SizeOfEntryExcludingThisFun</code> function to call
+   * @param     mallocSizeOf the function used to measure heap-allocated blocks
+   * @param     userArg a pointer to pass to the
+   *            <code>SizeOfEntryExcludingThisFun</code> function
+   * @return    the summed size of all the entries
+   */
+  size_t SizeOfExcludingThis(SizeOfEntryExcludingThisFun sizeOfEntryExcludingThis,
+                             nsMallocSizeOfFun mallocSizeOf, void *userArg = NULL)
+  {
+    if (IsInitialized()) {
+      s_SizeOfArgs args = { sizeOfEntryExcludingThis, userArg };
+      return PL_DHashTableSizeOfExcludingThis(&mTable, s_SizeOfStub, mallocSizeOf, &args);
+    }
+    return 0;
+  }
+
 protected:
   PLDHashTable mTable;
 
@@ -260,7 +294,7 @@ protected:
   static PLDHashNumber s_HashKey(PLDHashTable *table,
                                  const void   *key);
 
-  static PRBool s_MatchEntry(PLDHashTable           *table,
+  static bool s_MatchEntry(PLDHashTable           *table,
                              const PLDHashEntryHdr  *entry,
                              const void             *key);
   
@@ -271,7 +305,7 @@ protected:
   static void s_ClearEntry(PLDHashTable *table,
                            PLDHashEntryHdr *entry);
 
-  static PRBool s_InitEntry(PLDHashTable     *table,
+  static bool s_InitEntry(PLDHashTable     *table,
                             PLDHashEntryHdr  *entry,
                             const void       *key);
 
@@ -292,6 +326,24 @@ protected:
                                     PLDHashEntryHdr *entry,
                                     PRUint32         number,
                                     void            *arg);
+
+  /**
+   * passed internally during sizeOf counting.  Allocated on the stack.
+   *
+   * @param userFunc the SizeOfEntryExcludingThisFun passed to
+   *                 SizeOf{In,Ex}cludingThis by the client
+   * @param userArg the userArg passed unaltered
+   */
+  struct s_SizeOfArgs
+  {
+    SizeOfEntryExcludingThisFun userFunc;
+    void* userArg;
+  };
+  
+  static size_t s_SizeOfStub(PLDHashEntryHdr *entry,
+                             nsMallocSizeOfFun mallocSizeOf,
+                             void *arg);
+
 private:
   // copy constructor, not implemented
   nsTHashtable(nsTHashtable<EntryType>& toCopy);
@@ -319,13 +371,13 @@ nsTHashtable<EntryType>::~nsTHashtable()
 }
 
 template<class EntryType>
-PRBool
+bool
 nsTHashtable<EntryType>::Init(PRUint32 initSize)
 {
   if (mTable.entrySize)
   {
     NS_ERROR("nsTHashtable::Init() should not be called twice.");
-    return PR_TRUE;
+    return true;
   }
 
   static PLDHashTableOps sOps = 
@@ -349,10 +401,10 @@ nsTHashtable<EntryType>::Init(PRUint32 initSize)
   {
     // if failed, reset "flag"
     mTable.entrySize = 0;
-    return PR_FALSE;
+    return false;
   }
 
-  return PR_TRUE;
+  return true;
 }
 
 // static definitions
@@ -366,7 +418,7 @@ nsTHashtable<EntryType>::s_HashKey(PLDHashTable  *table,
 }
 
 template<class EntryType>
-PRBool
+bool
 nsTHashtable<EntryType>::s_MatchEntry(PLDHashTable          *table,
                                       const PLDHashEntryHdr *entry,
                                       const void            *key)
@@ -398,13 +450,13 @@ nsTHashtable<EntryType>::s_ClearEntry(PLDHashTable    *table,
 }
 
 template<class EntryType>
-PRBool
+bool
 nsTHashtable<EntryType>::s_InitEntry(PLDHashTable    *table,
                                      PLDHashEntryHdr *entry,
                                      const void      *key)
 {
   new(entry) EntryType(reinterpret_cast<KeyTypePointer>(key));
-  return PR_TRUE;
+  return true;
 }
 
 template<class EntryType>
@@ -418,6 +470,19 @@ nsTHashtable<EntryType>::s_EnumStub(PLDHashTable    *table,
   return (* reinterpret_cast<s_EnumArgs*>(arg)->userFunc)(
     reinterpret_cast<EntryType*>(entry),
     reinterpret_cast<s_EnumArgs*>(arg)->userArg);
+}
+
+template<class EntryType>
+size_t
+nsTHashtable<EntryType>::s_SizeOfStub(PLDHashEntryHdr *entry,
+                                      nsMallocSizeOfFun mallocSizeOf,
+                                      void *arg)
+{
+  // dereferences the function-pointer to the user's enumeration function
+  return (* reinterpret_cast<s_SizeOfArgs*>(arg)->userFunc)(
+    reinterpret_cast<EntryType*>(entry),
+    mallocSizeOf,
+    reinterpret_cast<s_SizeOfArgs*>(arg)->userArg);
 }
 
 #endif // nsTHashtable_h__

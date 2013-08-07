@@ -36,6 +36,8 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/Util.h"
+
 #include "nsFormSubmission.h"
 
 #include "nsCOMPtr.h"
@@ -71,18 +73,18 @@
 #include "nsIFileStreams.h"
 #include "nsContentUtils.h"
 
+using namespace mozilla;
+
 static void
 SendJSWarning(nsIDocument* aDocument,
               const char* aWarningName,
               const PRUnichar** aWarningArgs, PRUint32 aWarningArgsLen)
 {
-  nsContentUtils::ReportToConsole(nsContentUtils::eFORMS_PROPERTIES,
+  nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
+                                  "HTML", aDocument,
+                                  nsContentUtils::eFORMS_PROPERTIES,
                                   aWarningName,
-                                  aWarningArgs, aWarningArgsLen,
-                                  nsnull,
-                                  EmptyString(), 0, 0,
-                                  nsIScriptError::warningFlag,
-                                  "HTML", aDocument);
+                                  aWarningArgs, aWarningArgsLen);
 }
 
 // --------------------------------------------------------------------------
@@ -102,7 +104,7 @@ public:
     : nsEncodingFormSubmission(aCharset, aOriginatingElement),
       mMethod(aMethod),
       mDocument(aDocument),
-      mWarnedFileControl(PR_FALSE)
+      mWarnedFileControl(false)
   {
   }
 
@@ -113,9 +115,9 @@ public:
   virtual nsresult GetEncodedSubmission(nsIURI* aURI,
                                         nsIInputStream** aPostDataStream);
 
-  virtual PRBool SupportsIsindexSubmission()
+  virtual bool SupportsIsindexSubmission()
   {
-    return PR_TRUE;
+    return true;
   }
 
   virtual nsresult AddIsindex(const nsAString& aValue);
@@ -146,7 +148,7 @@ private:
   nsCOMPtr<nsIDocument> mDocument;
 
   /** Whether or not we have warned about a file control not being submitted */
-  PRBool mWarnedFileControl;
+  bool mWarnedFileControl;
 };
 
 nsresult
@@ -199,7 +201,7 @@ nsFSURLEncoded::AddNameFilePair(const nsAString& aName,
 {
   if (!mWarnedFileControl) {
     SendJSWarning(mDocument, "ForgotFileEnctypeWarning", nsnull, 0);
-    mWarnedFileControl = PR_TRUE;
+    mWarnedFileControl = true;
   }
 
   nsAutoString filename;
@@ -215,11 +217,11 @@ static void
 HandleMailtoSubject(nsCString& aPath) {
 
   // Walk through the string and see if we have a subject already.
-  PRBool hasSubject = PR_FALSE;
-  PRBool hasParams = PR_FALSE;
+  bool hasSubject = false;
+  bool hasParams = false;
   PRInt32 paramSep = aPath.FindChar('?');
   while (paramSep != kNotFound && paramSep < (PRInt32)aPath.Length()) {
-    hasParams = PR_TRUE;
+    hasParams = true;
 
     // Get the end of the name at the = op.  If it is *after* the next &,
     // assume that someone made a parameter without an = in it
@@ -238,7 +240,7 @@ HandleMailtoSubject(nsCString& aPath) {
     if (nameEnd != kNotFound) {
       if (Substring(aPath, paramSep+1, nameEnd-(paramSep+1)).
           LowerCaseEqualsLiteral("subject")) {
-        hasSubject = PR_TRUE;
+        hasSubject = true;
         break;
       }
     }
@@ -267,7 +269,7 @@ HandleMailtoSubject(nsCString& aPath) {
                                            nsContentUtils::eFORMS_PROPERTIES,
                                            "DefaultFormSubject",
                                            formatStrings,
-                                           NS_ARRAY_LENGTH(formatStrings),
+                                           ArrayLength(formatStrings),
                                            subjectStr);
     if (NS_FAILED(rv))
       return;
@@ -288,7 +290,7 @@ nsFSURLEncoded::GetEncodedSubmission(nsIURI* aURI,
 
   if (mMethod == NS_FORM_METHOD_POST) {
 
-    PRBool isMailto = PR_FALSE;
+    bool isMailto = false;
     aURI->SchemeIs("mailto", &isMailto);
     if (isMailto) {
 
@@ -329,7 +331,7 @@ nsFSURLEncoded::GetEncodedSubmission(nsIURI* aURI,
       mimeStream->AddHeader("Content-Type",
                             "application/x-www-form-urlencoded");
 #endif
-      mimeStream->SetAddContentLength(PR_TRUE);
+      mimeStream->SetAddContentLength(true);
       mimeStream->SetData(dataStream);
 
       *aPostDataStream = mimeStream;
@@ -338,7 +340,7 @@ nsFSURLEncoded::GetEncodedSubmission(nsIURI* aURI,
 
   } else {
     // Get the full query string
-    PRBool schemeIsJavaScript;
+    bool schemeIsJavaScript;
     rv = aURI->SchemeIs("javascript", &schemeIsJavaScript);
     NS_ENSURE_SUCCESS(rv, rv);
     if (schemeIsJavaScript) {
@@ -567,7 +569,7 @@ nsFSMultipartFormData::GetEncodedSubmission(nsIURI* aURI,
   nsCAutoString contentType;
   GetContentType(contentType);
   mimeStream->AddHeader("Content-Type", contentType.get());
-  mimeStream->SetAddContentLength(PR_TRUE);
+  mimeStream->SetAddContentLength(true);
   mimeStream->SetData(GetSubmissionBody());
 
   *aPostDataStream = mimeStream.forget().get();
@@ -650,7 +652,7 @@ nsFSTextPlain::GetEncodedSubmission(nsIURI* aURI,
   // XXX HACK We are using the standard URL mechanism to give the body to the
   // mailer instead of passing the post data stream to it, since that sounds
   // hard.
-  PRBool isMailto = PR_FALSE;
+  bool isMailto = false;
   aURI->SchemeIs("mailto", &isMailto);
   if (isMailto) {
     nsCAutoString path;
@@ -695,7 +697,7 @@ nsFSTextPlain::GetEncodedSubmission(nsIURI* aURI,
     NS_ENSURE_SUCCESS(rv, rv);
 
     mimeStream->AddHeader("Content-Type", "text/plain");
-    mimeStream->SetAddContentLength(PR_TRUE);
+    mimeStream->SetAddContentLength(true);
     mimeStream->SetData(bodyStream);
     CallQueryInterface(mimeStream, aPostDataStream);
   }
@@ -864,7 +866,7 @@ GetSubmissionFromForm(nsGenericHTMLElement* aForm,
              enctype == NS_FORM_ENCTYPE_TEXTPLAIN) {
     *aFormSubmission = new nsFSTextPlain(charset, aOriginatingElement);
   } else {
-    nsIDocument* doc = aForm->GetOwnerDoc();
+    nsIDocument* doc = aForm->OwnerDoc();
     if (enctype == NS_FORM_ENCTYPE_MULTIPART ||
         enctype == NS_FORM_ENCTYPE_TEXTPLAIN) {
       nsAutoString enctypeStr;

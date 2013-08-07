@@ -74,7 +74,7 @@ private:
         // proxy the Release over the right thread.  if that thread is dead,
         // then there's nothing we can do... better to leak than crash.
         //
-        PRBool val;
+        bool val;
         nsresult rv = mTarget->IsOnCurrentThread(&val);
         if (NS_FAILED(rv) || !val) {
             nsCOMPtr<nsIInputStreamCallback> event;
@@ -153,7 +153,7 @@ private:
         // proxy the Release over the right thread.  if that thread is dead,
         // then there's nothing we can do... better to leak than crash.
         //
-        PRBool val;
+        bool val;
         nsresult rv = mTarget->IsOnCurrentThread(&val);
         if (NS_FAILED(rv) || !val) {
             nsCOMPtr<nsIOutputStreamCallback> event;
@@ -251,11 +251,11 @@ public:
         , mCallback(nsnull)
         , mClosure(nsnull)
         , mChunkSize(0)
-        , mEventInProcess(PR_FALSE)
-        , mEventIsPending(PR_FALSE)
-        , mCloseSource(PR_TRUE)
-        , mCloseSink(PR_TRUE)
-        , mCanceled(PR_FALSE)
+        , mEventInProcess(false)
+        , mEventIsPending(false)
+        , mCloseSource(true)
+        , mCloseSink(true)
+        , mCanceled(false)
         , mCancelStatus(NS_OK)
     {
     }
@@ -272,8 +272,8 @@ public:
                    nsAsyncCopyCallbackFun callback,
                    void *closure,
                    PRUint32 chunksize,
-                   PRBool closeSource,
-                   PRBool closeSink)
+                   bool closeSource,
+                   bool closeSink)
     {
         mSource = source;
         mSink = sink;
@@ -301,7 +301,7 @@ public:
 
         nsresult sourceCondition, sinkCondition;
         nsresult cancelStatus;
-        PRBool canceled;
+        bool canceled;
         {
             MutexAutoLock lock(mLock);
             canceled = mCanceled;
@@ -314,7 +314,7 @@ public:
             // Note: copyFailed will be true if the source or the sink have
             //       reported an error, or if we failed to write any bytes
             //       because we have consumed all of our data.
-            PRBool copyFailed = PR_FALSE;
+            bool copyFailed = false;
             if (!canceled) {
                 PRUint32 n = DoCopy(&sourceCondition, &sinkCondition);
                 copyFailed = NS_FAILED(sourceCondition) ||
@@ -412,7 +412,7 @@ public:
             aReason = NS_BASE_STREAM_CLOSED;
         }
 
-        mCanceled = PR_TRUE;
+        mCanceled = true;
         mCancelStatus = aReason;
         return NS_OK;
     }
@@ -436,9 +436,9 @@ public:
 
         // clear "in process" flag and post any pending continuation event
         MutexAutoLock lock(mLock);
-        mEventInProcess = PR_FALSE;
+        mEventInProcess = false;
         if (mEventIsPending) {
-            mEventIsPending = PR_FALSE;
+            mEventIsPending = false;
             PostContinuationEvent_Locked();
         }
 
@@ -462,11 +462,11 @@ public:
     {
         nsresult rv = NS_OK;
         if (mEventInProcess)
-            mEventIsPending = PR_TRUE;
+            mEventIsPending = true;
         else {
             rv = mTarget->Dispatch(this, NS_DISPATCH_NORMAL);
             if (NS_SUCCEEDED(rv))
-                mEventInProcess = PR_TRUE;
+                mEventInProcess = true;
             else
                 NS_WARNING("unable to post continuation event");
         }
@@ -483,11 +483,11 @@ protected:
     nsAsyncCopyCallbackFun         mCallback;
     void                          *mClosure;
     PRUint32                       mChunkSize;
-    PRPackedBool                   mEventInProcess;
-    PRPackedBool                   mEventIsPending;
-    PRPackedBool                   mCloseSource;
-    PRPackedBool                   mCloseSink;
-    PRPackedBool                   mCanceled;
+    bool                           mEventInProcess;
+    bool                           mEventIsPending;
+    bool                           mCloseSource;
+    bool                           mCloseSink;
+    bool                           mCanceled;
     nsresult                       mCancelStatus;
 };
 
@@ -592,8 +592,8 @@ NS_AsyncCopy(nsIInputStream         *source,
              PRUint32                chunkSize,
              nsAsyncCopyCallbackFun  callback,
              void                   *closure,
-             PRBool                  closeSource,
-             PRBool                  closeSink,
+             bool                    closeSource,
+             bool                    closeSink,
              nsISupports           **aCopierCtx)
 {
     NS_ASSERTION(target, "non-null target required");
@@ -686,15 +686,15 @@ TestInputStream(nsIInputStream *inStr,
                 PRUint32 count,
                 PRUint32 *countWritten)
 {
-    PRBool *result = static_cast<PRBool *>(closure);
-    *result = PR_TRUE;
+    bool *result = static_cast<bool *>(closure);
+    *result = true;
     return NS_ERROR_ABORT;  // don't call me anymore
 }
 
-PRBool
+bool
 NS_InputStreamIsBuffered(nsIInputStream *stream)
 {
-    PRBool result = PR_FALSE;
+    bool result = false;
     PRUint32 n;
     nsresult rv = stream->ReadSegments(TestInputStream,
                                        &result, 1, &n);
@@ -709,15 +709,15 @@ TestOutputStream(nsIOutputStream *outStr,
                  PRUint32 count,
                  PRUint32 *countRead)
 {
-    PRBool *result = static_cast<PRBool *>(closure);
-    *result = PR_TRUE;
+    bool *result = static_cast<bool *>(closure);
+    *result = true;
     return NS_ERROR_ABORT;  // don't call me anymore
 }
 
-PRBool
+bool
 NS_OutputStreamIsBuffered(nsIOutputStream *stream)
 {
-    PRBool result = PR_FALSE;
+    bool result = false;
     PRUint32 n;
     stream->WriteSegments(TestOutputStream, &result, 1, &n);
     return result;

@@ -112,7 +112,7 @@ struct TestEntry {
           fontStyle(aFontStyle),
           stringType(S_ASCII),
           string(aString),
-          isRTL(PR_FALSE)
+          isRTL(false)
     {
     }
 
@@ -124,7 +124,7 @@ struct TestEntry {
           fontStyle(aFontStyle),
           stringType(stringType),
           string(aString),
-          isRTL(PR_FALSE)
+          isRTL(false)
     {
     }
 
@@ -134,24 +134,24 @@ struct TestEntry {
             : fontName(aFontName), glyphs(aGlyphs)
         { }
 
-        PRBool Compare(const nsCString& aFontName,
+        bool Compare(const nsCString& aFontName,
                        cairo_glyph_t *aGlyphs,
                        int num_glyphs)
         {
             // bit that allowed for empty fontname to match all is commented
             // out
             if (/*!fontName.IsEmpty() &&*/ !fontName.Equals(aFontName))
-                return PR_FALSE;
+                return false;
 
             if (num_glyphs != int(glyphs.data.Length()))
-                return PR_FALSE;
+                return false;
 
             for (int j = 0; j < num_glyphs; j++) {
                 if (glyphs.data[j] != aGlyphs[j].index)
-                return PR_FALSE;
+                return false;
             }
 
-            return PR_TRUE;
+            return true;
         }
 
         nsCString fontName;
@@ -160,7 +160,7 @@ struct TestEntry {
     
     void SetRTL()
     {
-        isRTL = PR_TRUE;
+        isRTL = true;
     }
 
     // empty/NULL fontName means ignore font name
@@ -194,21 +194,21 @@ struct TestEntry {
         expectItems.AppendElement(ExpectItem(fontName, glyphs));
     }
 
-    PRBool Check (gfxFontTestStore *store) {
+    bool Check (gfxFontTestStore *store) {
         if (expectItems.Length() == 0 ||
             store->items.Length() != expectItems.Length())
         {
-            return PR_FALSE;
+            return false;
         }
 
         for (PRUint32 i = 0; i < expectItems.Length(); i++) {
             if (!expectItems[i].Compare(store->items[i].platformFont,
                                         store->items[i].glyphs,
                                         store->items[i].num_glyphs))
-                return PR_FALSE;
+                return false;
         }
 
-        return PR_TRUE;
+        return true;
     }
 
     const char *utf8FamilyString;
@@ -216,7 +216,7 @@ struct TestEntry {
 
     int stringType;
     const char *string;
-    PRPackedBool isRTL;
+    bool isRTL;
 
     nsTArray<ExpectItem> expectItems;
 };
@@ -286,7 +286,7 @@ DumpTestExpect (TestEntry *test) {
     }
 }
 
-PRBool
+bool
 RunTest (TestEntry *test, gfxContext *ctx) {
     nsRefPtr<gfxFontGroup> fontGroup;
 
@@ -321,10 +321,10 @@ RunTest (TestEntry *test, gfxContext *ctx) {
         DumpStore(s);
         printf ("  expected:\n");
         DumpTestExpect(test);
-        return PR_FALSE;
+        return false;
     }
 
-    return PR_TRUE;
+    return true;
 }
 
 int
@@ -372,7 +372,7 @@ main (int argc, char **argv) {
          test++)
     {
         printf ("==== Test %d\n", test);
-        PRBool result = RunTest (&testList[test], context);
+        bool result = RunTest (&testList[test], context);
         if (result) {
             printf ("Test %d succeeded\n", test);
             passed++;

@@ -14,12 +14,12 @@
 # The Original Code is mozilla.org code.
 #
 # The Initial Developer of the Original Code is
-# Mozilla.org.
+# Mozilla Corporation.
 # Portions created by the Initial Developer are Copyright (C) 2010
 # the Initial Developer. All Rights Reserved.
 #
 # Contributor(s):
-#     Dave Townsend <dtownsend@oxymoronical.com>  (Original author)
+#   Dave Townsend <dtownsend@oxymoronical.com> (Original Author)
 #
 # Alternatively, the contents of this file may be used under the terms of
 # either of the GNU General Public License Version 2 or later (the "GPL"),
@@ -39,13 +39,16 @@ DEPTH		= ../../../..
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
+relativesrcdir  = toolkit/components/startup/tests
 
 include $(DEPTH)/config/autoconf.mk
-
-ifneq (mobile,$(MOZ_BUILD_APP))
-DIRS = \
-	browser \
-	$(NULL)
-endif
-
 include $(topsrcdir)/config/rules.mk
+
+_BROWSER_FILES = \
+	browser_bug511456.js \
+	browser_bug537449.js \
+	beforeunload.html \
+	$(NULL)
+
+libs:: $(_BROWSER_FILES)
+	$(INSTALL) $(foreach f,$^,"$f") $(DEPTH)/_tests/testing/mochitest/browser/$(relativesrcdir)

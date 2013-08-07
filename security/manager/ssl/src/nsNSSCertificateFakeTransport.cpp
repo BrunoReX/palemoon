@@ -37,12 +37,8 @@
 
 #include "nsNSSCertificateFakeTransport.h"
 #include "nsCOMPtr.h"
-#include "nsIMutableArray.h"
 #include "nsNSSCertificate.h"
 #include "nsIX509Cert.h"
-#include "nsIX509Cert3.h"
-#include "nsISMimeCert.h"
-#include "nsNSSASN1Object.h"
 #include "nsString.h"
 #include "nsXPIDLString.h"
 #include "nsISupportsPrimitives.h"
@@ -56,9 +52,7 @@ extern PRLogModuleInfo* gPIPNSSLog;
 
 /* nsNSSCertificateFakeTransport */
 
-NS_IMPL_THREADSAFE_ISUPPORTS5(nsNSSCertificateFakeTransport, nsIX509Cert,
-                                                nsIX509Cert2,
-                                                nsIX509Cert3,
+NS_IMPL_THREADSAFE_ISUPPORTS3(nsNSSCertificateFakeTransport, nsIX509Cert,
                                                 nsISerializable,
                                                 nsIClassInfo)
 
@@ -70,28 +64,7 @@ nsNSSCertificateFakeTransport::nsNSSCertificateFakeTransport() :
 nsNSSCertificateFakeTransport::~nsNSSCertificateFakeTransport()
 {
   if (mCertSerialization)
-    SECITEM_FreeItem(mCertSerialization, PR_TRUE);
-}
-
-NS_IMETHODIMP
-nsNSSCertificateFakeTransport::GetCertType(PRUint32 *aCertType)
-{
-  NS_NOTREACHED("Unimplemented on content process");
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-nsNSSCertificateFakeTransport::GetIsSelfSigned(PRBool *aIsSelfSigned)
-{
-  NS_NOTREACHED("Unimplemented on content process");
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-nsNSSCertificateFakeTransport::MarkForPermDeletion()
-{
-  NS_NOTREACHED("Unimplemented on content process");
-  return NS_ERROR_NOT_IMPLEMENTED;
+    SECITEM_FreeItem(mCertSerialization, true);
 }
 
 /* readonly attribute string dbKey; */
@@ -132,7 +105,7 @@ nsNSSCertificateFakeTransport::GetEmailAddresses(PRUint32 *aLength, PRUnichar***
 }
 
 NS_IMETHODIMP
-nsNSSCertificateFakeTransport::ContainsEmailAddress(const nsAString &aEmailAddress, PRBool *result)
+nsNSSCertificateFakeTransport::ContainsEmailAddress(const nsAString &aEmailAddress, bool *result)
 {
   NS_NOTREACHED("Unimplemented on content process");
   return NS_ERROR_NOT_IMPLEMENTED;
@@ -199,13 +172,6 @@ nsNSSCertificateFakeTransport::GetChain(nsIArray **_rvChain)
 }
 
 NS_IMETHODIMP
-nsNSSCertificateFakeTransport::GetAllTokenNames(PRUint32 *aLength, PRUnichar*** aTokenNames)
-{
-  NS_NOTREACHED("Unimplemented on content process");
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
 nsNSSCertificateFakeTransport::GetSubjectName(nsAString &_subjectName)
 {
   NS_NOTREACHED("Unimplemented on content process");
@@ -255,21 +221,6 @@ nsNSSCertificateFakeTransport::GetRawDER(PRUint32 *aLength, PRUint8 **aArray)
 }
 
 NS_IMETHODIMP
-nsNSSCertificateFakeTransport::ExportAsCMS(PRUint32 chainMode,
-                              PRUint32 *aLength, PRUint8 **aArray)
-{
-  NS_NOTREACHED("Unimplemented on content process");
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-CERTCertificate *
-nsNSSCertificateFakeTransport::GetCert()
-{
-  NS_NOTREACHED("Unimplemented on content process");
-  return nsnull;
-}
-
-NS_IMETHODIMP
 nsNSSCertificateFakeTransport::GetValidity(nsIX509CertValidity **aValidity)
 {
   NS_NOTREACHED("Unimplemented on content process");
@@ -284,7 +235,7 @@ nsNSSCertificateFakeTransport::VerifyForUsage(PRUint32 usage, PRUint32 *verifica
 }
 
 NS_IMETHODIMP
-nsNSSCertificateFakeTransport::GetUsagesArray(PRBool localOnly,
+nsNSSCertificateFakeTransport::GetUsagesArray(bool localOnly,
                                  PRUint32 *_verified,
                                  PRUint32 *_count,
                                  PRUnichar ***_usages)
@@ -294,14 +245,7 @@ nsNSSCertificateFakeTransport::GetUsagesArray(PRBool localOnly,
 }
 
 NS_IMETHODIMP
-nsNSSCertificateFakeTransport::RequestUsagesArrayAsync(nsICertVerificationListener *aResultListener)
-{
-  NS_NOTREACHED("Unimplemented on content process");
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-nsNSSCertificateFakeTransport::GetUsagesString(PRBool localOnly,
+nsNSSCertificateFakeTransport::GetUsagesString(bool localOnly,
                                   PRUint32   *_verified,
                                   nsAString &_usages)
 {
@@ -318,7 +262,7 @@ nsNSSCertificateFakeTransport::GetASN1Structure(nsIASN1Object * *aASN1Structure)
 }
 
 NS_IMETHODIMP
-nsNSSCertificateFakeTransport::Equals(nsIX509Cert *other, PRBool *result)
+nsNSSCertificateFakeTransport::Equals(nsIX509Cert *other, bool *result)
 {
   NS_NOTREACHED("Unimplemented on content process");
   return NS_ERROR_NOT_IMPLEMENTED;

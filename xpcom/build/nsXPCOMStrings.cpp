@@ -111,7 +111,7 @@ NS_StringContainerFinish(nsStringContainer &aContainer)
 
 XPCOM_API(PRUint32)
 NS_StringGetData(const nsAString &aStr, const PRUnichar **aData,
-                 PRBool *aTerminated)
+                 bool *aTerminated)
 {
   if (aTerminated)
     *aTerminated = aStr.IsTerminated();
@@ -174,7 +174,7 @@ NS_StringSetDataRange(nsAString &aStr,
     if (aDataLength == PR_UINT32_MAX)
       aStr.Replace(aCutOffset, aCutLength, nsDependentString(aData));
     else
-      aStr.Replace(aCutOffset, aCutLength, Substring(aData, aData + aDataLength));
+      aStr.Replace(aCutOffset, aCutLength, Substring(aData, aDataLength));
   }
   else
     aStr.Cut(aCutOffset, aCutLength);
@@ -190,12 +190,12 @@ NS_StringCopy(nsAString &aDest, const nsAString &aSrc)
 }
 
 XPCOM_API(void)
-NS_StringSetIsVoid(nsAString &aStr, const PRBool aIsVoid)
+NS_StringSetIsVoid(nsAString &aStr, const bool aIsVoid)
 {
   aStr.SetIsVoid(aIsVoid);
 }
 
-XPCOM_API(PRBool)
+XPCOM_API(bool)
 NS_StringGetIsVoid(const nsAString &aStr)
 {
   return aStr.IsVoid();
@@ -271,7 +271,7 @@ NS_CStringContainerFinish(nsCStringContainer &aContainer)
 
 XPCOM_API(PRUint32)
 NS_CStringGetData(const nsACString &aStr, const char **aData,
-                  PRBool *aTerminated)
+                  bool *aTerminated)
 {
   if (aTerminated)
     *aTerminated = aStr.IsTerminated();
@@ -333,7 +333,7 @@ NS_CStringSetDataRange(nsACString &aStr,
     if (aDataLength == PR_UINT32_MAX)
       aStr.Replace(aCutOffset, aCutLength, nsDependentCString(aData));
     else
-      aStr.Replace(aCutOffset, aCutLength, Substring(aData, aData + aDataLength));
+      aStr.Replace(aCutOffset, aCutLength, Substring(aData, aDataLength));
   }
   else
     aStr.Cut(aCutOffset, aCutLength);
@@ -349,12 +349,12 @@ NS_CStringCopy(nsACString &aDest, const nsACString &aSrc)
 }
 
 XPCOM_API(void)
-NS_CStringSetIsVoid(nsACString &aStr, const PRBool aIsVoid)
+NS_CStringSetIsVoid(nsACString &aStr, const bool aIsVoid)
 {
   aStr.SetIsVoid(aIsVoid);
 }
 
-XPCOM_API(PRBool)
+XPCOM_API(bool)
 NS_CStringGetIsVoid(const nsACString &aStr)
 {
   return aStr.IsVoid();

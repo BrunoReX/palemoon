@@ -73,11 +73,11 @@ nsPartChannel::nsPartChannel(nsIChannel *aMultipartChannel, PRUint32 aPartID,
   mListener(aListener),
   mStatus(NS_OK),
   mContentLength(LL_MAXUINT),
-  mIsByteRangeRequest(PR_FALSE),
+  mIsByteRangeRequest(false),
   mByteRangeStart(0),
   mByteRangeEnd(0),
   mPartID(aPartID),
-  mIsLastPart(PR_FALSE)
+  mIsLastPart(false)
 {
     mMultipartChannel = aMultipartChannel;
 
@@ -93,7 +93,7 @@ nsPartChannel::~nsPartChannel()
 
 void nsPartChannel::InitializeByteRange(PRInt64 aStart, PRInt64 aEnd)
 {
-    mIsByteRangeRequest = PR_TRUE;
+    mIsByteRangeRequest = true;
     
     mByteRangeStart = aStart;
     mByteRangeEnd   = aEnd;
@@ -156,7 +156,7 @@ nsPartChannel::GetName(nsACString &aResult)
 }
 
 NS_IMETHODIMP
-nsPartChannel::IsPending(PRBool *aResult)
+nsPartChannel::IsPending(bool *aResult)
 {
     // For now, consider the active lifetime of each part the same as
     // the underlying multipart channel...  This is not exactly right,
@@ -313,7 +313,7 @@ nsPartChannel::GetContentType(nsACString &aContentType)
 NS_IMETHODIMP
 nsPartChannel::SetContentType(const nsACString &aContentType)
 {
-    PRBool dummy;
+    bool dummy;
     net_ParseContentType(aContentType, mContentType, mContentCharset, &dummy);
     return NS_OK;
 }
@@ -384,7 +384,7 @@ nsPartChannel::GetPartID(PRUint32 *aPartID)
 }
 
 NS_IMETHODIMP
-nsPartChannel::GetIsLastPart(PRBool *aIsLastPart)
+nsPartChannel::GetIsLastPart(bool *aIsLastPart)
 {
     *aIsLastPart = mIsLastPart;
     return NS_OK;
@@ -395,7 +395,7 @@ nsPartChannel::GetIsLastPart(PRBool *aIsLastPart)
 //
 
 NS_IMETHODIMP 
-nsPartChannel::GetIsByteRangeRequest(PRBool *aIsByteRangeRequest)
+nsPartChannel::GetIsByteRangeRequest(bool *aIsByteRangeRequest)
 {
     *aIsByteRangeRequest = mIsByteRangeRequest;
 
@@ -463,7 +463,29 @@ nsMultiMixedConv::AsyncConvertData(const char *aFromType, const char *aToType,
     return NS_OK;
 }
 
-#define ERR_OUT { free(buffer); return rv; }
+// AutoFree implementation to prevent memory leaks
+class AutoFree
+{
+public:
+  AutoFree() : mBuffer(NULL) {}
+
+  AutoFree(char *buffer) : mBuffer(buffer) {}
+
+  ~AutoFree() {
+    free(mBuffer);
+  }
+
+  AutoFree& operator=(char *buffer) {
+    mBuffer = buffer;
+    return *this;
+  }
+
+  operator char*() const {
+    return mBuffer;
+  }
+private:
+  char *mBuffer;
+};
 
 // nsIStreamListener implementation
 NS_IMETHODIMP
@@ -474,7 +496,7 @@ nsMultiMixedConv::OnDataAvailable(nsIRequest *request, nsISupports *context,
         return NS_ERROR_FAILURE;
 
     nsresult rv = NS_OK;
-    char *buffer = nsnull;
+    AutoFree buffer = nsnull;
     PRUint32 bufLen = 0, read = 0;
 
     NS_ASSERTION(request, "multimixed converter needs a request");
@@ -512,7 +534,7 @@ nsMultiMixedConv::OnDataAvailable(nsIRequest *request, nsISupports *context,
         // don't bother sending a token in the first "part." This is
         // illegal, but we'll handle the case anyway by shoving the
         // boundary token in for the server.
-        mFirstOnData = PR_FALSE;
+        mFirstOnData = false;
         NS_ASSERTION(!mBufLen, "this is our first time through, we can't have buffered data");
         const char * token = mToken.get();
            
@@ -522,7 +544,7 @@ nsMultiMixedConv::OnDataAvailable(nsIRequest *request, nsISupports *context,
             // we don't have enough data yet to make this comparison.
             // skip this check, and try again the next time OnData()
             // is called.
-            mFirstOnData = PR_TRUE;
+            mFirstOnData = true;
         }
         else if (!PL_strnstr(cursor, token, mTokenLen+2)) {
             buffer = (char *) realloc(buffer, bufLen + mTokenLen + 1);
@@ -546,14 +568,14 @@ nsMultiMixedConv::OnDataAvailable(nsIRequest *request, nsISupports *context,
         // we were not able to process all the headers
         // for this "part" given the previous buffer given to 
         // us in the previous OnDataAvailable callback.
-        PRBool done = PR_FALSE;
+        bool done = false;
         rv = ParseHeaders(channel, cursor, bufLen, &done);
-        if (NS_FAILED(rv)) ERR_OUT
+        if (NS_FAILED(rv)) return rv;
 
         if (done) {
-            mProcessingHeaders = PR_FALSE;
+            mProcessingHeaders = false;
             rv = SendStart(channel);
-            if (NS_FAILED(rv)) ERR_OUT
+            if (NS_FAILED(rv)) return rv;
         }
     }
 
@@ -563,7 +585,6 @@ nsMultiMixedConv::OnDataAvailable(nsIRequest *request, nsISupports *context,
         if (*(token+mTokenLen+1) == '-') {
             // This was the last delimiter so we can stop processing
             rv = SendData(cursor, LengthToToken(cursor, token));
-            free(buffer);
             if (NS_FAILED(rv)) return rv;
             return SendStop(NS_OK);
         }
@@ -573,7 +594,7 @@ nsMultiMixedConv::OnDataAvailable(nsIRequest *request, nsISupports *context,
             NS_ASSERTION(!mProcessingHeaders, "we should be pushing raw data");
             rv = SendData(cursor, LengthToToken(cursor, token));
             bufLen -= token - cursor;
-            if (NS_FAILED(rv)) ERR_OUT
+            if (NS_FAILED(rv)) return rv;
         }
         // XXX else NS_ASSERTION(token == cursor, "?");
         token += mTokenLen;
@@ -582,34 +603,34 @@ nsMultiMixedConv::OnDataAvailable(nsIRequest *request, nsISupports *context,
 
         if (mNewPart) {
             // parse headers
-            mNewPart = PR_FALSE;
+            mNewPart = false;
             cursor = token;
-            PRBool done = PR_FALSE; 
+            bool done = false; 
             rv = ParseHeaders(channel, cursor, bufLen, &done);
-            if (NS_FAILED(rv)) ERR_OUT
+            if (NS_FAILED(rv)) return rv;
             if (done) {
                 rv = SendStart(channel);
-                if (NS_FAILED(rv)) ERR_OUT
+                if (NS_FAILED(rv)) return rv;
             }
             else {
                 // we haven't finished processing header info.
                 // we'll break out and try to process later.
-                mProcessingHeaders = PR_TRUE;
+                mProcessingHeaders = true;
                 break;
             }
         }
         else {
-            mNewPart = PR_TRUE;
+            mNewPart = true;
             // Reset state so we don't carry it over from part to part
             mContentType.Truncate();
             mContentLength = LL_MAXUINT;
             mContentDisposition.Truncate();
-            mIsByteRangeRequest = PR_FALSE;
+            mIsByteRangeRequest = false;
             mByteRangeStart = 0;
             mByteRangeEnd = 0;
             
             rv = SendStop(NS_OK);
-            if (NS_FAILED(rv)) ERR_OUT
+            if (NS_FAILED(rv)) return rv;
             // reset the token to front. this allows us to treat
             // the token as a starting token.
             token -= mTokenLen + tokenLinefeed;
@@ -639,16 +660,15 @@ nsMultiMixedConv::OnDataAvailable(nsIRequest *request, nsISupports *context,
 
     if (bufAmt) {
         rv = BufferData(cursor + (bufLen - bufAmt), bufAmt);
-        if (NS_FAILED(rv)) ERR_OUT
+        if (NS_FAILED(rv)) return rv;
         bufLen -= bufAmt;
     }
 
     if (bufLen) {
         rv = SendData(cursor, bufLen);
-        if (NS_FAILED(rv)) ERR_OUT
+        if (NS_FAILED(rv)) return rv;
     }
 
-    free(buffer);
     return rv;
 }
 
@@ -663,7 +683,7 @@ nsMultiMixedConv::OnStartRequest(nsIRequest *request, nsISupports *ctxt) {
     nsresult rv = NS_OK;
     mContext = ctxt;
 
-    mFirstOnData = PR_TRUE;
+    mFirstOnData = true;
     mTotalSent   = 0;
 
     nsCOMPtr<nsIChannel> channel = do_QueryInterface(request, &rv);
@@ -748,15 +768,15 @@ nsMultiMixedConv::nsMultiMixedConv() :
   mCurrentPartID(0)
 {
     mTokenLen           = 0;
-    mNewPart            = PR_TRUE;
+    mNewPart            = true;
     mContentLength      = LL_MAXUINT;
     mBuffer             = nsnull;
     mBufLen             = 0;
-    mProcessingHeaders  = PR_FALSE;
+    mProcessingHeaders  = false;
     mByteRangeStart     = 0;
     mByteRangeEnd       = 0;
     mTotalSent          = 0;
-    mIsByteRangeRequest = PR_FALSE;
+    mIsByteRangeRequest = false;
 }
 
 nsMultiMixedConv::~nsMultiMixedConv() {
@@ -919,13 +939,13 @@ nsMultiMixedConv::PushOverLine(char *&aPtr, PRUint32 &aLen) {
 
 nsresult
 nsMultiMixedConv::ParseHeaders(nsIChannel *aChannel, char *&aPtr, 
-                               PRUint32 &aLen, PRBool *_retval) {
+                               PRUint32 &aLen, bool *_retval) {
     // NOTE: this data must be ascii.
     // NOTE: aPtr is NOT null terminated!
     nsresult rv = NS_OK;
     char *cursor = aPtr, *newLine = nsnull;
     PRUint32 cursorLen = aLen;
-    PRBool done = PR_FALSE;
+    bool done = false;
     PRUint32 lineFeedIncrement = 1;
     
     mContentLength = LL_MAXUINT; // XXX what if we were already called?
@@ -945,7 +965,7 @@ nsMultiMixedConv::ParseHeaders(nsIChannel *aChannel, char *&aPtr,
             cursor += lineFeedIncrement;
             cursorLen -= lineFeedIncrement;
 
-            done = PR_TRUE;
+            done = true;
             break;
         }
 
@@ -1004,7 +1024,7 @@ nsMultiMixedConv::ParseHeaders(nsIChannel *aChannel, char *&aPtr,
                     mByteRangeEnd = atoi(tmpPtr);
                 }
 
-                mIsByteRangeRequest = PR_TRUE;
+                mIsByteRangeRequest = true;
                 if (mContentLength == LL_MAXUINT)
                     mContentLength = PRUint64(PRInt64(mByteRangeEnd - mByteRangeStart + PRInt64(1)));
             }

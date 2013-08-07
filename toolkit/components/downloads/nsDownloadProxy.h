@@ -78,7 +78,7 @@ public:
     NS_ENSURE_SUCCESS(rv, rv);
     nsCOMPtr<nsIPrefBranch> branch = do_QueryInterface(prefs);
 
-    PRBool showDM = PR_TRUE;
+    bool showDM = true;
     if (branch)
       branch->GetBoolPref(PREF_BDM_SHOWWHENSTARTING, &showDM);
 
@@ -90,11 +90,11 @@ public:
         do_GetService("@mozilla.org/download-manager-ui;1", &rv);
       NS_ENSURE_SUCCESS(rv, rv);
 
-      PRBool visible;
+      bool visible;
       rv = dmui->GetVisible(&visible);
       NS_ENSURE_SUCCESS(rv, rv);
 
-      PRBool focusWhenStarting = PR_TRUE;
+      bool focusWhenStarting = true;
       if (branch)
         (void)branch->GetBoolPref(PREF_BDM_FOCUSWHENSTARTING, &focusWhenStarting);
 
@@ -123,10 +123,11 @@ public:
   }
 
   NS_IMETHODIMP OnLocationChange(nsIWebProgress *aWebProgress,
-                                 nsIRequest *aRequest, nsIURI *aLocation)
+                                 nsIRequest *aRequest, nsIURI *aLocation,
+                                 PRUint32 aFlags)
   {
     NS_ENSURE_TRUE(mInner, NS_ERROR_NOT_INITIALIZED);
-    return mInner->OnLocationChange(aWebProgress, aRequest, aLocation);
+    return mInner->OnLocationChange(aWebProgress, aRequest, aLocation, aFlags);
   }
   
   NS_IMETHODIMP OnProgressChange(nsIWebProgress *aWebProgress,
@@ -162,10 +163,10 @@ public:
   NS_IMETHODIMP OnRefreshAttempted(nsIWebProgress *aWebProgress,
                                    nsIURI *aUri,
                                    PRInt32 aDelay,
-                                   PRBool aSameUri,
-                                   PRBool *allowRefresh)
+                                   bool aSameUri,
+                                   bool *allowRefresh)
   {
-    *allowRefresh = PR_TRUE;
+    *allowRefresh = true;
     return NS_OK;
   }
 

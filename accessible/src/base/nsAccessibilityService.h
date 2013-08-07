@@ -44,9 +44,38 @@
 #include "a11yGeneric.h"
 #include "nsAccDocManager.h"
 
+#include "mozilla/a11y/FocusManager.h"
+
 #include "nsIObserver.h"
 
+namespace mozilla {
+namespace a11y {
+
+/**
+ * Return focus manager.
+ */
+FocusManager* FocusMgr();
+
+#ifdef MOZ_ACCESSIBILITY_ATK
+/**
+ * Perform initialization that should be done as soon as possible, in order
+ * to minimize startup time.
+ * XXX: this function and the next defined in nsApplicationAccessibleWrap.cpp
+ */
+void PreInit();
+
+/**
+ * Is platform accessibility enabled.
+ * Only used on linux with atk for now.
+ */
+bool ShouldA11yBeEnabled();
+#endif
+
+} // namespace a11y
+} // namespace mozilla
+
 class nsAccessibilityService : public nsAccDocManager,
+                               public mozilla::a11y::FocusManager,
                                public nsIAccessibilityService,
                                public nsIObserver
 {
@@ -61,7 +90,7 @@ public:
   virtual nsAccessible* GetAccessibleInShell(nsINode* aNode,
                                              nsIPresShell* aPresShell);
   virtual nsAccessible* GetRootDocumentAccessible(nsIPresShell* aPresShell,
-                                                  PRBool aCanCreate);
+                                                  bool aCanCreate);
 
   virtual already_AddRefed<nsAccessible>
     CreateHTMLBRAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
@@ -69,12 +98,16 @@ public:
     CreateHTML4ButtonAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
   virtual already_AddRefed<nsAccessible>
     CreateHTMLButtonAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
+  already_AddRefed<nsAccessible>
+    CreateHTMLCanvasAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
   virtual already_AddRefed<nsAccessible>
     CreateHTMLCaptionAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
   virtual already_AddRefed<nsAccessible>
     CreateHTMLCheckboxAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
   virtual already_AddRefed<nsAccessible>
     CreateHTMLComboboxAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
+  already_AddRefed<nsAccessible>
+    CreateHTMLFileInputAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
   virtual already_AddRefed<nsAccessible>
     CreateHTMLGroupboxAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
   virtual already_AddRefed<nsAccessible>
@@ -146,7 +179,7 @@ public:
   /**
    * Return true if accessibility service has been shutdown.
    */
-  static PRBool IsShutdown() { return gIsShutdown; }
+  static bool IsShutdown() { return gIsShutdown; }
 
   /**
    * Return an accessible for the given DOM node from the cache or create new
@@ -208,24 +241,12 @@ private:
   /**
    * Initialize accessibility service.
    */
-  PRBool Init();
+  bool Init();
 
   /**
    * Shutdowns accessibility service.
    */
   void Shutdown();
-
-  /**
-   * Return accessible for HTML area element associated with an image map.
-   *
-   * @param  aImageFrame       [in] image frame
-   * @param  aAreaNode         [in] area node
-   * @param  aWeakShell        [in] presshell of image frame
-   * @param  aImageAccessible  [out, optional] image accessible, isn't addrefed
-   */
-  nsAccessible* GetAreaAccessible(nsIFrame* aImageFrame, nsINode* aAreaNode,
-                                  nsIWeakReference* aWeakShell,
-                                  nsAccessible** aImageAccessible = nsnull);
 
   /**
    * Create accessible for the element implementing nsIAccessibleProvider
@@ -257,25 +278,26 @@ private:
 #endif
 
   /**
-   * Reference for accessibility service.
+   * Reference for accessibility service instance.
    */
-  static nsAccessibilityService *gAccessibilityService;
+  static nsAccessibilityService* gAccessibilityService;
 
   /**
    * Indicates whether accessibility service was shutdown.
    */
-  static PRBool gIsShutdown;
+  static bool gIsShutdown;
 
   /**
    * Does this content node have a universal ARIA property set on it?
    * A universal ARIA property is one that can be defined on any element even if there is no role.
    *
    * @param aContent The content node to test
-   * @return PR_TRUE if there is a universal ARIA property set on the node
+   * @return true if there is a universal ARIA property set on the node
    */
-  PRBool HasUniversalAriaProperty(nsIContent *aContent);
+  bool HasUniversalAriaProperty(nsIContent *aContent);
 
   friend nsAccessibilityService* GetAccService();
+  friend mozilla::a11y::FocusManager* mozilla::a11y::FocusMgr();
 
   friend nsresult NS_GetAccessibilityService(nsIAccessibilityService** aResult);
 };
@@ -417,7 +439,8 @@ static const char kRoleNames[][20] = {
   "flat equation",       //ROLE_FLAT_EQUATION
   "gridcell",            //ROLE_GRID_CELL
   "embedded object",     //ROLE_EMBEDDED_OBJECT
-  "note"                 //ROLE_NOTE
+  "note",                //ROLE_NOTE
+  "figure"               //ROLE_FIGURE
 };
 
 /**
@@ -470,7 +493,7 @@ static const char kEventTypeNames[][40] = {
   "document attributes changed",             // EVENT_DOCUMENT_ATTRIBUTES_CHANGED
   "document content changed",                // EVENT_DOCUMENT_CONTENT_CHANGED
   "property changed",                        // EVENT_PROPERTY_CHANGED
-  "selection changed",                       // EVENT_SELECTION_CHANGED
+  "page changed",                           // EVENT_PAGE_CHANGED
   "text attribute changed",                  // EVENT_TEXT_ATTRIBUTE_CHANGED
   "text caret moved",                        // EVENT_TEXT_CARET_MOVED
   "text changed",                            // EVENT_TEXT_CHANGED
@@ -511,7 +534,6 @@ static const char kEventTypeNames[][40] = {
   "hypertext changed",                       // EVENT_HYPERTEXT_CHANGED
   "hypertext links count changed",           // EVENT_HYPERTEXT_NLINKS_CHANGED
   "object attribute changed",                // EVENT_OBJECT_ATTRIBUTE_CHANGED
-  "page changed"                             // EVENT_PAGE_CHANGED
 };
 
 /**

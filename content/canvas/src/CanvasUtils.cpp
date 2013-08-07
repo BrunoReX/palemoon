@@ -65,8 +65,8 @@ namespace CanvasUtils {
 void
 DoDrawImageSecurityCheck(nsHTMLCanvasElement *aCanvasElement,
                          nsIPrincipal *aPrincipal,
-                         PRBool forceWriteOnly,
-                         PRBool CORSUsed)
+                         bool forceWriteOnly,
+                         bool CORSUsed)
 {
     NS_PRECONDITION(aPrincipal, "Must have a principal here");
 
@@ -89,7 +89,7 @@ DoDrawImageSecurityCheck(nsHTMLCanvasElement *aCanvasElement,
     if (CORSUsed)
         return;
 
-    PRBool subsumes;
+    bool subsumes;
     nsresult rv =
         aCanvasElement->NodePrincipal()->Subsumes(aPrincipal, &subsumes);
 
@@ -99,34 +99,6 @@ DoDrawImageSecurityCheck(nsHTMLCanvasElement *aCanvasElement,
     }
 
     aCanvasElement->SetWriteOnly();
-}
-
-void
-LogMessage (const nsCString& errorString)
-{
-    nsCOMPtr<nsIConsoleService> console(do_GetService(NS_CONSOLESERVICE_CONTRACTID));
-    if (!console)
-        return;
-
-    console->LogStringMessage(NS_ConvertUTF8toUTF16(errorString).get());
-    fprintf(stderr, "%s\n", errorString.get());
-}
-
-void
-LogMessagef (const char *fmt, ...)
-{
-    va_list ap;
-    va_start(ap, fmt);
-    char buf[256];
-
-    nsCOMPtr<nsIConsoleService> console(do_GetService(NS_CONSOLESERVICE_CONTRACTID));
-    if (console) {
-        PR_vsnprintf(buf, 256, fmt, ap);
-        console->LogStringMessage(NS_ConvertUTF8toUTF16(nsDependentCString(buf)).get());
-        fprintf(stderr, "%s\n", buf);
-    }
-
-    va_end(ap);
 }
 
 bool

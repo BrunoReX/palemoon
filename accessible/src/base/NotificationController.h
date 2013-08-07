@@ -203,6 +203,11 @@ public:
       ScheduleProcessing();
   }
 
+#ifdef DEBUG
+  bool IsUpdating() const
+    { return mObservingState == eRefreshProcessingForUpdate; }
+#endif
+
 protected:
   nsAutoRefCnt mRefCnt;
   NS_DECL_OWNINGTHREAD
@@ -246,11 +251,11 @@ private:
                        AccEvent::EEventRule aEventRule);
 
   /**
-   * Do not emit one of two given reorder events fired for DOM nodes in the case
-   * when one DOM node is in parent chain of second one.
+   * Coalesce two selection change events within the same select control.
    */
-  void CoalesceReorderEventsFromSameTree(AccEvent* aAccEvent,
-                                         AccEvent* aDescendantAccEvent);
+  void CoalesceSelChangeEvents(AccSelChangeEvent* aTailEvent,
+                               AccSelChangeEvent* aThisEvent,
+                               PRInt32 aThisIndex);
 
   /**
    * Coalesce text change events caused by sibling hide events.
@@ -344,13 +349,13 @@ private:
     ~nsCOMPtrHashKey() { }
 
     KeyType GetKey() const { return mKey; }
-    PRBool KeyEquals(KeyTypePointer aKey) const { return aKey == mKey; }
+    bool KeyEquals(KeyTypePointer aKey) const { return aKey == mKey; }
 
     static KeyTypePointer KeyToPointer(KeyType aKey) { return aKey; }
     static PLDHashNumber HashKey(KeyTypePointer aKey)
       { return NS_PTR_TO_INT32(aKey) >> 2; }
 
-    enum { ALLOW_MEMMOVE = PR_TRUE };
+    enum { ALLOW_MEMMOVE = true };
 
    protected:
      nsCOMPtr<T> mKey;

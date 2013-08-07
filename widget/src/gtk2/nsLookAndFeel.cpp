@@ -71,7 +71,7 @@ nscolor   nsLookAndFeel::sComboBoxText = 0;
 nscolor   nsLookAndFeel::sComboBoxBackground = 0;
 PRUnichar nsLookAndFeel::sInvisibleCharacter = PRUnichar('*');
 float     nsLookAndFeel::sCaretRatio = 0;
-PRBool    nsLookAndFeel::sMenuSupportsDrag = PR_FALSE;
+bool      nsLookAndFeel::sMenuSupportsDrag = false;
 
 //-------------------------------------------------------------------------
 //
@@ -83,10 +83,10 @@ nsLookAndFeel::nsLookAndFeel() : nsXPLookAndFeel()
     mStyle = nsnull;
     InitWidget();
 
-    static PRBool sInitialized = PR_FALSE;
+    static bool sInitialized = false;
 
     if (!sInitialized) {
-        sInitialized = PR_TRUE;
+        sInitialized = true;
         InitLookAndFeel();
     }
 }
@@ -367,7 +367,7 @@ static void darken_gdk_color(GdkColor *src, GdkColor *dest)
 }
 
 static PRInt32 CheckWidgetStyle(GtkWidget* aWidget, const char* aStyle, PRInt32 aResult) {
-    gboolean value = PR_FALSE;
+    gboolean value = FALSE;
     gtk_widget_style_get(aWidget, aStyle, &value, NULL);
     return value ? aResult : 0;
 }
@@ -469,6 +469,11 @@ nsLookAndFeel::GetIntImpl(IntID aID, PRInt32 &aResult)
             settings = gtk_settings_get_default ();
             g_object_get (settings, "gtk-menu-popup-delay", &delay, NULL);
             aResult = (PRInt32) delay;
+            break;
+        }
+    case eIntID_TooltipDelay:
+        {
+            aResult = 500;
             break;
         }
     case eIntID_MenusCanOverlapOSBar:
@@ -574,6 +579,9 @@ nsLookAndFeel::GetIntImpl(IntID aID, PRInt32 &aResult)
         break;
     case eIntID_MenuBarDrag:
         aResult = sMenuSupportsDrag;
+        break;
+    case eIntID_ScrollbarButtonAutoRepeatBehavior:
+        aResult = 1;
         break;
     default:
         aResult = 0;
@@ -808,4 +816,13 @@ nsLookAndFeel::RefreshImpl()
  
     InitWidget();
     InitLookAndFeel();
+}
+
+bool
+nsLookAndFeel::GetEchoPasswordImpl() {
+#ifdef MOZ_PLATFORM_MAEMO
+    return true;
+#else
+    return false;
+#endif
 }

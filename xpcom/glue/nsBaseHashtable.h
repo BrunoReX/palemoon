@@ -93,17 +93,17 @@ public:
    * @param initSize the initial number of buckets in the hashtable,
    *        default 16
    * locking on all class methods
-   * @return    PR_TRUE if the object was initialized properly.
+   * @return    true if the object was initialized properly.
    */
-  PRBool Init(PRUint32 initSize = PL_DHASH_MIN_SIZE)
+  bool Init(PRUint32 initSize = PL_DHASH_MIN_SIZE)
   { return nsTHashtable<EntryType>::Init(initSize); }
 
   /**
    * Check whether the table has been initialized.
    * This function is especially useful for static hashtables.
-   * @return PR_TRUE if the table has been initialized.
+   * @return true if the table has been initialized.
    */
-  PRBool IsInitialized() const { return !!this->mTable.entrySize; }
+  bool IsInitialized() const { return !!this->mTable.entrySize; }
 
   /**
    * Return the number of entries in the table.
@@ -118,20 +118,20 @@ public:
    * @param pData data associated with this key will be placed at this
    *   pointer.  If you only need to check if the key exists, pData
    *   may be null.
-   * @return PR_TRUE if the key exists. If key does not exist, pData is not
+   * @return true if the key exists. If key does not exist, pData is not
    *   modified.
    */
-  PRBool Get(KeyType aKey, UserDataType* pData NS_OUTPARAM) const
+  bool Get(KeyType aKey, UserDataType* pData NS_OUTPARAM) const
   {
     EntryType* ent = this->GetEntry(aKey);
 
     if (!ent)
-      return PR_FALSE;
+      return false;
 
     if (pData)
       *pData = ent->mData;
 
-    return PR_TRUE;
+    return true;
   }
 
   /**
@@ -156,18 +156,18 @@ public:
    * put a new value for the associated key
    * @param aKey the key to put
    * @param aData the new data
-   * @return always PR_TRUE, unless memory allocation failed
+   * @return always true, unless memory allocation failed
    */
-  PRBool Put(KeyType aKey, UserDataType aData)
+  bool Put(KeyType aKey, UserDataType aData)
   {
     EntryType* ent = this->PutEntry(aKey);
 
     if (!ent)
-      return PR_FALSE;
+      return false;
 
     ent->mData = aData;
 
-    return PR_TRUE;
+    return true;
   }
 
   /**
@@ -244,6 +244,46 @@ public:
    */
   void Clear() { nsTHashtable<EntryType>::Clear(); }
 
+  /**
+   * client must provide a SizeOfEntryExcludingThisFun function for
+   *   SizeOfExcludingThis.
+   * @param     aKey the key being enumerated
+   * @param     aData Reference to data being enumerated.
+   * @param     mallocSizeOf the function used to measure heap-allocated blocks
+   * @param     userArg passed unchanged from SizeOf{In,Ex}cludingThis
+   * @return    summed size of the things pointed to by the entries
+   */
+  typedef size_t
+    (* SizeOfEntryExcludingThisFun)(KeyType           aKey,
+                                    const DataType    &aData,
+                                    nsMallocSizeOfFun mallocSizeOf,
+                                    void*             userArg);
+
+  /**
+   * Measure the size of the table's entry storage, and if
+   * |sizeOfEntryExcludingThis| is non-NULL, measure the size of things pointed
+   * to by entries.
+   * 
+   * @param     sizeOfEntryExcludingThis the
+   *            <code>SizeOfEntryExcludingThisFun</code> function to call
+   * @param     mallocSizeOf the function used to measure heap-allocated blocks
+   * @param     userArg a pointer to pass to the
+   *            <code>SizeOfEntryExcludingThisFun</code> function
+   * @return    the summed size of all the entries
+   */
+  size_t SizeOfExcludingThis(SizeOfEntryExcludingThisFun sizeOfEntryExcludingThis,
+                             nsMallocSizeOfFun mallocSizeOf, void *userArg = NULL)
+  {
+    if (IsInitialized()) {
+      s_SizeOfArgs args = { sizeOfEntryExcludingThis, userArg };
+      return PL_DHashTableSizeOfExcludingThis(&this->mTable,
+                                              s_SizeOfStub,
+                                              mallocSizeOf,
+                                              &args);
+    }
+    return 0;
+  }
+
 protected:
   /**
    * used internally during EnumerateRead.  Allocated on the stack.
@@ -271,6 +311,16 @@ protected:
                                     PLDHashEntryHdr   *hdr,
                                     PRUint32           number,
                                     void              *arg);
+
+  struct s_SizeOfArgs
+  {
+    SizeOfEntryExcludingThisFun func;
+    void* userArg;
+  };
+  
+  static size_t s_SizeOfStub(PLDHashEntryHdr *entry,
+                             nsMallocSizeOfFun mallocSizeOf,
+                             void *arg);
 };
 
 /**
@@ -293,11 +343,11 @@ public:
   nsBaseHashtableMT() : mLock(nsnull) { }
   ~nsBaseHashtableMT();
 
-  PRBool Init(PRUint32 initSize = PL_DHASH_MIN_SIZE);
-  PRBool IsInitialized() const { return mLock != nsnull; }
+  bool Init(PRUint32 initSize = PL_DHASH_MIN_SIZE);
+  bool IsInitialized() const { return mLock != nsnull; }
   PRUint32 Count() const;
-  PRBool Get(KeyType aKey, UserDataType* pData) const;
-  PRBool Put(KeyType aKey, UserDataType aData);
+  bool Get(KeyType aKey, UserDataType* pData) const;
+  bool Put(KeyType aKey, UserDataType aData);
   void Remove(KeyType aKey);
 
   PRUint32 EnumerateRead(EnumReadFunction enumFunc, void* userArg) const;
@@ -364,6 +414,16 @@ nsBaseHashtable<KeyClass,DataType,UserDataType>::s_EnumStub
   return (eargs->func)(ent->GetKey(), ent->mData, eargs->userArg);
 }
 
+template<class KeyClass,class DataType,class UserDataType>
+size_t
+nsBaseHashtable<KeyClass,DataType,UserDataType>::s_SizeOfStub
+  (PLDHashEntryHdr *hdr, nsMallocSizeOfFun mallocSizeOf, void *arg)
+{
+  EntryType* ent = static_cast<EntryType*>(hdr);
+  s_SizeOfArgs* eargs = static_cast<s_SizeOfArgs*>(arg);
+
+  return (eargs->func)(ent->GetKey(), ent->mData, mallocSizeOf, eargs->userArg);
+}
 
 //
 // nsBaseHashtableMT  definitions
@@ -377,11 +437,11 @@ nsBaseHashtableMT<KeyClass,DataType,UserDataType>::~nsBaseHashtableMT()
 }
 
 template<class KeyClass,class DataType,class UserDataType>
-PRBool
+bool
 nsBaseHashtableMT<KeyClass,DataType,UserDataType>::Init(PRUint32 initSize)
 {
   if (!nsTHashtable<EntryType>::IsInitialized() && !nsTHashtable<EntryType>::Init(initSize))
-    return PR_FALSE;
+    return false;
 
   this->mLock = PR_NewLock();
   NS_ASSERTION(this->mLock, "Error creating lock during nsBaseHashtableL::Init()");
@@ -401,12 +461,12 @@ nsBaseHashtableMT<KeyClass,DataType,UserDataType>::Count() const
 }
 
 template<class KeyClass,class DataType,class UserDataType>
-PRBool
+bool
 nsBaseHashtableMT<KeyClass,DataType,UserDataType>::Get(KeyType       aKey,
                                                            UserDataType* pData) const
 {
   PR_Lock(this->mLock);
-  PRBool res =
+  bool res =
     nsBaseHashtable<KeyClass,DataType,UserDataType>::Get(aKey, pData);
   PR_Unlock(this->mLock);
 
@@ -414,12 +474,12 @@ nsBaseHashtableMT<KeyClass,DataType,UserDataType>::Get(KeyType       aKey,
 }
 
 template<class KeyClass,class DataType,class UserDataType>
-PRBool
+bool
 nsBaseHashtableMT<KeyClass,DataType,UserDataType>::Put(KeyType      aKey,
                                                            UserDataType aData)
 {
   PR_Lock(this->mLock);
-  PRBool res =
+  bool res =
     nsBaseHashtable<KeyClass,DataType,UserDataType>::Put(aKey, aData);
   PR_Unlock(this->mLock);
 

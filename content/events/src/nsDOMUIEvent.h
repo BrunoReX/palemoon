@@ -56,18 +56,21 @@ public:
 
   // nsIPrivateDOMEvent interface
   NS_IMETHOD DuplicatePrivateData();
-  virtual void Serialize(IPC::Message* aMsg, PRBool aSerializeInterfaceType);
-  virtual PRBool Deserialize(const IPC::Message* aMsg, void** aIter);
+  virtual void Serialize(IPC::Message* aMsg, bool aSerializeInterfaceType);
+  virtual bool Deserialize(const IPC::Message* aMsg, void** aIter);
   
   // Forward to nsDOMEvent
   NS_FORWARD_TO_NSDOMEVENT
 
   NS_FORWARD_NSIDOMNSEVENT(nsDOMEvent::)
 
+  virtual const nsIID& EventInitIID() { return NS_GET_IID(nsIUIEventInit); }
+  virtual nsresult InitFromCtor(const nsAString& aType, nsISupports* aDict,
+                                JSContext* aCx, JSObject* aObj);
 protected:
   // Internal helper functions
-  nsIntPoint GetClientPoint();
   nsIntPoint GetScreenPoint();
+  nsIntPoint GetClientPoint();
   nsIntPoint GetLayerPoint();
   nsIntPoint GetPagePoint();
 

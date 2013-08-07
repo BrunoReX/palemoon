@@ -52,8 +52,20 @@
 const char*
 anp_system_getApplicationDataDirectory()
 {
-  LOG("getApplicationDataDirectory return /data/data/org.mozilla.%s", MOZ_APP_NAME);
-  return "/data/data/org.mozilla." MOZ_APP_NAME;
+  static char *dir = NULL;
+
+  if (!dir) {
+    dir = getenv("ANDROID_PLUGIN_DATADIR");
+  }
+
+  LOG("getApplicationDataDirectory return %s", dir);
+  return dir;
+}
+
+const char*
+anp_system_getApplicationDataDirectory(NPP instance)
+{
+  return anp_system_getApplicationDataDirectory();
 }
 
 jclass anp_system_loadJavaClass(NPP instance, const char* className)
@@ -61,6 +73,9 @@ jclass anp_system_loadJavaClass(NPP instance, const char* className)
   LOG("%s", __PRETTY_FUNCTION__);
 
   JNIEnv* env = GetJNIForThread();
+  if (!env)
+    return nsnull;
+
   jclass cls = env->FindClass("org/mozilla/gecko/GeckoAppShell");
   jmethodID method = env->GetStaticMethodID(cls,
                                             "loadPluginClass",
@@ -79,8 +94,27 @@ jclass anp_system_loadJavaClass(NPP instance, const char* className)
   return reinterpret_cast<jclass>(obj);
 }
 
+void anp_system_setPowerState(NPP instance, ANPPowerState powerState)
+{
+  NOT_IMPLEMENTED();
+}
+
 void InitSystemInterface(ANPSystemInterfaceV0 *i) {
   _assert(i->inSize == sizeof(*i));
   ASSIGN(i, getApplicationDataDirectory);
   ASSIGN(i, loadJavaClass);
+}
+
+void InitSystemInterfaceV1(ANPSystemInterfaceV1 *i) {
+  _assert(i->inSize == sizeof(*i));
+  ASSIGN(i, getApplicationDataDirectory);
+  ASSIGN(i, loadJavaClass);
+  ASSIGN(i, setPowerState);
+}
+
+void InitSystemInterfaceV2(ANPSystemInterfaceV2 *i) {
+  _assert(i->inSize == sizeof(*i));
+  ASSIGN(i, getApplicationDataDirectory);
+  ASSIGN(i, loadJavaClass);
+  ASSIGN(i, setPowerState);
 }

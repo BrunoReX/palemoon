@@ -41,6 +41,13 @@
 #ifndef __mozilla_widget_GfxDriverInfo_h__
 #define __mozilla_widget_GfxDriverInfo_h__
 
+#define V(a,b,c,d) GFX_DRIVER_VERSION(a,b,c,d)
+
+#define APPEND_TO_DRIVER_BLOCKLIST(os, vendor, devices, feature, featureStatus, driverComparator, driverVersion, suggestedVersion) \
+    mDriverInfo->AppendElement(GfxDriverInfo(os, vendor, devices, feature, featureStatus, driverComparator, driverVersion, suggestedVersion))
+#define APPEND_TO_DRIVER_BLOCKLIST2(os, vendor, devices, feature, featureStatus, driverComparator, driverVersion) \
+    mDriverInfo->AppendElement(GfxDriverInfo(os, vendor, devices, feature, featureStatus, driverComparator, driverVersion))
+
 namespace mozilla {
 namespace widget {
 
@@ -54,6 +61,8 @@ enum OperatingSystem {
   DRIVER_OS_LINUX,
   DRIVER_OS_OS_X_10_5,
   DRIVER_OS_OS_X_10_6,
+  DRIVER_OS_OS_X_10_7,
+  DRIVER_OS_ANDROID,
   DRIVER_OS_ALL
 };
 
@@ -70,8 +79,18 @@ enum VersionComparisonOp {
   DRIVER_UNKNOWN_COMPARISON
 };
 
+enum DeviceFamily {
+  IntelGMA500,
+  IntelGMA900,
+  IntelGMA950,
+  IntelGMA3150,
+  IntelGMAX3000,
+  IntelGMAX4500HD,
+  NvidiaBlockD3D9Layers
+};
+
 /* A zero-terminated array of devices to match, or all devices */
-typedef PRUint32 *GfxDeviceFamily;
+typedef PRUint32* GfxDeviceFamily;
 
 struct GfxDriverInfo
 {
@@ -110,8 +129,16 @@ struct GfxDriverInfo
   /* versions are assumed to be A.B.C.D packed as 0xAAAABBBBCCCCDDDD */
   PRUint64 mDriverVersion;
   PRUint64 mDriverVersionMax;
+  static PRUint64 allDriverVersions;
+
+  static PRUint32 vendorIntel;
+  static PRUint32 vendorNVIDIA;
+  static PRUint32 vendorAMD;
+  static PRUint32 vendorATI;
 
   const char *mSuggestedVersion;
+
+  static const GfxDeviceFamily GetDeviceFamily(DeviceFamily id);
 };
 
 #define GFX_DRIVER_VERSION(a,b,c,d) \

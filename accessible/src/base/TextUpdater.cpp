@@ -80,7 +80,7 @@ TextUpdater::DoUpdate(const nsAString& aNewText, const nsAString& aOldText,
   }
 
   // Get the text leaf accessible offset and invalidate cached offsets after it.
-  mTextOffset = mHyperText->GetChildOffset(mTextLeaf, PR_TRUE);
+  mTextOffset = mHyperText->GetChildOffset(mTextLeaf, true);
   NS_ASSERTION(mTextOffset != -1,
                "Text leaf hasn't offset within hyper text!");
 
@@ -111,24 +111,18 @@ TextUpdater::DoUpdate(const nsAString& aNewText, const nsAString& aOldText,
     if (strLen1 > 0) {
       // Fire text change event for removal.
       nsRefPtr<AccEvent> textRemoveEvent =
-        new AccTextChangeEvent(mHyperText, mTextOffset, str1, PR_FALSE);
+        new AccTextChangeEvent(mHyperText, mTextOffset, str1, false);
       mDocument->FireDelayedAccessibleEvent(textRemoveEvent);
     }
 
     if (strLen2 > 0) {
       // Fire text change event for insertion.
       nsRefPtr<AccEvent> textInsertEvent =
-        new AccTextChangeEvent(mHyperText, mTextOffset, str2, PR_TRUE);
+        new AccTextChangeEvent(mHyperText, mTextOffset, str2, true);
       mDocument->FireDelayedAccessibleEvent(textInsertEvent);
     }
 
-    // Fire value change event.
-    if (mHyperText->Role() == nsIAccessibleRole::ROLE_ENTRY) {
-      nsRefPtr<AccEvent> valueChangeEvent =
-        new AccEvent(nsIAccessibleEvent::EVENT_VALUE_CHANGE, mHyperText,
-                     eAutoDetect, AccEvent::eRemoveDupes);
-      mDocument->FireDelayedAccessibleEvent(valueChangeEvent);
-    }
+    mDocument->MaybeNotifyOfValueChange(mHyperText);
 
     // Update the text.
     mTextLeaf->SetText(aNewText);
@@ -173,12 +167,7 @@ TextUpdater::DoUpdate(const nsAString& aNewText, const nsAString& aOldText,
   for (PRInt32 idx = events.Length() - 1; idx >= 0; idx--)
     mDocument->FireDelayedAccessibleEvent(events[idx]);
 
-  if (mHyperText->Role() == nsIAccessibleRole::ROLE_ENTRY) {
-    nsRefPtr<AccEvent> valueChangeEvent =
-      new AccEvent(nsIAccessibleEvent::EVENT_VALUE_CHANGE, mHyperText,
-                   eAutoDetect, AccEvent::eRemoveDupes);
-    mDocument->FireDelayedAccessibleEvent(valueChangeEvent);
-  }
+  mDocument->MaybeNotifyOfValueChange(mHyperText);
 
   // Update the text.
   mTextLeaf->SetText(aNewText);

@@ -61,10 +61,13 @@
 #include "nsDataHashtable.h"
 #include "nsHashKeys.h"
 #include "nsIFileStreams.h"
-#include "nsTObserverArray.h"
-#include "nsITimer.h"
 
 namespace mozilla {
+namespace dom {
+class PCrashReporterParent;
+class CrashReporterParent;
+}
+
 namespace plugins {
 //-----------------------------------------------------------------------------
 
@@ -85,6 +88,8 @@ class PluginModuleParent : public PPluginModuleParent, PluginLibrary
 {
 private:
     typedef mozilla::PluginLibrary PluginLibrary;
+    typedef mozilla::dom::PCrashReporterParent PCrashReporterParent;
+    typedef mozilla::dom::CrashReporterParent CrashReporterParent;
 
 protected:
 
@@ -148,11 +153,6 @@ public:
 
     void ProcessRemoteNativeEventsInRPCCall();
 
-#ifdef OS_MACOSX
-    void AddToRefreshTimer(PluginInstanceParent *aInstance);
-    void RemoveFromRefreshTimer(PluginInstanceParent *aInstance);
-#endif
-
 protected:
     NS_OVERRIDE
     virtual mozilla::ipc::RPCChannel::RacyRPCPolicy
@@ -184,9 +184,6 @@ protected:
     NS_OVERRIDE virtual bool
     RecvProcessNativeEventsInRPCCall();
 
-    virtual bool
-    RecvAppendNotesToCrashReport(const nsCString& aNotes);
-
     NS_OVERRIDE virtual bool
     RecvPluginShowWindow(const uint32_t& aWindowId, const bool& aModal,
                          const int32_t& aX, const int32_t& aY,
@@ -194,6 +191,12 @@ protected:
 
     NS_OVERRIDE virtual bool
     RecvPluginHideWindow(const uint32_t& aWindowId);
+
+    NS_OVERRIDE virtual PCrashReporterParent*
+    AllocPCrashReporter(mozilla::dom::NativeThreadId* id,
+                        PRUint32* processType);
+    NS_OVERRIDE virtual bool
+    DeallocPCrashReporter(PCrashReporterParent* actor);
 
     NS_OVERRIDE virtual bool
     RecvSetCursor(const NSCursorInfo& aCursorInfo);
@@ -273,7 +276,7 @@ private:
                                          gfxContext* aCtx,
                                          const nsIntRect& aRect);
 
-#if defined(XP_UNIX) && !defined(XP_MACOSX)
+#if defined(XP_UNIX) && !defined(XP_MACOSX) && !defined(MOZ_WIDGET_GONK)
     virtual nsresult NP_Initialize(NPNetscapeFuncs* bFuncs, NPPluginFuncs* pFuncs, NPError* error);
 #else
     virtual nsresult NP_Initialize(NPNetscapeFuncs* bFuncs, NPError* error);
@@ -294,7 +297,7 @@ private:
     virtual nsresult NPP_GetSitesWithData(InfallibleTArray<nsCString>& result);
 
 #if defined(XP_MACOSX)
-    virtual nsresult IsRemoteDrawingCoreAnimation(NPP instance, PRBool *aDrawing);
+    virtual nsresult IsRemoteDrawingCoreAnimation(NPP instance, bool *aDrawing);
 #endif
 #if defined(MOZ_WIDGET_QT) && (MOZ_PLATFORM_MAEMO == 6)
     virtual nsresult HandleGUIEvent(NPP instance, const nsGUIEvent& anEvent,
@@ -302,13 +305,15 @@ private:
 #endif
 
 private:
-    void WritePluginExtraDataForMinidump(const nsAString& id);
-    void WriteExtraDataForHang();
+    CrashReporterParent* CrashReporter();
+
+#ifdef MOZ_CRASHREPORTER
+    void WriteExtraDataForMinidump(CrashReporter::AnnotationTable& notes);
+#endif
     void CleanupFromTimeout();
     static int TimeoutChanged(const char* aPref, void* aModule);
     void NotifyPluginCrashed();
 
-    nsCString mCrashNotes;
     PluginProcessParent* mSubprocess;
     // the plugin thread in mSubprocess
     NativeThreadId mPluginThread;
@@ -318,22 +323,18 @@ private:
     const NPNetscapeFuncs* mNPNIface;
     nsDataHashtable<nsVoidPtrHashKey, PluginIdentifierParent*> mIdentifiers;
     nsNPAPIPlugin* mPlugin;
-    time_t mProcessStartTime;
     ScopedRunnableMethodFactory<PluginModuleParent> mTaskFactory;
     nsString mPluginDumpID;
     nsString mBrowserDumpID;
     nsString mHangID;
-
-#ifdef OS_MACOSX
-    nsCOMPtr<nsITimer> mCATimer;
-    nsTObserverArray<PluginInstanceParent*> mCATimerTargets;
-#endif
 
 #ifdef MOZ_X11
     // Dup of plugin's X socket, used to scope its resources to this
     // object instead of the plugin process's lifetime
     ScopedClose mPluginXSocketFdDup;
 #endif
+
+    friend class mozilla::dom::CrashReporterParent;
 };
 
 } // namespace plugins

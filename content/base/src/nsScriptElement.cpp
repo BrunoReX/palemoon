@@ -53,7 +53,7 @@ using namespace mozilla::dom;
 NS_IMETHODIMP
 nsScriptElement::ScriptAvailable(nsresult aResult,
                                  nsIScriptElement *aElement,
-                                 PRBool aIsInline,
+                                 bool aIsInline,
                                  nsIURI *aURI,
                                  PRInt32 aLineNo)
 {
@@ -65,7 +65,7 @@ nsScriptElement::ScriptAvailable(nsresult aResult,
       nsContentUtils::GetContextForContent(cont);
 
     nsEventStatus status = nsEventStatus_eIgnore;
-    nsScriptErrorEvent event(PR_TRUE, NS_LOAD_ERROR);
+    nsScriptErrorEvent event(true, NS_LOAD_ERROR);
 
     event.lineNr = aLineNo;
 
@@ -87,7 +87,7 @@ nsScriptElement::ScriptAvailable(nsresult aResult,
 NS_IMETHODIMP
 nsScriptElement::ScriptEvaluated(nsresult aResult,
                                  nsIScriptElement *aElement,
-                                 PRBool aIsInline)
+                                 bool aIsInline)
 {
   nsresult rv = NS_OK;
   if (!aIsInline) {
@@ -99,7 +99,7 @@ nsScriptElement::ScriptEvaluated(nsresult aResult,
 
     nsEventStatus status = nsEventStatus_eIgnore;
     PRUint32 type = NS_SUCCEEDED(aResult) ? NS_LOAD : NS_LOAD_ERROR;
-    nsEvent event(PR_TRUE, type);
+    nsEvent event(true, type);
     if (type == NS_LOAD) {
       // Load event doesn't bubble.
       event.flags |= NS_EVENT_FLAG_CANT_BUBBLE;
@@ -147,7 +147,7 @@ nsScriptElement::ContentInserted(nsIDocument *aDocument,
   MaybeProcessScript();
 }
 
-nsresult
+bool
 nsScriptElement::MaybeProcessScript()
 {
   nsCOMPtr<nsIContent> cont =
@@ -158,14 +158,14 @@ nsScriptElement::MaybeProcessScript()
 
   if (mAlreadyStarted || !mDoneAddingChildren || !cont->IsInDoc() ||
       mMalformed || !HasScriptContent()) {
-    return NS_OK;
+    return false;
   }
 
   FreezeUriAsyncDefer();
 
-  mAlreadyStarted = PR_TRUE;
+  mAlreadyStarted = true;
 
-  nsIDocument* ownerDoc = cont->GetOwnerDoc();
+  nsIDocument* ownerDoc = cont->OwnerDoc();
   nsCOMPtr<nsIParser> parser = ((nsIScriptElement*) this)->GetCreatorParser();
   if (parser) {
     nsCOMPtr<nsIContentSink> sink = parser->GetContentSink();
@@ -173,21 +173,11 @@ nsScriptElement::MaybeProcessScript()
       nsCOMPtr<nsIDocument> parserDoc = do_QueryInterface(sink->GetTarget());
       if (ownerDoc != parserDoc) {
         // Willful violation of HTML5 as of 2010-12-01
-        return NS_OK;
+        return false;
       }
     }
   }
 
   nsRefPtr<nsScriptLoader> loader = ownerDoc->ScriptLoader();
-  nsresult scriptresult = loader->ProcessScriptElement(this);
-
-  // The only error we don't ignore is NS_ERROR_HTMLPARSER_BLOCK
-  // However we don't want to override other success values
-  // (such as NS_CONTENT_SCRIPT_IS_EVENTHANDLER)
-  if (NS_FAILED(scriptresult) &&
-      scriptresult != NS_ERROR_HTMLPARSER_BLOCK) {
-    scriptresult = NS_OK;
-  }
-
-  return scriptresult;
+  return loader->ProcessScriptElement(this);
 }

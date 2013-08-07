@@ -104,7 +104,7 @@ public:
   NS_DECL_NSIDOCUMENTOBSERVER
 
   // nsAccessNode
-  virtual PRBool Init();
+  virtual bool Init();
   virtual void Shutdown();
   virtual nsIFrame* GetFrame() const;
   virtual bool IsDefunct() const;
@@ -132,7 +132,7 @@ public:
   /**
    * Return true if associated DOM document was loaded and isn't unloading.
    */
-  PRBool IsContentLoaded() const
+  bool IsContentLoaded() const
   {
     // eDOMLoaded flag check is used for error pages as workaround to make this
     // method return correct result since error pages do not receive 'pageshow'
@@ -205,13 +205,28 @@ public:
   nsresult FireDelayedAccessibleEvent(AccEvent* aEvent);
 
   /**
-   * Handle anchor jump when page is loaded.
+   * Fire value change event on the given accessible if applicable.
    */
-  inline void HandleAnchorJump(nsIContent* aTargetNode)
+  inline void MaybeNotifyOfValueChange(nsAccessible* aAccessible)
   {
-    HandleNotification<nsDocAccessible, nsIContent>
-      (this, &nsDocAccessible::ProcessAnchorJump, aTargetNode);
+    PRUint32 role = aAccessible->Role();
+    if (role == nsIAccessibleRole::ROLE_ENTRY ||
+        role == nsIAccessibleRole::ROLE_COMBOBOX) {
+      nsRefPtr<AccEvent> valueChangeEvent =
+        new AccEvent(nsIAccessibleEvent::EVENT_VALUE_CHANGE, aAccessible,
+                     eAutoDetect, AccEvent::eRemoveDupes);
+      FireDelayedAccessibleEvent(valueChangeEvent);
+    }
   }
+
+  /**
+   * Get/set the anchor jump.
+   */
+  inline nsAccessible* AnchorJump()
+    { return GetAccessibleOrContainer(mAnchorJumpElm); }
+
+  inline void SetAnchorJump(nsIContent* aTargetNode)
+    { mAnchorJumpElm = aTargetNode; }
 
   /**
    * Bind the child document to the tree.
@@ -305,7 +320,7 @@ public:
    *       XBL bindings. Be careful the result of this method may be  senseless
    *       while it's called for XUL elements (where XBL is used widely).
    */
-  PRBool IsDependentID(const nsAString& aID) const
+  bool IsDependentID(const nsAString& aID) const
     { return mDependentIDsHash.Get(aID, nsnull); }
 
   /**
@@ -457,15 +472,15 @@ protected:
     void ARIAAttributeChanged(nsIContent* aContent, nsIAtom* aAttribute);
 
   /**
+   * Process ARIA active-descendant attribute change.
+   */
+  void ARIAActiveDescendantChanged(nsIContent* aElm);
+
+  /**
    * Process the event when the queue of pending events is untwisted. Fire
    * accessible events as result of the processing.
    */
   void ProcessPendingEvent(AccEvent* aEvent);
-
-  /**
-   * Process anchor jump notification and fire scrolling end event.
-   */
-  void ProcessAnchorJump(nsIContent* aTargetNode);
 
   /**
    * Update the accessible tree for inserted content.
@@ -566,6 +581,11 @@ protected:
    * Type of document load event fired after the document is loaded completely.
    */
   PRUint32 mLoadEventType;
+
+  /**
+   * Reference to anchor jump element.
+   */
+  nsCOMPtr<nsIContent> mAnchorJumpElm;
 
   /**
    * Keep the ARIA attribute old value that is initialized by

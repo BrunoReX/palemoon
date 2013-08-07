@@ -60,8 +60,8 @@
 #include "nsContentUtils.h"
 
 nsStyleLinkElement::nsStyleLinkElement()
-  : mDontLoadStyle(PR_FALSE)
-  , mUpdatesEnabled(PR_TRUE)
+  : mDontLoadStyle(false)
+  , mUpdatesEnabled(true)
   , mLineNumber(1)
 {
 }
@@ -103,7 +103,7 @@ nsStyleLinkElement::GetStyleSheet(nsIStyleSheet*& aStyleSheet)
 }
 
 NS_IMETHODIMP 
-nsStyleLinkElement::InitStyleLinkElement(PRBool aDontLoadStyle)
+nsStyleLinkElement::InitStyleLinkElement(bool aDontLoadStyle)
 {
   mDontLoadStyle = aDontLoadStyle;
 
@@ -126,7 +126,7 @@ nsStyleLinkElement::GetSheet(nsIDOMStyleSheet** aSheet)
 }
 
 NS_IMETHODIMP
-nsStyleLinkElement::SetEnableUpdates(PRBool aEnableUpdates)
+nsStyleLinkElement::SetEnableUpdates(bool aEnableUpdates)
 {
   mUpdatesEnabled = aEnableUpdates;
 
@@ -153,55 +153,72 @@ nsStyleLinkElement::SetLineNumber(PRUint32 aLineNumber)
   mLineNumber = aLineNumber;
 }
 
-void nsStyleLinkElement::ParseLinkTypes(const nsAString& aTypes,
-                                        nsTArray<nsString>& aResult)
+PRUint32 ToLinkMask(const nsAString& aLink)
+{ 
+  if (aLink.EqualsLiteral("prefetch"))
+     return PREFETCH;
+  else if (aLink.EqualsLiteral("dns-prefetch"))
+     return DNS_PREFETCH;
+  else if (aLink.EqualsLiteral("stylesheet"))
+    return STYLESHEET;
+  else if (aLink.EqualsLiteral("next"))
+    return NEXT;
+  else if (aLink.EqualsLiteral("alternate"))
+    return ALTERNATE;
+  else 
+    return 0;
+}
+
+PRUint32 nsStyleLinkElement::ParseLinkTypes(const nsAString& aTypes)
 {
+  PRUint32 linkMask = 0;
   nsAString::const_iterator start, done;
   aTypes.BeginReading(start);
   aTypes.EndReading(done);
   if (start == done)
-    return;
+    return linkMask;
 
   nsAString::const_iterator current(start);
-  PRBool inString = !nsCRT::IsAsciiSpace(*current);
+  bool inString = !nsContentUtils::IsHTMLWhitespace(*current);
   nsAutoString subString;
-
+  
   while (current != done) {
-    if (nsCRT::IsAsciiSpace(*current)) {
+    if (nsContentUtils::IsHTMLWhitespace(*current)) {
       if (inString) {
         ToLowerCase(Substring(start, current), subString);
-        aResult.AppendElement(subString);
-        inString = PR_FALSE;
+        linkMask |= ToLinkMask(subString);
+        inString = false;
       }
     }
     else {
       if (!inString) {
         start = current;
-        inString = PR_TRUE;
+        inString = true;
       }
     }
     ++current;
   }
   if (inString) {
     ToLowerCase(Substring(start, current), subString);
-    aResult.AppendElement(subString);
+     linkMask |= ToLinkMask(subString);
   }
+  return linkMask;
 }
 
 NS_IMETHODIMP
 nsStyleLinkElement::UpdateStyleSheet(nsICSSLoaderObserver* aObserver,
-                                     PRBool* aWillNotify,
-                                     PRBool* aIsAlternate)
+                                     bool* aWillNotify,
+                                     bool* aIsAlternate)
 {
   return DoUpdateStyleSheet(nsnull, aObserver, aWillNotify, aIsAlternate,
-                            PR_FALSE);
+                            false);
 }
 
 nsresult
 nsStyleLinkElement::UpdateStyleSheetInternal(nsIDocument *aOldDocument,
-                                             PRBool aForceUpdate)
+                                             bool aForceUpdate)
 {
-  PRBool notify, alternate;
+  bool notify, alternate;
   return DoUpdateStyleSheet(aOldDocument, nsnull, &notify, &alternate,
                             aForceUpdate);
 }
@@ -209,11 +226,11 @@ nsStyleLinkElement::UpdateStyleSheetInternal(nsIDocument *aOldDocument,
 nsresult
 nsStyleLinkElement::DoUpdateStyleSheet(nsIDocument *aOldDocument,
                                        nsICSSLoaderObserver* aObserver,
-                                       PRBool* aWillNotify,
-                                       PRBool* aIsAlternate,
-                                       PRBool aForceUpdate)
+                                       bool* aWillNotify,
+                                       bool* aIsAlternate,
+                                       bool aForceUpdate)
 {
-  *aWillNotify = PR_FALSE;
+  *aWillNotify = false;
 
   if (mStyleSheet && aOldDocument) {
     // We're removing the link element from the document, unload the
@@ -241,13 +258,13 @@ nsStyleLinkElement::DoUpdateStyleSheet(nsIDocument *aOldDocument,
     return NS_OK;
   }
 
-  PRBool isInline;
+  bool isInline;
   nsCOMPtr<nsIURI> uri = GetStyleSheetURL(&isInline);
 
   if (!aForceUpdate && mStyleSheet && !isInline && uri) {
     nsIURI* oldURI = mStyleSheet->GetSheetURI();
     if (oldURI) {
-      PRBool equal;
+      bool equal;
       nsresult rv = oldURI->Equals(uri, &equal);
       if (NS_SUCCEEDED(rv) && equal) {
         return NS_OK; // We already loaded this stylesheet
@@ -267,7 +284,7 @@ nsStyleLinkElement::DoUpdateStyleSheet(nsIDocument *aOldDocument,
   }
 
   nsAutoString title, type, media;
-  PRBool isAlternate;
+  bool isAlternate;
 
   GetStyleSheetInfo(title, type, media, &isAlternate);
 
@@ -275,11 +292,11 @@ nsStyleLinkElement::DoUpdateStyleSheet(nsIDocument *aOldDocument,
     return NS_OK;
   }
 
-  PRBool doneLoading = PR_FALSE;
+  bool doneLoading = false;
   nsresult rv = NS_OK;
   if (isInline) {
     nsAutoString text;
-    nsContentUtils::GetNodeTextContent(thisContent, PR_FALSE, text);
+    nsContentUtils::GetNodeTextContent(thisContent, false, text);
 
     // Parse the style sheet.
     rv = doc->CSSLoader()->
@@ -298,8 +315,8 @@ nsStyleLinkElement::DoUpdateStyleSheet(nsIDocument *aOldDocument,
       // Don't propagate LoadStyleLink() errors further than this, since some
       // consumers (e.g. nsXMLContentSink) will completely abort on innocuous
       // things like a stylesheet load being blocked by the security system.
-      doneLoading = PR_TRUE;
-      isAlternate = PR_FALSE;
+      doneLoading = true;
+      isAlternate = false;
       rv = NS_OK;
     }
   }

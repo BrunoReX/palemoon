@@ -94,6 +94,20 @@ private:
     return rv;
   }
 
+#elif defined(MOZ_WIDGET_ANDROID)
+  static nsresult Get(const char *argv0, char aResult[MAXPATHLEN])
+  {
+    // On Android, we use the GRE_HOME variable that is set by the Java
+    // bootstrap code.
+    const char *greHome = getenv("GRE_HOME");
+    if (!greHome)
+      return NS_ERROR_FAILURE;
+
+    snprintf(aResult, MAXPATHLEN, "%s/%s", greHome, "dummy");
+    aResult[MAXPATHLEN] = '\0';
+    return NS_OK;
+  }
+
 #elif defined(XP_UNIX)
   static nsresult Get(const char *argv0, char aResult[MAXPATHLEN])
   {
@@ -118,13 +132,13 @@ private:
     if (!pathdup)
       return NS_ERROR_OUT_OF_MEMORY;
 
-    PRBool found = PR_FALSE;
+    bool found = false;
     char *token = strtok(pathdup, ":");
     while (token) {
       char tmpPath[MAXPATHLEN];
       sprintf(tmpPath, "%s/%s", token, argv0);
       if (realpath(tmpPath, aResult) && stat(aResult, &fileStat) == 0) {
-        found = PR_TRUE;
+        found = true;
         break;
       }
       token = strtok(NULL, ":");
@@ -162,10 +176,10 @@ public:
     if (NS_FAILED(rv))
       return rv;
 #ifdef XP_WIN
-    rv = NS_NewLocalFile(nsDependentString(exePath), PR_TRUE,
+    rv = NS_NewLocalFile(nsDependentString(exePath), true,
                          getter_AddRefs(lf));
 #else
-    rv = NS_NewNativeLocalFile(nsDependentCString(exePath), PR_TRUE,
+    rv = NS_NewNativeLocalFile(nsDependentCString(exePath), true,
                                getter_AddRefs(lf));
 #endif
     if (NS_FAILED(rv))

@@ -40,8 +40,10 @@
 
 #include "nsISupports.h"
 #include "nsCOMPtr.h"
+#include "nsHashKeys.h"
 #include "nsINode.h"
 #include "nsIDOMRange.h"
+#include "nsTHashtable.h"
 
 // IID for the nsIRange interface
 #define NS_IRANGE_IID \
@@ -58,9 +60,10 @@ public:
     : mRoot(nsnull),
       mStartOffset(0),
       mEndOffset(0),
-      mIsPositioned(PR_FALSE),
-      mIsDetached(PR_FALSE),
-      mMaySpanAnonymousSubtrees(PR_FALSE)
+      mIsPositioned(false),
+      mIsDetached(false),
+      mMaySpanAnonymousSubtrees(false),
+      mInSelection(false)
   {
   }
 
@@ -89,25 +92,52 @@ public:
     return mEndOffset;
   }
   
-  PRBool IsPositioned() const
+  bool IsPositioned() const
   {
     return mIsPositioned;
   }
 
-  PRBool IsDetached() const
+  bool IsDetached() const
   {
     return mIsDetached;
   }
   
-  PRBool Collapsed() const
+  bool Collapsed() const
   {
     return mIsPositioned && mStartParent == mEndParent &&
            mStartOffset == mEndOffset;
   }
 
-  void SetMaySpanAnonymousSubtrees(PRBool aMaySpanAnonymousSubtrees)
+  void SetMaySpanAnonymousSubtrees(bool aMaySpanAnonymousSubtrees)
   {
     mMaySpanAnonymousSubtrees = aMaySpanAnonymousSubtrees;
+  }
+
+  /**
+   * Return true iff this range is part of at least one Selection object
+   * and isn't detached.
+   */
+  bool IsInSelection() const
+  {
+    return mInSelection;
+  }
+
+  /**
+   * Called when the range is added/removed from a Selection.
+   */
+  void SetInSelection(bool aInSelection)
+  {
+    if (mInSelection == aInSelection || mIsDetached) {
+      return;
+    }
+    mInSelection = aInSelection;
+    nsINode* commonAncestor = GetCommonAncestor();
+    NS_ASSERTION(commonAncestor, "unexpected disconnected nodes");
+    if (mInSelection) {
+      RegisterCommonAncestor(commonAncestor);
+    } else {
+      UnregisterCommonAncestor(commonAncestor);
+    }
   }
 
   virtual nsINode* GetCommonAncestor() const = 0;
@@ -128,16 +158,22 @@ public:
   // To support the font inspector API
   NS_IMETHOD GetUsedFontFaces(nsIDOMFontFaceList** aResult) = 0;
 
+  typedef nsTHashtable<nsPtrHashKey<nsIRange> > RangeHashTable;
 protected:
+  void RegisterCommonAncestor(nsINode* aNode);
+  void UnregisterCommonAncestor(nsINode* aNode);
+  nsINode* IsValidBoundary(nsINode* aNode);
+
   nsCOMPtr<nsINode> mRoot;
   nsCOMPtr<nsINode> mStartParent;
   nsCOMPtr<nsINode> mEndParent;
   PRInt32 mStartOffset;
   PRInt32 mEndOffset;
 
-  PRPackedBool mIsPositioned;
-  PRPackedBool mIsDetached;
-  PRPackedBool mMaySpanAnonymousSubtrees;
+  bool mIsPositioned;
+  bool mIsDetached;
+  bool mMaySpanAnonymousSubtrees;
+  bool mInSelection;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIRange, NS_IRANGE_IID)

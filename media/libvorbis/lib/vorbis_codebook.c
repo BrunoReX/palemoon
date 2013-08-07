@@ -11,7 +11,7 @@
  ********************************************************************
 
  function: basic codebook pack/unpack/code/decode operations
- last mod: $Id: codebook.c 17553 2010-10-21 17:54:26Z tterribe $
+ last mod: $Id: codebook.c 18076 2011-09-02 02:44:49Z giles $
 
  ********************************************************************/
 
@@ -447,7 +447,7 @@ long vorbis_book_decodev_set(codebook *book,float *a,oggpack_buffer *b,int n){
     int i,j;
 
     for(i=0;i<n;){
-      for (j=0;j<book->dim;)
+      for (j=0;j<book->dim;j++)
         a[i++]=0.f;
     }
   }

@@ -42,13 +42,13 @@
 
 txNodeSetAdaptor::txNodeSetAdaptor()
     : txXPathObjectAdaptor(),
-      mWritable(PR_TRUE)
+      mWritable(true)
 {
 }
 
 txNodeSetAdaptor::txNodeSetAdaptor(txNodeSet *aNodeSet)
     : txXPathObjectAdaptor(aNodeSet),
-      mWritable(PR_FALSE)
+      mWritable(false)
 {
 }
 
@@ -86,7 +86,7 @@ txNodeSetAdaptor::ItemAsNumber(PRUint32 aIndex, double *aResult)
     nsAutoString result;
     txXPathNodeUtils::appendNodeValue(NodeSet()->get(aIndex), result);
 
-    *aResult = Double::toDouble(result);
+    *aResult = txDouble::toDouble(result);
 
     return NS_OK;
 }
@@ -117,7 +117,7 @@ txNodeSetAdaptor::Add(nsIDOMNode *aNode)
     NS_ENSURE_TRUE(mWritable, NS_ERROR_FAILURE);
 
     nsAutoPtr<txXPathNode> node(txXPathNativeNode::createXPathNode(aNode,
-                                                                   PR_TRUE));
+                                                                   true));
 
     return node ? NodeSet()->add(*node) : NS_ERROR_OUT_OF_MEMORY;
 }

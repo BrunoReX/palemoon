@@ -67,8 +67,8 @@ nsDOMCustomEvent::GetDetail(nsIVariant** aDetail)
 
 NS_IMETHODIMP
 nsDOMCustomEvent::InitCustomEvent(const nsAString& aType,
-                                  PRBool aCanBubble,
-                                  PRBool aCancelable,
+                                  bool aCanBubble,
+                                  bool aCancelable,
                                   nsIVariant* aDetail)
 {
   nsresult rv = nsDOMEvent::InitEvent(aType, aCanBubble, aCancelable);
@@ -76,6 +76,25 @@ nsDOMCustomEvent::InitCustomEvent(const nsAString& aType,
 
   mDetail = aDetail;
   return NS_OK;
+}
+
+nsresult
+nsDOMCustomEvent::InitFromCtor(const nsAString& aType, nsISupports* aDict,
+                               JSContext* aCx, JSObject* aObj)
+{
+  nsCOMPtr<nsICustomEventInit> eventInit = do_QueryInterface(aDict);
+  bool bubbles = false;
+  bool cancelable = false;
+  nsCOMPtr<nsIVariant> detail;
+  if (eventInit) {
+    nsresult rv = eventInit->GetBubbles(&bubbles);
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = eventInit->GetCancelable(&cancelable);
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = eventInit->GetDetail(getter_AddRefs(detail));
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+  return InitCustomEvent(aType, bubbles, cancelable, detail);
 }
 
 nsresult

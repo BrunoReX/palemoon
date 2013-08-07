@@ -51,6 +51,7 @@
 #include "nsIParser.h" // kCharsetFrom* macro definition
 #include "nsIDocumentCharsetInfo.h" 
 #include "nsNodeInfoManager.h"
+#include "nsContentUtils.h"
 
 namespace mozilla {
 namespace dom {
@@ -130,6 +131,7 @@ const char* const MediaDocument::sFormatNames[4] =
 };
 
 MediaDocument::MediaDocument()
+    : mDocumentElementInserted(false)
 {
 }
 MediaDocument::~MediaDocument()
@@ -150,7 +152,7 @@ MediaDocument::Init()
                                 getter_AddRefs(mStringBundle));
   }
 
-  mIsSyntheticDocument = PR_TRUE;
+  mIsSyntheticDocument = true;
 
   return NS_OK;
 }
@@ -161,7 +163,7 @@ MediaDocument::StartDocumentLoad(const char*         aCommand,
                                  nsILoadGroup*       aLoadGroup,
                                  nsISupports*        aContainer,
                                  nsIStreamListener** aDocListener,
-                                 PRBool              aReset,
+                                 bool                aReset,
                                  nsIContentSink*     aSink)
 {
   nsresult rv = nsDocument::StartDocumentLoad(aCommand, aChannel, aLoadGroup,
@@ -243,12 +245,10 @@ MediaDocument::CreateSyntheticDocument()
   NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
 
   nsRefPtr<nsGenericHTMLElement> root = NS_NewHTMLHtmlElement(nodeInfo.forget());
-  if (!root) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  NS_ENSURE_TRUE(root, NS_ERROR_OUT_OF_MEMORY);
 
   NS_ASSERTION(GetChildCount() == 0, "Shouldn't have any kids");
-  rv = AppendChildTo(root, PR_FALSE);
+  rv = AppendChildTo(root, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::head, nsnull,
@@ -258,30 +258,25 @@ MediaDocument::CreateSyntheticDocument()
 
   // Create a <head> so our title has somewhere to live
   nsRefPtr<nsGenericHTMLElement> head = NS_NewHTMLHeadElement(nodeInfo.forget());
-  if (!head) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  NS_ENSURE_TRUE(head, NS_ERROR_OUT_OF_MEMORY);
 
-  nsCOMPtr<nsINodeInfo> nodeInfoMeta;
-  nodeInfoMeta = mNodeInfoManager->GetNodeInfo(nsGkAtoms::meta, nsnull,
-                                               kNameSpaceID_XHTML,
-                                               nsIDOMNode::ELEMENT_NODE);
-  NS_ENSURE_TRUE(nodeInfoMeta, NS_ERROR_OUT_OF_MEMORY);
+  nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::meta, nsnull,
+                                           kNameSpaceID_XHTML,
+                                           nsIDOMNode::ELEMENT_NODE);
+  NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
 
-  nsRefPtr<nsGenericHTMLElement> metaContent = NS_NewHTMLMetaElement(nodeInfoMeta.forget());
-  if (!metaContent) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  nsRefPtr<nsGenericHTMLElement> metaContent = NS_NewHTMLMetaElement(nodeInfo.forget());
+  NS_ENSURE_TRUE(metaContent, NS_ERROR_OUT_OF_MEMORY);
   metaContent->SetAttr(kNameSpaceID_None, nsGkAtoms::name,
                        NS_LITERAL_STRING("viewport"),
-                       PR_TRUE);
+                       true);
 
   metaContent->SetAttr(kNameSpaceID_None, nsGkAtoms::content,
                        NS_LITERAL_STRING("width=device-width; height=device-height;"),
-                       PR_TRUE);
-  head->AppendChildTo(metaContent, PR_FALSE);
+                       true);
+  head->AppendChildTo(metaContent, false);
 
-  root->AppendChildTo(head, PR_FALSE);
+  root->AppendChildTo(head, false);
 
   nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::body, nsnull,
                                            kNameSpaceID_XHTML,
@@ -289,11 +284,9 @@ MediaDocument::CreateSyntheticDocument()
   NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
 
   nsRefPtr<nsGenericHTMLElement> body = NS_NewHTMLBodyElement(nodeInfo.forget());
-  if (!body) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  NS_ENSURE_TRUE(body, NS_ERROR_OUT_OF_MEMORY);
 
-  root->AppendChildTo(body, PR_FALSE);
+  root->AppendChildTo(body, false);
 
   return NS_OK;
 }
@@ -301,7 +294,7 @@ MediaDocument::CreateSyntheticDocument()
 nsresult
 MediaDocument::StartLayout()
 {
-  mMayStartLayout = PR_TRUE;
+  mMayStartLayout = true;
   nsCOMPtr<nsIPresShell> shell = GetShell();
   // Don't mess with the presshell if someone has already handled
   // its initial reflow.
@@ -352,6 +345,27 @@ MediaDocument::GetFileName(nsAString& aResult)
   } else {
     CopyUTF8toUTF16(fileName, aResult);
   }
+}
+
+nsresult
+MediaDocument::LinkStylesheet(const nsAString& aStylesheet)
+{
+  nsCOMPtr<nsINodeInfo> nodeInfo;
+  nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::link, nsnull,
+                                           kNameSpaceID_XHTML,
+                                           nsIDOMNode::ELEMENT_NODE);
+  NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
+
+  nsRefPtr<nsGenericHTMLElement> link = NS_NewHTMLLinkElement(nodeInfo.forget());
+  NS_ENSURE_TRUE(link, NS_ERROR_OUT_OF_MEMORY);
+
+  link->SetAttr(kNameSpaceID_None, nsGkAtoms::rel, 
+                NS_LITERAL_STRING("stylesheet"), true);
+
+  link->SetAttr(kNameSpaceID_None, nsGkAtoms::href, aStylesheet, true);
+
+  Element* head = GetHeadElement();
+  return head->AppendChildTo(link, false);
 }
 
 void 
@@ -419,6 +433,17 @@ MediaDocument::UpdateTitleAndCharset(const nsACString& aTypeStr,
                                         getter_Copies(titleWithStatus));
     SetTitle(titleWithStatus);
   }
+}
+
+void 
+MediaDocument::SetScriptGlobalObject(nsIScriptGlobalObject* aGlobalObject)
+{
+    nsHTMLDocument::SetScriptGlobalObject(aGlobalObject);
+    if (!mDocumentElementInserted && aGlobalObject) {
+        mDocumentElementInserted = true;
+        nsContentUtils::AddScriptRunner(
+            new nsDocElementCreatedNotificationRunner(this));        
+    }
 }
 
 } // namespace dom

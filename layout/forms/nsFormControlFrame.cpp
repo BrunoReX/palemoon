@@ -37,6 +37,7 @@
 
 #include "nsFormControlFrame.h"
 #include "nsGkAtoms.h"
+#include "nsLayoutUtils.h"
 #include "nsIDOMHTMLInputElement.h"
 #include "nsEventStateManager.h"
 #include "mozilla/LookAndFeel.h"
@@ -60,7 +61,7 @@ void
 nsFormControlFrame::DestroyFrom(nsIFrame* aDestructRoot)
 {
   // Unregister the access key registered in reflow
-  nsFormControlFrame::RegUnRegAccessKey(static_cast<nsIFrame*>(this), PR_FALSE);
+  nsFormControlFrame::RegUnRegAccessKey(static_cast<nsIFrame*>(this), false);
   nsLeafFrame::DestroyFrom(aDestructRoot);
 }
 
@@ -109,15 +110,27 @@ nsFormControlFrame::Reflow(nsPresContext*          aPresContext,
   DISPLAY_REFLOW(aPresContext, this, aReflowState, aDesiredSize, aStatus);
 
   if (mState & NS_FRAME_FIRST_REFLOW) {
-    RegUnRegAccessKey(static_cast<nsIFrame*>(this), PR_TRUE);
+    RegUnRegAccessKey(static_cast<nsIFrame*>(this), true);
   }
 
-  return nsLeafFrame::Reflow(aPresContext, aDesiredSize, aReflowState,
-                             aStatus);
+  nsresult rv = nsLeafFrame::Reflow(aPresContext, aDesiredSize, aReflowState,
+                                    aStatus);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  if (nsLayoutUtils::FontSizeInflationEnabled(aPresContext)) {
+    float inflation = nsLayoutUtils::FontSizeInflationFor(aReflowState);
+    aDesiredSize.width *= inflation;
+    aDesiredSize.height *= inflation;
+    aDesiredSize.UnionOverflowAreasWithDesiredBounds();
+    FinishAndStoreOverflow(&aDesiredSize);
+  }
+  return NS_OK;
 }
 
 nsresult
-nsFormControlFrame::RegUnRegAccessKey(nsIFrame * aFrame, PRBool aDoReg)
+nsFormControlFrame::RegUnRegAccessKey(nsIFrame * aFrame, bool aDoReg)
 {
   NS_ENSURE_ARG_POINTER(aFrame);
   
@@ -142,7 +155,7 @@ nsFormControlFrame::RegUnRegAccessKey(nsIFrame * aFrame, PRBool aDoReg)
 }
 
 void 
-nsFormControlFrame::SetFocus(PRBool aOn, PRBool aRepaint)
+nsFormControlFrame::SetFocus(bool aOn, bool aRepaint)
 {
 }
 
@@ -161,7 +174,7 @@ nsFormControlFrame::HandleEvent(nsPresContext* aPresContext,
 }
 
 void
-nsFormControlFrame::GetCurrentCheckState(PRBool *aState)
+nsFormControlFrame::GetCurrentCheckState(bool *aState)
 {
   nsCOMPtr<nsIDOMHTMLInputElement> inputElement = do_QueryInterface(mContent);
   if (inputElement) {

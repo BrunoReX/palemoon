@@ -70,11 +70,11 @@ class AutoSelectFont // select a font into the given DC, and auto-restore
 {
 public:
     AutoSelectFont(HDC aDC, LOGFONTW *aLogFont)
-        : mOwnsFont(PR_FALSE)
+        : mOwnsFont(false)
     {
         mFont = ::CreateFontIndirectW(aLogFont);
         if (mFont) {
-            mOwnsFont = PR_TRUE;
+            mOwnsFont = true;
             mDC = aDC;
             mOldFont = (HFONT)::SelectObject(aDC, mFont);
         } else {
@@ -83,7 +83,7 @@ public:
     }
 
     AutoSelectFont(HDC aDC, HFONT aFont)
-        : mOwnsFont(PR_FALSE)
+        : mOwnsFont(false)
     {
         mDC = aDC;
         mFont = aFont;
@@ -99,7 +99,7 @@ public:
         }
     }
 
-    PRBool IsValid() const {
+    bool IsValid() const {
         return mFont != NULL;
     }
 
@@ -111,7 +111,7 @@ private:
     HDC    mDC;
     HFONT  mFont;
     HFONT  mOldFont;
-    PRBool mOwnsFont;
+    bool mOwnsFont;
 };
 
 /**
@@ -144,10 +144,10 @@ public:
 
     nsresult ReadCMAP();
 
-    virtual PRBool IsSymbolFont();
+    virtual bool IsSymbolFont();
 
-    void FillLogFont(LOGFONTW *aLogFont, PRBool aItalic,
-                     PRUint16 aWeight, gfxFloat aSize, PRBool aUseCleartype);
+    void FillLogFont(LOGFONTW *aLogFont, bool aItalic,
+                     PRUint16 aWeight, gfxFloat aSize, bool aUseCleartype);
 
     static gfxWindowsFontType DetermineFontType(const NEWTEXTMETRICW& metrics, 
                                                 DWORD fontType)
@@ -171,19 +171,19 @@ public:
         return feType;
     }
 
-    PRBool IsType1() const {
+    bool IsType1() const {
         return (mFontType == GFX_FONT_TYPE_TYPE1);
     }
 
-    PRBool IsTrueType() const {
+    bool IsTrueType() const {
         return (mFontType == GFX_FONT_TYPE_TRUETYPE ||
                 mFontType == GFX_FONT_TYPE_PS_OPENTYPE ||
                 mFontType == GFX_FONT_TYPE_TT_OPENTYPE);
     }
 
-    virtual PRBool MatchesGenericFamily(const nsACString& aGeneric) const {
+    virtual bool MatchesGenericFamily(const nsACString& aGeneric) const {
         if (aGeneric.IsEmpty()) {
-            return PR_TRUE;
+            return true;
         }
 
         // Japanese 'Mincho' fonts do not belong to FF_MODERN even if
@@ -201,7 +201,7 @@ public:
         // All other fonts will be grouped correctly using family...
         switch (mWindowsFamily) {
         case FF_DONTCARE:
-            return PR_FALSE;
+            return false;
         case FF_ROMAN:
             return aGeneric.EqualsLiteral("serif");
         case FF_SWISS:
@@ -214,12 +214,12 @@ public:
             return aGeneric.EqualsLiteral("fantasy");
         }
 
-        return PR_FALSE;
+        return false;
     }
 
-    virtual PRBool SupportsLangGroup(nsIAtom* aLangGroup) const {
+    virtual bool SupportsLangGroup(nsIAtom* aLangGroup) const {
         if (!aLangGroup || aLangGroup == gfxAtoms::x_unicode) {
-            return PR_TRUE;
+            return true;
         }
 
         PRInt16 bit = -1;
@@ -261,23 +261,23 @@ public:
             return mCharset.test(bit);
         }
 
-        return PR_FALSE;
+        return false;
     }
 
-    virtual PRBool SupportsRange(PRUint8 range) {
+    virtual bool SupportsRange(PRUint8 range) {
         return mUnicodeRanges.test(range);
     }
 
-    virtual PRBool SkipDuringSystemFallback() { 
+    virtual bool SkipDuringSystemFallback() { 
         return !HasCmapTable(); // explicitly skip non-SFNT fonts
     }
 
-    virtual PRBool TestCharacterMap(PRUint32 aCh);
+    virtual bool TestCharacterMap(PRUint32 aCh);
 
     // create a font entry for a font with a given name
     static GDIFontEntry* CreateFontEntry(const nsAString& aName,
                                          gfxWindowsFontType aFontType,
-                                         PRBool aItalic,
+                                         bool aItalic,
                                          PRUint16 aWeight, PRInt16 aStretch,
                                          gfxUserFontData* aUserFontData);
 
@@ -289,8 +289,8 @@ public:
     PRUint8 mWindowsPitch;
 
     gfxWindowsFontType mFontType;
-    PRPackedBool mForceGDI    : 1;
-    PRPackedBool mUnknownCMAP : 1;
+    bool mForceGDI    : 1;
+    bool mUnknownCMAP : 1;
 
     gfxSparseBitSet mCharset;
     gfxSparseBitSet mUnicodeRanges;
@@ -299,12 +299,12 @@ protected:
     friend class gfxWindowsFont;
 
     GDIFontEntry(const nsAString& aFaceName, gfxWindowsFontType aFontType,
-                 PRBool aItalic, PRUint16 aWeight, PRInt16 aStretch,
+                 bool aItalic, PRUint16 aWeight, PRInt16 aStretch,
                  gfxUserFontData *aUserFontData);
 
     void InitLogFont(const nsAString& aName, gfxWindowsFontType aFontType);
 
-    virtual gfxFont *CreateFontInstance(const gfxFontStyle *aFontStyle, PRBool aNeedsBold);
+    virtual gfxFont *CreateFontInstance(const gfxFontStyle *aFontStyle, bool aNeedsBold);
 
     virtual nsresult GetFontTable(PRUint32 aTableTag,
                                   FallibleTArray<PRUint8>& aBuffer);
@@ -336,7 +336,7 @@ public:
     // initialize font lists
     virtual nsresult InitFontList();
 
-    virtual gfxFontEntry* GetDefaultFont(const gfxFontStyle* aStyle, PRBool& aNeedsBold);
+    virtual gfxFontEntry* GetDefaultFont(const gfxFontStyle* aStyle, bool& aNeedsBold);
 
     virtual gfxFontEntry* LookupLocalFont(const gfxProxyFontEntry *aProxyEntry,
                                           const nsAString& aFontName);
@@ -344,7 +344,7 @@ public:
     virtual gfxFontEntry* MakePlatformFont(const gfxProxyFontEntry *aProxyEntry,
                                            const PRUint8 *aFontData, PRUint32 aLength);
 
-    virtual PRBool ResolveFontName(const nsAString& aFontName,
+    virtual bool ResolveFontName(const nsAString& aFontName,
                                    nsAString& aResolvedFontName);
 
 private:

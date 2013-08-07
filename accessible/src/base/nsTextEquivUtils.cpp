@@ -120,7 +120,7 @@ nsTextEquivUtils::AppendTextEquivFromContent(nsAccessible *aInitiatorAcc,
 
   nsCOMPtr<nsIWeakReference> shell = nsCoreUtils::GetWeakShellFor(aContent);
   if (!shell) {
-    NS_ASSERTION(PR_TRUE, "There is no presshell!");
+    NS_ASSERTION(true, "There is no presshell!");
     gInitiatorAcc = nsnull;
     return NS_ERROR_UNEXPECTED;
   }
@@ -129,17 +129,17 @@ nsTextEquivUtils::AppendTextEquivFromContent(nsAccessible *aInitiatorAcc,
   // through the DOM subtree otherwise go down through accessible subtree and
   // calculate the flat string.
   nsIFrame *frame = aContent->GetPrimaryFrame();
-  PRBool isVisible = frame && frame->GetStyleVisibility()->IsVisible();
+  bool isVisible = frame && frame->GetStyleVisibility()->IsVisible();
 
   nsresult rv = NS_ERROR_FAILURE;
-  PRBool goThroughDOMSubtree = PR_TRUE;
+  bool goThroughDOMSubtree = true;
 
   if (isVisible) {
     nsAccessible *accessible =
       GetAccService()->GetAccessibleInWeakShell(aContent, shell);
     if (accessible) {
       rv = AppendFromAccessible(accessible, aString);
-      goThroughDOMSubtree = PR_FALSE;
+      goThroughDOMSubtree = false;
     }
   }
 
@@ -155,7 +155,7 @@ nsTextEquivUtils::AppendTextEquivFromTextContent(nsIContent *aContent,
                                                  nsAString *aString)
 {
   if (aContent->IsNodeOfType(nsINode::eTEXT)) {
-    PRBool isHTMLBlock = PR_FALSE;
+    bool isHTMLBlock = false;
 
     nsIContent *parentContent = aContent->GetParent();
     if (parentContent) {
@@ -167,7 +167,7 @@ nsTextEquivUtils::AppendTextEquivFromTextContent(nsIContent *aContent,
         const nsStyleDisplay* display = frame->GetStyleDisplay();
         if (display->IsBlockOutside() ||
             display->mDisplay == NS_STYLE_DISPLAY_TABLE_CELL) {
-          isHTMLBlock = PR_TRUE;
+          isHTMLBlock = true;
           if (!aString->IsEmpty()) {
             aString->Append(PRUnichar(' '));
           }
@@ -238,7 +238,7 @@ nsTextEquivUtils::AppendFromAccessible(nsAccessible *aAccessible,
   nsresult rv = aAccessible->GetName(text);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  PRBool isEmptyTextEquiv = PR_TRUE;
+  bool isEmptyTextEquiv = true;
 
   // If the name is from tooltip then append it to result string in the end
   // (see h. step of name computation guide).
@@ -250,7 +250,7 @@ nsTextEquivUtils::AppendFromAccessible(nsAccessible *aAccessible,
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (rv != NS_OK_NO_NAME_CLAUSE_HANDLED)
-    isEmptyTextEquiv = PR_FALSE;
+    isEmptyTextEquiv = false;
 
   // Implementation of g) step of text equivalent computation guide. Go down
   // into subtree if accessible allows "text equivalent from subtree rule" or
@@ -262,7 +262,7 @@ nsTextEquivUtils::AppendFromAccessible(nsAccessible *aAccessible,
       NS_ENSURE_SUCCESS(rv, rv);
 
       if (rv != NS_OK_NO_NAME_CLAUSE_HANDLED)
-        isEmptyTextEquiv = PR_FALSE;
+        isEmptyTextEquiv = false;
     }
   }
 
@@ -303,16 +303,14 @@ nsTextEquivUtils::AppendFromValue(nsAccessible *aAccessible,
 
   nsIContent *content = aAccessible->GetContent();
 
-  nsCOMPtr<nsIContent> parent = content->GetParent();
-  PRInt32 indexOf = parent->IndexOf(content);
-
-  for (PRInt32 i = indexOf - 1; i >= 0; i--) {
+  for (nsIContent* childContent = content->GetPreviousSibling(); childContent;
+       childContent = childContent->GetPreviousSibling()) {
     // check for preceding text...
-    if (!parent->GetChildAt(i)->TextIsOnlyWhitespace()) {
-      PRUint32 childCount = parent->GetChildCount();
-      for (PRUint32 j = indexOf + 1; j < childCount; j++) {
+    if (!childContent->TextIsOnlyWhitespace()) {
+      for (nsIContent* siblingContent = content->GetNextSibling(); siblingContent;
+           siblingContent = siblingContent->GetNextSibling()) {
         // .. and subsequent text
-        if (!parent->GetChildAt(j)->TextIsOnlyWhitespace()) {
+        if (!siblingContent->TextIsOnlyWhitespace()) {
           nsresult rv = aAccessible->GetValue(text);
           NS_ENSURE_SUCCESS(rv, rv);
 
@@ -332,10 +330,8 @@ nsresult
 nsTextEquivUtils::AppendFromDOMChildren(nsIContent *aContent,
                                         nsAString *aString)
 {
-  PRUint32 childCount = aContent->GetChildCount();
-  for (PRUint32 childIdx = 0; childIdx < childCount; childIdx++) {
-    nsCOMPtr<nsIContent> childContent = aContent->GetChildAt(childIdx);
-
+  for (nsIContent* childContent = aContent->GetFirstChild(); childContent;
+       childContent = childContent->GetNextSibling()) {
     nsresult rv = AppendFromDOMNode(childContent, aString);
     NS_ENSURE_SUCCESS(rv, rv);
   }
@@ -376,22 +372,22 @@ nsTextEquivUtils::AppendFromDOMNode(nsIContent *aContent, nsAString *aString)
   return AppendFromDOMChildren(aContent, aString);
 }
 
-PRBool
+bool
 nsTextEquivUtils::AppendString(nsAString *aString,
                                const nsAString& aTextEquivalent)
 {
   // Insert spaces to insure that words from controls aren't jammed together.
   if (aTextEquivalent.IsEmpty())
-    return PR_FALSE;
+    return false;
 
   if (!aString->IsEmpty())
     aString->Append(PRUnichar(' '));
 
   aString->Append(aTextEquivalent);
-  return PR_TRUE;
+  return true;
 }
 
-PRBool
+bool
 nsTextEquivUtils::IsWhitespaceString(const nsSubstring& aString)
 {
   nsSubstring::const_char_iterator iterBegin, iterEnd;
@@ -405,7 +401,7 @@ nsTextEquivUtils::IsWhitespaceString(const nsSubstring& aString)
   return iterBegin == iterEnd;
 }
 
-PRBool
+bool
 nsTextEquivUtils::IsWhitespace(PRUnichar aChar)
 {
   return aChar == ' ' || aChar == '\n' ||

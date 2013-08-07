@@ -57,8 +57,12 @@ public:
   NS_DECL_NSITHREADINTERNAL
   NS_DECL_NSISUPPORTSPRIORITY
 
-  nsThread();
-  nsThread(PRUint32 aStackSize);
+  enum MainThreadFlag {
+    MAIN_THREAD,
+    NOT_MAIN_THREAD
+  };
+
+  nsThread(MainThreadFlag aMainThread, PRUint32 aStackSize);
 
   // Initialize this as a wrapper for a new PRThread.
   nsresult Init();
@@ -71,7 +75,7 @@ public:
 
   // If this flag is true, then the nsThread was created using
   // nsIThreadManager::NewThread.
-  PRBool ShutdownRequired() { return mShutdownRequired; }
+  bool ShutdownRequired() { return mShutdownRequired; }
 
   // The global thread observer
   static nsIThreadObserver* sGlobalObserver;
@@ -81,7 +85,7 @@ private:
 
   ~nsThread();
 
-  PRBool ShuttingDown() { return mShutdownContext != nsnull; }
+  bool ShuttingDown() { return mShutdownContext != nsnull; }
 
   static void ThreadFunc(void *arg);
 
@@ -93,7 +97,7 @@ private:
   }
 
   // Wrappers for event queue methods:
-  PRBool GetEvent(PRBool mayWait, nsIRunnable **event) {
+  bool GetEvent(bool mayWait, nsIRunnable **event) {
     return mEvents->GetEvent(mayWait, event);
   }
   nsresult PutEvent(nsIRunnable *event);
@@ -105,13 +109,13 @@ private:
       : mNext(nsnull), mFilter(filter) {
     }
 
-    PRBool GetEvent(PRBool mayWait, nsIRunnable **event) {
+    bool GetEvent(bool mayWait, nsIRunnable **event) {
       return mQueue.GetEvent(mayWait, event);
     }
 
-    PRBool PutEvent(nsIRunnable *event);
+    bool PutEvent(nsIRunnable *event);
     
-    PRBool HasPendingEvent() {
+    bool HasPendingEvent() {
       return mQueue.HasPendingEvent();
     }
 
@@ -143,10 +147,11 @@ private:
 
   struct nsThreadShutdownContext *mShutdownContext;
 
-  PRPackedBool mShutdownRequired;
-  PRPackedBool mShutdownPending;
+  bool mShutdownRequired;
+  bool mShutdownPending;
   // Set to true when events posted to this thread will never run.
-  PRPackedBool mEventsAreDoomed;
+  bool mEventsAreDoomed;
+  MainThreadFlag mIsMainThread;
 };
 
 //-----------------------------------------------------------------------------
@@ -157,7 +162,7 @@ public:
     : mOrigin(origin), mSyncTask(task), mResult(NS_ERROR_NOT_INITIALIZED) {
   }
 
-  PRBool IsPending() {
+  bool IsPending() {
     return mSyncTask != nsnull;
   }
 
@@ -172,5 +177,17 @@ private:
   nsCOMPtr<nsIRunnable> mSyncTask;
   nsresult mResult;
 };
+
+namespace mozilla {
+
+/**
+ * This function causes the main thread to fire a memory pressure event at its
+ * next available opportunity.
+ *
+ * You may call this function from any thread.
+ */
+void ScheduleMemoryPressureEvent();
+
+} // namespace mozilla
 
 #endif  // nsThread_h__

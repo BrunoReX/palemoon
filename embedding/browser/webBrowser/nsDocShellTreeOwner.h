@@ -193,8 +193,7 @@ private:
 
     // various delays for tooltips
   enum {
-    kTooltipAutoHideTime = 5000,       // 5000ms = 5 seconds
-    kTooltipShowTime = 500             // 500ms = 0.5 seconds
+    kTooltipAutoHideTime = 5000        // 5000ms = 5 seconds
   };
 
   NS_IMETHOD AddTooltipListener();
@@ -213,13 +212,13 @@ private:
     // to tell it, and no one would ever tell us of that fact.
   nsCOMPtr<nsIWebBrowserChrome> mWebBrowserChrome;
 
-  PRPackedBool mTooltipListenerInstalled;
+  bool mTooltipListenerInstalled;
 
   nsCOMPtr<nsITimer> mTooltipTimer;
   static void sTooltipCallback ( nsITimer* aTimer, void* aListener ) ;
   PRInt32 mMouseClientX, mMouseClientY;       // mouse coordinates for last mousemove event we saw
   PRInt32 mMouseScreenX, mMouseScreenY;       // mouse coordinates for tooltip event
-  PRBool mShowingTooltip;
+  bool mShowingTooltip;
 
     // a timer for auto-hiding the tooltip after a certain delay
   nsCOMPtr<nsITimer> mAutoHideTimer;
@@ -267,7 +266,7 @@ private:
   NS_IMETHOD AddContextMenuListener();
   NS_IMETHOD RemoveContextMenuListener();
 
-  PRPackedBool mContextMenuListenerInstalled;
+  bool mContextMenuListenerInstalled;
 
   nsWebBrowser* mWebBrowser;
   nsCOMPtr<nsIDOMEventTarget> mEventTarget;

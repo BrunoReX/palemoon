@@ -108,14 +108,14 @@ public:
    * (i.e. there are no other scripts pending) then ScriptAvailable
    * and ScriptEvaluated will be called before the function returns.
    *
-   * If NS_ERROR_HTMLPARSER_BLOCK is returned the script could not be
-   * executed immediately. In this case ScriptAvailable is guaranteed
-   * to be called at a later point (as well as possibly ScriptEvaluated).
+   * If true is returned the script could not be executed immediately.
+   * In this case ScriptAvailable is guaranteed to be called at a later
+   * point (as well as possibly ScriptEvaluated).
    *
    * @param aElement The element representing the script to be loaded and
    *        evaluated.
    */
-  nsresult ProcessScriptElement(nsIScriptElement* aElement);
+  bool ProcessScriptElement(nsIScriptElement* aElement);
 
   /**
    * Gets the currently executing script. This is useful if you want to
@@ -134,15 +134,14 @@ public:
   /**
    * Whether the loader is enabled or not.
    * When disabled, processing of new script elements is disabled. 
-   * Any call to ProcessScriptElement() will fail with a return code of
-   * NS_ERROR_NOT_AVAILABLE. Note that this DOES NOT disable
-   * currently loading or executing scripts.
+   * Any call to ProcessScriptElement() will return false. Note that
+   * this DOES NOT disable currently loading or executing scripts.
    */
-  PRBool GetEnabled()
+  bool GetEnabled()
   {
     return mEnabled;
   }
-  void SetEnabled(PRBool aEnabled)
+  void SetEnabled(bool aEnabled)
   {
     if (!mEnabled && aEnabled) {
       ProcessPendingRequestsAsync();
@@ -178,7 +177,7 @@ public:
    */
   static nsresult ConvertToUTF16(nsIChannel* aChannel, const PRUint8* aData,
                                  PRUint32 aLength,
-                                 const nsString& aHintCharset,
+                                 const nsAString& aHintCharset,
                                  nsIDocument* aDocument, nsString& aString);
 
   /**
@@ -199,7 +198,7 @@ public:
    * Check whether it's OK to execute a script loaded via aChannel in
    * aDocument.
    */
-  static PRBool ShouldExecuteScript(nsIDocument* aDocument,
+  static bool ShouldExecuteScript(nsIDocument* aDocument,
                                     nsIChannel* aChannel);
 
   /**
@@ -208,7 +207,7 @@ public:
    */
   void BeginDeferringScripts()
   {
-    mDeferEnabled = PR_TRUE;
+    mDeferEnabled = true;
     if (mDocument) {
       mDocument->BlockOnload();
     }
@@ -223,7 +222,7 @@ public:
    * WARNING: This function will synchronously execute content scripts, so be
    * prepared that the world might change around you.
    */
-  void ParsingComplete(PRBool aTerminated);
+  void ParsingComplete(bool aTerminated);
 
   /**
    * Returns the number of pending scripts, deferred or not.
@@ -272,17 +271,17 @@ private:
    * function will add an execute blocker and ask the ancestor to remove it
    * once it becomes ready.
    */
-  PRBool ReadyToExecuteScripts();
+  bool ReadyToExecuteScripts();
 
   /**
    * Return whether just this loader is ready to execute scripts.
    */
-  PRBool SelfReadyToExecuteScripts()
+  bool SelfReadyToExecuteScripts()
   {
     return mEnabled && !mBlockerCount;
   }
 
-  PRBool AddPendingChildLoader(nsScriptLoader* aChild) {
+  bool AddPendingChildLoader(nsScriptLoader* aChild) {
     return mPendingChildLoaders.AppendElement(aChild) != nsnull;
   }
   
@@ -315,14 +314,14 @@ private:
   };
 
   struct PreloadRequestComparator {
-    PRBool Equals(const PreloadInfo &aPi, nsScriptLoadRequest * const &aRequest)
+    bool Equals(const PreloadInfo &aPi, nsScriptLoadRequest * const &aRequest)
         const
     {
       return aRequest == aPi.mRequest;
     }
   };
   struct PreloadURIComparator {
-    PRBool Equals(const PreloadInfo &aPi, nsIURI * const &aURI) const;
+    bool Equals(const PreloadInfo &aPi, nsIURI * const &aURI) const;
   };
   nsTArray<PreloadInfo> mPreloads;
 
@@ -331,9 +330,9 @@ private:
   // XXXbz do we want to cycle-collect these or something?  Not sure.
   nsTArray< nsRefPtr<nsScriptLoader> > mPendingChildLoaders;
   PRUint32 mBlockerCount;
-  PRPackedBool mEnabled;
-  PRPackedBool mDeferEnabled;
-  PRPackedBool mDocumentParsingDone;
+  bool mEnabled;
+  bool mDeferEnabled;
+  bool mDocumentParsingDone;
 };
 
 class nsAutoScriptLoaderDisabler
@@ -344,18 +343,18 @@ public:
     mLoader = aDoc->ScriptLoader();
     mWasEnabled = mLoader->GetEnabled();
     if (mWasEnabled) {
-      mLoader->SetEnabled(PR_FALSE);
+      mLoader->SetEnabled(false);
     }
   }
   
   ~nsAutoScriptLoaderDisabler()
   {
     if (mWasEnabled) {
-      mLoader->SetEnabled(PR_TRUE);
+      mLoader->SetEnabled(true);
     }
   }
   
-  PRBool mWasEnabled;
+  bool mWasEnabled;
   nsRefPtr<nsScriptLoader> mLoader;
 };
 

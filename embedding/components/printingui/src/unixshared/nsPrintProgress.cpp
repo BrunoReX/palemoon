@@ -58,8 +58,8 @@ NS_INTERFACE_MAP_END_THREADSAFE
 
 nsPrintProgress::nsPrintProgress(nsIPrintSettings* aPrintSettings)
 {
-  m_closeProgress = PR_FALSE;
-  m_processCanceled = PR_FALSE;
+  m_closeProgress = false;
+  m_processCanceled = false;
   m_pendingStateFlags = -1;
   m_pendingStateValue = 0;
   m_PrintSetting = aPrintSettings;
@@ -75,9 +75,9 @@ NS_IMETHODIMP nsPrintProgress::OpenProgressDialog(nsIDOMWindow *parent,
                                                   const char *dialogURL,
                                                   nsISupports *parameters, 
                                                   nsIObserver *openDialogObserver,
-                                                  PRBool *notifyOnOpen)
+                                                  bool *notifyOnOpen)
 {
-  *notifyOnOpen = PR_TRUE;
+  *notifyOnOpen = true;
   m_observer = openDialogObserver;
   nsresult rv = NS_ERROR_FAILURE;
   
@@ -117,9 +117,9 @@ NS_IMETHODIMP nsPrintProgress::OpenProgressDialog(nsIDOMWindow *parent,
 }
 
 /* void closeProgressDialog (in boolean forceClose); */
-NS_IMETHODIMP nsPrintProgress::CloseProgressDialog(PRBool forceClose)
+NS_IMETHODIMP nsPrintProgress::CloseProgressDialog(bool forceClose)
 {
-  m_closeProgress = PR_TRUE;
+  m_closeProgress = true;
   return OnStateChange(nsnull, nsnull, nsIWebProgressListener::STATE_STOP, forceClose);
 }
 
@@ -136,18 +136,18 @@ NS_IMETHODIMP nsPrintProgress::GetPrompter(nsIPrompt **_retval)
 }
 
 /* attribute boolean processCanceledByUser; */
-NS_IMETHODIMP nsPrintProgress::GetProcessCanceledByUser(PRBool *aProcessCanceledByUser)
+NS_IMETHODIMP nsPrintProgress::GetProcessCanceledByUser(bool *aProcessCanceledByUser)
 {
   NS_ENSURE_ARG_POINTER(aProcessCanceledByUser);
   *aProcessCanceledByUser = m_processCanceled;
   return NS_OK;
 }
-NS_IMETHODIMP nsPrintProgress::SetProcessCanceledByUser(PRBool aProcessCanceledByUser)
+NS_IMETHODIMP nsPrintProgress::SetProcessCanceledByUser(bool aProcessCanceledByUser)
 {
   if(m_PrintSetting)
-    m_PrintSetting->SetIsCancelled(PR_TRUE);
+    m_PrintSetting->SetIsCancelled(true);
   m_processCanceled = aProcessCanceledByUser;
-  OnStateChange(nsnull, nsnull, nsIWebProgressListener::STATE_STOP, PR_FALSE);
+  OnStateChange(nsnull, nsnull, nsIWebProgressListener::STATE_STOP, false);
   return NS_OK;
 }
 
@@ -257,8 +257,8 @@ NS_IMETHODIMP nsPrintProgress::OnProgressChange(nsIWebProgress *aWebProgress, ns
   return rv;
 }
 
-/* void onLocationChange (in nsIWebProgress aWebProgress, in nsIRequest aRequest, in nsIURI location); */
-NS_IMETHODIMP nsPrintProgress::OnLocationChange(nsIWebProgress *aWebProgress, nsIRequest *aRequest, nsIURI *location)
+/* void onLocationChange (in nsIWebProgress aWebProgress, in nsIRequest aRequest, in nsIURI location, in unsigned long aFlags); */
+NS_IMETHODIMP nsPrintProgress::OnLocationChange(nsIWebProgress *aWebProgress, nsIRequest *aRequest, nsIURI *location, PRUint32 aFlags)
 {
     return NS_ERROR_NOT_IMPLEMENTED;
 }

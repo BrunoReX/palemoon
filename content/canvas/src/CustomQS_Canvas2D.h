@@ -78,7 +78,7 @@ Canvas2D_SetStyleHelper(JSContext *cx, JSObject *obj, jsid id, jsval *vp,
         }
 
         nsString voidStr;
-        voidStr.SetIsVoid(PR_TRUE);
+        voidStr.SetIsVoid(true);
 
         rv = (self->*setfunc)(voidStr, arg0);
     }
@@ -173,7 +173,7 @@ CreateImageData(JSContext* cx,
     if (h == 0)
         h = 1;
 
-    CheckedInt<uint32> len = CheckedInt<uint32>(w) * h * 4;
+    CheckedInt<uint32_t> len = CheckedInt<uint32_t>(w) * h * 4;
     if (!len.valid()) {
         return xpc_qsThrow(cx, NS_ERROR_DOM_INDEX_SIZE_ERR);
     }
@@ -221,10 +221,10 @@ CreateImageData(JSContext* cx,
 }
 
 static bool
-GetImageDataDimensions(JSContext *cx, JSObject *dataObject, uint32 *width, uint32 *height)
+GetImageDataDimensions(JSContext *cx, JSObject *dataObject, uint32_t *width, uint32_t *height)
 {
     jsval temp;
-    int32 wi, hi;
+    int32_t wi, hi;
     
     // Need to check that dataObject is ImageData object. That's hard for the moment 
     // because they're just vanilla objects in our implementation.
@@ -241,8 +241,8 @@ GetImageDataDimensions(JSContext *cx, JSObject *dataObject, uint32 *width, uint3
     if (wi <= 0 || hi <= 0)
         return xpc_qsThrow(cx, NS_ERROR_DOM_INDEX_SIZE_ERR);
 
-    *width = (uint32)wi;
-    *height = (uint32)hi;
+    *width = uint32_t(wi);
+    *height = uint32_t(hi);
     return true;
 }
 
@@ -266,7 +266,7 @@ nsIDOMCanvasRenderingContext2D_CreateImageData(JSContext *cx, uintN argc, jsval 
 
         JSObject *dataObject = JSVAL_TO_OBJECT(argv[0]);
 
-        uint32 data_width, data_height;
+        uint32_t data_width, data_height;
         if (!GetImageDataDimensions(cx, dataObject, &data_width, &data_height))
             return false;
 
@@ -375,35 +375,54 @@ nsIDOMCanvasRenderingContext2D_PutImageData(JSContext *cx, uintN argc, jsval *vp
         return xpc_qsThrow(cx, NS_ERROR_DOM_TYPE_MISMATCH_ERR);
 
     JSObject *dataObject = JSVAL_TO_OBJECT(argv[0]);
-    int32 x, y;
-    if (!JS_ValueToECMAInt32(cx, argv[1], &x) ||
-        !JS_ValueToECMAInt32(cx, argv[2], &y))
-        return JS_FALSE;
 
-    uint32 w, h;
-    JSObject *darray;
+    double xd, yd;
+    if (!JS_ValueToNumber(cx, argv[1], &xd) ||
+        !JS_ValueToNumber(cx, argv[2], &yd)) {
+        return false;
+    }
 
-    // grab width, height, and the dense array from the dataObject
+    if (!NS_finite(xd) || !NS_finite(yd)) {
+        return xpc_qsThrow(cx, NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+    }
+
+    int32 x = JS_DoubleToInt32(xd);
+    int32 y = JS_DoubleToInt32(yd);
+
+    // Grab width, height, and the dense array from the dataObject.
     js::AutoValueRooter tv(cx);
 
+    uint32_t w, h;
     if (!GetImageDataDimensions(cx, dataObject, &w, &h))
         return JS_FALSE;
 
     // the optional dirty rect
-    PRBool hasDirtyRect = PR_FALSE;
+    bool hasDirtyRect = false;
     int32 dirtyX = 0,
           dirtyY = 0,
           dirtyWidth = w,
           dirtyHeight = h;
 
     if (argc >= 7) {
-        if (!JS_ValueToECMAInt32(cx, argv[3], &dirtyX) ||
-            !JS_ValueToECMAInt32(cx, argv[4], &dirtyY) ||
-            !JS_ValueToECMAInt32(cx, argv[5], &dirtyWidth) ||
-            !JS_ValueToECMAInt32(cx, argv[6], &dirtyHeight))
-            return JS_FALSE;
+        double dx, dy, dw, dh;
+        if (!JS_ValueToNumber(cx, argv[3], &dx) ||
+            !JS_ValueToNumber(cx, argv[4], &dy) ||
+            !JS_ValueToNumber(cx, argv[5], &dw) ||
+            !JS_ValueToNumber(cx, argv[6], &dh)) {
+            return false;
+        }
 
-        hasDirtyRect = PR_TRUE;
+        if (!NS_finite(dx) || !NS_finite(dy) ||
+            !NS_finite(dw) || !NS_finite(dh)) {
+            return xpc_qsThrow(cx, NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+        }
+
+        dirtyX = JS_DoubleToInt32(dx);
+        dirtyY = JS_DoubleToInt32(dy);
+        dirtyWidth = JS_DoubleToInt32(dw);
+        dirtyHeight = JS_DoubleToInt32(dh);
+
+        hasDirtyRect = true;
     }
 
     if (!JS_GetProperty(cx, dataObject, "data", tv.jsval_addr()))
@@ -412,13 +431,13 @@ nsIDOMCanvasRenderingContext2D_PutImageData(JSContext *cx, uintN argc, jsval *vp
     if (JSVAL_IS_PRIMITIVE(tv.jsval_value()))
         return xpc_qsThrow(cx, NS_ERROR_DOM_TYPE_MISMATCH_ERR);
 
-    darray = JSVAL_TO_OBJECT(tv.jsval_value());
+    JSObject *darray = JSVAL_TO_OBJECT(tv.jsval_value());
 
     js::AutoValueRooter tsrc_tvr(cx);
 
     JSObject *tsrc = NULL;
-    if (darray->getClass() == &js::TypedArray::fastClasses[js::TypedArray::TYPE_UINT8] ||
-        darray->getClass() == &js::TypedArray::fastClasses[js::TypedArray::TYPE_UINT8_CLAMPED])
+    if (js::GetObjectClass(darray) == &js::TypedArray::fastClasses[js::TypedArray::TYPE_UINT8] ||
+        js::GetObjectClass(darray) == &js::TypedArray::fastClasses[js::TypedArray::TYPE_UINT8_CLAMPED])
     {
         tsrc = js::TypedArray::getTypedArray(darray);
     } else if (JS_IsArrayObject(cx, darray) || js_IsTypedArray(darray)) {
@@ -435,7 +454,7 @@ nsIDOMCanvasRenderingContext2D_PutImageData(JSContext *cx, uintN argc, jsval *vp
     }
 
     // make the call
-    rv = self->PutImageData_explicit(x, y, w, h, (PRUint8*) JS_GetTypedArrayData(tsrc), JS_GetTypedArrayByteLength(tsrc), hasDirtyRect, dirtyX, dirtyY, dirtyWidth, dirtyHeight);
+    rv = self->PutImageData_explicit(x, y, w, h, static_cast<PRUint8*>(JS_GetTypedArrayData(tsrc)), JS_GetTypedArrayByteLength(tsrc), hasDirtyRect, dirtyX, dirtyY, dirtyWidth, dirtyHeight);
     if (NS_FAILED(rv))
         return xpc_qsThrowMethodFailed(cx, rv, vp);
 

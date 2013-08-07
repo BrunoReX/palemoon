@@ -103,7 +103,7 @@ AccEvent::GetDocAccessible()
 {
   nsINode *node = GetNode();
   if (node)
-    return GetAccService()->GetDocAccessible(node->GetOwnerDoc());
+    return GetAccService()->GetDocAccessible(node->OwnerDoc());
 
   return nsnull;
 }
@@ -161,7 +161,7 @@ AccEvent::CaptureIsFromUserInput(EIsFromUserInput aIsFromUserInput)
 #endif
 
   if (aIsFromUserInput != eAutoDetect) {
-    mIsFromUserInput = aIsFromUserInput == eFromUserInput ? PR_TRUE : PR_FALSE;
+    mIsFromUserInput = aIsFromUserInput == eFromUserInput ? true : false;
     return;
   }
 
@@ -193,7 +193,7 @@ AccEvent::CaptureIsFromUserInput(EIsFromUserInput aIsFromUserInput)
 // decide how to coalesce events created via accessible (instead of node).
 AccStateChangeEvent::
   AccStateChangeEvent(nsAccessible* aAccessible, PRUint64 aState,
-                      PRBool aIsEnabled, EIsFromUserInput aIsFromUserInput):
+                      bool aIsEnabled, EIsFromUserInput aIsFromUserInput):
   AccEvent(nsIAccessibleEvent::EVENT_STATE_CHANGE, aAccessible,
            aIsFromUserInput, eAllowDupes),
   mState(aState), mIsEnabled(aIsEnabled)
@@ -201,7 +201,7 @@ AccStateChangeEvent::
 }
 
 AccStateChangeEvent::
-  AccStateChangeEvent(nsINode* aNode, PRUint64 aState, PRBool aIsEnabled):
+  AccStateChangeEvent(nsINode* aNode, PRUint64 aState, bool aIsEnabled):
   AccEvent(::nsIAccessibleEvent::EVENT_STATE_CHANGE, aNode,
            eAutoDetect, eAllowDupes),
   mState(aState), mIsEnabled(aIsEnabled)
@@ -244,7 +244,7 @@ AccStateChangeEvent::CreateXPCOMObject()
 // XXX revisit this when coalescence is faster (eCoalesceFromSameSubtree)
 AccTextChangeEvent::
   AccTextChangeEvent(nsAccessible* aAccessible, PRInt32 aStart,
-                     const nsAString& aModifiedText, PRBool aIsInserted,
+                     const nsAString& aModifiedText, bool aIsInserted,
                      EIsFromUserInput aIsFromUserInput)
   : AccEvent(aIsInserted ?
              static_cast<PRUint32>(nsIAccessibleEvent::EVENT_TEXT_INSERTED) :
@@ -327,6 +327,28 @@ AccCaretMoveEvent::CreateXPCOMObject()
   nsAccEvent* event = new nsAccCaretMoveEvent(this);
   NS_IF_ADDREF(event);
   return event;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// AccSelChangeEvent
+////////////////////////////////////////////////////////////////////////////////
+
+AccSelChangeEvent::
+  AccSelChangeEvent(nsAccessible* aWidget, nsAccessible* aItem,
+                    SelChangeType aSelChangeType) :
+    AccEvent(0, aItem, eAutoDetect, eCoalesceSelectionChange),
+    mWidget(aWidget), mItem(aItem), mSelChangeType(aSelChangeType),
+    mPreceedingCount(0), mPackedEvent(nsnull)
+{
+  if (aSelChangeType == eSelectionAdd) {
+    if (mWidget->GetSelectedItem(1))
+      mEventType = nsIAccessibleEvent::EVENT_SELECTION_ADD;
+    else
+      mEventType = nsIAccessibleEvent::EVENT_SELECTION;
+  } else {
+    mEventType = nsIAccessibleEvent::EVENT_SELECTION_REMOVE;
+  }
 }
 
 

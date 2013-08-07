@@ -1,7 +1,6 @@
+opensearch.ssl
 bing
-eBay
 google
 twitter
 wikipedia
 yahoo
-opensearch.ssl

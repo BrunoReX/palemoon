@@ -43,7 +43,7 @@
 
 #include <time.h>
 #include <windows.h>
-#include <pstore.h>
+#include <ole2.h>
 #include "nsIBrowserProfileMigrator.h"
 #include "nsIObserverService.h"
 #include "nsTArray.h"
@@ -61,6 +61,79 @@ struct SignonData {
   char*      realm;
 };
 
+// VC11 doesn't ship with pstore.h, so we go ahead and define the stuff that
+// we need from that file here.
+class IEnumPStoreItems : public IUnknown {
+public:
+  virtual HRESULT STDMETHODCALLTYPE Next(DWORD celt, LPWSTR* rgelt,
+                                         DWORD* pceltFetched) = 0;
+  virtual HRESULT STDMETHODCALLTYPE Skip(DWORD celt) = 0;
+  virtual HRESULT STDMETHODCALLTYPE Reset() = 0;
+  virtual HRESULT STDMETHODCALLTYPE Clone(IEnumPStoreItems** ppenum) = 0;
+};
+
+class IEnumPStoreTypes; // not used
+struct PST_PROVIDERINFO; // not used
+struct PST_TYPEINFO; // not used
+struct PST_PROMPTINFO; // not used
+struct PST_ACCESSRULESET; // not used
+typedef DWORD PST_KEY;
+typedef DWORD PST_ACCESSMODE;
+
+class IPStore : public IUnknown {
+public:
+  virtual HRESULT STDMETHODCALLTYPE GetInfo(PST_PROVIDERINFO** ppProperties) = 0;
+  virtual HRESULT STDMETHODCALLTYPE GetProvParam(DWORD dwParam, DWORD* pcbData,
+                                                 BYTE** ppbData, DWORD dwFlags) = 0;
+  virtual HRESULT STDMETHODCALLTYPE SetProvParam(DWORD dwParam, DWORD cbData,
+                                                 BYTE* pbData, DWORD dwFlags) = 0;
+  virtual HRESULT STDMETHODCALLTYPE CreateType(PST_KEY Key, const GUID* pType,
+                                               PST_TYPEINFO* pInfo, DWORD dwFlags) = 0;
+  virtual HRESULT STDMETHODCALLTYPE GetTypeInfo(PST_KEY Key, const GUID* pType,
+                                                PST_TYPEINFO** ppInfo, DWORD dwFlags) = 0;
+  virtual HRESULT STDMETHODCALLTYPE DeleteType(PST_KEY Key, const GUID* pType,
+                                               DWORD dwFlags) = 0;
+  virtual HRESULT STDMETHODCALLTYPE CreateSubtype(PST_KEY Key, const GUID* pType,
+                                                  const GUID* pSubtype, PST_TYPEINFO* pInfo,
+                                                  PST_ACCESSRULESET* pRules, DWORD dwFlags) = 0;
+  virtual HRESULT STDMETHODCALLTYPE GetSubtypeInfo(PST_KEY Key, const GUID* pType,
+                                                   const GUID* pSubtype, PST_TYPEINFO** ppInfo,
+                                                   DWORD dwFlags) = 0;
+  virtual HRESULT STDMETHODCALLTYPE DeleteSubtype(PST_KEY Key, const GUID* pType,
+                                                  const GUID* pSubtype, DWORD dwFlags) = 0;
+  virtual HRESULT STDMETHODCALLTYPE ReadAccessRuleset(PST_KEY Key, const GUID* pType,
+                                                      const GUID* pSubtype, PST_ACCESSRULESET** ppRules,
+                                                      DWORD dwFlags) = 0;
+  virtual HRESULT STDMETHODCALLTYPE WriteAccessRuleset(PST_KEY Key, const GUID* pType,
+                                                       const GUID* pSubtype, PST_ACCESSRULESET* pRules,
+                                                       DWORD dwFlags) = 0;
+  virtual HRESULT STDMETHODCALLTYPE EnumTypes(PST_KEY Key, DWORD dwFlags, IEnumPStoreTypes** ppenum) = 0;
+  virtual HRESULT STDMETHODCALLTYPE EnumSubtypes(PST_KEY Key, const GUID* pType,
+                                                 DWORD dwFlags, IEnumPStoreTypes** ppenum) = 0;
+  virtual HRESULT STDMETHODCALLTYPE DeleteItem(PST_KEY Key, const GUID* pItemType,
+                                               const GUID* pItemSubtype, LPCWSTR szItemName,
+                                               PST_PROMPTINFO* pPromptInfo, DWORD dwFlags) = 0;
+  virtual HRESULT STDMETHODCALLTYPE ReadItem(PST_KEY Key, const GUID* pItemType,
+                                             const GUID* pItemSubtype, LPCWSTR szItemName,
+                                             DWORD* pcbData, BYTE** ppbData,
+                                             PST_PROMPTINFO* pPromptInfo, DWORD dwFlags) = 0;
+  virtual HRESULT STDMETHODCALLTYPE WriteItem(PST_KEY Key, const GUID* pItemType,
+                                              const GUID* pItemSubtype, LPCWSTR szItemName,
+                                              DWORD cbData, BYTE* pbData,
+                                              PST_PROMPTINFO* pPromptInfo, DWORD dwFlags) = 0;
+  virtual HRESULT STDMETHODCALLTYPE OpenItem(PST_KEY Key, const GUID* pItemType,
+                                             const GUID* pItemSubtype, LPCWSTR szItemName,
+                                             PST_ACCESSMODE ModeFlags, PST_PROMPTINFO* pPromptInfo,
+                                             DWORD dwFlags) = 0;
+  virtual HRESULT STDMETHODCALLTYPE CloseItem(PST_KEY Key, const GUID* pItemType,
+                                              const GUID* pItemSubtype, LPCWSTR szItemName,
+                                              DWORD dwFlags) = 0;
+  virtual HRESULT STDMETHODCALLTYPE EnumItems(PST_KEY Key, const GUID* pItemType,
+                                              const GUID* pItemSubtype, DWORD dwFlags,
+                                              IEnumPStoreItems** ppenum) = 0;
+};
+
+
 class nsIEProfileMigrator : public nsIBrowserProfileMigrator,
                             public nsINavHistoryBatchCallback {
 public:
@@ -72,9 +145,9 @@ public:
   virtual ~nsIEProfileMigrator();
 
 protected:
-  nsresult CopyPreferences(PRBool aReplace);
-  nsresult CopyStyleSheet(PRBool aReplace);
-  nsresult CopyCookies(PRBool aReplace);
+  nsresult CopyPreferences(bool aReplace);
+  nsresult CopyStyleSheet(bool aReplace);
+  nsresult CopyCookies(bool aReplace);
   nsresult CopyProxyPreferences(nsIPrefBranch* aPrefs);
   nsresult CopySecurityPrefs(nsIPrefBranch* aPrefs);
   /**
@@ -85,19 +158,19 @@ protected:
    * @param aReplace
    *        Indicates if we should replace current history or append to it.
    */
-  nsresult CopyHistory(PRBool aReplace);
-  nsresult CopyHistoryBatched(PRBool aReplace);
+  nsresult CopyHistory(bool aReplace);
+  nsresult CopyHistoryBatched(bool aReplace);
 
-  PRBool   KeyIsURI(const nsAString& aKey, char** aRealm);
+  bool     KeyIsURI(const nsAString& aKey, char** aRealm);
 
-  nsresult CopyPasswords(PRBool aReplace);
+  nsresult CopyPasswords(bool aReplace);
   nsresult MigrateSiteAuthSignons(IPStore* aPStore);
   nsresult GetSignonsListFromPStore(IPStore* aPStore, nsTArray<SignonData>* aSignonsFound);
   nsresult ResolveAndMigrateSignons(IPStore* aPStore, nsTArray<SignonData>* aSignonsFound);
   void     EnumerateUsernames(const nsAString& aKey, PRUnichar* aData, unsigned long aCount, nsTArray<SignonData>* aSignonsFound);
   void     GetUserNameAndPass(unsigned char* data, unsigned long len, unsigned char** username, unsigned char** pass);
 
-  nsresult CopyFormData(PRBool aReplace);
+  nsresult CopyFormData(bool aReplace);
   nsresult AddDataToFormHistory(const nsAString& aKey, PRUnichar* data, unsigned long len);
   /**
    * Migrate bookmarks to Places.
@@ -108,14 +181,14 @@ protected:
    *        Indicates if we should replace current bookmarks or append to them.
    *        When appending we will usually default to bookmarks menu.
    */
-  nsresult CopyFavorites(PRBool aReplace);
-  nsresult CopyFavoritesBatched(PRBool aReplace);
+  nsresult CopyFavorites(bool aReplace);
+  nsresult CopyFavoritesBatched(bool aReplace);
   void     ResolveShortcut(const nsString &aFileName, char** aOutURL);
   nsresult ParseFavoritesFolder(nsIFile* aDirectory, 
                                 PRInt64 aParentFolder,
                                 nsINavBookmarksService* aBookmarksService,
                                 const nsAString& aPersonalToolbarFolderName,
-                                PRBool aIsAtRootLevel);
+                                bool aIsAtRootLevel);
   nsresult CopySmartKeywords(nsINavBookmarksService* aBMS,
                              PRInt64 aParentFolder);
 
@@ -125,7 +198,7 @@ protected:
   time_t   FileTimeToTimeT(const char *aLowDateIntString,
                            const char *aHighDateIntString);
   void     GetUserStyleSheetFile(nsIFile **aUserFile);
-  PRBool   TestForIE7();
+  bool     TestForIE7();
 
 private:
   nsCOMPtr<nsIObserverService> mObserverService;

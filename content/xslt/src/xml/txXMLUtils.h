@@ -75,7 +75,7 @@ public:
     }
 
     nsresult init(const nsAString& aQName, txNamespaceMap* aResolver,
-                  MBool aUseDefault);
+                  bool aUseDefault);
 
     void reset()
     {
@@ -83,7 +83,7 @@ public:
         mLocalName = nsnull;
     }
 
-    PRBool isNull()
+    bool isNull()
     {
         return mNamespaceID == kNameSpaceID_None && !mLocalName;
     }
@@ -95,13 +95,13 @@ public:
         return *this;
     }
 
-    MBool operator == (const txExpandedName& rhs) const
+    bool operator == (const txExpandedName& rhs) const
     {
         return ((mLocalName == rhs.mLocalName) &&
                 (mNamespaceID == rhs.mNamespaceID));
     }
 
-    MBool operator != (const txExpandedName& rhs) const
+    bool operator != (const txExpandedName& rhs) const
     {
         return ((mLocalName != rhs.mLocalName) ||
                 (mNamespaceID != rhs.mNamespaceID));
@@ -124,7 +124,7 @@ public:
     /*
      * Returns true if the given character is whitespace.
      */
-    static MBool isWhitespace(const PRUnichar& aChar)
+    static bool isWhitespace(const PRUnichar& aChar)
     {
         return (aChar <= ' ' &&
                 (aChar == ' ' || aChar == '\r' ||
@@ -134,7 +134,7 @@ public:
     /**
      * Returns true if the given string has only whitespace characters
      */
-    static PRBool isWhitespace(const nsAFlatString& aText);
+    static bool isWhitespace(const nsAFlatString& aText);
 
     /**
      * Normalizes the value of a XML processingInstruction
@@ -144,17 +144,17 @@ public:
     /**
      * Returns true if the given string is a valid XML QName
      */
-    static PRBool isValidQName(const nsAFlatString& aQName,
+    static bool isValidQName(const nsAFlatString& aQName,
                                const PRUnichar** aColon)
     {
         nsIParserService* ps = nsContentUtils::GetParserService();
-        return ps && NS_SUCCEEDED(ps->CheckQName(aQName, PR_TRUE, aColon));
+        return ps && NS_SUCCEEDED(ps->CheckQName(aQName, true, aColon));
     }
 
     /**
      * Returns true if the given character represents an Alpha letter
      */
-    static PRBool isLetter(PRUnichar aChar)
+    static bool isLetter(PRUnichar aChar)
     {
         nsIParserService* ps = nsContentUtils::GetParserService();
         return ps && ps->IsXMLLetter(aChar);
@@ -163,7 +163,7 @@ public:
     /**
      * Returns true if the given character is an allowable NCName character
      */
-    static PRBool isNCNameChar(PRUnichar aChar)
+    static bool isNCNameChar(PRUnichar aChar)
     {
         nsIParserService* ps = nsContentUtils::GetParserService();
         return ps && ps->IsXMLNCNameChar(aChar);
@@ -173,7 +173,7 @@ public:
      * Walks up the document tree and returns true if the closest xml:space
      * attribute is "preserve"
      */
-    static MBool getXMLSpacePreserve(const txXPathNode& aNode);
+    static bool getXMLSpacePreserve(const txXPathNode& aNode);
 };
 
 #endif

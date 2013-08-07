@@ -9,8 +9,16 @@
       android:sharedUserId="@MOZ_ANDROID_SHARED_ID@"
 #endif
       >
+
     <uses-sdk android:minSdkVersion="5"
               android:targetSdkVersion="11"/>
+
+#ifdef MOZ_TABLETS_ONLY
+    <supports-screens android:smallScreens="false"
+                      android:normalScreens="false"
+                      android:largeScreens="true"
+                      android:xlargeScreens="true" />
+#endif
 
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
@@ -19,23 +27,22 @@
     <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT"/>
 
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.VIBRATE"/>
 
     <uses-feature android:name="android.hardware.location" android:required="false"/>
     <uses-feature android:name="android.hardware.location.gps" android:required="false"/>
     <uses-feature android:name="android.hardware.touchscreen"/>
 
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-feature android:name="android.hardware.camera" />
-    <uses-feature android:name="android.hardware.camera.autofocus" />
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
  
     <application android:label="@MOZ_APP_DISPLAYNAME@"
-		 android:icon="@drawable/icon"
+                 android:icon="@drawable/icon"
 #if MOZILLA_OFFICIAL
-		 android:debuggable="false">
+                 android:debuggable="false">
 #else
-		 android:debuggable="true">
+                 android:debuggable="true">
 #endif
 
         <activity android:name="App"
@@ -110,11 +117,12 @@
           <intent-filter>
             <action android:name="org.mozilla.gecko.reportCrash" />
           </intent-filter>
-	</activity>
+        </activity>
 #endif
 
         <activity android:name="LauncherShortcuts"
-                  android:label="@string/launcher_shortcuts_title">
+                  android:label="@string/launcher_shortcuts_title"
+                  android:theme="@android:style/Theme.Translucent">
             <!--  This intent-filter allows your shortcuts to be created in the launcher. -->
             <intent-filter>
                 <action android:name="android.intent.action.CREATE_SHORTCUT" />

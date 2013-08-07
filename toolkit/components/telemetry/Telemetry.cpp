@@ -94,6 +94,17 @@ struct TelemetryHistogram {
   PRUint32 histogramType;
 };
 
+// Perform the checks at the beginning of HistogramGet at compile time, so
+// that if people add incorrect histogram definitions, they get compiler
+// errors.
+#define HISTOGRAM(id, min, max, bucket_count, histogram_type, b) \
+  PR_STATIC_ASSERT(nsITelemetry::HISTOGRAM_ ## histogram_type == nsITelemetry::HISTOGRAM_BOOLEAN || \
+                   (min < max && bucket_count > 2 && min >= 1));
+
+#include "TelemetryHistograms.h"
+
+#undef HISTOGRAM
+
 const TelemetryHistogram gHistograms[] = {
 #define HISTOGRAM(id, min, max, bucket_count, histogram_type, b) \
   { NULL, NS_STRINGIFY(id), min, max, bucket_count, nsITelemetry::HISTOGRAM_ ## histogram_type },
@@ -217,6 +228,10 @@ JSHistogram_Add(JSContext *cx, uintN argc, jsval *vp)
 
   if (TelemetryImpl::CanRecord()) {
     JSObject *obj = JS_THIS_OBJECT(cx, vp);
+    if (!obj) {
+      return JS_FALSE;
+    }
+
     Histogram *h = static_cast<Histogram*>(JS_GetPrivate(cx, obj));
     if (h->histogram_type() == Histogram::BOOLEAN_HISTOGRAM)
       h->Add(!!value);
@@ -230,6 +245,10 @@ JSBool
 JSHistogram_Snapshot(JSContext *cx, uintN argc, jsval *vp)
 {
   JSObject *obj = JS_THIS_OBJECT(cx, vp);
+  if (!obj) {
+    return JS_FALSE;
+  }
+
   Histogram *h = static_cast<Histogram*>(JS_GetPrivate(cx, obj));
   JSObject *snapshot = JS_NewObject(cx, NULL, NULL, NULL);
   if (!snapshot)
@@ -333,13 +352,13 @@ TelemetryImpl::GetHistogramById(const nsACString &name, JSContext *cx, jsval *re
 }
 
 NS_IMETHODIMP
-TelemetryImpl::GetCanRecord(PRBool *ret) {
+TelemetryImpl::GetCanRecord(bool *ret) {
   *ret = mCanRecord;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-TelemetryImpl::SetCanRecord(PRBool canRecord) {
+TelemetryImpl::SetCanRecord(bool canRecord) {
   mCanRecord = !!canRecord;
   return NS_OK;
 }
@@ -409,6 +428,13 @@ Accumulate(ID aHistogram, PRUint32 aSample)
   nsresult rv = GetHistogramByEnumId(aHistogram, &h);
   if (NS_SUCCEEDED(rv))
     h->Add(aSample);
+}
+
+void
+AccumulateTimeDelta(ID aHistogram, TimeStamp start, TimeStamp end)
+{
+  Accumulate(aHistogram,
+             static_cast<PRUint32>((end - start).ToMilliseconds()));
 }
 
 base::Histogram*

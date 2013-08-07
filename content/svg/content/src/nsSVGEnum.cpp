@@ -37,10 +37,8 @@
 #include "nsSVGEnum.h"
 #include "nsIAtom.h"
 #include "nsSVGElement.h"
-#ifdef MOZ_SMIL
 #include "nsSMILValue.h"
 #include "SMILEnumType.h"
-#endif // MOZ_SMIL
 
 using namespace mozilla;
 
@@ -70,8 +68,7 @@ nsSVGEnum::GetMapping(nsSVGElement *aSVGElement)
 
 nsresult
 nsSVGEnum::SetBaseValueString(const nsAString& aValue,
-                              nsSVGElement *aSVGElement,
-                              PRBool aDoSetAttr)
+                              nsSVGElement *aSVGElement)
 {
   nsCOMPtr<nsIAtom> valAtom = do_GetAtom(aValue);
 
@@ -79,17 +76,15 @@ nsSVGEnum::SetBaseValueString(const nsAString& aValue,
 
   while (mapping && mapping->mKey) {
     if (valAtom == *(mapping->mKey)) {
-      mIsBaseSet = PR_TRUE;
+      mIsBaseSet = true;
       if (mBaseVal != mapping->mVal) {
         mBaseVal = mapping->mVal;
         if (!mIsAnimated) {
           mAnimVal = mBaseVal;
         }
-#ifdef MOZ_SMIL
         else {
           aSVGElement->AnimationNeedsResample();
         }
-#endif
         // We don't need to call DidChange* here - we're only called by
         // nsSVGElement::ParseAttribute under nsGenericElement::SetAttr,
         // which takes care of notifying.
@@ -121,25 +116,22 @@ nsSVGEnum::GetBaseValueString(nsAString& aValue, nsSVGElement *aSVGElement)
 
 nsresult
 nsSVGEnum::SetBaseValue(PRUint16 aValue,
-                        nsSVGElement *aSVGElement,
-                        PRBool aDoSetAttr)
+                        nsSVGElement *aSVGElement)
 {
   nsSVGEnumMapping *mapping = GetMapping(aSVGElement);
 
   while (mapping && mapping->mKey) {
     if (mapping->mVal == aValue) {
-      mIsBaseSet = PR_TRUE;
+      mIsBaseSet = true;
       if (mBaseVal != PRUint8(aValue)) {
         mBaseVal = PRUint8(aValue);
         if (!mIsAnimated) {
           mAnimVal = mBaseVal;
         }
-#ifdef MOZ_SMIL
         else {
           aSVGElement->AnimationNeedsResample();
         }
-#endif
-        aSVGElement->DidChangeEnum(mAttrEnum, aDoSetAttr);
+        aSVGElement->DidChangeEnum(mAttrEnum, true);
       }
       return NS_OK;
     }
@@ -152,7 +144,7 @@ void
 nsSVGEnum::SetAnimValue(PRUint16 aValue, nsSVGElement *aSVGElement)
 {
   mAnimVal = aValue;
-  mIsAnimated = PR_TRUE;
+  mIsAnimated = true;
   aSVGElement->DidAnimateEnum(mAttrEnum);
 }
 
@@ -168,7 +160,6 @@ nsSVGEnum::ToDOMAnimatedEnum(nsIDOMSVGAnimatedEnumeration **aResult,
   return NS_OK;
 }
 
-#ifdef MOZ_SMIL
 nsISMILAttr*
 nsSVGEnum::ToSMILAttr(nsSVGElement *aSVGElement)
 {
@@ -179,7 +170,7 @@ nsresult
 nsSVGEnum::SMILEnum::ValueFromString(const nsAString& aStr,
                                      const nsISMILAnimationElement* /*aSrcElement*/,
                                      nsSMILValue& aValue,
-                                     PRBool& aPreventCachingOfSandwich) const
+                                     bool& aPreventCachingOfSandwich) const
 {
   nsCOMPtr<nsIAtom> valAtom = do_GetAtom(aStr);
   nsSVGEnumMapping *mapping = mVal->GetMapping(mSVGElement);
@@ -189,7 +180,7 @@ nsSVGEnum::SMILEnum::ValueFromString(const nsAString& aStr,
       nsSMILValue val(&SMILEnumType::sSingleton);
       val.mU.mUint = mapping->mVal;
       aValue = val;
-      aPreventCachingOfSandwich = PR_FALSE;
+      aPreventCachingOfSandwich = false;
       return NS_OK;
     }
     mapping++;
@@ -213,7 +204,7 @@ nsSVGEnum::SMILEnum::ClearAnimValue()
 {
   if (mVal->mIsAnimated) {
     mVal->SetAnimValue(mVal->mBaseVal, mSVGElement);
-    mVal->mIsAnimated = PR_FALSE;
+    mVal->mIsAnimated = false;
   }
 }
 
@@ -229,4 +220,3 @@ nsSVGEnum::SMILEnum::SetAnimValue(const nsSMILValue& aValue)
   }
   return NS_OK;
 }
-#endif // MOZ_SMIL

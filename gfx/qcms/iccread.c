@@ -402,11 +402,11 @@ static struct XYZNumber read_tag_XYZType(struct mem_source *src, struct tag_inde
 // present that are not part of the tag_index.
 static struct curveType *read_curveType(struct mem_source *src, uint32_t offset, uint32_t *len)
 {
-	static const size_t COUNT_TO_LENGTH[5] = {1, 3, 4, 5, 7};
+	static const uint32_t COUNT_TO_LENGTH[5] = {1, 3, 4, 5, 7};
 	struct curveType *curve = NULL;
 	uint32_t type = read_u32(src, offset);
 	uint32_t count;
-	int i;
+	uint32_t i;
 
 	if (type != CURVE_TYPE && type != PARAMETRIC_CURVE_TYPE) {
 		invalid_source(src, "unexpected type, expected CURV or PARA");
@@ -917,6 +917,8 @@ qcms_profile* qcms_profile_create_rgb_with_table(
 
 /* from lcms: cmsWhitePointFromTemp */
 /* tempK must be >= 4000. and <= 25000.
+ * Invalid values of tempK will return
+ * (x,y,Y) = (-1.0, -1.0, -1.0)
  * similar to argyll: icx_DTEMP2XYZ() */
 static qcms_CIE_xyY white_point_from_temp(int temp_K)
 {
@@ -938,7 +940,14 @@ static qcms_CIE_xyY white_point_from_temp(int temp_K)
 		if (T > 7000.0 && T <= 25000.0) {
 			x = -2.0064*(1E9/T3) + 1.9018*(1E6/T2) + 0.24748*(1E3/T) + 0.237040;
 		} else {
+			// Invalid tempK
+			white_point.x = -1.0;
+			white_point.y = -1.0;
+			white_point.Y = -1.0;
+
 			assert(0 && "invalid temp");
+
+			return white_point;
 		}
 	}
 

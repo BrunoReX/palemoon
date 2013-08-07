@@ -2236,6 +2236,15 @@ CSS_PROP_TEXT(
     offsetof(nsStyleText, mTextShadow),
     eStyleAnimType_Shadow)
 CSS_PROP_TEXT(
+    -moz-text-size-adjust,
+    text_size_adjust,
+    CSS_PROP_DOMPROP_PREFIXED(TextSizeAdjust),
+    CSS_PROPERTY_PARSE_VALUE,
+    VARIANT_AUTO | VARIANT_NONE | VARIANT_INHERIT,
+    nsnull,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_None)
+CSS_PROP_TEXT(
     text-transform,
     text_transform,
     TextTransform,
@@ -2360,8 +2369,9 @@ CSS_PROP_TEXTRESET(
     unicode-bidi,
     unicode_bidi,
     UnicodeBidi,
-    CSS_PROPERTY_PARSE_VALUE,
-    VARIANT_HK,
+    CSS_PROPERTY_PARSE_VALUE |
+        CSS_PROPERTY_VALUE_PARSER_FUNCTION,
+    0,
     kUnicodeBidiKTable,
     CSS_PROP_NO_OFFSET,
     eStyleAnimType_None)

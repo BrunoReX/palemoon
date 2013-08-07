@@ -45,11 +45,11 @@
 using namespace mozilla;
 using mozilla::dom::ContentChild;
 
-PRBool nsLookAndFeel::mInitializedSystemColors = PR_FALSE;
+bool nsLookAndFeel::mInitializedSystemColors = false;
 AndroidSystemColors nsLookAndFeel::mSystemColors;
 
-PRBool nsLookAndFeel::mInitializedShowPassword = PR_FALSE;
-PRBool nsLookAndFeel::mShowPassword = PR_TRUE;
+bool nsLookAndFeel::mInitializedShowPassword = false;
+bool nsLookAndFeel::mShowPassword = true;
 
 nsLookAndFeel::nsLookAndFeel()
     : nsXPLookAndFeel()
@@ -79,7 +79,7 @@ nsLookAndFeel::GetSystemColors()
 
     AndroidBridge::Bridge()->GetSystemColors(&mSystemColors);
 
-    mInitializedSystemColors = PR_TRUE;
+    mInitializedSystemColors = true;
 
     return NS_OK;
 }
@@ -105,7 +105,7 @@ nsLookAndFeel::CallRemoteGetSystemColors()
     // so just copy the memory block
     memcpy(&mSystemColors, colors.Elements(), sizeof(nscolor) * colorsCount);
 
-    mInitializedSystemColors = PR_TRUE;
+    mInitializedSystemColors = true;
 
     return NS_OK;
 }
@@ -405,6 +405,10 @@ nsLookAndFeel::GetIntImpl(IntID aID, PRInt32 &aResult)
             aResult = 200;
             break;
 
+        case eIntID_TooltipDelay:
+            aResult = 500;
+            break;
+
         case eIntID_MenusCanOverlapOSBar:
             // we want XUL popups to be able to overlap the task bar.
             aResult = 1;
@@ -428,6 +432,10 @@ nsLookAndFeel::GetIntImpl(IntID aID, PRInt32 &aResult)
 
         case eIntID_SpellCheckerUnderlineStyle:
             aResult = NS_STYLE_TEXT_DECORATION_STYLE_WAVY;
+            break;
+
+        case eIntID_ScrollbarButtonAutoRepeatBehavior:
+            aResult = 0;
             break;
 
         default:
@@ -464,7 +472,7 @@ nsLookAndFeel::GetFloatImpl(FloatID aID, float &aResult)
 }
 
 /*virtual*/
-PRBool
+bool
 nsLookAndFeel::GetEchoPasswordImpl()
 {
     if (!mInitializedShowPassword) {
@@ -476,7 +484,7 @@ nsLookAndFeel::GetEchoPasswordImpl()
         } else {
             ContentChild::GetSingleton()->SendGetShowPasswordSetting(&mShowPassword);
         }
-        mInitializedShowPassword = PR_TRUE;
+        mInitializedShowPassword = true;
     }
     return mShowPassword;
 }

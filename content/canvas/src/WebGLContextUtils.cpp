@@ -106,7 +106,7 @@ WebGLContext::LogMessageIfVerbose(const char *fmt, ...)
 void
 WebGLContext::LogMessageIfVerbose(const char *fmt, va_list ap)
 {
-    static PRBool firstTime = PR_TRUE;
+    static bool firstTime = true;
 
     if (mVerbose)
         LogMessage(fmt, ap);
@@ -114,7 +114,7 @@ WebGLContext::LogMessageIfVerbose(const char *fmt, va_list ap)
         LogMessage("There are WebGL warnings or messages in this page, but they are hidden. To see them, "
                    "go to about:config, set the webgl.verbose preference, and reload this page.");
 
-    firstTime = PR_FALSE;
+    firstTime = false;
 }
 
 CheckedUint32

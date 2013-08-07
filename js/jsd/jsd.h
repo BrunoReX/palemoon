@@ -136,7 +136,7 @@ struct JSDContext
     JSCList                 links;      /* we are part of a JSCList */
     JSBool                  inited;
     void*                   data;
-    uint32                  flags;
+    uint32_t                flags;
     JSD_ScriptHookProc      scriptHook;
     void*                   scriptHookData;
     JSD_ExecutionHookProc   interruptHook;
@@ -168,7 +168,7 @@ struct JSDContext
     JSCList                 objectsList;
     JSHashTable*            objectsTable;
     JSDProfileData*         callingFunctionPData;
-    int64                   lastReturnTime;
+    int64_t                 lastReturnTime;
 #ifdef JSD_THREADSAFE
     void*                   scriptsLock;
     void*                   sourceTextLock;
@@ -187,12 +187,11 @@ struct JSDScript
     JSCList     links;      /* we are part of a JSCList */
     JSDContext* jsdc;       /* JSDContext for this jsdscript */
     JSScript*   script;     /* script we are wrapping */
-    JSFunction* function;   /* back pointer to owning function (can be NULL) */
     uintN       lineBase;   /* we cache this */
     uintN       lineExtent; /* we cache this */
     JSCList     hooks;      /* JSCList of JSDExecHooks for this script */
     char*       url;
-    uint32      flags;
+    uint32_t    flags;
     void*       data;
 
     JSDProfileData  *profileData;
@@ -206,8 +205,8 @@ struct JSDScript
 struct JSDProfileData
 {
     JSDProfileData* caller;
-    int64    lastCallStart;
-    int64    runningTime;
+    int64_t  lastCallStart;
+    int64_t  runningTime;
     uintN    callCount;
     uintN    recurseDepth;
     uintN    maxRecurseDepth;
@@ -406,11 +405,11 @@ jsd_FindOrCreateJSDScript(JSDContext    *jsdc,
 extern JSDProfileData*
 jsd_GetScriptProfileData(JSDContext* jsdc, JSDScript *script);
 
-extern uint32
+extern uint32_t
 jsd_GetScriptFlags(JSDContext *jsdc, JSDScript *script);
 
 extern void
-jsd_SetScriptFlags(JSDContext *jsdc, JSDScript *script, uint32 flags);
+jsd_SetScriptFlags(JSDContext *jsdc, JSDScript *script, uint32_t flags);
 
 extern uintN
 jsd_GetScriptCallCount(JSDContext* jsdc, JSDScript *script);
@@ -970,7 +969,7 @@ jsd_IsValueNative(JSDContext* jsdc, JSDValue* jsdval);
 extern JSBool
 jsd_GetValueBoolean(JSDContext* jsdc, JSDValue* jsdval);
 
-extern int32
+extern int32_t
 jsd_GetValueInt(JSDContext* jsdc, JSDValue* jsdval);
 
 extern jsdouble

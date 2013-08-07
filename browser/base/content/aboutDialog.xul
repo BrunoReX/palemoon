@@ -67,7 +67,8 @@
 #else
         title="&aboutDialog.title;"
 #endif
-        aria-describedby="version distribution distributionId"
+        role="dialog"
+        aria-describedby="version distribution distributionId communityDesc contributeDesc trademark"
         >
 
   <script type="application/javascript" src="chrome://browser/content/aboutDialog.js"/>
@@ -80,7 +81,7 @@
         <label id="distribution" class="text-blurb"/>
         <label id="distributionId" class="text-blurb"/>
 
-        <vbox id="detailsBox" aria-describedby="communityDesc contributeDesc">
+        <vbox id="detailsBox">
           <vbox id="updateBox">
 #ifdef MOZ_UPDATER
             <deck id="updateDeck" orient="vertical">
@@ -114,6 +115,22 @@
 #endif
           </vbox>
 
+#ifdef MOZ_UPDATER
+#          <description class="text-blurb" id="currentChannelText">
+#            &channel.description.start;<label id="currentChannel"/>&channel.description.end;
+#          </description>
+#endif
+          <vbox id="experimental" hidden="true">
+            <description class="text-blurb" id="warningDesc">
+              &warningDesc.version;
+#ifdef MOZ_TELEMETRY_REPORTING
+              &warningDesc.telemetry;
+#endif
+            </description>
+            <description class="text-blurb" id="communityExperimentalDesc">
+              &community.exp.start;<label class="text-link" href="http://www.mozilla.org/">&community.exp.mozillaLink;</label>&community.exp.middle;<label class="text-link" href="about:credits">&community.exp.creditsLink;</label>&community.exp.end;
+            </description>
+          </vbox>
         <description class="text-pmcreds">
           Pale Moon is released by <label class="text-link" href="http://www.moonchildproductions.info">Moonchild Productions</label>.
         </description>
@@ -125,7 +142,7 @@
         </description>
         <description class="text-blurb">
           If you wish to contribute, please consider becoming part of the Mozilla Firefox development team: <label class="text-link" href="http://www.mozilla.org/contribute/">&contribute.getInvolvedLink;</label>
-        </description>
+        </description> 
         </vbox>
       </vbox>
     </hbox>
@@ -138,7 +155,7 @@
       <description id="trademark">
         <label class="trademark-label">&trademarkInfo.part1;</label>
 #ifdef MOZ_OFFICIAL_BRANDING
-        <!-- DO NOT REMOVE Breaks updater button in non en/en-US --> 
+        <!-- DO NOT REMOVE breaks updater button in PM -->
         <label id="extra-trademark" class="trademark-label"></label>
 #endif
       </description>

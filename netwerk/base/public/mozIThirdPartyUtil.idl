@@ -45,7 +45,7 @@ interface nsIChannel;
  * Utility functions for determining whether a given URI, channel, or window
  * hierarchy is third party with respect to a known URI.
  */
-[scriptable, uuid(55385caa-1b94-4376-a34c-b47c51ef0837)]
+[scriptable, uuid(d994fd1d-d2fe-4372-9ae7-88b08b7d9d90)]
 interface mozIThirdPartyUtil : nsISupports
 {
   /**
@@ -155,16 +155,7 @@ interface mozIThirdPartyUtil : nsISupports
    * @see isThirdPartyWindow
    */
   boolean isThirdPartyChannel(in nsIChannel aChannel, [optional] in nsIURI aURI);
-};
 
-/**
- * Interface extension for branches only to avoid iid rev of mozIThirdPartyUtil.
- * This interface has been merged with mozIThirdPartyUtil on trunk and will
- * cease to exist in Firefox 10.
- */
-[scriptable, uuid(bc92a019-c595-439a-9d1c-353d3ff80780)]
-interface mozIThirdPartyUtil_BRANCH : mozIThirdPartyUtil
-{
   /**
    * getBaseDomain
    *

@@ -38,6 +38,7 @@
 #include "nsIDocument.h"
 #include "nsSVGOuterSVGFrame.h"
 #include "nsGkAtoms.h"
+#include "nsSVGEffects.h"
 #include "nsSVGUtils.h"
 #include "nsSVGFilterElement.h"
 #include "nsSVGFilters.h"
@@ -167,7 +168,7 @@ nsAutoFilterInstance::nsAutoFilterInstance(nsIFrame *aTarget,
     filterRegion.Scale(1.0 / filterResX, 1.0 / filterResY);
     // We don't care if this overflows, because we can handle upscaling/
     // downscaling to filterRes
-    PRBool overflow;
+    bool overflow;
     filterRes =
       nsSVGUtils::ConvertToSurfaceSize(gfxSize(filterResX, filterResY),
                                        &overflow);
@@ -182,7 +183,7 @@ nsAutoFilterInstance::nsAutoFilterInstance(nsIFrame *aTarget,
     filterRegion.RoundOut();
     // We don't care if this overflows, because we can handle upscaling/
     // downscaling to filterRes
-    PRBool overflow;
+    bool overflow;
     filterRes = nsSVGUtils::ConvertToSurfaceSize(filterRegion.Size(),
                                                  &overflow);
     filterRegion.Scale(1.0 / scale);
@@ -225,6 +226,27 @@ nsAutoFilterInstance::nsAutoFilterInstance(nsIFrame *aTarget,
 
 nsAutoFilterInstance::~nsAutoFilterInstance()
 {
+}
+
+NS_IMETHODIMP
+nsSVGFilterFrame::AttributeChanged(PRInt32  aNameSpaceID,
+                                   nsIAtom* aAttribute,
+                                   PRInt32  aModType)
+{
+  if ((aNameSpaceID == kNameSpaceID_None &&
+       (aAttribute == nsGkAtoms::x ||
+        aAttribute == nsGkAtoms::y ||
+        aAttribute == nsGkAtoms::width ||
+        aAttribute == nsGkAtoms::height ||
+        aAttribute == nsGkAtoms::filterRes ||
+        aAttribute == nsGkAtoms::filterUnits ||
+        aAttribute == nsGkAtoms::primitiveUnits)) ||
+       (aNameSpaceID == kNameSpaceID_XLink &&
+        aAttribute == nsGkAtoms::href)) {
+    nsSVGEffects::InvalidateRenderingObservers(this);
+  }
+  return nsSVGFilterFrameBase::AttributeChanged(aNameSpaceID,
+                                                aAttribute, aModType);
 }
 
 nsresult

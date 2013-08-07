@@ -246,17 +246,35 @@ static inline PRUint64 version(PRUint32 major, PRUint32 minor, PRUint32 revision
     return (PRUint64(major) << 32) + (PRUint64(minor) << 16) + PRUint64(revision);
 }
 
+const nsTArray<GfxDriverInfo>&
+GfxInfo::GetGfxDriverInfo()
+{
+  // Nothing here yet.
+  //if (!mDriverInfo->Length()) {
+  //
+  //}
+  return *mDriverInfo;
+}
+
 nsresult
-GfxInfo::GetFeatureStatusImpl(PRInt32 aFeature, PRInt32 *aStatus, nsAString & aSuggestedDriverVersion, GfxDriverInfo* aDriverInfo /* = nsnull */)
+GfxInfo::GetFeatureStatusImpl(PRInt32 aFeature, 
+                              PRInt32 *aStatus, 
+                              nsAString & aSuggestedDriverVersion, 
+                              const nsTArray<GfxDriverInfo>& aDriverInfo, 
+                              OperatingSystem* aOS /* = nsnull */)
+
 {
     GetData();
-    *aStatus = nsIGfxInfo::FEATURE_NO_INFO;
-    aSuggestedDriverVersion.SetIsVoid(PR_TRUE);
+    *aStatus = nsIGfxInfo::FEATURE_STATUS_UNKNOWN;
+    aSuggestedDriverVersion.SetIsVoid(true);
 
 #ifdef MOZ_PLATFORM_MAEMO
+    *aStatus = nsIGfxInfo::FEATURE_NO_INFO;
     // on Maemo, the glxtest probe doesn't build, and we don't really need GfxInfo anyway
     return NS_OK;
 #endif
+
+    OperatingSystem os = DRIVER_OS_LINUX;
 
     // Disable OpenGL layers when we don't have texture_from_pixmap because it regresses performance. 
     if (aFeature == nsIGfxInfo::FEATURE_OPENGL_LAYERS && !mHasTextureFromPixmap) {
@@ -274,6 +292,7 @@ GfxInfo::GetFeatureStatusImpl(PRInt32 aFeature, PRInt32 *aStatus, nsAString & aS
         !strcmp(mRenderer.get(), "GeForce 9400/PCI/SSE2") &&
         !strcmp(mVersion.get(), "3.2.0 NVIDIA 190.42"))
     {
+        *aStatus = nsIGfxInfo::FEATURE_NO_INFO;
         return NS_OK;
     }
 
@@ -298,24 +317,28 @@ GfxInfo::GetFeatureStatusImpl(PRInt32 aFeature, PRInt32 *aStatus, nsAString & aS
         // Also, this case is hit whenever the GLXtest probe failed to get driver info or crashed.
         *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
     }
-  return NS_OK;
+
+  if (aOS)
+    *aOS = os;
+
+  return GfxInfoBase::GetFeatureStatusImpl(aFeature, aStatus, aSuggestedDriverVersion, aDriverInfo, &os);
 }
 
 
 NS_IMETHODIMP
-GfxInfo::GetD2DEnabled(PRBool *aEnabled)
+GfxInfo::GetD2DEnabled(bool *aEnabled)
 {
   return NS_ERROR_FAILURE;
 }
 
 NS_IMETHODIMP
-GfxInfo::GetDWriteEnabled(PRBool *aEnabled)
+GfxInfo::GetDWriteEnabled(bool *aEnabled)
 {
   return NS_ERROR_FAILURE;
 }
 
 NS_IMETHODIMP
-GfxInfo::GetAzureEnabled(PRBool *aEnabled)
+GfxInfo::GetAzureEnabled(bool *aEnabled)
 {
   return NS_ERROR_FAILURE;
 }
@@ -443,7 +466,7 @@ GfxInfo::GetAdapterDeviceID2(PRUint32 *aAdapterDeviceID)
 
 /* readonly attribute boolean isGPU2Active; */
 NS_IMETHODIMP
-GfxInfo::GetIsGPU2Active(PRBool* aIsGPU2Active)
+GfxInfo::GetIsGPU2Active(bool* aIsGPU2Active)
 {
   return NS_ERROR_FAILURE;
 }

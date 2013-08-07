@@ -39,6 +39,12 @@
 
 #include "nsISupports.idl"
 
+%{C++
+class nsWrapperCache;
+%}
+
+[ptr] native nsWrapperCachePtr(nsWrapperCache);
+
 typedef unsigned long long DOMTimeStamp;
 typedef unsigned long long DOMTimeMilliSec;
 
@@ -52,7 +58,6 @@ interface nsIDOMDocument;
 interface nsIDOMDocumentFragment;
 interface nsIDOMDocumentType;
 interface nsIDOMElement;
-interface nsIDOMNSElement;
 interface nsIDOMNamedNodeMap;
 interface nsIDOMNode;
 interface nsIDOMNodeList;
@@ -60,7 +65,6 @@ interface nsIDOMProcessingInstruction;
 interface nsIDOMText;
 interface nsIDOMDOMStringList;
 interface nsIDOMDOMTokenList;
-interface nsIDOMNameList;
 interface nsIDOMClientRect;
 interface nsIDOMClientRectList;
 

@@ -39,13 +39,16 @@
 
 #include "nsSVGStylableElement.h"
 #include "nsSVGLength2.h"
+#include "nsSVGString.h"
 #include "nsIFrame.h"
 #include "gfxRect.h"
 #include "gfxImageSurface.h"
 #include "nsIDOMSVGFilters.h"
+#include "nsImageLoadingContent.h"
+#include "nsIDOMSVGURIReference.h"
+#include "SVGAnimatedPreserveAspectRatio.h"
 
 class nsSVGFilterResource;
-class nsSVGString;
 class nsSVGNumberPair;
 class nsSVGFilterInstance;
 
@@ -64,6 +67,11 @@ typedef nsSVGStylableElement nsSVGFEBase;
 { 0x60483958, 0xd229, 0x4a77, \
   { 0x96, 0xb2, 0x62, 0x3e, 0x69, 0x95, 0x1e, 0x0e } }
 
+/**
+ * Base class for filter primitive elements
+ * Children of those elements e.g. feMergeNode
+ * derive from SVGFEUnstyledElement instead
+ */
 class nsSVGFE : public nsSVGFEBase
 //, public nsIDOMSVGFilterPrimitiveStandardAttributes
 {
@@ -79,7 +87,7 @@ public:
       mColorSpace(aColorSpace), mAlphaChannel(aAlphaChannel) {}
     ColorModel() :
       mColorSpace(SRGB), mAlphaChannel(PREMULTIPLIED) {}
-    PRBool operator==(const ColorModel& aOther) const {
+    bool operator==(const ColorModel& aOther) const {
       return mColorSpace == aOther.mColorSpace &&
              mAlphaChannel == aOther.mAlphaChannel;
     }
@@ -94,9 +102,9 @@ public:
     gfxRect                   mFilterPrimitiveSubregion;
     ColorModel                mColorModel;
     // When true, the RGB values are the same for all pixels in mImage
-    PRPackedBool              mConstantColorChannels;
+    bool                      mConstantColorChannels;
     
-    Image() : mConstantColorChannels(PR_FALSE) {}
+    Image() : mConstantColorChannels(false) {}
   };
 
 protected:
@@ -107,7 +115,7 @@ protected:
     nsRefPtr<gfxImageSurface> mSource;
     nsRefPtr<gfxImageSurface> mTarget;
     nsIntRect mDataRect; // rect in mSource and mTarget to operate on
-    PRPackedBool mRescaling;
+    bool mRescaling;
   };
 
   ScaleInfo SetupScalingFilter(nsSVGFilterInstance *aInstance,
@@ -139,7 +147,7 @@ public:
   }
 
   // See http://www.w3.org/TR/SVG/filters.html#FilterPrimitiveSubRegion
-  virtual PRBool SubregionIsUnionOfRegions() { return PR_TRUE; }
+  virtual bool SubregionIsUnionOfRegions() { return true; }
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_SVG_FE_CID)
   
@@ -148,7 +156,7 @@ public:
   NS_DECL_NSIDOMSVGFILTERPRIMITIVESTANDARDATTRIBUTES
 
   // nsIContent interface
-  NS_IMETHOD_(PRBool) IsAttributeMapped(const nsIAtom* aAttribute) const;
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const;
 
   virtual nsSVGString& GetResultImageName() = 0;
   // Return a list of all image names used as sources. Default is to
@@ -194,6 +202,11 @@ public:
                           const Image* aTarget,
                           const nsIntRect& aDataRect) = 0;
 
+  // returns true if changes to the attribute should cause us to
+  // repaint the filter
+  virtual bool AttributeAffectsRendering(
+          PRInt32 aNameSpaceID, nsIAtom* aAttribute) const;
+
   static nsIntRect GetMaxRect() {
     // Try to avoid overflow errors dealing with this rect. It will
     // be intersected with some other reasonable-sized rect eventually.
@@ -203,15 +216,15 @@ public:
   operator nsISupports*() { return static_cast<nsIContent*>(this); }
   
 protected:
-  virtual PRBool OperatesOnPremultipledAlpha(PRInt32) { return PR_TRUE; }
+  virtual bool OperatesOnPremultipledAlpha(PRInt32) { return true; }
 
   // Called either with aInputIndex >=0 in which case this is
   // testing whether the input 'aInputIndex' should be SRGB, or
   // if aInputIndex is -1 returns true if the output will be SRGB
-  virtual PRBool OperatesOnSRGB(nsSVGFilterInstance* aInstance,
+  virtual bool OperatesOnSRGB(nsSVGFilterInstance* aInstance,
                                 PRInt32 aInputIndex, Image* aImage) {
     nsIFrame* frame = GetPrimaryFrame();
-    if (!frame) return PR_FALSE;
+    if (!frame) return false;
 
     nsStyleContext* style = frame->GetStyleContext();
     return style->GetStyleSVG()->mColorInterpolationFilters ==
@@ -220,21 +233,113 @@ protected:
 
   // nsSVGElement specializations:
   virtual LengthAttributesInfo GetLengthInfo();
-  virtual void DidAnimateLength(PRUint8 aAttrEnum);
-  virtual void DidAnimateNumber(PRUint8 aAttrEnum);
-  virtual void DidAnimateNumberPair(PRUint8 aAttrEnum);
-  virtual void DidAnimateNumberList(PRUint8 aAttrEnum);
-  virtual void DidAnimateInteger(PRUint8 aAttrEnum);
-  virtual void DidAnimateIntegerPair(PRUint8 aAttrEnum);
-  virtual void DidAnimateEnum(PRUint8 aAttrEnum);
-  virtual void DidAnimateBoolean(PRUint8 aAttrEnum);
-  virtual void DidAnimatePreserveAspectRatio();
-  virtual void DidAnimateString(PRUint8 aAttrEnum);
 
   // nsIDOMSVGFitlerPrimitiveStandardAttributes values
   enum { X, Y, WIDTH, HEIGHT };
   nsSVGLength2 mLengthAttributes[4];
   static LengthInfo sLengthInfo[4];
+};
+
+typedef nsSVGFE nsSVGFEImageElementBase;
+
+class nsSVGFEImageElement : public nsSVGFEImageElementBase,
+                            public nsIDOMSVGFEImageElement,
+                            public nsIDOMSVGURIReference,
+                            public nsImageLoadingContent
+{
+  friend class SVGFEImageFrame;
+
+protected:
+  friend nsresult NS_NewSVGFEImageElement(nsIContent **aResult,
+                                          already_AddRefed<nsINodeInfo> aNodeInfo);
+  nsSVGFEImageElement(already_AddRefed<nsINodeInfo> aNodeInfo);
+  virtual ~nsSVGFEImageElement();
+
+public:
+  virtual bool SubregionIsUnionOfRegions() { return false; }
+
+  // interfaces:
+  NS_DECL_ISUPPORTS_INHERITED
+
+  // FE Base
+  NS_FORWARD_NSIDOMSVGFILTERPRIMITIVESTANDARDATTRIBUTES(nsSVGFEImageElementBase::)
+
+  virtual nsresult Filter(nsSVGFilterInstance* aInstance,
+                          const nsTArray<const Image*>& aSources,
+                          const Image* aTarget,
+                          const nsIntRect& aDataRect);
+  virtual bool AttributeAffectsRendering(
+          PRInt32 aNameSpaceID, nsIAtom* aAttribute) const;
+  virtual nsSVGString& GetResultImageName() { return mStringAttributes[RESULT]; }
+  virtual nsIntRect ComputeTargetBBox(const nsTArray<nsIntRect>& aSourceBBoxes,
+          const nsSVGFilterInstance& aInstance);
+
+  NS_DECL_NSIDOMSVGFEIMAGEELEMENT
+  NS_DECL_NSIDOMSVGURIREFERENCE
+
+  NS_FORWARD_NSIDOMSVGELEMENT(nsSVGFEImageElementBase::)
+
+  NS_FORWARD_NSIDOMNODE(nsSVGFEImageElementBase::)
+  NS_FORWARD_NSIDOMELEMENT(nsSVGFEImageElementBase::)
+
+  // nsIContent
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const;
+
+  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
+
+  virtual nsresult AfterSetAttr(PRInt32 aNamespaceID, nsIAtom* aName,
+                                const nsAString* aValue, bool aNotify);
+  virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
+                              nsIContent* aBindingParent,
+                              bool aCompileEventHandlers);
+  virtual nsEventStates IntrinsicState() const;
+
+  // imgIDecoderObserver
+  NS_IMETHOD OnStopDecode(imgIRequest *aRequest, nsresult status,
+                          const PRUnichar *statusArg);
+  // imgIContainerObserver
+  NS_IMETHOD FrameChanged(imgIContainer *aContainer,
+                          const nsIntRect *aDirtyRect);
+  // imgIContainerObserver
+  NS_IMETHOD OnStartContainer(imgIRequest *aRequest,
+                              imgIContainer *aContainer);
+
+  void MaybeLoadSVGImage();
+
+  virtual nsXPCClassInfo* GetClassInfo();
+private:
+  // Invalidate users of the filter containing this element.
+  void Invalidate();
+
+  nsresult LoadSVGImage(bool aForce, bool aNotify);
+
+protected:
+  virtual bool OperatesOnSRGB(nsSVGFilterInstance*,
+                                PRInt32, Image*) { return true; }
+
+  virtual SVGAnimatedPreserveAspectRatio *GetPreserveAspectRatio();
+  virtual StringAttributesInfo GetStringInfo();
+
+  enum { RESULT, HREF };
+  nsSVGString mStringAttributes[2];
+  static StringInfo sStringInfo[2];
+
+  SVGAnimatedPreserveAspectRatio mPreserveAspectRatio;
+};
+
+typedef nsSVGElement SVGFEUnstyledElementBase;
+
+class SVGFEUnstyledElement : public SVGFEUnstyledElementBase
+{
+protected:
+  SVGFEUnstyledElement(already_AddRefed<nsINodeInfo> aNodeInfo)
+    : SVGFEUnstyledElementBase(aNodeInfo) {}
+
+public:
+  // returns true if changes to the attribute should cause us to
+  // repaint the filter
+  virtual bool AttributeAffectsRendering(
+          PRInt32 aNameSpaceID, nsIAtom* aAttribute) const = 0;
 };
 
 #endif

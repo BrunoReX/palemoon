@@ -54,6 +54,14 @@
 
 #include "mozilla/FunctionTimer.h"
 
+// XXX: There is no good header file to put these in. :(
+namespace mozilla { namespace psm {
+
+void InitializeSSLServerCertVerificationThreads();
+void StopSSLServerCertVerificationThreads();
+
+} } // namespace mozilla::psm
+
 using namespace mozilla;
 
 #if defined(PR_LOGGING)
@@ -76,15 +84,16 @@ PRCallOnceType nsSocketTransportService::gMaxCountInitOnce;
 nsSocketTransportService::nsSocketTransportService()
     : mThread(nsnull)
     , mThreadEvent(nsnull)
-    , mAutodialEnabled(PR_FALSE)
+    , mAutodialEnabled(false)
     , mLock("nsSocketTransportService::mLock")
-    , mInitialized(PR_FALSE)
-    , mShuttingDown(PR_FALSE)
+    , mInitialized(false)
+    , mShuttingDown(false)
     , mActiveListSize(SOCKET_LIMIT_MIN)
     , mIdleListSize(SOCKET_LIMIT_MIN)
     , mActiveCount(0)
     , mIdleCount(0)
     , mSendBufferSize(0)
+    , mProbedMaxCount(false)
 {
 #if defined(PR_LOGGING)
     gSocketTransportLog = PR_NewLogModule("nsSocketTransport");
@@ -147,7 +156,7 @@ nsSocketTransportService::Dispatch(nsIRunnable *event, PRUint32 flags)
 }
 
 NS_IMETHODIMP
-nsSocketTransportService::IsOnCurrentThread(PRBool *result)
+nsSocketTransportService::IsOnCurrentThread(bool *result)
 {
     nsCOMPtr<nsIThread> thread = GetThreadSafely();
     NS_ENSURE_TRUE(thread, NS_ERROR_NOT_INITIALIZED);
@@ -328,36 +337,36 @@ nsSocketTransportService::MoveToPollList(SocketContext *sock)
         RemoveFromIdleList(sock);
 }
 
-PRBool
+bool
 nsSocketTransportService::GrowActiveList()
 {
     PRInt32 toAdd = gMaxCount - mActiveListSize;
     if (toAdd > 100)
         toAdd = 100;
     if (toAdd < 1)
-        return PR_FALSE;
+        return false;
     
     mActiveListSize += toAdd;
     mActiveList = (SocketContext *)
         moz_xrealloc(mActiveList, sizeof(SocketContext) * mActiveListSize);
     mPollList = (PRPollDesc *)
         moz_xrealloc(mPollList, sizeof(PRPollDesc) * (mActiveListSize + 1));
-    return PR_TRUE;
+    return true;
 }
 
-PRBool
+bool
 nsSocketTransportService::GrowIdleList()
 {
     PRInt32 toAdd = gMaxCount - mIdleListSize;
     if (toAdd > 100)
         toAdd = 100;
     if (toAdd < 1)
-        return PR_FALSE;
+        return false;
 
     mIdleListSize += toAdd;
     mIdleList = (SocketContext *)
         moz_xrealloc(mIdleList, sizeof(SocketContext) * mIdleListSize);
-    return PR_TRUE;
+    return true;
 }
 
 PRIntervalTime
@@ -383,7 +392,7 @@ nsSocketTransportService::PollTimeout()
 }
 
 PRInt32
-nsSocketTransportService::Poll(PRBool wait, PRUint32 *interval)
+nsSocketTransportService::Poll(bool wait, PRUint32 *interval)
 {
     PRPollDesc *pollList;
     PRUint32 pollCount;
@@ -487,12 +496,12 @@ nsSocketTransportService::Init()
 
     nsCOMPtr<nsIPrefBranch2> tmpPrefService = do_GetService(NS_PREFSERVICE_CONTRACTID);
     if (tmpPrefService) 
-        tmpPrefService->AddObserver(SEND_BUFFER_PREF, this, PR_FALSE);
+        tmpPrefService->AddObserver(SEND_BUFFER_PREF, this, false);
     UpdatePrefs();
 
     NS_TIME_FUNCTION_MARK("UpdatePrefs");
 
-    mInitialized = PR_TRUE;
+    mInitialized = true;
     return NS_OK;
 }
 
@@ -514,7 +523,7 @@ nsSocketTransportService::Shutdown()
         MutexAutoLock lock(mLock);
 
         // signal the socket thread to shutdown
-        mShuttingDown = PR_TRUE;
+        mShuttingDown = true;
 
         if (mThreadEvent)
             PR_SetPollableEvent(mThreadEvent);
@@ -534,8 +543,8 @@ nsSocketTransportService::Shutdown()
     if (tmpPrefService) 
         tmpPrefService->RemoveObserver(SEND_BUFFER_PREF, this);
 
-    mInitialized = PR_FALSE;
-    mShuttingDown = PR_FALSE;
+    mInitialized = false;
+    mShuttingDown = false;
 
     return NS_OK;
 }
@@ -567,14 +576,14 @@ nsSocketTransportService::CreateTransport(const char **types,
 }
 
 NS_IMETHODIMP
-nsSocketTransportService::GetAutodialEnabled(PRBool *value)
+nsSocketTransportService::GetAutodialEnabled(bool *value)
 {
     *value = mAutodialEnabled;
     return NS_OK;
 }
 
 NS_IMETHODIMP
-nsSocketTransportService::SetAutodialEnabled(PRBool value)
+nsSocketTransportService::SetAutodialEnabled(bool value)
 {
     mAutodialEnabled = value;
     return NS_OK;
@@ -591,7 +600,7 @@ nsSocketTransportService::OnDispatchedEvent(nsIThreadInternal *thread)
 
 NS_IMETHODIMP
 nsSocketTransportService::OnProcessNextEvent(nsIThreadInternal *thread,
-                                             PRBool mayWait, PRUint32 depth)
+                                             bool mayWait, PRUint32 depth)
 {
     return NS_OK;
 }
@@ -608,6 +617,8 @@ nsSocketTransportService::Run()
 {
     SOCKET_LOG(("STS thread init\n"));
 
+    psm::InitializeSSLServerCertVerificationThreads();
+
     gSocketThread = PR_GetCurrentThread();
 
     // add thread event to poll list (mThreadEvent may be NULL)
@@ -622,7 +633,7 @@ nsSocketTransportService::Run()
     threadInt->SetObserver(this);
 
     for (;;) {
-        PRBool pendingEvents = PR_FALSE;
+        bool pendingEvents = false;
         thread->HasPendingEvents(&pendingEvents);
 
         do {
@@ -636,7 +647,7 @@ nsSocketTransportService::Run()
 
             if (pendingEvents) {
                 NS_ProcessNextEvent(thread);
-                pendingEvents = PR_FALSE;
+                pendingEvents = false;
                 thread->HasPendingEvents(&pendingEvents);
             }
         } while (pendingEvents);
@@ -664,12 +675,14 @@ nsSocketTransportService::Run()
 
     gSocketThread = nsnull;
 
+    psm::StopSSLServerCertVerificationThreads();
+
     SOCKET_LOG(("STS thread exit\n"));
     return NS_OK;
 }
 
 nsresult
-nsSocketTransportService::DoPollIteration(PRBool wait)
+nsSocketTransportService::DoPollIteration(bool wait)
 {
     SOCKET_LOG(("STS poll iter [%d]\n", wait));
 
@@ -718,6 +731,14 @@ nsSocketTransportService::DoPollIteration(PRBool wait)
     }
 
     SOCKET_LOG(("  calling PR_Poll [active=%u idle=%u]\n", mActiveCount, mIdleCount));
+
+#if defined(XP_WIN)
+    // 30 active connections is the historic limit before firefox 7's 256. A few
+    //  windows systems have troubles with the higher limit, so actively probe a
+    // limit the first time we exceed 30.
+    if ((mActiveCount > 30) && !mProbedMaxCount)
+        ProbeMaxCount();
+#endif
 
     // Measures seconds spent while blocked on PR_Poll
     PRUint32 pollInterval;
@@ -834,6 +855,73 @@ nsSocketTransportService::GetSendBufferSize(PRInt32 *value)
 #elif defined(XP_UNIX) && !defined(AIX) && !defined(NEXTSTEP) && !defined(QNX)
 #include <sys/resource.h>
 #endif
+
+// Right now the only need to do this is on windows.
+#if defined(XP_WIN)
+void
+nsSocketTransportService::ProbeMaxCount()
+{
+    NS_ASSERTION(PR_GetCurrentThread() == gSocketThread, "wrong thread");
+
+    if (mProbedMaxCount)
+        return;
+    mProbedMaxCount = true;
+
+    PRInt32 startedMaxCount = gMaxCount;
+
+    // Allocate and test a PR_Poll up to the gMaxCount number of unconnected
+    // sockets. See bug 692260 - windows should be able to handle 1000 sockets
+    // in select() without a problem, but LSPs have been known to balk at lower
+    // numbers. (64 in the bug).
+
+    // Allocate
+    struct PRPollDesc pfd[SOCKET_LIMIT_TARGET];
+    PRUint32 numAllocated = 0;
+
+    for (PRUint32 index = 0 ; index < gMaxCount; ++index) {
+        pfd[index].in_flags = PR_POLL_READ | PR_POLL_WRITE | PR_POLL_EXCEPT;
+        pfd[index].out_flags = 0;
+        pfd[index].fd =  PR_OpenTCPSocket(PR_AF_INET);
+        if (!pfd[index].fd) {
+            SOCKET_LOG(("Socket Limit Test index %d failed\n", index));
+            if (index < SOCKET_LIMIT_MIN)
+                gMaxCount = SOCKET_LIMIT_MIN;
+            else
+                gMaxCount = index;
+            break;
+        }
+        ++numAllocated;
+    }
+
+    // Test
+    PR_STATIC_ASSERT(SOCKET_LIMIT_MIN >= 32U);
+    while (gMaxCount <= numAllocated) {
+        PRInt32 rv = PR_Poll(pfd, gMaxCount, PR_MillisecondsToInterval(0));
+        
+        SOCKET_LOG(("Socket Limit Test poll() size=%d rv=%d\n",
+                    gMaxCount, rv));
+
+        if (rv >= 0)
+            break;
+
+        SOCKET_LOG(("Socket Limit Test poll confirmationSize=%d rv=%d error=%d\n",
+                    gMaxCount, rv, PR_GetError()));
+
+        gMaxCount -= 32;
+        if (gMaxCount <= SOCKET_LIMIT_MIN) {
+            gMaxCount = SOCKET_LIMIT_MIN;
+            break;
+        }
+    }
+
+    // Free
+    for (PRUint32 index = 0 ; index < numAllocated; ++index)
+        if (pfd[index].fd)
+            PR_Close(pfd[index].fd);
+
+    SOCKET_LOG(("Socket Limit Test max was confirmed at %d\n", gMaxCount));
+}
+#endif // windows
 
 PRStatus
 nsSocketTransportService::DiscoverMaxCount()

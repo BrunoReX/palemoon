@@ -38,8 +38,10 @@ namespace
 
 namespace gl
 {
-Context::Context(const egl::Config *config, const gl::Context *shareContext) : mConfig(config)
+Context::Context(const egl::Config *config, const gl::Context *shareContext, bool notifyResets, bool robustAccess) : mConfig(config)
 {
+    ASSERT(robustAccess == false);   // Unimplemented
+
     mDisplay = NULL;
     mDevice = NULL;
 
@@ -145,6 +147,7 @@ Context::Context(const egl::Config *config, const gl::Context *shareContext) : m
 
     mState.packAlignment = 4;
     mState.unpackAlignment = 4;
+    mState.packReverseRowOrder = false;
 
     mVertexDataManager = NULL;
     mIndexDataManager = NULL;
@@ -158,6 +161,10 @@ Context::Context(const egl::Config *config, const gl::Context *shareContext) : m
     mInvalidFramebufferOperation = false;
 
     mHasBeenCurrent = false;
+    mContextLost = false;
+    mResetStatus = GL_NO_ERROR;
+    mResetStrategy = (notifyResets ? GL_LOSE_CONTEXT_ON_RESET_EXT : GL_NO_RESET_NOTIFICATION_EXT);
+    mRobustAccess = robustAccess;
 
     mSupportsDXT1Textures = false;
     mSupportsDXT3Textures = false;
@@ -290,8 +297,8 @@ void Context::makeCurrent(egl::Display *display, egl::Surface *surface)
         mSupportsDXT1Textures = mDisplay->getDXT1TextureSupport();
         mSupportsDXT3Textures = mDisplay->getDXT3TextureSupport();
         mSupportsDXT5Textures = mDisplay->getDXT5TextureSupport();
-        mSupportsFloatTextures = mDisplay->getFloatTextureSupport(&mSupportsFloatLinearFilter, &mSupportsFloatRenderableTextures);
-        mSupportsHalfFloatTextures = mDisplay->getHalfFloatTextureSupport(&mSupportsHalfFloatLinearFilter, &mSupportsHalfFloatRenderableTextures);
+        mSupportsFloat32Textures = mDisplay->getFloat32TextureSupport(&mSupportsFloat32LinearFilter, &mSupportsFloat32RenderableTextures);
+        mSupportsFloat16Textures = mDisplay->getFloat16TextureSupport(&mSupportsFloat16LinearFilter, &mSupportsFloat16RenderableTextures);
         mSupportsLuminanceTextures = mDisplay->getLuminanceTextureSupport();
         mSupportsLuminanceAlphaTextures = mDisplay->getLuminanceAlphaTextureSupport();
 
@@ -387,6 +394,18 @@ void Context::markAllStateDirty()
     mFrontFaceDirty = true;
     mDxUniformsDirty = true;
     mCachedCurrentProgram = NULL;
+}
+
+void Context::markContextLost()
+{
+    if (mResetStrategy == GL_LOSE_CONTEXT_ON_RESET_EXT)
+        mResetStatus = GL_UNKNOWN_CONTEXT_RESET_EXT;
+    mContextLost = true;
+}
+
+bool Context::isContextLost()
+{
+    return mContextLost;
 }
 
 void Context::setClearColor(float red, float green, float blue, float alpha)
@@ -837,6 +856,16 @@ GLint Context::getUnpackAlignment() const
     return mState.unpackAlignment;
 }
 
+void Context::setPackReverseRowOrder(bool reverseRowOrder)
+{
+    mState.packReverseRowOrder = reverseRowOrder;
+}
+
+bool Context::getPackReverseRowOrder() const
+{
+    return mState.packReverseRowOrder;
+}
+
 GLuint Context::createBuffer()
 {
     return mResourceManager->createBuffer();
@@ -1158,24 +1187,25 @@ bool Context::getBooleanv(GLenum pname, GLboolean *params)
 {
     switch (pname)
     {
-      case GL_SHADER_COMPILER:          *params = GL_TRUE;                          break;
-      case GL_SAMPLE_COVERAGE_INVERT:   *params = mState.sampleCoverageInvert;      break;
-      case GL_DEPTH_WRITEMASK:          *params = mState.depthMask;                 break;
+      case GL_SHADER_COMPILER:           *params = GL_TRUE;                            break;
+      case GL_SAMPLE_COVERAGE_INVERT:    *params = mState.sampleCoverageInvert;        break;
+      case GL_DEPTH_WRITEMASK:           *params = mState.depthMask;                   break;
       case GL_COLOR_WRITEMASK:
         params[0] = mState.colorMaskRed;
         params[1] = mState.colorMaskGreen;
         params[2] = mState.colorMaskBlue;
         params[3] = mState.colorMaskAlpha;
         break;
-      case GL_CULL_FACE:                *params = mState.cullFace;                  break;
-      case GL_POLYGON_OFFSET_FILL:      *params = mState.polygonOffsetFill;         break;
-      case GL_SAMPLE_ALPHA_TO_COVERAGE: *params = mState.sampleAlphaToCoverage;     break;
-      case GL_SAMPLE_COVERAGE:          *params = mState.sampleCoverage;            break;
-      case GL_SCISSOR_TEST:             *params = mState.scissorTest;               break;
-      case GL_STENCIL_TEST:             *params = mState.stencilTest;               break;
-      case GL_DEPTH_TEST:               *params = mState.depthTest;                 break;
-      case GL_BLEND:                    *params = mState.blend;                     break;
-      case GL_DITHER:                   *params = mState.dither;                    break;
+      case GL_CULL_FACE:                 *params = mState.cullFace;                    break;
+      case GL_POLYGON_OFFSET_FILL:       *params = mState.polygonOffsetFill;           break;
+      case GL_SAMPLE_ALPHA_TO_COVERAGE:  *params = mState.sampleAlphaToCoverage;       break;
+      case GL_SAMPLE_COVERAGE:           *params = mState.sampleCoverage;              break;
+      case GL_SCISSOR_TEST:              *params = mState.scissorTest;                 break;
+      case GL_STENCIL_TEST:              *params = mState.stencilTest;                 break;
+      case GL_DEPTH_TEST:                *params = mState.depthTest;                   break;
+      case GL_BLEND:                     *params = mState.blend;                       break;
+      case GL_DITHER:                    *params = mState.dither;                      break;
+      case GL_CONTEXT_ROBUST_ACCESS_EXT: *params = mRobustAccess ? GL_TRUE : GL_FALSE; break;
       default:
         return false;
     }
@@ -1254,6 +1284,7 @@ bool Context::getIntegerv(GLenum pname, GLint *params)
       case GL_RENDERBUFFER_BINDING:             *params = mState.renderbuffer.id();             break;
       case GL_CURRENT_PROGRAM:                  *params = mState.currentProgram;                break;
       case GL_PACK_ALIGNMENT:                   *params = mState.packAlignment;                 break;
+      case GL_PACK_REVERSE_ROW_ORDER_ANGLE:     *params = mState.packReverseRowOrder;           break;
       case GL_UNPACK_ALIGNMENT:                 *params = mState.unpackAlignment;               break;
       case GL_GENERATE_MIPMAP_HINT:             *params = mState.generateMipmapHint;            break;
       case GL_FRAGMENT_SHADER_DERIVATIVE_HINT_OES: *params = mState.fragmentShaderDerivativeHint; break;
@@ -1375,7 +1406,7 @@ bool Context::getIntegerv(GLenum pname, GLint *params)
       case GL_ALPHA_BITS:
         {
             gl::Framebuffer *framebuffer = getDrawFramebuffer();
-            gl::Colorbuffer *colorbuffer = framebuffer->getColorbuffer();
+            gl::Renderbuffer *colorbuffer = framebuffer->getColorbuffer();
 
             if (colorbuffer)
             {
@@ -1396,7 +1427,7 @@ bool Context::getIntegerv(GLenum pname, GLint *params)
       case GL_DEPTH_BITS:
         {
             gl::Framebuffer *framebuffer = getDrawFramebuffer();
-            gl::DepthStencilbuffer *depthbuffer = framebuffer->getDepthbuffer();
+            gl::Renderbuffer *depthbuffer = framebuffer->getDepthbuffer();
 
             if (depthbuffer)
             {
@@ -1411,7 +1442,7 @@ bool Context::getIntegerv(GLenum pname, GLint *params)
       case GL_STENCIL_BITS:
         {
             gl::Framebuffer *framebuffer = getDrawFramebuffer();
-            gl::DepthStencilbuffer *stencilbuffer = framebuffer->getStencilbuffer();
+            gl::Renderbuffer *stencilbuffer = framebuffer->getStencilbuffer();
 
             if (stencilbuffer)
             {
@@ -1444,6 +1475,9 @@ bool Context::getIntegerv(GLenum pname, GLint *params)
 
             *params = mState.samplerTexture[TEXTURE_CUBE][mState.activeSampler].id();
         }
+        break;
+      case GL_RESET_NOTIFICATION_STRATEGY_EXT:
+        *params = mResetStrategy;
         break;
       default:
         return false;
@@ -1490,6 +1524,7 @@ bool Context::getQueryParameterInfo(GLenum pname, GLenum *type, unsigned int *nu
       case GL_RENDERBUFFER_BINDING:
       case GL_CURRENT_PROGRAM:
       case GL_PACK_ALIGNMENT:
+      case GL_PACK_REVERSE_ROW_ORDER_ANGLE:
       case GL_UNPACK_ALIGNMENT:
       case GL_GENERATE_MIPMAP_HINT:
       case GL_FRAGMENT_SHADER_DERIVATIVE_HINT_OES:
@@ -1534,6 +1569,7 @@ bool Context::getQueryParameterInfo(GLenum pname, GLenum *type, unsigned int *nu
       case GL_IMPLEMENTATION_COLOR_READ_FORMAT:
       case GL_TEXTURE_BINDING_2D:
       case GL_TEXTURE_BINDING_CUBE_MAP:
+      case GL_RESET_NOTIFICATION_STRATEGY_EXT:
         {
             *type = GL_INT;
             *numParams = 1;
@@ -1577,6 +1613,7 @@ bool Context::getQueryParameterInfo(GLenum pname, GLenum *type, unsigned int *nu
       case GL_DEPTH_TEST:
       case GL_BLEND:
       case GL_DITHER:
+      case GL_CONTEXT_ROBUST_ACCESS_EXT:
         {
             *type = GL_BOOL;
             *numParams = 1;
@@ -1631,15 +1668,11 @@ bool Context::applyRenderTarget(bool ignoreViewport)
         return error(GL_INVALID_FRAMEBUFFER_OPERATION, false);
     }
 
-    IDirect3DSurface9 *renderTarget = NULL;
-    IDirect3DSurface9 *depthStencil = NULL;
-
     bool renderTargetChanged = false;
     unsigned int renderTargetSerial = framebufferObject->getRenderTargetSerial();
     if (renderTargetSerial != mAppliedRenderTargetSerial)
     {
-        renderTarget = framebufferObject->getRenderTarget();
-
+        IDirect3DSurface9 *renderTarget = framebufferObject->getRenderTarget();
         if (!renderTarget)
         {
             return false;   // Context must be lost
@@ -1648,8 +1681,10 @@ bool Context::applyRenderTarget(bool ignoreViewport)
         mAppliedRenderTargetSerial = renderTargetSerial;
         mScissorStateDirty = true; // Scissor area must be clamped to render target's size-- this is different for different render targets.
         renderTargetChanged = true;
+        renderTarget->Release();
     }
 
+    IDirect3DSurface9 *depthStencil = NULL;
     unsigned int depthbufferSerial = 0;
     unsigned int stencilbufferSerial = 0;
     if (framebufferObject->getDepthbufferType() != GL_NONE)
@@ -1687,17 +1722,14 @@ bool Context::applyRenderTarget(bool ignoreViewport)
 
     if (!mRenderTargetDescInitialized || renderTargetChanged)
     {
+        IDirect3DSurface9 *renderTarget = framebufferObject->getRenderTarget();
         if (!renderTarget)
         {
-            renderTarget = framebufferObject->getRenderTarget();
-
-            if (!renderTarget)
-            {
-                return false;   // Context must be lost
-            }
+            return false;   // Context must be lost
         }
         renderTarget->GetDesc(&mRenderTargetDesc);
         mRenderTargetDescInitialized = true;
+        renderTarget->Release();
     }
 
     D3DVIEWPORT9 viewport;
@@ -1730,7 +1762,7 @@ bool Context::applyRenderTarget(bool ignoreViewport)
         return false;   // Nothing to render
     }
 
-    if (!mViewportInitialized || memcmp(&viewport, &mSetViewport, sizeof mSetViewport) != 0)
+    if (renderTargetChanged || !mViewportInitialized || memcmp(&viewport, &mSetViewport, sizeof mSetViewport) != 0)
     {
         mDevice->SetViewport(&viewport);
         mSetViewport = viewport;
@@ -1766,11 +1798,13 @@ bool Context::applyRenderTarget(bool ignoreViewport)
         GLfloat xy[2] = {1.0f / viewport.Width, -1.0f / viewport.Height};
         programObject->setUniform2fv(halfPixelSize, 1, xy);
 
-        GLint viewport = programObject->getDxViewportLocation();
-        GLfloat whxy[4] = {mState.viewportWidth / 2.0f, mState.viewportHeight / 2.0f, 
+        // These values are used for computing gl_FragCoord in Program::linkVaryings(). The approach depends on Shader Model 3.0 support.
+        GLint coord = programObject->getDxCoordLocation();
+        float h = mSupportsShaderModel3 ? mRenderTargetDesc.Height : mState.viewportHeight / 2.0f;
+        GLfloat whxy[4] = {mState.viewportWidth / 2.0f, h, 
                           (float)mState.viewportX + mState.viewportWidth / 2.0f, 
                           (float)mState.viewportY + mState.viewportHeight / 2.0f};
-        programObject->setUniform4fv(viewport, 1, whxy);
+        programObject->setUniform4fv(coord, 1, whxy);
 
         GLint depth = programObject->getDxDepthLocation();
         GLfloat dz[2] = {(zFar - zNear) / 2.0f, (zNear + zFar) / 2.0f};
@@ -1911,7 +1945,7 @@ void Context::applyState(GLenum drawMode)
             }
 
             // get the maximum size of the stencil ref
-            gl::DepthStencilbuffer *stencilbuffer = framebufferObject->getStencilbuffer();
+            gl::Renderbuffer *stencilbuffer = framebufferObject->getStencilbuffer();
             GLuint maxStencil = (1 << stencilbuffer->getStencilSize()) - 1;
 
             mDevice->SetRenderState(adjustedFrontFace == GL_CCW ? D3DRS_STENCILWRITEMASK : D3DRS_CCW_STENCILWRITEMASK, mState.stencilWritemask);
@@ -1978,7 +2012,7 @@ void Context::applyState(GLenum drawMode)
     {
         if (mState.polygonOffsetFill)
         {
-            gl::DepthStencilbuffer *depthbuffer = framebufferObject->getDepthbuffer();
+            gl::Renderbuffer *depthbuffer = framebufferObject->getDepthbuffer();
             if (depthbuffer)
             {
                 mDevice->SetRenderState(D3DRS_SLOPESCALEDEPTHBIAS, *((DWORD*)&mState.polygonOffsetFactor));
@@ -2127,13 +2161,13 @@ void Context::applyTextures(SamplerType type)
 
             Texture *texture = getSamplerTexture(textureUnit, textureType);
 
-            if (appliedTextureSerial[samplerIndex] != texture->getSerial() || texture->isDirtyParameter() || texture->isDirtyImage())
+            if (appliedTextureSerial[samplerIndex] != texture->getTextureSerial() || texture->hasDirtyParameters() || texture->hasDirtyImages())
             {
                 IDirect3DBaseTexture9 *d3dTexture = texture->getTexture();
 
                 if (d3dTexture)
                 {
-                    if (appliedTextureSerial[samplerIndex] != texture->getSerial() || texture->isDirtyParameter())
+                    if (appliedTextureSerial[samplerIndex] != texture->getTextureSerial() || texture->hasDirtyParameters())
                     {
                         GLenum wrapS = texture->getWrapS();
                         GLenum wrapT = texture->getWrapT();
@@ -2150,7 +2184,7 @@ void Context::applyTextures(SamplerType type)
                         mDevice->SetSamplerState(d3dSampler, D3DSAMP_MIPFILTER, d3dMipFilter);
                     }
 
-                    if (appliedTextureSerial[samplerIndex] != texture->getSerial() || texture->isDirtyImage())
+                    if (appliedTextureSerial[samplerIndex] != texture->getTextureSerial() || texture->hasDirtyImages())
                     {
                         mDevice->SetTexture(d3dSampler, d3dTexture);
                     }
@@ -2160,7 +2194,7 @@ void Context::applyTextures(SamplerType type)
                     mDevice->SetTexture(d3dSampler, getIncompleteTexture(textureType)->getTexture());
                 }
 
-                appliedTextureSerial[samplerIndex] = texture->getSerial();
+                appliedTextureSerial[samplerIndex] = texture->getTextureSerial();
                 texture->resetDirty();
             }
         }
@@ -2184,7 +2218,8 @@ void Context::applyTextures(SamplerType type)
     }
 }
 
-void Context::readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, void* pixels)
+void Context::readPixels(GLint x, GLint y, GLsizei width, GLsizei height,
+                         GLenum format, GLenum type, GLsizei *bufSize, void* pixels)
 {
     Framebuffer *framebuffer = getReadFramebuffer();
 
@@ -2198,8 +2233,18 @@ void Context::readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum
         return error(GL_INVALID_OPERATION);
     }
 
-    IDirect3DSurface9 *renderTarget = framebuffer->getRenderTarget();
+    GLsizei outputPitch = ComputePitch(width, format, type, mState.packAlignment);
+    // sized query sanity check
+    if (bufSize)
+    {
+        int requiredSize = outputPitch * height;
+        if (requiredSize > *bufSize)
+        {
+            return error(GL_INVALID_OPERATION);
+        }
+    }
 
+    IDirect3DSurface9 *renderTarget = framebuffer->getRenderTarget();
     if (!renderTarget)
     {
         return;   // Context must be lost, return silently
@@ -2208,39 +2253,65 @@ void Context::readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum
     D3DSURFACE_DESC desc;
     renderTarget->GetDesc(&desc);
 
-    IDirect3DSurface9 *systemSurface;
-    HRESULT result = mDevice->CreateOffscreenPlainSurface(desc.Width, desc.Height, desc.Format, D3DPOOL_SYSTEMMEM, &systemSurface, NULL);
-
-    if (FAILED(result))
-    {
-        ASSERT(result == D3DERR_OUTOFVIDEOMEMORY || result == E_OUTOFMEMORY);
-        return error(GL_OUT_OF_MEMORY);
-    }
-
     if (desc.MultiSampleType != D3DMULTISAMPLE_NONE)
     {
         UNIMPLEMENTED();   // FIXME: Requires resolve using StretchRect into non-multisampled render target
+        renderTarget->Release();
         return error(GL_OUT_OF_MEMORY);
     }
 
+    HRESULT result;
+    IDirect3DSurface9 *systemSurface = NULL;
+    bool directToPixels = getPackReverseRowOrder() && getPackAlignment() <= 4 && mDisplay->isD3d9ExDevice() &&
+                          x == 0 && y == 0 && width == desc.Width && height == desc.Height &&
+                          desc.Format == D3DFMT_A8R8G8B8 && format == GL_BGRA_EXT && type == GL_UNSIGNED_BYTE;
+    if (directToPixels)
+    {
+        // Use the pixels ptr as a shared handle to write directly into client's memory
+        result = mDevice->CreateOffscreenPlainSurface(desc.Width, desc.Height, desc.Format,
+                                                      D3DPOOL_SYSTEMMEM, &systemSurface, &pixels);
+        if (FAILED(result))
+        {
+            // Try again without the shared handle
+            directToPixels = false;
+        }
+    }
+
+    if (!directToPixels)
+    {
+        result = mDevice->CreateOffscreenPlainSurface(desc.Width, desc.Height, desc.Format,
+                                                      D3DPOOL_SYSTEMMEM, &systemSurface, NULL);
+        if (FAILED(result))
+        {
+            ASSERT(result == D3DERR_OUTOFVIDEOMEMORY || result == E_OUTOFMEMORY);
+            return error(GL_OUT_OF_MEMORY);
+        }
+    }
+
     result = mDevice->GetRenderTargetData(renderTarget, systemSurface);
+    renderTarget->Release();
+    renderTarget = NULL;
 
     if (FAILED(result))
     {
         systemSurface->Release();
 
-        switch (result)
-        {
-          // It turns out that D3D will sometimes produce more error
-          // codes than those documented.
-          case D3DERR_DRIVERINTERNALERROR:
-          case D3DERR_DEVICELOST:
-          case D3DERR_DEVICEHUNG:
+        // It turns out that D3D will sometimes produce more error
+        // codes than those documented.
+        if (checkDeviceLost(result))
             return error(GL_OUT_OF_MEMORY);
-          default:
+        else
+        {
             UNREACHABLE();
-            return;   // No sensible error to generate
+            return;
         }
+
+    }
+
+    if (directToPixels)
+    {
+        systemSurface->Release();
+        return;
     }
 
     D3DLOCKED_RECT lock;
@@ -2260,11 +2331,21 @@ void Context::readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum
         return;   // No sensible error to generate
     }
 
-    unsigned char *source = ((unsigned char*)lock.pBits) + lock.Pitch * (rect.bottom - rect.top - 1);
     unsigned char *dest = (unsigned char*)pixels;
     unsigned short *dest16 = (unsigned short*)pixels;
-    int inputPitch = -lock.Pitch;
-    GLsizei outputPitch = ComputePitch(width, format, type, mState.packAlignment);
+
+    unsigned char *source;
+    int inputPitch;
+    if (getPackReverseRowOrder())
+    {
+        source = (unsigned char*)lock.pBits;
+        inputPitch = lock.Pitch;
+    }
+    else
+    {
+        source = ((unsigned char*)lock.pBits) + lock.Pitch * (rect.bottom - rect.top - 1);
+        inputPitch = -lock.Pitch;
+    }
 
     for (int j = 0; j < rect.bottom - rect.top; j++)
     {
@@ -2517,17 +2598,7 @@ void Context::clear(GLbitfield mask)
     float depth = clamp01(mState.depthClearValue);
     int stencil = mState.stencilClearValue & 0x000000FF;
 
-    IDirect3DSurface9 *renderTarget = framebufferObject->getRenderTarget();
-
-    if (!renderTarget)
-    {
-        return;   // Context must be lost, return silently
-    }
-
-    D3DSURFACE_DESC desc;
-    renderTarget->GetDesc(&desc);
-
-    bool alphaUnmasked = (dx2es::GetAlphaSize(desc.Format) == 0) || mState.colorMaskAlpha;
+    bool alphaUnmasked = (dx2es::GetAlphaSize(mRenderTargetDesc.Format) == 0) || mState.colorMaskAlpha;
 
     const bool needMaskedStencilClear = (flags & D3DCLEAR_STENCIL) &&
                                         (mState.stencilWritemask & stencilUnmasked) != stencilUnmasked;
@@ -2628,12 +2699,12 @@ void Context::clear(GLbitfield mask)
 
         float quad[4][4];   // A quadrilateral covering the target, aligned to match the edges
         quad[0][0] = -0.5f;
-        quad[0][1] = desc.Height - 0.5f;
+        quad[0][1] = mRenderTargetDesc.Height - 0.5f;
         quad[0][2] = 0.0f;
         quad[0][3] = 1.0f;
 
-        quad[1][0] = desc.Width - 0.5f;
-        quad[1][1] = desc.Height - 0.5f;
+        quad[1][0] = mRenderTargetDesc.Width - 0.5f;
+        quad[1][1] = mRenderTargetDesc.Height - 0.5f;
         quad[1][2] = 0.0f;
         quad[1][3] = 1.0f;
 
@@ -2642,7 +2713,7 @@ void Context::clear(GLbitfield mask)
         quad[2][2] = 0.0f;
         quad[2][3] = 1.0f;
 
-        quad[3][0] = desc.Width - 0.5f;
+        quad[3][0] = mRenderTargetDesc.Width - 0.5f;
         quad[3][1] = -0.5f;
         quad[3][2] = 0.0f;
         quad[3][3] = 1.0f;
@@ -2715,7 +2786,7 @@ void Context::drawArrays(GLenum mode, GLint first, GLsizei count)
 
         if (mode == GL_LINE_LOOP)   // Draw the last segment separately
         {
-            drawClosingLine(first, first + count - 1);
+            drawClosingLine(0, count - 1, 0);
         }
     }
 }
@@ -2780,7 +2851,7 @@ void Context::drawElements(GLenum mode, GLsizei count, GLenum type, const void *
 
         if (mode == GL_LINE_LOOP)   // Draw the last segment separately
         {
-            drawClosingLine(count, type, indices);
+            drawClosingLine(count, type, indices, indexInfo.minIndex);
         }
     }
 }
@@ -2788,6 +2859,7 @@ void Context::drawElements(GLenum mode, GLsizei count, GLenum type, const void *
 // Implements glFlush when block is false, glFinish when block is true
 void Context::sync(bool block)
 {
+    egl::Display *display = getDisplay();
     IDirect3DQuery9 *eventQuery = NULL;
     HRESULT result;
 
@@ -2820,19 +2892,26 @@ void Context::sync(bool block)
         {
             // Keep polling, but allow other threads to do something useful first
             Sleep(0);
+            // explicitly check for device loss
+            // some drivers seem to return S_FALSE even if the device is lost
+            // instead of D3DERR_DEVICELOST like they should
+            if (display->testDeviceLost())
+            {
+                result = D3DERR_DEVICELOST;
+            }
         }
     }
     while(block && result == S_FALSE);
 
     eventQuery->Release();
 
-    if (result == D3DERR_DEVICELOST)
+    if (checkDeviceLost(result))
     {
         error(GL_OUT_OF_MEMORY);
     }
 }
 
-void Context::drawClosingLine(unsigned int first, unsigned int last)
+void Context::drawClosingLine(unsigned int first, unsigned int last, int minIndex)
 {
     IDirect3DIndexBuffer9 *indexBuffer = NULL;
     bool succeeded = false;
@@ -2886,7 +2965,7 @@ void Context::drawClosingLine(unsigned int first, unsigned int last)
         mDevice->SetIndices(mClosingIB->getBuffer());
         mAppliedIBSerial = mClosingIB->getSerial();
 
-        mDevice->DrawIndexedPrimitive(D3DPT_LINELIST, 0, 0, last, offset, 1);
+        mDevice->DrawIndexedPrimitive(D3DPT_LINELIST, -minIndex, minIndex, last, offset, 1);
     }
     else
     {
@@ -2895,7 +2974,7 @@ void Context::drawClosingLine(unsigned int first, unsigned int last)
     }
 }
 
-void Context::drawClosingLine(GLsizei count, GLenum type, const void *indices)
+void Context::drawClosingLine(GLsizei count, GLenum type, const void *indices, int minIndex)
 {
     unsigned int first = 0;
     unsigned int last = 0;
@@ -2924,7 +3003,7 @@ void Context::drawClosingLine(GLsizei count, GLenum type, const void *indices)
       default: UNREACHABLE();
     }
 
-    drawClosingLine(first, last);
+    drawClosingLine(first, last, minIndex);
 }
 
 void Context::recordInvalidEnum()
@@ -2992,6 +3071,36 @@ GLenum Context::getError()
     }
 
     return GL_NO_ERROR;
+}
+
+GLenum Context::getResetStatus()
+{
+    if (mResetStatus == GL_NO_ERROR)
+    {
+        bool lost = mDisplay->testDeviceLost();
+
+        if (lost)
+        {
+            mDisplay->notifyDeviceLost();   // Sets mResetStatus
+        }
+    }
+
+    GLenum status = mResetStatus;
+
+    if (mResetStatus != GL_NO_ERROR)
+    {
+        if (mDisplay->testDeviceResettable())
+        {
+            mResetStatus = GL_NO_ERROR;
+        }
+    }
+    
+    return status;
+}
+
+bool Context::isResetNotificationEnabled()
+{
+    return (mResetStrategy == GL_LOSE_CONTEXT_ON_RESET_EXT);
 }
 
 bool Context::supportsShaderModel3() const
@@ -3068,34 +3177,34 @@ bool Context::supportsDXT5Textures() const
     return mSupportsDXT5Textures;
 }
 
-bool Context::supportsFloatTextures() const
+bool Context::supportsFloat32Textures() const
 {
-    return mSupportsFloatTextures;
+    return mSupportsFloat32Textures;
 }
 
-bool Context::supportsFloatLinearFilter() const
+bool Context::supportsFloat32LinearFilter() const
 {
-    return mSupportsFloatLinearFilter;
+    return mSupportsFloat32LinearFilter;
 }
 
-bool Context::supportsFloatRenderableTextures() const
+bool Context::supportsFloat32RenderableTextures() const
 {
-    return mSupportsFloatRenderableTextures;
+    return mSupportsFloat32RenderableTextures;
 }
 
-bool Context::supportsHalfFloatTextures() const
+bool Context::supportsFloat16Textures() const
 {
-    return mSupportsHalfFloatTextures;
+    return mSupportsFloat16Textures;
 }
 
-bool Context::supportsHalfFloatLinearFilter() const
+bool Context::supportsFloat16LinearFilter() const
 {
-    return mSupportsHalfFloatLinearFilter;
+    return mSupportsFloat16LinearFilter;
 }
 
-bool Context::supportsHalfFloatRenderableTextures() const
+bool Context::supportsFloat16RenderableTextures() const
 {
-    return mSupportsHalfFloatRenderableTextures;
+    return mSupportsFloat16RenderableTextures;
 }
 
 int Context::getMaximumRenderbufferDimension() const
@@ -3344,19 +3453,19 @@ void Context::initExtensionString()
     mExtensionString += "GL_OES_rgb8_rgba8 ";
     mExtensionString += "GL_OES_standard_derivatives ";
 
-    if (supportsHalfFloatTextures())
+    if (supportsFloat16Textures())
     {
         mExtensionString += "GL_OES_texture_half_float ";
     }
-    if (supportsHalfFloatLinearFilter())
+    if (supportsFloat16LinearFilter())
     {
         mExtensionString += "GL_OES_texture_half_float_linear ";
     }
-    if (supportsFloatTextures())
+    if (supportsFloat32Textures())
     {
         mExtensionString += "GL_OES_texture_float ";
     }
-    if (supportsFloatLinearFilter())
+    if (supportsFloat32LinearFilter())
     {
         mExtensionString += "GL_OES_texture_float_linear ";
     }
@@ -3368,6 +3477,7 @@ void Context::initExtensionString()
 
     // Multi-vendor (EXT) extensions
     mExtensionString += "GL_EXT_read_format_bgra ";
+    mExtensionString += "GL_EXT_robustness ";
 
     if (supportsDXT1Textures())
     {
@@ -3375,6 +3485,7 @@ void Context::initExtensionString()
     }
 
     mExtensionString += "GL_EXT_texture_format_BGRA8888 ";
+    mExtensionString += "GL_EXT_texture_storage ";
 
     // ANGLE-specific extensions
     mExtensionString += "GL_ANGLE_framebuffer_blit ";
@@ -3382,6 +3493,8 @@ void Context::initExtensionString()
     {
         mExtensionString += "GL_ANGLE_framebuffer_multisample ";
     }
+
+    mExtensionString += "GL_ANGLE_pack_reverse_row_order ";
 
     if (supportsDXT3Textures())
     {
@@ -3391,6 +3504,8 @@ void Context::initExtensionString()
     {
         mExtensionString += "GL_ANGLE_texture_compression_dxt5 ";
     }
+
+    mExtensionString += "GL_ANGLE_texture_usage ";
     mExtensionString += "GL_ANGLE_translated_shader_source ";
 
     // Other vendor-specific extensions
@@ -3616,8 +3731,8 @@ void Context::blitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1
 
     if (mask & (GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT))
     {
-        DepthStencilbuffer *readDSBuffer = NULL;
-        DepthStencilbuffer *drawDSBuffer = NULL;
+        Renderbuffer *readDSBuffer = NULL;
+        Renderbuffer *drawDSBuffer = NULL;
 
         // We support OES_packed_depth_stencil, and do not support a separately attached depth and stencil buffer, so if we have
         // both a depth and stencil buffer, it will be the same buffer.
@@ -3673,8 +3788,14 @@ void Context::blitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1
 
         if (blitRenderTarget)
         {
-            HRESULT result = mDevice->StretchRect(readFramebuffer->getRenderTarget(), &sourceTrimmedRect, 
-                                                 drawFramebuffer->getRenderTarget(), &destTrimmedRect, D3DTEXF_NONE);
+            IDirect3DSurface9* readRenderTarget = readFramebuffer->getRenderTarget();
+            IDirect3DSurface9* drawRenderTarget = drawFramebuffer->getRenderTarget();
+
+            HRESULT result = mDevice->StretchRect(readRenderTarget, &sourceTrimmedRect, 
+                                                  drawRenderTarget, &destTrimmedRect, D3DTEXF_NONE);
+
+            readRenderTarget->Release();
+            drawRenderTarget->Release();
 
             if (FAILED(result))
             {
@@ -3805,9 +3926,9 @@ void VertexDeclarationCache::markStateDirty()
 
 extern "C"
 {
-gl::Context *glCreateContext(const egl::Config *config, const gl::Context *shareContext)
+gl::Context *glCreateContext(const egl::Config *config, const gl::Context *shareContext, bool notifyResets, bool robustAccess)
 {
-    return new gl::Context(config, shareContext);
+    return new gl::Context(config, shareContext, notifyResets, robustAccess);
 }
 
 void glDestroyContext(gl::Context *context)

@@ -42,8 +42,6 @@
 #include "nsToolkitCompsCID.h"
 #include "nsIPlacesImportExportService.h"
 #include "nsIFile.h"
-#include "nsIInputStream.h"
-#include "nsILineInputStream.h"
 #include "nsIProperties.h"
 #include "nsIProfileMigrator.h"
 
@@ -54,7 +52,6 @@
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsIRDFService.h"
 #include "nsIStringBundle.h"
-#include "nsISupportsArray.h"
 #include "nsXPCOMCID.h"
 
 #define MIGRATION_BUNDLE "chrome://browser/locale/migration/migration.properties"
@@ -127,11 +124,11 @@ void ParseOverrideServers(const nsAString& aServers, nsIPrefBranch* aBranch)
 }
 
 void GetMigrateDataFromArray(MigrationData* aDataArray, PRInt32 aDataArrayLength, 
-                             PRBool aReplace, nsIFile* aSourceProfile, 
+                             bool aReplace, nsIFile* aSourceProfile, 
                              PRUint16* aResult)
 {
   nsCOMPtr<nsIFile> sourceFile; 
-  PRBool exists;
+  bool exists;
   MigrationData* cursor;
   MigrationData* end = aDataArray + aDataArrayLength;
   for (cursor = aDataArray; cursor < end && cursor->fileName; ++cursor) {
@@ -166,61 +163,10 @@ GetProfilePath(nsIProfileStartup* aStartup, nsCOMPtr<nsIFile>& aProfileDir)
   }
 }
 
-nsresult 
-AnnotatePersonalToolbarFolder(nsIFile* aSourceBookmarksFile,
-                              nsIFile* aTargetBookmarksFile,
-                              const char* aToolbarFolderName)
-{
-  nsCOMPtr<nsIInputStream> fileInputStream;
-  nsresult rv = NS_NewLocalFileInputStream(getter_AddRefs(fileInputStream),
-                                           aSourceBookmarksFile);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsIOutputStream> outputStream;
-  rv = NS_NewLocalFileOutputStream(getter_AddRefs(outputStream),
-                                   aTargetBookmarksFile);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsILineInputStream> lineInputStream =
-    do_QueryInterface(fileInputStream, &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCAutoString sourceBuffer;
-  nsCAutoString targetBuffer;
-  PRBool moreData = PR_FALSE;
-  PRUint32 bytesWritten = 0;
-  do {
-    lineInputStream->ReadLine(sourceBuffer, &moreData);
-    if (!moreData)
-      break;
-
-    PRInt32 nameOffset = sourceBuffer.Find(aToolbarFolderName);
-    if (nameOffset >= 0) {
-      // Found the personal toolbar name on a line, check to make sure it's
-      // actually a folder. 
-      NS_NAMED_LITERAL_CSTRING(folderPrefix, "<DT><H3 ");
-      PRInt32 folderPrefixOffset = sourceBuffer.Find(folderPrefix);
-      if (folderPrefixOffset >= 0)
-        sourceBuffer.Insert(NS_LITERAL_CSTRING("PERSONAL_TOOLBAR_FOLDER=\"true\" "), 
-                            folderPrefixOffset + folderPrefix.Length());
-    }
-
-    targetBuffer.Assign(sourceBuffer);
-    targetBuffer.Append("\r\n");
-    outputStream->Write(targetBuffer.get(), targetBuffer.Length(),
-                        &bytesWritten);
-  }
-  while (1);
-  
-  outputStream->Close();
-  
-  return NS_OK;
-}
-
 nsresult
 ImportBookmarksHTML(nsIFile* aBookmarksFile, 
-                    PRBool aImportIntoRoot,
-                    PRBool aOverwriteDefaults,
+                    bool aImportIntoRoot,
+                    bool aOverwriteDefaults,
                     const PRUnichar* aImportSourceNameKey)
 {
   nsresult rv;
@@ -273,7 +219,7 @@ ImportBookmarksHTML(nsIFile* aBookmarksFile,
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Import the bookmarks into the folder.
-  return importer->ImportHTMLFromFileToFolder(localFile, folder, PR_FALSE);
+  return importer->ImportHTMLFromFileToFolder(localFile, folder, false);
 }
 
 nsresult
@@ -283,7 +229,7 @@ InitializeBookmarks(nsIFile* aTargetProfile)
   aTargetProfile->Clone(getter_AddRefs(bookmarksFile));
   bookmarksFile->Append(BOOKMARKS_FILE_NAME);
   
-  nsresult rv = ImportBookmarksHTML(bookmarksFile, PR_TRUE, PR_TRUE, EmptyString().get());
+  nsresult rv = ImportBookmarksHTML(bookmarksFile, true, true, EmptyString().get());
   NS_ENSURE_SUCCESS(rv, rv);
   return NS_OK;
 }

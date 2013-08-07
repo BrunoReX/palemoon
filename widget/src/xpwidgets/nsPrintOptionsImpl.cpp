@@ -292,7 +292,7 @@ nsPrintOptions::ReadPrefs(nsIPrintSettings* aPS, const nsAString& aPrinterName,
     aPS->SetUnwriteableMarginInTwips(margin);
   }
 
-  PRBool   b;
+  bool     b;
   nsAutoString str;
   PRInt32  iVal;
   double   dbl;
@@ -330,7 +330,7 @@ nsPrintOptions::ReadPrefs(nsIPrintSettings* aPS, const nsAString& aPrinterName,
     PRInt32 sizeUnit, sizeType;
     double width, height;
 
-    PRBool success = GETINTPREF(kPrintPaperSizeUnit, &sizeUnit)
+    bool success = GETINTPREF(kPrintPaperSizeUnit, &sizeUnit)
                   && GETINTPREF(kPrintPaperSizeType, &sizeType)
                   && GETDBLPREF(kPrintPaperWidth, width)
                   && GETDBLPREF(kPrintPaperHeight, height)
@@ -625,7 +625,7 @@ nsPrintOptions::WritePrefs(nsIPrintSettings *aPS, const nsAString& aPrinterName,
     }
   }
 
-  PRBool     b;
+  bool       b;
   PRUnichar* uStr;
   PRInt32    iVal;
   PRInt16    iVal16;
@@ -827,10 +827,10 @@ nsPrintOptions::WritePrefs(nsIPrintSettings *aPS, const nsAString& aPrinterName,
 NS_IMETHODIMP
 nsPrintOptions::DisplayJobProperties(const PRUnichar *aPrinter,
                                      nsIPrintSettings* aPrintSettings,
-                                     PRBool *aDisplayed)
+                                     bool *aDisplayed)
 {
   NS_ENSURE_ARG_POINTER(aPrinter);
-  *aDisplayed = PR_FALSE;
+  *aDisplayed = false;
 
   nsresult rv;
   nsCOMPtr<nsIPrinterEnumerator> propDlg =
@@ -841,7 +841,7 @@ nsPrintOptions::DisplayJobProperties(const PRUnichar *aPrinter,
   rv = propDlg->DisplayPropertiesDlg(aPrinter, aPrintSettings);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  *aDisplayed = PR_TRUE;
+  *aDisplayed = true;
 
   return rv;
 }
@@ -864,7 +864,7 @@ nsresult nsPrintOptions::_CreatePrintSettings(nsIPrintSettings **_retval)
   NS_ENSURE_SUCCESS(rv, rv);
   (*_retval)->SetPrinterName(printerName.get());
 
-  (void)InitPrintSettingsFromPrefs(*_retval, PR_FALSE,
+  (void)InitPrintSettingsFromPrefs(*_retval, false,
                                    nsIPrintSettings::kInitSaveAll);
 
   return NS_OK;
@@ -910,12 +910,12 @@ nsPrintOptions::GetDefaultPrinterName(PRUnichar * *aDefaultPrinterName)
     nsCOMPtr<nsIStringEnumerator> printers;
     rv = prtEnum->GetPrinterNameList(getter_AddRefs(printers));
     if (NS_SUCCEEDED(rv)) {
-      PRBool isValid = PR_FALSE;
-      PRBool hasMore;
+      bool isValid = false;
+      bool hasMore;
       while (NS_SUCCEEDED(printers->HasMore(&hasMore)) && hasMore) {
         nsAutoString printer;
         if (NS_SUCCEEDED(printers->GetNext(printer)) && lastPrinterName.Equals(printer)) {
-          isValid = PR_TRUE;
+          isValid = true;
           break;
         }
       }
@@ -946,7 +946,7 @@ nsPrintOptions::InitPrintSettingsFromPrinter(const PRUnichar *aPrinterName,
   }
 #endif
 
-  PRBool isInitialized;
+  bool isInitialized;
   aPrintSettings->GetIsInitializedFromPrinter(&isInitialized);
   if (isInitialized)
     return NS_OK;
@@ -959,7 +959,7 @@ nsPrintOptions::InitPrintSettingsFromPrinter(const PRUnichar *aPrinterName,
   rv = prtEnum->InitPrintSettingsFromPrinter(aPrinterName, aPrintSettings);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  aPrintSettings->SetIsInitializedFromPrinter(PR_TRUE);
+  aPrintSettings->SetIsInitializedFromPrinter(true);
   return rv;
 }
 
@@ -967,7 +967,7 @@ nsPrintOptions::InitPrintSettingsFromPrinter(const PRUnichar *aPrinterName,
  *  Helper function - Returns either the name or sets the length to zero
  */
 static nsresult 
-GetAdjustedPrinterName(nsIPrintSettings* aPS, PRBool aUsePNP,
+GetAdjustedPrinterName(nsIPrintSettings* aPS, bool aUsePNP,
                        nsAString& aPrinterName)
 {
   NS_ENSURE_ARG_POINTER(aPS);
@@ -1013,7 +1013,7 @@ nsPrintOptions::GetPrinterPrefInt(nsIPrintSettings *aPrintSettings,
   nsAutoString prtName;
   // Get the Printer Name from the PrintSettings
   // to use as a prefix for Pref Names
-  GetAdjustedPrinterName(aPrintSettings, PR_TRUE, prtName);
+  GetAdjustedPrinterName(aPrintSettings, true, prtName);
 
   const char* prefName =
     GetPrefName(NS_LossyConvertUTF16toASCII(aPrefName).get(), prtName);
@@ -1030,11 +1030,11 @@ nsPrintOptions::GetPrinterPrefInt(nsIPrintSettings *aPrintSettings,
 
 NS_IMETHODIMP 
 nsPrintOptions::InitPrintSettingsFromPrefs(nsIPrintSettings* aPS,
-                                           PRBool aUsePNP, PRUint32 aFlags)
+                                           bool aUsePNP, PRUint32 aFlags)
 {
   NS_ENSURE_ARG_POINTER(aPS);
 
-  PRBool isInitialized;
+  bool isInitialized;
   aPS->GetIsInitializedFromPrefs(&isInitialized);
 
   if (isInitialized)
@@ -1059,7 +1059,7 @@ nsPrintOptions::InitPrintSettingsFromPrefs(nsIPrintSettings* aPS,
   // Now read any printer specific prefs
   rv = ReadPrefs(aPS, prtName, aFlags);
   if (NS_SUCCEEDED(rv))
-    aPS->SetIsInitializedFromPrefs(PR_TRUE);
+    aPS->SetIsInitializedFromPrefs(true);
 
   return NS_OK;
 }
@@ -1070,7 +1070,7 @@ nsPrintOptions::InitPrintSettingsFromPrefs(nsIPrintSettings* aPS,
  */
 nsresult
 nsPrintOptions::SavePrintSettingsToPrefs(nsIPrintSettings *aPS,
-                                         PRBool aUsePrinterNamePrefix,
+                                         bool aUsePrinterNamePrefix,
                                          PRUint32 aFlags)
 {
   NS_ENSURE_ARG_POINTER(aPS);
@@ -1116,16 +1116,14 @@ void
 nsPrintOptions::ReadInchesToTwipsPref(const char * aPrefId, PRInt32& aTwips,
                                       const char * aMarginPref)
 {
-  nsCAutoString str;
-  nsresult rv = Preferences::GetCString(aPrefId, &str);
+  nsAutoString str;
+  nsresult rv = Preferences::GetString(aPrefId, &str);
   if (NS_FAILED(rv) || str.IsEmpty()) {
-    rv = Preferences::GetCString(aMarginPref, &str);
+    rv = Preferences::GetString(aMarginPref, &str);
   }
   if (NS_SUCCEEDED(rv) && !str.IsEmpty()) {
-    nsAutoString justStr;
-    justStr.AssignWithConversion(str);
     PRInt32 errCode;
-    float inches = justStr.ToFloat(&errCode);
+    float inches = str.ToFloat(&errCode);
     if (NS_SUCCEEDED(errCode)) {
       aTwips = NS_INCHES_TO_INT_TWIPS(inches);
     } else {
@@ -1223,15 +1221,15 @@ Tester::Tester()
   }
 
   if (ps) {
-    ps->SetPrintOptions(nsIPrintSettings::kPrintOddPages,  PR_TRUE);
-    ps->SetPrintOptions(nsIPrintSettings::kPrintEvenPages,  PR_FALSE);
+    ps->SetPrintOptions(nsIPrintSettings::kPrintOddPages,  true);
+    ps->SetPrintOptions(nsIPrintSettings::kPrintEvenPages,  false);
     ps->SetMarginTop(1.0);
     ps->SetMarginLeft(1.0);
     ps->SetMarginBottom(1.0);
     ps->SetMarginRight(1.0);
     ps->SetScaling(0.5);
-    ps->SetPrintBGColors(PR_TRUE);
-    ps->SetPrintBGImages(PR_TRUE);
+    ps->SetPrintBGColors(true);
+    ps->SetPrintBGImages(true);
     ps->SetPrintRange(15);
     ps->SetHeaderStrLeft(NS_ConvertUTF8toUTF16("Left").get());
     ps->SetHeaderStrCenter(NS_ConvertUTF8toUTF16("Center").get());
@@ -1246,16 +1244,16 @@ Tester::Tester()
     ps->SetPaperWidth(100.0);
     ps->SetPaperHeight(50.0);
     ps->SetPaperSizeUnit(nsIPrintSettings::kPaperSizeMillimeters);
-    ps->SetPrintReversed(PR_TRUE);
-    ps->SetPrintInColor(PR_TRUE);
+    ps->SetPrintReversed(true);
+    ps->SetPrintInColor(true);
     ps->SetOrientation(nsIPrintSettings::kLandscapeOrientation);
     ps->SetPrintCommand(NS_ConvertUTF8toUTF16("Command").get());
     ps->SetNumCopies(2);
     ps->SetPrinterName(NS_ConvertUTF8toUTF16("Printer Name").get());
-    ps->SetPrintToFile(PR_TRUE);
+    ps->SetPrintToFile(true);
     ps->SetToFileName(NS_ConvertUTF8toUTF16("File Name").get());
     ps->SetPrintPageDelay(1000);
-    ps->SetShrinkToFit(PR_TRUE);
+    ps->SetShrinkToFit(true);
 
     struct SettingsType {
       const char* mName;
@@ -1295,8 +1293,8 @@ Tester::Tester()
       while (gSettings[i].mName != nsnull) {
         printf("------------------------------------------------\n");
         printf("%d) %s -> 0x%X\n", i, gSettings[i].mName, gSettings[i].mFlag);
-        printService->SavePrintSettingsToPrefs(ps, PR_TRUE, gSettings[i].mFlag);
-        printService->InitPrintSettingsFromPrefs(ps, PR_TRUE,
+        printService->SavePrintSettingsToPrefs(ps, true, gSettings[i].mFlag);
+        printService->InitPrintSettingsFromPrefs(ps, true,
                                                  gSettings[i].mFlag);
         i++;
       }

@@ -127,7 +127,7 @@ nsIndexedToHTML::Init(nsIStreamListener* aListener) {
     if (NS_FAILED(rv)) return rv;
     rv = sbs->CreateBundle(NECKO_MSGS_URL, getter_AddRefs(mBundle));
 
-    mExpectAbsLoc = PR_FALSE;
+    mExpectAbsLoc = false;
 
     return rv;
 }
@@ -207,8 +207,8 @@ nsIndexedToHTML::DoOnStartRequest(nsIRequest* request, nsISupports *aContext,
     // would muck up the XUL display
     // - bbaetz
 
-    PRBool isScheme = PR_FALSE;
-    PRBool isSchemeFile = PR_FALSE;
+    bool isScheme = false;
+    bool isSchemeFile = false;
     if (NS_SUCCEEDED(uri->SchemeIs("ftp", &isScheme)) && isScheme) {
 
         // strip out the password here, so it doesn't show in the page title
@@ -243,7 +243,7 @@ nsIndexedToHTML::DoOnStartRequest(nsIRequest* request, nsISupports *aContext,
         if (NS_FAILED(rv)) return rv;
         nsCOMPtr<nsILocalFile> lfile = do_QueryInterface(file, &rv);
         if (NS_FAILED(rv)) return rv;
-        lfile->SetFollowLinks(PR_TRUE);
+        lfile->SetFollowLinks(true);
         
         nsCAutoString url;
         rv = net_GetURLSpecFromFile(file, url);
@@ -610,7 +610,7 @@ nsIndexedToHTML::DoOnStartRequest(nsIRequest* request, nsISupports *aContext,
     nsCOMPtr<nsIXULChromeRegistry> reg =
       mozilla::services::GetXULChromeRegistryService();
     if (reg) {
-      PRBool isRTL = PR_FALSE;
+      bool isRTL = false;
       reg->IsLocaleRTL(NS_LITERAL_CSTRING("global"), &isRTL);
       if (isRTL) {
         direction.AssignLiteral("rtl");
@@ -766,7 +766,7 @@ nsIndexedToHTML::FormatInputStream(nsIRequest* aRequest, nsISupports *aContext, 
 
     nsCOMPtr<nsIInputStream> inputData;
     if (buffer) {
-      rv = NS_NewCStringInputStream(getter_AddRefs(inputData), Substring(buffer, buffer + dstLength));
+      rv = NS_NewCStringInputStream(getter_AddRefs(inputData), Substring(buffer, dstLength));
       nsMemory::Free(buffer);
       NS_ENSURE_SUCCESS(rv, rv);
       rv = mListener->OnDataAvailable(aRequest, aContext,

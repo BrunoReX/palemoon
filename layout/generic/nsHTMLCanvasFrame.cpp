@@ -52,6 +52,10 @@
 
 #include "gfxContext.h"
 
+#ifdef ACCESSIBILITY
+#include "nsAccessibilityService.h"
+#endif
+
 using namespace mozilla;
 using namespace mozilla::layers;
 
@@ -78,9 +82,9 @@ public:
   NS_DISPLAY_DECL_NAME("nsDisplayCanvas", TYPE_CANVAS)
 
   virtual nsRegion GetOpaqueRegion(nsDisplayListBuilder* aBuilder,
-                                   PRBool* aForceTransparentSurface = nsnull) {
+                                   bool* aForceTransparentSurface = nsnull) {
     if (aForceTransparentSurface) {
-      *aForceTransparentSurface = PR_FALSE;
+      *aForceTransparentSurface = false;
     }
     nsIFrame* f = GetUnderlyingFrame();
     nsHTMLCanvasElement *canvas = CanvasElementFromContent(f->GetContent());
@@ -191,7 +195,7 @@ nsHTMLCanvasFrame::GetIntrinsicRatio()
 nsHTMLCanvasFrame::ComputeSize(nsRenderingContext *aRenderingContext,
                                nsSize aCBSize, nscoord aAvailableWidth,
                                nsSize aMargin, nsSize aBorder, nsSize aPadding,
-                               PRBool aShrinkWrap)
+                               bool aShrinkWrap)
 {
   nsIntSize size = GetCanvasSize();
 
@@ -360,6 +364,10 @@ nsHTMLCanvasFrame::GetContinuationOffset(nscoord* aWidth) const
 already_AddRefed<nsAccessible>
 nsHTMLCanvasFrame::CreateAccessible()
 {
+  nsAccessibilityService* accService = nsIPresShell::AccService();
+  if (accService) {
+    return accService->CreateHTMLCanvasAccessible(mContent, PresContext()->PresShell());
+  }
   return nsnull;
 }
 #endif

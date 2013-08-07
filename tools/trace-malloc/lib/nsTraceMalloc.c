@@ -68,6 +68,7 @@
 #include "plstr.h"
 #include "nsStackWalk.h"
 #include "nsTraceMallocCallbacks.h"
+#include "nsTypeInfo.h"
 
 #if defined(XP_MACOSX)
 
@@ -957,6 +958,18 @@ backtrace(tm_thread *t, int skip, int *immediate_abort)
     t->suppress_tracing++;
 
     if (!stacks_enabled) {
+#if defined(XP_MACOSX)
+        /* Walk the stack, even if stacks_enabled is false. We do this to
+           check if we must set immediate_abort. */
+        info->entries = 0;
+        rv = NS_StackWalk(stack_callback, skip, info);
+        *immediate_abort = rv == NS_ERROR_UNEXPECTED;
+        if (rv == NS_ERROR_UNEXPECTED || info->entries == 0) {
+            t->suppress_tracing--;
+            return NULL;
+        }
+#endif
+
         /*
          * Create a single fake stack frame so that all the tools get
          * data in the correct format.
@@ -1738,7 +1751,6 @@ allocation_enumerator(PLHashEntry *he, PRIntn i, void *arg)
     FILE *ofp = (FILE*) arg;
     callsite *site = (callsite*) he->value;
 
-    extern const char* nsGetTypeName(const void* ptr);
     unsigned long *p, *end;
 
     fprintf(ofp, "%p <%s> (%lu)\n",

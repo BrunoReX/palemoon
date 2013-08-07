@@ -137,7 +137,6 @@ PlacesController.prototype = {
   },
 
   supportsCommand: function PC_supportsCommand(aCommand) {
-    //LOG("supportsCommand: " + command);
     // Non-Places specific commands that we also support
     switch (aCommand) {
     case "cmd_undo":
@@ -313,7 +312,7 @@ PlacesController.prototype = {
                                                      , "loadInSidebar" ]
                                        , uri: NetUtil.newURI(node.uri)
                                        , title: node.title
-                                       }, window.top, true);
+                                       }, window.top);
       break;
     }
   },
@@ -448,7 +447,6 @@ PlacesController.prototype = {
    *    "tagChild"          node is a child of a tag
    *    "folder"            node is a folder
    *    "query"             node is a query
-   *    "dynamiccontainer"  node is a dynamic container
    *    "separator"         node is a separator line
    *    "host"              node is a host
    *
@@ -490,9 +488,6 @@ PlacesController.prototype = {
                 break;
             }
           }
-          break;
-        case Ci.nsINavHistoryResultNode.RESULT_TYPE_DYNAMIC_CONTAINER:
-          nodeData["dynamiccontainer"] = true;
           break;
         case Ci.nsINavHistoryResultNode.RESULT_TYPE_FOLDER:
         case Ci.nsINavHistoryResultNode.RESULT_TYPE_FOLDER_SHORTCUT:
@@ -721,6 +716,7 @@ PlacesController.prototype = {
                                      , type: itemType
                                      , itemId: itemId
                                      , readOnly: isRootItem
+                                     , hiddenRows: [ "folderPicker" ]
                                      }, window.top);
   },
 
@@ -769,24 +765,13 @@ PlacesController.prototype = {
                                        , type: aType
                                        , defaultInsertionPoint: ip
                                        , hiddenRows: [ "folderPicker" ]
-                                       }, window);
+                                       }, window.top);
     if (performed) {
       // Select the new item.
       let insertedNodeId = PlacesUtils.bookmarks
                                       .getIdForItemAt(ip.itemId, ip.index);
       this._view.selectItems([insertedNodeId], false);
     }
-  },
-
-
-  /**
-   * Create a new Bookmark folder somewhere. Prompts the user for the name
-   * of the folder.
-   */
-  newFolder: function PC_newFolder() {
-    Cu.reportError("PlacesController.newFolder is deprecated and will be \
-                   removed in a future release.  Use newItem instead.");
-    this.newItem("folder");
   },
 
   /**

@@ -55,6 +55,10 @@
 #include <pthread.h>
 #include <wchar.h>
 
+#ifdef MOZ_ANDROID_HISTORY
+#include "nsAndroidHistory.h"
+#endif
+
 #ifdef MOZ_LOGGING
 #define FORCE_PR_LOG
 #include "prlog.h"
@@ -84,7 +88,8 @@ nsAppShell::nsAppShell()
     : mQueueLock("nsAppShell.mQueueLock"),
       mCondLock("nsAppShell.mCondLock"),
       mQueueCond(mCondLock, "nsAppShell.mQueueCond"),
-      mNumDraws(0)
+      mNumDraws(0),
+      mNumViewports(0)
 {
     gAppShell = this;
 }
@@ -121,13 +126,11 @@ nsAppShell::Init()
 
     nsresult rv = nsBaseAppShell::Init();
     AndroidBridge* bridge = AndroidBridge::Bridge();
-    if (bridge)
-        bridge->NotifyAppShellReady();
 
     nsCOMPtr<nsIObserverService> obsServ =
         mozilla::services::GetObserverService();
     if (obsServ) {
-        obsServ->AddObserver(this, "xpcom-shutdown", PR_FALSE);
+        obsServ->AddObserver(this, "xpcom-shutdown", false);
     }
 
     if (!bridge)
@@ -135,7 +138,7 @@ nsAppShell::Init()
 
     Preferences::AddStrongObservers(this, kObservedPrefs);
 
-    PRBool match;
+    bool match;
     rv = Preferences::GetBool(PREFNAME_MATCH_OS, &match);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -174,7 +177,7 @@ nsAppShell::Observe(nsISupports* aSubject,
             return NS_OK;
         }
 
-        PRBool match;
+        bool match;
         nsresult rv = Preferences::GetBool(PREFNAME_MATCH_OS, &match);
         NS_ENSURE_SUCCESS(rv, rv);
 
@@ -204,8 +207,8 @@ nsAppShell::ScheduleNativeEventCallback()
     PostEvent(new AndroidGeckoEvent(AndroidGeckoEvent::NATIVE_POKE));
 }
 
-PRBool
-nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
+bool
+nsAppShell::ProcessNextNativeEvent(bool mayWait)
 {
     EVLOG("nsAppShell::ProcessNextNativeEvent %d", mayWait);
 
@@ -214,7 +217,7 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
     {
         MutexAutoLock lock(mCondLock);
 
-        curEvent = GetNextEvent();
+        curEvent = PopNextEvent();
         if (!curEvent && mayWait) {
             // hmm, should we really hardcode this 10s?
 #if defined(DEBUG_ANDROID_EVENTS)
@@ -229,7 +232,7 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
             mQueueCond.Wait();
 #endif
 
-            curEvent = GetNextEvent();
+            curEvent = PopNextEvent();
         }
     }
 
@@ -244,7 +247,16 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
         int curType = curEvent->Type();
         int nextType = nextEvent->Type();
 
-        while (nextType == AndroidGeckoEvent::DRAW &&
+        while (nextType == AndroidGeckoEvent::VIEWPORT && mNumViewports > 1) {
+            // Skip this viewport change, as there's another one later and
+            // processing this one will only cause more unnecessary work
+            PopNextEvent();
+            delete nextEvent;
+            nextEvent = PeekNextEvent();
+            nextType = nextEvent->Type();
+        }
+
+        while (nextType == AndroidGeckoEvent::DRAW && mLastDrawEvent &&
                mNumDraws > 1)
         {
             // skip this draw, since there's a later one already in the queue.. this will let us
@@ -253,7 +265,27 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
             // and end up with just
             //   MOVE DRAW
             // when we process all the events.
-            RemoveNextEvent();
+
+            // Combine the next draw event's rect with the last one in the queue
+            const nsIntRect& nextRect = nextEvent->Rect();
+            const nsIntRect& lastRect = mLastDrawEvent->Rect();
+            int combinedArea = (lastRect.width * lastRect.height) +
+                               (nextRect.width * nextRect.height);
+
+            nsIntRect combinedRect = lastRect.Union(nextRect);
+            mLastDrawEvent->Init(AndroidGeckoEvent::DRAW, combinedRect);
+
+            // XXX We may want to consider using regions instead of rectangles.
+            //     Print an error if we're upload a lot more than we would
+            //     if we handled this as two separate events.
+            int boundsArea = combinedRect.width * combinedRect.height;
+            if (boundsArea > combinedArea * 8)
+                ALOG("nsAppShell::ProcessNextNativeEvent: "
+                     "Area of bounds greatly exceeds combined area: %d > %d",
+                     boundsArea, combinedArea);
+
+            // Remove the next draw event
+            PopNextEvent();
             delete nextEvent;
 
 #if defined(DEBUG_ANDROID_EVENTS)
@@ -281,8 +313,7 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
         ALOG("# Removing % 2d event", curType);
 #endif
 
-        RemoveNextEvent();
-        curEvent = nextEvent;
+        curEvent = PopNextEvent();
         nextEvent = PeekNextEvent();
     }
 
@@ -354,6 +385,12 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
         // of flushing data
         nsIPrefService* prefs = Preferences::GetService();
         if (prefs) {
+            // reset the crash loop state
+            nsCOMPtr<nsIPrefBranch> prefBranch;
+            prefs->GetBranch("browser.sessionstore.", getter_AddRefs(prefBranch));
+            if (prefBranch)
+                prefBranch->SetIntPref("recent_crashes", 0);
+
             prefs->SavePrefFile(nsnull);
         }
 
@@ -368,10 +405,29 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
         break;
     }
 
+    case AndroidGeckoEvent::VIEWPORT:
+    case AndroidGeckoEvent::BROADCAST: {
+
+        if (curEvent->Characters().Length() == 0)
+            break;
+
+        nsCOMPtr<nsIObserverService> obsServ =
+            mozilla::services::GetObserverService();
+
+        const NS_ConvertUTF16toUTF8 topic(curEvent->Characters());
+        const nsPromiseFlatString& data = PromiseFlatString(curEvent->CharactersExtra());
+
+        obsServ->NotifyObservers(nsnull, topic.get(), data.get());
+        break;
+    }
+
     case AndroidGeckoEvent::LOAD_URI: {
         nsCOMPtr<nsICommandLineRunner> cmdline
             (do_CreateInstance("@mozilla.org/toolkit/command-line;1"));
         if (!cmdline)
+            break;
+
+        if (curEvent->Characters().Length() == 0)
             break;
 
         char *uri = ToNewUTF8String(curEvent->Characters());
@@ -399,6 +455,13 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
         break;
     }
 
+    case AndroidGeckoEvent::VISITED: {
+#ifdef MOZ_ANDROID_HISTORY
+        nsAndroidHistory::NotifyURIVisited(nsString(curEvent->Characters()));
+#endif
+        break;
+    }
+
     default:
         nsWindow::OnGlobalAndroidEvent(curEvent);
     }
@@ -416,7 +479,7 @@ nsAppShell::ResendLastResizeEvent(nsWindow* aDest) {
 }
 
 AndroidGeckoEvent*
-nsAppShell::GetNextEvent()
+nsAppShell::PopNextEvent()
 {
     AndroidGeckoEvent *ae = nsnull;
     MutexAutoLock lock(mQueueLock);
@@ -424,7 +487,10 @@ nsAppShell::GetNextEvent()
         ae = mEventQueue[0];
         mEventQueue.RemoveElementAt(0);
         if (ae->Type() == AndroidGeckoEvent::DRAW) {
-            mNumDraws--;
+            if (--mNumDraws == 0)
+                mLastDrawEvent = nsnull;
+        } else if (ae->Type() == AndroidGeckoEvent::VIEWPORT) {
+            mNumViewports--;
         }
     }
 
@@ -466,23 +532,12 @@ nsAppShell::PostEvent(AndroidGeckoEvent *ae)
 
         if (ae->Type() == AndroidGeckoEvent::DRAW) {
             mNumDraws++;
+            mLastDrawEvent = ae;
+        } else if (ae->Type() == AndroidGeckoEvent::VIEWPORT) {
+            mNumViewports++;
         }
     }
     NotifyNativeEvent();
-}
-
-void
-nsAppShell::RemoveNextEvent()
-{
-    AndroidGeckoEvent *ae = nsnull;
-    MutexAutoLock lock(mQueueLock);
-    if (mEventQueue.Length()) {
-        ae = mEventQueue[0];
-        mEventQueue.RemoveElementAt(0);
-        if (ae->Type() == AndroidGeckoEvent::DRAW) {
-            mNumDraws--;
-        }
-    }
 }
 
 void
@@ -591,7 +646,7 @@ namespace mozilla {
 
 bool ProcessNextEvent()
 {
-    return nsAppShell::gAppShell->ProcessNextNativeEvent(PR_TRUE) ? true : false;
+    return nsAppShell::gAppShell->ProcessNextNativeEvent(true) ? true : false;
 }
 
 void NotifyEvent()

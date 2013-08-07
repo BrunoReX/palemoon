@@ -37,6 +37,8 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/Util.h"
+
 #include "nsProtocolProxyService.h"
 #include "nsProxyInfo.h"
 #include "nsIClassInfoImpl.h"
@@ -61,6 +63,8 @@
 #include "nsPACMan.h"
 
 //----------------------------------------------------------------------------
+
+using namespace mozilla;
 
 #include "prlog.h"
 #if defined(PR_LOGGING)
@@ -97,7 +101,7 @@ public:
                           PRUint32 aResolveFlags,
                           nsIProtocolProxyCallback *callback)
         : mStatus(NS_OK)
-        , mDispatched(PR_FALSE)
+        , mDispatched(false)
         , mResolveFlags(0)
         , mPPS(pps)
         , mURI(uri)
@@ -140,7 +144,7 @@ public:
         if (NS_FAILED(rv))
             NS_WARNING("unable to dispatch callback event");
         else {
-            mDispatched = PR_TRUE;
+            mDispatched = true;
             return NS_OK;
         }
 
@@ -195,7 +199,7 @@ private:
 
     nsresult  mStatus;
     nsCString mPACString;
-    PRBool    mDispatched;
+    bool      mDispatched;
     PRUint32  mResolveFlags;
 
     nsRefPtr<nsProtocolProxyService>   mPPS;
@@ -278,12 +282,12 @@ proxy_GetIntPref(nsIPrefBranch *aPrefBranch,
 static void
 proxy_GetBoolPref(nsIPrefBranch *aPrefBranch,
                  const char    *aPref,
-                 PRBool        &aResult)
+                 bool          &aResult)
 {
-    PRBool temp;
+    bool temp;
     nsresult rv = aPrefBranch->GetBoolPref(aPref, &temp);
     if (NS_FAILED(rv)) 
-        aResult = PR_FALSE;
+        aResult = false;
     else
         aResult = temp;
 }
@@ -306,7 +310,7 @@ NS_IMPL_CI_INTERFACE_GETTER2(nsProtocolProxyService,
                              nsIProtocolProxyService2)
 
 nsProtocolProxyService::nsProtocolProxyService()
-    : mFilterLocalHosts(PR_FALSE)
+    : mFilterLocalHosts(false)
     , mFilters(nsnull)
     , mProxyConfig(PROXYCONFIG_DIRECT)
     , mHTTPProxyPort(-1)
@@ -314,7 +318,7 @@ nsProtocolProxyService::nsProtocolProxyService()
     , mHTTPSProxyPort(-1)
     , mSOCKSProxyPort(-1)
     , mSOCKSProxyVersion(4)
-    , mSOCKSProxyRemoteDNS(PR_FALSE)
+    , mSOCKSProxyRemoteDNS(false)
     , mPACMan(nsnull)
     , mSessionStart(PR_Now())
     , mFailedProxyTimeout(30 * 60) // 30 minute default
@@ -340,7 +344,7 @@ nsProtocolProxyService::Init()
             do_GetService(NS_PREFSERVICE_CONTRACTID);
     if (prefBranch) {
         // monitor proxy prefs
-        prefBranch->AddObserver(PROXY_PREF_BRANCH, this, PR_FALSE);
+        prefBranch->AddObserver(PROXY_PREF_BRANCH, this, false);
 
         // read all prefs
         PrefsChanged(prefBranch, nsnull);
@@ -349,7 +353,7 @@ nsProtocolProxyService::Init()
     // register for shutdown notification so we can clean ourselves up properly.
     nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
     if (obs)
-        obs->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, PR_FALSE);
+        obs->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
 
     return NS_OK;
 }
@@ -388,7 +392,7 @@ nsProtocolProxyService::PrefsChanged(nsIPrefBranch *prefBranch,
                                      const char    *pref)
 {
     nsresult rv = NS_OK;
-    PRBool reloadPAC = PR_FALSE;
+    bool reloadPAC = false;
     nsXPIDLCString tempString;
 
     if (!pref || !strcmp(pref, PROXY_PREF("type"))) {
@@ -409,7 +413,7 @@ nsProtocolProxyService::PrefsChanged(nsIPrefBranch *prefBranch,
                 type = PROXYCONFIG_DIRECT;
             }
             mProxyConfig = type;
-            reloadPAC = PR_TRUE;
+            reloadPAC = true;
         }
 
         if (mProxyConfig == PROXYCONFIG_SYSTEM) {
@@ -481,7 +485,7 @@ nsProtocolProxyService::PrefsChanged(nsIPrefBranch *prefBranch,
     //  2) network.proxy.autoconfig_url changed and PAC is configured
 
     if (!pref || !strcmp(pref, PROXY_PREF("autoconfig_url")))
-        reloadPAC = PR_TRUE;
+        reloadPAC = true;
 
     if (reloadPAC) {
         tempString.Truncate();
@@ -501,31 +505,31 @@ nsProtocolProxyService::PrefsChanged(nsIPrefBranch *prefBranch,
             mSystemProxySettings->GetPACURI(tempString);
         }
         if (!tempString.IsEmpty())
-            ConfigureFromPAC(tempString, PR_FALSE);
+            ConfigureFromPAC(tempString, false);
     }
 }
 
-PRBool
+bool
 nsProtocolProxyService::CanUseProxy(nsIURI *aURI, PRInt32 defaultPort) 
 {
     if (mHostFiltersArray.Length() == 0)
-        return PR_TRUE;
+        return true;
 
     PRInt32 port;
     nsCAutoString host;
  
     nsresult rv = aURI->GetAsciiHost(host);
     if (NS_FAILED(rv) || host.IsEmpty())
-        return PR_FALSE;
+        return false;
 
     rv = aURI->GetPort(&port);
     if (NS_FAILED(rv))
-        return PR_FALSE;
+        return false;
     if (port == -1)
         port = defaultPort;
 
     PRNetAddr addr;
-    PRBool is_ipaddr = (PR_StringToNetAddr(host.get(), &addr) == PR_SUCCESS);
+    bool is_ipaddr = (PR_StringToNetAddr(host.get(), &addr) == PR_SUCCESS);
 
     PRIPv6Addr ipv6;
     if (is_ipaddr) {
@@ -540,14 +544,14 @@ nsProtocolProxyService::CanUseProxy(nsIURI *aURI, PRInt32 defaultPort)
         }
         else {
             NS_WARNING("unknown address family");
-            return PR_TRUE; // allow proxying
+            return true; // allow proxying
         }
     }
     
     // Don't use proxy for local hosts (plain hostname, no dots)
     if (!is_ipaddr && mFilterLocalHosts && (kNotFound == host.FindChar('.'))) {
         LOG(("Not using proxy for this local host [%s]!\n", host.get()));
-        return PR_FALSE; // don't allow proxying
+        return false; // don't allow proxying
     }
 
     PRInt32 index = -1;
@@ -567,7 +571,7 @@ nsProtocolProxyService::CanUseProxy(nsIURI *aURI, PRInt32 defaultPort)
 
             // check for a match
             if (memcmp(&masked, &hinfo->ip.addr, sizeof(PRIPv6Addr)) == 0)
-                return PR_FALSE; // proxy disallowed
+                return false; // proxy disallowed
         }
         else {
             PRUint32 host_len = host.Length();
@@ -579,11 +583,11 @@ nsProtocolProxyService::CanUseProxy(nsIURI *aURI, PRInt32 defaultPort)
                 //
                 const char *host_tail = host.get() + host_len - filter_host_len;
                 if (!PL_strncasecmp(host_tail, hinfo->name.host, filter_host_len))
-                    return PR_FALSE; // proxy disallowed
+                    return false; // proxy disallowed
             }
         }
     }
-    return PR_TRUE;
+    return true;
 }
 
 static const char kProxyType_HTTP[]    = "http";
@@ -639,7 +643,7 @@ nsProtocolProxyService::ExtractProxyInfo(const char *start,
         // If it's a SOCKS5 proxy, do name resolution on the server side.
         // We could use this with SOCKS4a servers too, but they might not
         // support it.
-        if (type == kProxyType_SOCKS)
+        if (type == kProxyType_SOCKS || mSOCKSProxyRemoteDNS)
             flags |= nsIProxyInfo::TRANSPARENT_PROXY_RESOLVES_HOST;
 
         // extract host:port
@@ -748,7 +752,7 @@ nsProtocolProxyService::DisableProxy(nsProxyInfo *pi)
     mFailedProxies.Put(key, dsec);
 }
 
-PRBool
+bool
 nsProtocolProxyService::IsProxyDisabled(nsProxyInfo *pi)
 {
     nsCAutoString key;
@@ -756,22 +760,22 @@ nsProtocolProxyService::IsProxyDisabled(nsProxyInfo *pi)
 
     PRUint32 val;
     if (!mFailedProxies.Get(key, &val))
-        return PR_FALSE;
+        return false;
 
     PRUint32 dsec = SecondsSinceSessionStart();
 
     // if time passed has exceeded interval, then try proxy again.
     if (dsec > val) {
         mFailedProxies.Remove(key);
-        return PR_FALSE;
+        return false;
     }
 
-    return PR_TRUE;
+    return true;
 }
 
 nsresult
 nsProtocolProxyService::ConfigureFromPAC(const nsCString &spec,
-                                         PRBool forceReload)
+                                         bool forceReload)
 {
     if (!mPACMan) {
         mPACMan = new nsPACMan();
@@ -840,7 +844,7 @@ nsProtocolProxyService::ReloadPAC()
         pacSpec.AssignLiteral(WPAD_URL);
 
     if (!pacSpec.IsEmpty())
-        ConfigureFromPAC(pacSpec, PR_TRUE);
+        ConfigureFromPAC(pacSpec, true);
     return NS_OK;
 }
 
@@ -854,7 +858,7 @@ nsProtocolProxyService::Resolve(nsIURI *uri, PRUint32 flags,
     if (NS_FAILED(rv))
         return rv;
 
-    PRBool usePAC;
+    bool usePAC;
     rv = Resolve_Internal(uri, info, flags, &usePAC, result);
     if (NS_FAILED(rv)) {
         LOG(("Resolve_Internal returned rv(0x%08x)\n", rv));
@@ -904,7 +908,7 @@ nsProtocolProxyService::AsyncResolve(nsIURI *uri, PRUint32 flags,
     if (NS_FAILED(rv))
         return rv;
 
-    PRBool usePAC;
+    bool usePAC;
     nsCOMPtr<nsIProxyInfo> pi;
     rv = Resolve_Internal(uri, info, flags, &usePAC, getter_AddRefs(pi));
     if (NS_FAILED(rv))
@@ -945,7 +949,7 @@ nsProtocolProxyService::NewProxyInfo(const nsACString &aType,
     // resolve type; this allows us to avoid copying the type string into each
     // proxy info instance.  we just reference the string literals directly :)
     const char *type = nsnull;
-    for (PRUint32 i=0; i<NS_ARRAY_LENGTH(types); ++i) {
+    for (PRUint32 i=0; i<ArrayLength(types); ++i) {
         if (aType.LowerCaseEqualsASCII(types[i])) {
             type = types[i];
             break;
@@ -1079,7 +1083,7 @@ nsProtocolProxyService::LoadHostFilters(const char *filters)
     // filters = filter *( "," LWS filter)
     //
     // Reset mFilterLocalHosts - will be set to true if "<local>" is in pref string
-    mFilterLocalHosts = PR_FALSE;
+    mFilterLocalHosts = false;
     while (*filters) {
         // skip over spaces and ,
         while (*filters && (*filters == ',' || IS_ASCII_SPACE(*filters)))
@@ -1112,7 +1116,7 @@ nsProtocolProxyService::LoadHostFilters(const char *filters)
         // If the current host filter is "<local>", then all local (i.e.
         // no dots in the hostname) hosts should bypass the proxy
         if (str.EqualsIgnoreCase("<local>")) {
-            mFilterLocalHosts = PR_TRUE;
+            mFilterLocalHosts = true;
             LOG(("loaded filter for local hosts "
                  "(plain host names, no dots)\n"));
             // Continue to next host filter;
@@ -1125,7 +1129,7 @@ nsProtocolProxyService::LoadHostFilters(const char *filters)
 
         PRNetAddr addr;
         if (PR_StringToNetAddr(str.get(), &addr) == PR_SUCCESS) {
-            hinfo->is_ipaddr   = PR_TRUE;
+            hinfo->is_ipaddr   = true;
             hinfo->ip.family   = PR_AF_INET6; // we always store address as IPv6
             hinfo->ip.mask_len = maskLocation ? atoi(maskLocation + 1) : 128;
 
@@ -1161,7 +1165,7 @@ nsProtocolProxyService::LoadHostFilters(const char *filters)
                 startIndex = 0;
             endIndex = (portLocation ? portLocation : endhost) - starthost;
 
-            hinfo->is_ipaddr = PR_FALSE;
+            hinfo->is_ipaddr = false;
             hinfo->name.host = ToNewCString(Substring(str, startIndex, endIndex));
 
             if (!hinfo->name.host)
@@ -1263,12 +1267,12 @@ nsresult
 nsProtocolProxyService::Resolve_Internal(nsIURI *uri,
                                          const nsProtocolInfo &info,
                                          PRUint32 flags,
-                                         PRBool *usePAC,
+                                         bool *usePAC,
                                          nsIProxyInfo **result)
 {
     NS_ENSURE_ARG_POINTER(uri);
 
-    *usePAC = PR_FALSE;
+    *usePAC = false;
     *result = nsnull;
 
     if (!(info.flags & nsIProtocolHandler::ALLOWS_PROXY))
@@ -1296,7 +1300,7 @@ nsProtocolProxyService::Resolve_Internal(nsIURI *uri,
 
         // Switch to new PAC file if that setting has changed. If the setting
         // hasn't changed, ConfigureFromPAC will exit early.
-        nsresult rv = ConfigureFromPAC(PACURI, PR_FALSE);
+        nsresult rv = ConfigureFromPAC(PACURI, false);
         if (NS_FAILED(rv))
             return rv;
     }
@@ -1312,7 +1316,7 @@ nsProtocolProxyService::Resolve_Internal(nsIURI *uri,
     if (mProxyConfig == PROXYCONFIG_PAC || mProxyConfig == PROXYCONFIG_WPAD ||
         mProxyConfig == PROXYCONFIG_SYSTEM) {
         // Do not query PAC now.
-        *usePAC = PR_TRUE;
+        *usePAC = true;
         return NS_OK;
     }
 
@@ -1458,12 +1462,12 @@ nsProtocolProxyService::PruneProxyInfo(const nsProtocolInfo &info,
     // we'll just bail and return them all.  Otherwise, we'll go and prune the
     // disabled ones.
     
-    PRBool allDisabled = PR_TRUE;
+    bool allDisabled = true;
 
     nsProxyInfo *iter;
     for (iter = head; iter; iter = iter->mNext) {
         if (!IsProxyDisabled(iter)) {
-            allDisabled = PR_FALSE;
+            allDisabled = false;
             break;
         }
     }

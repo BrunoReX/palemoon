@@ -39,7 +39,7 @@
 #include "txTextHandler.h"
 #include "nsAString.h"
 
-txTextHandler::txTextHandler(MBool aOnlyText) : mLevel(0),
+txTextHandler::txTextHandler(bool aOnlyText) : mLevel(0),
                                                 mOnlyText(aOnlyText)
 {
 }
@@ -61,7 +61,7 @@ txTextHandler::attribute(nsIAtom* aPrefix, const nsSubstring& aLocalName,
 }
 
 nsresult
-txTextHandler::characters(const nsSubstring& aData, PRBool aDOE)
+txTextHandler::characters(const nsSubstring& aData, bool aDOE)
 {
     if (mLevel == 0)
         mValue.Append(aData);

@@ -216,6 +216,7 @@ private:
   PRUint64 mBusyCount;
   Status mParentStatus;
   PRUint32 mJSContextOptions;
+  PRUint32 mJSRuntimeHeapSize;
   PRUint8 mGCZeal;
   bool mJSObjectRooted;
   bool mParentSuspended;
@@ -271,7 +272,9 @@ public:
   void
   TraceInstance(JSTracer* aTrc)
   {
-    AssertIsOnParentThread();
+    // This should only happen on the parent thread but we can't assert that
+    // because it can also happen on the cycle collector thread when this is a
+    // top-level worker.
     events::EventTarget::TraceInstance(aTrc);
   }
 
@@ -305,10 +308,16 @@ public:
   void
   UpdateJSContextOptions(JSContext* aCx, PRUint32 aOptions);
 
+  void
+  UpdateJSRuntimeHeapSize(JSContext* aCx, PRUint32 aJSRuntimeHeapSize);
+
 #ifdef JS_GC_ZEAL
   void
   UpdateGCZeal(JSContext* aCx, PRUint8 aGCZeal);
 #endif
+
+  void
+  GarbageCollect(JSContext* aCx, bool aShrinking);
 
   using events::EventTarget::GetEventListenerOnEventTarget;
   using events::EventTarget::SetEventListenerOnEventTarget;
@@ -441,6 +450,12 @@ public:
     return mJSContextOptions;
   }
 
+  PRUint32
+  GetJSRuntimeHeapSize() const
+  {
+    return mJSRuntimeHeapSize;
+  }
+
 #ifdef JS_GC_ZEAL
   PRUint8
   GetGCZeal() const
@@ -506,6 +521,7 @@ class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
 
   // Touched on multiple threads, protected with mMutex.
   JSContext* mJSContext;
+  nsRefPtr<WorkerCrossThreadDispatcher> mCrossThreadDispatcher;
 
   // Things touched on worker thread only.
   nsTArray<ParentType*> mChildWorkers;
@@ -655,6 +671,9 @@ public:
   UpdateJSContextOptionsInternal(JSContext* aCx, PRUint32 aOptions);
 
   void
+  UpdateJSRuntimeHeapSizeInternal(JSContext* aCx, PRUint32 aJSRuntimeHeapSize);
+
+  void
   ScheduleDeletion(bool aWasPending);
 
   bool
@@ -668,6 +687,10 @@ public:
   void
   UpdateGCZealInternal(JSContext* aCx, PRUint8 aGCZeal);
 #endif
+
+  void
+  GarbageCollectInternal(JSContext* aCx, bool aShrinking,
+                         bool aCollectChildren);
 
   JSContext*
   GetJSContext() const
@@ -690,6 +713,9 @@ public:
   AssertIsOnWorkerThread() const
   { }
 #endif
+
+  WorkerCrossThreadDispatcher*
+  GetCrossThreadDispatcher();
 
 private:
   WorkerPrivate(JSContext* aCx, JSObject* aObject, WorkerPrivate* aParent,

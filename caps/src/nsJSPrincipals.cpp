@@ -68,7 +68,7 @@ nsJSPrincipalsSubsume(JSPrincipals *jsprin, JSPrincipals *other)
     nsJSPrincipals *nsjsprin = static_cast<nsJSPrincipals *>(jsprin);
     nsJSPrincipals *nsother  = static_cast<nsJSPrincipals *>(other);
 
-    PRBool result;
+    bool result;
     nsresult rv = nsjsprin->nsIPrincipalPtr->Subsumes(nsother->nsIPrincipalPtr,
                                                       &result);
     return NS_SUCCEEDED(rv) && result;
@@ -110,7 +110,7 @@ nsTranscodeJSPrincipals(JSXDRState *xdr, JSPrincipals **jsprinp)
             reinterpret_cast<nsIObjectOutputStream*>(xdr->userdata);
 
         // Flush xdr'ed data to the underlying object output stream.
-        uint32 size;
+        uint32_t size;
         char *data = (char*) ::JS_XDRMemGetData(xdr, &size);
 
         rv = stream->Write32(size);
@@ -124,7 +124,7 @@ nsTranscodeJSPrincipals(JSXDRState *xdr, JSPrincipals **jsprinp)
                 nsJSPrincipals *nsjsprin =
                     static_cast<nsJSPrincipals*>(*jsprinp);
 
-                rv = stream->WriteObject(nsjsprin->nsIPrincipalPtr, PR_TRUE);
+                rv = stream->WriteObject(nsjsprin->nsIPrincipalPtr, true);
             }
         }
     } else {
@@ -133,7 +133,7 @@ nsTranscodeJSPrincipals(JSXDRState *xdr, JSPrincipals **jsprinp)
             reinterpret_cast<nsIObjectInputStream*>(xdr->userdata);
 
         nsCOMPtr<nsIPrincipal> prin;
-        rv = stream->ReadObject(PR_TRUE, getter_AddRefs(prin));
+        rv = stream->ReadObject(true, getter_AddRefs(prin));
         if (NS_SUCCEEDED(rv)) {
             PRUint32 size;
             rv = stream->Read32(&size);
@@ -143,7 +143,7 @@ nsTranscodeJSPrincipals(JSXDRState *xdr, JSPrincipals **jsprinp)
                     rv = stream->ReadBytes(size, &data);
                 if (NS_SUCCEEDED(rv)) {
                     char *olddata;
-                    uint32 oldsize;
+                    uint32_t oldsize;
 
                     // Any decode-mode JSXDRState whose userdata points to an
                     // nsIObjectInputStream instance must use nsMemory to Alloc

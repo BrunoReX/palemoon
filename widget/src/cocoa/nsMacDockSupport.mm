@@ -62,7 +62,7 @@ nsMacDockSupport::SetDockMenu(nsIStandaloneNativeMenu * aDockMenu)
 }
 
 NS_IMETHODIMP
-nsMacDockSupport::ActivateApplication(PRBool aIgnoreOtherApplications)
+nsMacDockSupport::ActivateApplication(bool aIgnoreOtherApplications)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
@@ -70,4 +70,27 @@ nsMacDockSupport::ActivateApplication(PRBool aIgnoreOtherApplications)
   return NS_OK;
 
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+}
+
+NS_IMETHODIMP
+nsMacDockSupport::SetBadgeText(const nsAString& aBadgeText)
+{
+  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+
+  NSDockTile *tile = [[NSApplication sharedApplication] dockTile];
+  mBadgeText = aBadgeText;
+  if (aBadgeText.IsEmpty())
+    [tile setBadgeLabel: nil];
+  else
+    [tile setBadgeLabel:[NSString stringWithCharacters:mBadgeText.get() length:mBadgeText.Length()]];
+  return NS_OK;
+
+  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+}
+
+NS_IMETHODIMP
+nsMacDockSupport::GetBadgeText(nsAString& aBadgeText)
+{
+  aBadgeText = mBadgeText;
+  return NS_OK;
 }

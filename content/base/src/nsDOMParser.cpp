@@ -47,7 +47,7 @@
 #include "nsIDOMDocument.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIPrincipal.h"
-#include "nsIDOMClassInfo.h"
+#include "nsDOMClassInfoID.h"
 #include "nsReadableUtils.h"
 #include "nsCRT.h"
 #include "nsStreamUtils.h"
@@ -63,7 +63,7 @@
 using namespace mozilla;
 
 nsDOMParser::nsDOMParser()
-  : mAttemptedInit(PR_FALSE)
+  : mAttemptedInit(false)
 {
 }
 
@@ -141,10 +141,15 @@ nsDOMParser::ParseFromStream(nsIInputStream *stream,
   NS_ENSURE_ARG_POINTER(aResult);
   *aResult = nsnull;
 
+  bool svg = nsCRT::strcmp(contentType, "image/svg+xml") == 0;
+
   // For now, we can only create XML documents.
+  //XXXsmaug Should we create an HTMLDocument (in XHTML mode)
+  //         for "application/xhtml+xml"?
   if ((nsCRT::strcmp(contentType, "text/xml") != 0) &&
       (nsCRT::strcmp(contentType, "application/xml") != 0) &&
-      (nsCRT::strcmp(contentType, "application/xhtml+xml") != 0))
+      (nsCRT::strcmp(contentType, "application/xhtml+xml") != 0) &&
+      !svg)
     return NS_ERROR_NOT_IMPLEMENTED;
 
   nsCOMPtr<nsIScriptGlobalObject> scriptHandlingObject =
@@ -184,6 +189,8 @@ nsDOMParser::ParseFromStream(nsIInputStream *stream,
                                       mDocumentURI, mBaseURI,
                                       mOriginalPrincipal,
                                       scriptHandlingObject,
+                                      svg ? DocumentFlavorSVG :
+                                            DocumentFlavorLegacyGuess,
                                       getter_AddRefs(domDocument));
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -203,7 +210,7 @@ nsDOMParser::ParseFromStream(nsIInputStream *stream,
   // Tell the document to start loading
   nsCOMPtr<nsIStreamListener> listener;
 
-  // Have to pass PR_FALSE for reset here, else the reset will remove
+  // Have to pass false for reset here, else the reset will remove
   // our event listener.  Should that listener addition move to later
   // than this call?  Then we wouldn't need to mess around with
   // SetPrincipal, etc, probably!
@@ -217,7 +224,7 @@ nsDOMParser::ParseFromStream(nsIInputStream *stream,
   rv = document->StartDocumentLoad(kLoadAsData, parserChannel, 
                                    nsnull, nsnull, 
                                    getter_AddRefs(listener),
-                                   PR_FALSE);
+                                   false);
 
   // Make sure to give this document the right base URI
   document->SetBaseURI(mBaseURI);
@@ -263,7 +270,7 @@ nsDOMParser::Init(nsIPrincipal* principal, nsIURI* documentURI,
                   nsIURI* baseURI, nsIScriptGlobalObject* aScriptObject)
 {
   NS_ENSURE_STATE(!mAttemptedInit);
-  mAttemptedInit = PR_TRUE;
+  mAttemptedInit = true;
   
   NS_ENSURE_ARG(principal || documentURI);
 
@@ -315,14 +322,14 @@ nsDOMParser::Init(nsIPrincipal* principal, nsIURI* documentURI,
 }
   
 static nsQueryInterface
-JSvalToInterface(JSContext* cx, jsval val, nsIXPConnect* xpc, PRBool* wasNull)
+JSvalToInterface(JSContext* cx, jsval val, nsIXPConnect* xpc, bool* wasNull)
 {
   if (val == JSVAL_NULL) {
-    *wasNull = PR_TRUE;
+    *wasNull = true;
     return nsQueryInterface(nsnull);
   }
   
-  *wasNull = PR_FALSE;
+  *wasNull = false;
   if (JSVAL_IS_OBJECT(val)) {
     JSObject* arg = JSVAL_TO_OBJECT(val);
 
@@ -344,7 +351,7 @@ GetInitArgs(JSContext *cx, PRUint32 argc, jsval *argv,
             nsIURI** aBaseURI)
 {
   // Only proceed if the caller has UniversalXPConnect.
-  PRBool haveUniversalXPConnect;
+  bool haveUniversalXPConnect;
   nsresult rv = nsContentUtils::GetSecurityManager()->
     IsCapabilityEnabled("UniversalXPConnect", &haveUniversalXPConnect);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -357,7 +364,7 @@ GetInitArgs(JSContext *cx, PRUint32 argc, jsval *argv,
   
   // First arg is our principal.  If someone passes something that's
   // not a principal and not null, die to prevent privilege escalation.
-  PRBool wasNull;
+  bool wasNull;
   nsCOMPtr<nsIPrincipal> prin = JSvalToInterface(cx, argv[0], xpc, &wasNull);
   if (!prin && !wasNull) {
     return NS_ERROR_INVALID_ARG;

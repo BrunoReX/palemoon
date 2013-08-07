@@ -93,7 +93,7 @@ nsStyledElementNotElementCSSInlineStyle::DoGetClasses() const
   return mAttrsAndChildren.GetAttr(nsGkAtoms::_class);
 }
 
-PRBool
+bool
 nsStyledElementNotElementCSSInlineStyle::ParseAttribute(PRInt32 aNamespaceID,
                                                         nsIAtom* aAttribute,
                                                         const nsAString& aValue,
@@ -102,13 +102,13 @@ nsStyledElementNotElementCSSInlineStyle::ParseAttribute(PRInt32 aNamespaceID,
   if (aNamespaceID == kNameSpaceID_None) {
     if (aAttribute == nsGkAtoms::style) {
       SetMayHaveStyle();
-      ParseStyleAttribute(aValue, aResult, PR_FALSE);
-      return PR_TRUE;
+      ParseStyleAttribute(aValue, aResult, false);
+      return true;
     }
     if (aAttribute == nsGkAtoms::_class) {
       SetFlags(NODE_MAY_HAVE_CLASS);
       aResult.ParseAtomArray(aValue);
-      return PR_TRUE;
+      return true;
     }
     if (aAttribute == nsGkAtoms::id) {
       // Store id as an atom.  id="" means that the element has no id,
@@ -116,12 +116,12 @@ nsStyledElementNotElementCSSInlineStyle::ParseAttribute(PRInt32 aNamespaceID,
       RemoveFromIdTable();
       if (aValue.IsEmpty()) {
         ClearHasID();
-        return PR_FALSE;
+        return false;
       }
       aResult.ParseAtom(aValue);
       SetHasID();
       AddToIdTable(aResult.GetAtomValue());
-      return PR_TRUE;
+      return true;
     }
   }
 
@@ -132,7 +132,7 @@ nsStyledElementNotElementCSSInlineStyle::ParseAttribute(PRInt32 aNamespaceID,
 nsresult
 nsStyledElementNotElementCSSInlineStyle::UnsetAttr(PRInt32 aNameSpaceID,
                                                    nsIAtom* aAttribute,
-                                                   PRBool aNotify)
+                                                   bool aNotify)
 {
   nsAutoScriptBlocker scriptBlocker;
   if (aAttribute == nsGkAtoms::id && aNameSpaceID == kNameSpaceID_None) {
@@ -147,7 +147,7 @@ nsresult
 nsStyledElementNotElementCSSInlineStyle::AfterSetAttr(PRInt32 aNamespaceID,
                                                       nsIAtom* aAttribute,
                                                       const nsAString* aValue,
-                                                      PRBool aNotify)
+                                                      bool aNotify)
 {
   if (aNamespaceID == kNameSpaceID_None && !aValue &&
       aAttribute == nsGkAtoms::id) {
@@ -163,13 +163,13 @@ nsStyledElementNotElementCSSInlineStyle::AfterSetAttr(PRInt32 aNamespaceID,
 
 NS_IMETHODIMP
 nsStyledElementNotElementCSSInlineStyle::SetInlineStyleRule(css::StyleRule* aStyleRule,
-                                                            PRBool aNotify)
+                                                            bool aNotify)
 {
   SetMayHaveStyle();
-  PRBool modification = PR_FALSE;
+  bool modification = false;
   nsAutoString oldValueStr;
 
-  PRBool hasListeners = aNotify &&
+  bool hasListeners = aNotify &&
     nsContentUtils::HasMutationListeners(this,
                                          NS_EVENT_BITS_MUTATION_ATTRMODIFIED,
                                          this);
@@ -220,7 +220,7 @@ nsresult
 nsStyledElementNotElementCSSInlineStyle::BindToTree(nsIDocument* aDocument,
                                                     nsIContent* aParent,
                                                     nsIContent* aBindingParent,
-                                                    PRBool aCompileEventHandlers)
+                                                    bool aCompileEventHandlers)
 {
   nsresult rv = nsStyledElementBase::BindToTree(aDocument, aParent,
                                                 aBindingParent,
@@ -234,15 +234,15 @@ nsStyledElementNotElementCSSInlineStyle::BindToTree(nsIDocument* aDocument,
   if (!IsXUL()) {
     // XXXbz if we already have a style attr parsed, this won't do
     // anything... need to fix that.
-    ReparseStyleAttribute(PR_FALSE);
+    ReparseStyleAttribute(false);
   }
 
   return NS_OK;
 }
 
 void
-nsStyledElementNotElementCSSInlineStyle::UnbindFromTree(PRBool aDeep,
-                                                        PRBool aNullParent)
+nsStyledElementNotElementCSSInlineStyle::UnbindFromTree(bool aDeep,
+                                                        bool aNullParent)
 {
   RemoveFromIdTable();
 
@@ -269,13 +269,9 @@ nsStyledElementNotElementCSSInlineStyle::GetStyle(nsresult* retval)
 
   if (!slots->mStyle) {
     // Just in case...
-    ReparseStyleAttribute(PR_TRUE);
+    ReparseStyleAttribute(true);
 
-    slots->mStyle = new nsDOMCSSAttributeDeclaration(this
-#ifdef MOZ_SMIL
-                                                     , PR_FALSE
-#endif // MOZ_SMIL
-                                                     );
+    slots->mStyle = new nsDOMCSSAttributeDeclaration(this, false);
     SetMayHaveStyle();
   }
 
@@ -284,7 +280,7 @@ nsStyledElementNotElementCSSInlineStyle::GetStyle(nsresult* retval)
 }
 
 nsresult
-nsStyledElementNotElementCSSInlineStyle::ReparseStyleAttribute(PRBool aForceInDataDoc)
+nsStyledElementNotElementCSSInlineStyle::ReparseStyleAttribute(bool aForceInDataDoc)
 {
   if (!MayHaveStyle()) {
     return NS_OK;
@@ -308,14 +304,14 @@ nsStyledElementNotElementCSSInlineStyle::ReparseStyleAttribute(PRBool aForceInDa
 void
 nsStyledElementNotElementCSSInlineStyle::ParseStyleAttribute(const nsAString& aValue,
                                                              nsAttrValue& aResult,
-                                                             PRBool aForceInDataDoc)
+                                                             bool aForceInDataDoc)
 {
-  nsIDocument* doc = GetOwnerDoc();
+  nsIDocument* doc = OwnerDoc();
 
-  if (doc && (aForceInDataDoc ||
-              !doc->IsLoadedAsData() ||
-              doc->IsStaticDocument())) {
-    PRBool isCSS = PR_TRUE; // assume CSS until proven otherwise
+  if (aForceInDataDoc ||
+      !doc->IsLoadedAsData() ||
+      doc->IsStaticDocument()) {
+    bool isCSS = true; // assume CSS until proven otherwise
 
     if (!IsInNativeAnonymousSubtree()) {  // native anonymous content
                                           // always assumes CSS

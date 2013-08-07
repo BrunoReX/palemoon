@@ -144,6 +144,10 @@ CSS_STATE_PSEUDO_CLASS(indeterminate, ":indeterminate",
 // any containing frames.
 CSS_STATE_PSEUDO_CLASS(mozFullScreen, ":-moz-full-screen", NS_EVENT_STATE_FULL_SCREEN)
 
+// Matches any element which is an ancestor of the DOM full-screen element,
+// or an ancestor of a containing frame of the full-screen element.
+CSS_STATE_PSEUDO_CLASS(mozFullScreenAncestor, ":-moz-full-screen-ancestor", NS_EVENT_STATE_FULL_SCREEN_ANCESTOR)
+
 // Matches if the element is focused and should show a focus ring
 CSS_STATE_PSEUDO_CLASS(mozFocusRing, ":-moz-focusring", NS_EVENT_STATE_FOCUSRING)
 
@@ -156,6 +160,8 @@ CSS_STATE_PSEUDO_CLASS(mozSuppressed, ":-moz-suppressed",
 CSS_STATE_PSEUDO_CLASS(mozLoading, ":-moz-loading", NS_EVENT_STATE_LOADING)
 CSS_STATE_PSEUDO_CLASS(mozTypeUnsupported, ":-moz-type-unsupported",
                        NS_EVENT_STATE_TYPE_UNSUPPORTED)
+CSS_STATE_PSEUDO_CLASS(mozHandlerClickToPlay, ":-moz-handler-clicktoplay",
+                       NS_EVENT_STATE_TYPE_CLICK_TO_PLAY)
 CSS_STATE_PSEUDO_CLASS(mozHandlerDisabled, ":-moz-handler-disabled",
                        NS_EVENT_STATE_HANDLER_DISABLED)
 CSS_STATE_PSEUDO_CLASS(mozHandlerBlocked, ":-moz-handler-blocked",

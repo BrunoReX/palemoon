@@ -60,7 +60,7 @@ public:
   RestyleTracker(PRUint32 aRestyleBits,
                  nsCSSFrameConstructor* aFrameConstructor) :
     mRestyleBits(aRestyleBits), mFrameConstructor(aFrameConstructor),
-    mHaveLaterSiblingRestyles(PR_FALSE)
+    mHaveLaterSiblingRestyles(false)
   {
     NS_PRECONDITION((mRestyleBits & ~ELEMENT_ALL_RESTYLE_FLAGS) == 0,
                     "Why do we have these bits set?");
@@ -76,7 +76,7 @@ public:
                     "Shouldn't have both root flags");
   }
 
-  PRBool Init() {
+  bool Init() {
     return mPendingRestyles.Init();
   }
 
@@ -88,13 +88,19 @@ public:
    * Add a restyle for the given element to the tracker.  Returns true
    * if the element already had eRestyle_LaterSiblings set on it.
    */
-  PRBool AddPendingRestyle(Element* aElement, nsRestyleHint aRestyleHint,
+  bool AddPendingRestyle(Element* aElement, nsRestyleHint aRestyleHint,
                            nsChangeHint aMinChangeHint);
 
   /**
    * Process the restyles we've been tracking.
    */
-  void ProcessRestyles();
+  void ProcessRestyles() {
+    // Fast-path the common case (esp. for the animation restyle
+    // tracker) of not having anything to do.
+    if (mPendingRestyles.Count()) {
+      DoProcessRestyles();
+    }
+  }
 
   // Return our ELEMENT_HAS_PENDING_(ANIMATION_)RESTYLE bit
   PRUint32 RestyleBit() const {
@@ -122,7 +128,7 @@ public:
    * the element.  If false is returned, then the state of *aData is
    * undefined.
    */
-  PRBool GetRestyleData(Element* aElement, RestyleData* aData);
+  bool GetRestyleData(Element* aElement, RestyleData* aData);
 
   /**
    * The document we're associated with.
@@ -142,6 +148,11 @@ private:
   inline void ProcessOneRestyle(Element* aElement,
                                 nsRestyleHint aRestyleHint,
                                 nsChangeHint aChangeHint);
+
+  /**
+   * The guts of our restyle processing.
+   */
+  void DoProcessRestyles();
 
   typedef nsDataHashtable<nsISupportsHashKey, RestyleData> PendingRestyleTable;
   typedef nsAutoTArray< nsRefPtr<Element>, 32> RestyleRootArray;
@@ -166,10 +177,10 @@ private:
   // True if we have some entries with the eRestyle_LaterSiblings
   // flag.  We need this to avoid enumerating the hashtable looking
   // for such entries when we can't possibly have any.
-  PRBool mHaveLaterSiblingRestyles;
+  bool mHaveLaterSiblingRestyles;
 };
 
-inline PRBool RestyleTracker::AddPendingRestyle(Element* aElement,
+inline bool RestyleTracker::AddPendingRestyle(Element* aElement,
                                                 nsRestyleHint aRestyleHint,
                                                 nsChangeHint aMinChangeHint)
 {
@@ -186,7 +197,7 @@ inline PRBool RestyleTracker::AddPendingRestyle(Element* aElement,
     aElement->SetFlags(RestyleBit());
   }
 
-  PRBool hadRestyleLaterSiblings =
+  bool hadRestyleLaterSiblings =
     (existingData.mRestyleHint & eRestyle_LaterSiblings) != 0;
   existingData.mRestyleHint =
     nsRestyleHint(existingData.mRestyleHint | aRestyleHint);

@@ -243,6 +243,14 @@ EVENT(mousedown,
       NS_MOUSE_BUTTON_DOWN,
       EventNameType_All,
       NS_MOUSE_EVENT)
+EVENT(mouseenter,
+      NS_MOUSEENTER,
+      EventNameType_All,
+      NS_MOUSE_EVENT)
+EVENT(mouseleave,
+      NS_MOUSELEAVE,
+      EventNameType_All,
+      NS_MOUSE_EVENT)
 EVENT(mousemove,
       NS_MOUSE_MOVE,
       EventNameType_All,
@@ -261,6 +269,10 @@ EVENT(mouseup,
       NS_MOUSE_EVENT)
 EVENT(mozfullscreenchange,
       NS_FULLSCREENCHANGE,
+      EventNameType_HTML,
+      NS_EVENT_NULL)
+EVENT(mozfullscreenerror,
+      NS_FULLSCREENERROR,
       EventNameType_HTML,
       NS_EVENT_NULL)
 // Not supported yet; probably never because "wheel" is a better idea.
@@ -437,29 +449,29 @@ WINDOW_ONLY_EVENT(deviceorientation,
                   NS_EVENT)
 
 TOUCH_EVENT(touchstart,
-            NS_USER_DEFINED_EVENT,
+            NS_TOUCH_START,
             EventNameType_All,
-            NS_INPUT_EVENT)
+            NS_TOUCH_EVENT)
 TOUCH_EVENT(touchend,
-            NS_USER_DEFINED_EVENT,
+            NS_TOUCH_END,
             EventNameType_All,
-            NS_INPUT_EVENT)
+            NS_TOUCH_EVENT)
 TOUCH_EVENT(touchmove,
-            NS_USER_DEFINED_EVENT,
+            NS_TOUCH_MOVE,
             EventNameType_All,
-            NS_INPUT_EVENT )
+            NS_TOUCH_EVENT )
 TOUCH_EVENT(touchenter,
-            NS_USER_DEFINED_EVENT,
+            NS_TOUCH_ENTER,
             EventNameType_All,
-            NS_INPUT_EVENT )
+            NS_TOUCH_EVENT )
 TOUCH_EVENT(touchleave,
-            NS_USER_DEFINED_EVENT,
+            NS_TOUCH_LEAVE,
             EventNameType_All,
-            NS_INPUT_EVENT)
+            NS_TOUCH_EVENT)
 TOUCH_EVENT(touchcancel,
-            NS_USER_DEFINED_EVENT,
+            NS_TOUCH_CANCEL,
             EventNameType_All,
-            NS_INPUT_EVENT)
+            NS_TOUCH_EVENT)
 
 DOCUMENT_ONLY_EVENT(readystatechange,
                     NS_READYSTATECHANGE,
@@ -636,7 +648,6 @@ NON_IDL_EVENT(zoom,
               NS_SVG_ZOOM,
               EventNameType_SVGSVG,
               NS_EVENT_NULL)
-#ifdef MOZ_SMIL
 NON_IDL_EVENT(begin,
               NS_SMIL_BEGIN,
               EventNameType_SMIL,
@@ -661,7 +672,6 @@ NON_IDL_EVENT(repeatEvent,
               NS_SMIL_REPEAT,
               EventNameType_None,
               NS_SMIL_TIME_EVENT)
-#endif // MOZ_SMIL
 
 NON_IDL_EVENT(MozAudioAvailable,
               NS_MOZAUDIOAVAILABLE,
@@ -671,10 +681,6 @@ NON_IDL_EVENT(MozAfterPaint,
               NS_AFTERPAINT,
               EventNameType_None,
               NS_EVENT)
-NON_IDL_EVENT(MozBeforePaint,
-              NS_BEFOREPAINT,
-              EventNameType_None,
-              NS_EVENT_NULL)
 
 NON_IDL_EVENT(MozScrolledAreaChanged,
               NS_SCROLLEDAREACHANGED,

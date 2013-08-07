@@ -65,14 +65,14 @@ public:
 
   const nsSMILValue& operator=(const nsSMILValue& aVal);
 
-  // Equality operators. These are allowed to be conservative (return PR_FALSE
+  // Equality operators. These are allowed to be conservative (return false
   // more than you'd expect) - see comment above nsISMILType::IsEqual.
-  PRBool operator==(const nsSMILValue& aVal) const;
-  PRBool operator!=(const nsSMILValue& aVal) const {
+  bool operator==(const nsSMILValue& aVal) const;
+  bool operator!=(const nsSMILValue& aVal) const {
     return !(*this == aVal);
   }
 
-  PRBool IsNull() const
+  bool IsNull() const
   {
     return (mType == &nsSMILNullType::sSingleton);
   }
@@ -88,7 +88,7 @@ public:
                        nsSMILValue& aResult) const;
 
   union {
-    PRBool mBool;
+    bool mBool;
     PRUint64 mUint;
     PRInt64 mInt;
     double mDouble;

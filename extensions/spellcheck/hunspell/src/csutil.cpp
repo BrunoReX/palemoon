@@ -5523,7 +5523,14 @@ struct cs_info * get_current_cs(const char * es) {
 // conversion tables static in this file, create them when needed
 // with help the mozilla backend.
 struct cs_info * get_current_cs(const char * es) {
-  struct cs_info *ccs;
+  struct cs_info *ccs = new cs_info[256];
+  // Initialze the array with dummy data so that we wouldn't need
+  // to return null in case of failures.
+  for (int i = 0; i <= 0xff; ++i) {
+    ccs[i].ccase = false;
+    ccs[i].clower = i;
+    ccs[i].cupper = i;
+  }
 
   nsCOMPtr<nsIUnicodeEncoder> encoder; 
   nsCOMPtr<nsIUnicodeDecoder> decoder; 
@@ -5531,24 +5538,22 @@ struct cs_info * get_current_cs(const char * es) {
   nsresult rv;
   nsCOMPtr<nsICharsetConverterManager> ccm = do_GetService(kCharsetConverterManagerCID, &rv);
   if (NS_FAILED(rv))
-    return nsnull;
+    return ccs;
 
   rv = ccm->GetUnicodeEncoder(es, getter_AddRefs(encoder));
   if (NS_FAILED(rv))
-    return nsnull;
+    return ccs;
   encoder->SetOutputErrorBehavior(encoder->kOnError_Signal, nsnull, '?');
   rv = ccm->GetUnicodeDecoder(es, getter_AddRefs(decoder));
   if (NS_FAILED(rv))
-    return nsnull;
+    return ccs;
   decoder->SetInputErrorBehavior(decoder->kOnError_Signal);
 
   if (NS_FAILED(rv))
-    return nsnull;
-
-  ccs = new cs_info[256];
+    return ccs;
 
   for (unsigned int i = 0; i <= 0xff; ++i) {
-    PRBool success = PR_FALSE;
+    bool success = false;
     // We want to find the upper/lowercase equivalents of each byte
     // in this 1-byte character encoding.  Call our encoding/decoding
     // APIs separately for each byte since they may reject some of the
@@ -5580,7 +5585,7 @@ struct cs_info * get_current_cs(const char * es) {
       if (rv != NS_OK || charLength != 1 || uniLength != 1)
         break;
 
-      success = PR_TRUE;
+      success = true;
     } while (0);
 
     if (success) {

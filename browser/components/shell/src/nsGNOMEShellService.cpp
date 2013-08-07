@@ -34,6 +34,8 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/Util.h"
+
 #include "nsCOMPtr.h"
 #include "nsGNOMEShellService.h"
 #include "nsShellService.h"
@@ -68,10 +70,12 @@
 #include <limits.h>
 #include <stdlib.h>
 
+using namespace mozilla;
+
 struct ProtocolAssociation
 {
   const char *name;
-  PRBool essential;
+  bool essential;
 };
 
 struct MimeTypeAssociation
@@ -81,10 +85,10 @@ struct MimeTypeAssociation
 };
 
 static const ProtocolAssociation appProtocols[] = {
-  { "http",   PR_TRUE  },
-  { "https",  PR_TRUE  },
-  { "ftp",    PR_FALSE },
-  { "chrome", PR_FALSE }
+  { "http",   true     },
+  { "https",  true     },
+  { "ftp",    false },
+  { "chrome", false }
 };
 
 static const MimeTypeAssociation appTypes[] = {
@@ -149,35 +153,35 @@ nsGNOMEShellService::Init()
 
 NS_IMPL_ISUPPORTS1(nsGNOMEShellService, nsIShellService)
 
-PRBool
+bool
 nsGNOMEShellService::GetAppPathFromLauncher()
 {
   gchar *tmp;
 
   const char *launcher = PR_GetEnv("MOZ_APP_LAUNCHER");
   if (!launcher)
-    return PR_FALSE;
+    return false;
 
   if (g_path_is_absolute(launcher)) {
     mAppPath = launcher;
     tmp = g_path_get_basename(launcher);
     gchar *fullpath = g_find_program_in_path(tmp);
     if (fullpath && mAppPath.Equals(fullpath))
-      mAppIsInPath = PR_TRUE;
+      mAppIsInPath = true;
     g_free(fullpath);
   } else {
     tmp = g_find_program_in_path(launcher);
     if (!tmp)
-      return PR_FALSE;
+      return false;
     mAppPath = tmp;
-    mAppIsInPath = PR_TRUE;
+    mAppIsInPath = true;
   }
 
   g_free(tmp);
-  return PR_TRUE;
+  return true;
 }
 
-PRBool
+bool
 nsGNOMEShellService::KeyMatchesAppName(const char *aKeyValue) const
 {
 
@@ -186,7 +190,7 @@ nsGNOMEShellService::KeyMatchesAppName(const char *aKeyValue) const
     gchar *nativePath = g_filename_from_utf8(aKeyValue, -1, NULL, NULL, NULL);
     if (!nativePath) {
       NS_ERROR("Error converting path to filesystem encoding");
-      return PR_FALSE;
+      return false;
     }
 
     commandPath = g_find_program_in_path(nativePath);
@@ -196,14 +200,14 @@ nsGNOMEShellService::KeyMatchesAppName(const char *aKeyValue) const
   }
 
   if (!commandPath)
-    return PR_FALSE;
+    return false;
 
-  PRBool matches = mAppPath.Equals(commandPath);
+  bool matches = mAppPath.Equals(commandPath);
   g_free(commandPath);
   return matches;
 }
 
-PRBool
+bool
 nsGNOMEShellService::CheckHandlerMatchesAppName(const nsACString &handler) const
 {
   gint argc;
@@ -219,27 +223,27 @@ nsGNOMEShellService::CheckHandlerMatchesAppName(const nsACString &handler) const
   }
 
   if (!KeyMatchesAppName(command.get()))
-    return PR_FALSE; // the handler is set to another app
+    return false; // the handler is set to another app
 
-  return PR_TRUE;
+  return true;
 }
 
 NS_IMETHODIMP
-nsGNOMEShellService::IsDefaultBrowser(PRBool aStartupCheck,
-                                      PRBool* aIsDefaultBrowser)
+nsGNOMEShellService::IsDefaultBrowser(bool aStartupCheck,
+                                      bool* aIsDefaultBrowser)
 {
-  *aIsDefaultBrowser = PR_FALSE;
+  *aIsDefaultBrowser = false;
   if (aStartupCheck)
-    mCheckedThisSession = PR_TRUE;
+    mCheckedThisSession = true;
 
   nsCOMPtr<nsIGConfService> gconf = do_GetService(NS_GCONFSERVICE_CONTRACTID);
   nsCOMPtr<nsIGIOService> giovfs = do_GetService(NS_GIOSERVICE_CONTRACTID);
 
-  PRBool enabled;
+  bool enabled;
   nsCAutoString handler;
   nsCOMPtr<nsIGIOMimeApp> gioApp;
 
-  for (unsigned int i = 0; i < NS_ARRAY_LENGTH(appProtocols); ++i) {
+  for (unsigned int i = 0; i < ArrayLength(appProtocols); ++i) {
     if (!appProtocols[i].essential)
       continue;
 
@@ -266,14 +270,14 @@ nsGNOMEShellService::IsDefaultBrowser(PRBool aStartupCheck,
     }
   }
 
-  *aIsDefaultBrowser = PR_TRUE;
+  *aIsDefaultBrowser = true;
 
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsGNOMEShellService::SetDefaultBrowser(PRBool aClaimAllTypes,
-                                       PRBool aForAllUsers)
+nsGNOMEShellService::SetDefaultBrowser(bool aClaimAllTypes,
+                                       bool aForAllUsers)
 {
 #ifdef DEBUG
   if (aForAllUsers)
@@ -295,7 +299,7 @@ nsGNOMEShellService::SetDefaultBrowser(PRBool aClaimAllTypes,
 
     appKeyValue.AppendLiteral(" %s");
 
-    for (unsigned int i = 0; i < NS_ARRAY_LENGTH(appProtocols); ++i) {
+    for (unsigned int i = 0; i < ArrayLength(appProtocols); ++i) {
       if (appProtocols[i].essential || aClaimAllTypes) {
         gconf->SetAppForProtocol(nsDependentCString(appProtocols[i].name),
                                  appKeyValue);
@@ -328,7 +332,7 @@ nsGNOMEShellService::SetDefaultBrowser(PRBool aClaimAllTypes,
     NS_ENSURE_SUCCESS(rv, rv);
 
     // set handler for the protocols
-    for (unsigned int i = 0; i < NS_ARRAY_LENGTH(appProtocols); ++i) {
+    for (unsigned int i = 0; i < ArrayLength(appProtocols); ++i) {
       if (appProtocols[i].essential || aClaimAllTypes) {
         appInfo->SetAsDefaultForURIScheme(nsDependentCString(appProtocols[i].name));
       }
@@ -337,7 +341,7 @@ nsGNOMEShellService::SetDefaultBrowser(PRBool aClaimAllTypes,
     // set handler for .html and xhtml files and MIME types:
     if (aClaimAllTypes) {
       // Add mime types for html, xhtml extension and set app to just created appinfo.
-      for (unsigned int i = 0; i < NS_ARRAY_LENGTH(appTypes); ++i) {
+      for (unsigned int i = 0; i < ArrayLength(appTypes); ++i) {
         appInfo->SetAsDefaultForMimeType(nsDependentCString(appTypes[i].mimeType));
         appInfo->SetAsDefaultForFileExtensions(nsDependentCString(appTypes[i].extensions));
       }
@@ -348,12 +352,12 @@ nsGNOMEShellService::SetDefaultBrowser(PRBool aClaimAllTypes,
 }
 
 NS_IMETHODIMP
-nsGNOMEShellService::GetShouldCheckDefaultBrowser(PRBool* aResult)
+nsGNOMEShellService::GetShouldCheckDefaultBrowser(bool* aResult)
 {
   // If we've already checked, the browser has been started and this is a 
   // new window open, and we don't want to check again.
   if (mCheckedThisSession) {
-    *aResult = PR_FALSE;
+    *aResult = false;
     return NS_OK;
   }
 
@@ -369,7 +373,7 @@ nsGNOMEShellService::GetShouldCheckDefaultBrowser(PRBool* aResult)
 }
 
 NS_IMETHODIMP
-nsGNOMEShellService::SetShouldCheckDefaultBrowser(PRBool aShouldCheck)
+nsGNOMEShellService::SetShouldCheckDefaultBrowser(bool aShouldCheck)
 {
   nsCOMPtr<nsIPrefBranch> prefs;
   nsCOMPtr<nsIPrefService> pserve(do_GetService(NS_PREFSERVICE_CONTRACTID));
@@ -478,7 +482,7 @@ nsGNOMEShellService::SetDesktopBackground(nsIDOMElement* aElement,
                                      nsDependentCString(file_uri));
       g_free(file_uri);
       background_settings->SetBoolean(NS_LITERAL_CSTRING(kDesktopDrawBGGSKey),
-                                      PR_TRUE);
+                                      true);
       return rv;
     }
   }
@@ -496,7 +500,7 @@ nsGNOMEShellService::SetDesktopBackground(nsIDOMElement* aElement,
                      EmptyCString());
 
     gconf->SetString(NS_LITERAL_CSTRING(kDesktopImageKey), filePath);
-    gconf->SetBool(NS_LITERAL_CSTRING(kDesktopDrawBGKey), PR_TRUE);
+    gconf->SetBool(NS_LITERAL_CSTRING(kDesktopDrawBGKey), true);
   }
 
   return rv;
@@ -611,7 +615,7 @@ nsGNOMEShellService::OpenApplication(PRInt32 aApplication)
   if (!gconf)
     return NS_ERROR_FAILURE;
 
-  PRBool enabled;
+  bool enabled;
   nsCAutoString appCommand;
   gconf->GetAppForProtocol(scheme, &enabled, appCommand);
 
@@ -620,7 +624,7 @@ nsGNOMEShellService::OpenApplication(PRInt32 aApplication)
 
   // XXX we don't currently handle launching a terminal window.
   // If the handler requires a terminal, bail.
-  PRBool requiresTerminal;
+  bool requiresTerminal;
   gconf->HandlerRequiresTerminal(scheme, &requiresTerminal);
   if (requiresTerminal)
     return NS_ERROR_FAILURE;
@@ -667,7 +671,7 @@ nsGNOMEShellService::OpenApplicationWithURI(nsILocalFile* aApplication, const ns
 
   const nsCString spec(aURI);
   const char* specStr = spec.get();
-  return process->Run(PR_FALSE, &specStr, 1);
+  return process->Run(false, &specStr, 1);
 }
 
 NS_IMETHODIMP

@@ -22,6 +22,7 @@
  *  Marina Samuel <msamuel@mozilla.com>
  *  Philipp von Weitershausen <philipp@weitershausen.de>
  *  Chenxia Liu <liuche@mozilla.com>
+ *  Richard Newman <rnewman@mozilla.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -37,8 +38,9 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-
-const EXPORTED_SYMBOLS = ["SyncScheduler", "ErrorHandler"];
+const EXPORTED_SYMBOLS = ["SyncScheduler",
+                          "ErrorHandler",
+                          "SendCredentialsController"];
 
 const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
@@ -53,6 +55,12 @@ Cu.import("resource://services-sync/main.js");    // So we can get to Service fo
 
 let SyncScheduler = {
   _log: Log4Moz.repository.getLogger("Sync.SyncScheduler"),
+
+  _fatalLoginStatus: [LOGIN_FAILED_NO_USERNAME,
+                      LOGIN_FAILED_NO_PASSWORD,
+                      LOGIN_FAILED_NO_PASSPHRASE,
+                      LOGIN_FAILED_INVALID_PASSPHRASE,
+                      LOGIN_FAILED_LOGIN_REJECTED],
 
   /**
    * The nsITimer object that schedules the next sync. See scheduleNextSync().
@@ -115,6 +123,7 @@ let SyncScheduler = {
   },
 
   observe: function observe(subject, topic, data) {
+    this._log.trace("Handling " + topic);
     switch(topic) {
       case "weave:engine:score:updated":
         if (Status.login == LOGIN_SUCCEEDED) {
@@ -162,7 +171,7 @@ let SyncScheduler = {
         }
         break;
       case "weave:engine:sync:error":
-        // subject is the exception thrown by an engine's sync() method
+        // `subject` is the exception thrown by an engine's sync() method.
         let exception = subject;
         if (exception.status >= 500 && exception.status <= 504) {
           this.requiresBackoff = true;
@@ -171,12 +180,16 @@ let SyncScheduler = {
       case "weave:service:login:error":
         this.clearSyncTriggers();
 
-        // Try again later, just as if we threw an error... only without the
-        // error count.
         if (Status.login == MASTER_PASSWORD_LOCKED) {
+          // Try again later, just as if we threw an error... only without the
+          // error count.
           this._log.debug("Couldn't log in: master password is locked.");
           this._log.trace("Scheduling a sync at MASTER_PASSWORD_LOCKED_RETRY_INTERVAL");
           this.scheduleAtInterval(MASTER_PASSWORD_LOCKED_RETRY_INTERVAL);
+        } else if (this._fatalLoginStatus.indexOf(Status.login) == -1) {
+          // Not a fatal login error, just an intermittent network or server
+          // issue. Keep on syncin'.
+          this.checkSyncStatus();
         }
         break;
       case "weave:service:logout:finish":
@@ -217,8 +230,13 @@ let SyncScheduler = {
          Svc.Idle.addIdleObserver(this, Svc.Prefs.get("scheduler.idleTime"));
          break;
       case "weave:service:start-over":
-         Svc.Idle.removeIdleObserver(this, Svc.Prefs.get("scheduler.idleTime"));
          SyncScheduler.setDefaults();
+         try {
+           Svc.Idle.removeIdleObserver(this, Svc.Prefs.get("scheduler.idleTime"));
+         } catch (ex if (ex.result == Cr.NS_ERROR_FAILURE)) {
+           // In all likelihood we didn't have an idle observer registered yet.
+           // It's all good.
+         }
          break;
       case "idle":
         this._log.trace("We're idle.");
@@ -443,6 +461,7 @@ let SyncScheduler = {
    * Deal with sync errors appropriately
    */
   handleSyncError: function handleSyncError() {
+    this._log.trace("In handleSyncError. Error count: " + this._syncErrors);
     this._syncErrors++;
 
     // Do nothing on the first couple of failures, if we're not in
@@ -452,6 +471,8 @@ let SyncScheduler = {
         this.scheduleNextSync();
         return;
       }
+      this._log.debug("Sync error count has exceeded " +
+                      MAX_ERROR_COUNT_BEFORE_BACKOFF + "; enforcing backoff.");
       Status.enforceBackoff = true;
     }
 
@@ -463,7 +484,8 @@ let SyncScheduler = {
    * Remove any timers/observers that might trigger a sync
    */
   clearSyncTriggers: function clearSyncTriggers() {
-    this._log.debug("Clearing sync triggers.");
+    this._log.debug("Clearing sync triggers and the global score.");
+    this.globalScore = this.nextSync = 0;
 
     // Clear out any scheduled syncs
     if (this.syncTimer)
@@ -515,6 +537,7 @@ let ErrorHandler = {
   },
 
   observe: function observe(subject, topic, data) {
+    this._log.trace("Handling " + topic);
     switch(topic) {
       case "weave:engine:sync:applied":
         if (subject.newFailed) {
@@ -563,6 +586,19 @@ let ErrorHandler = {
         this.dontIgnoreErrors = false;
         break;
       case "weave:service:sync:finish":
+        this._log.trace("Status.service is " + Status.service);
+
+        // Check both of these status codes: in the event of a failure in one
+        // engine, Status.service will be SYNC_FAILED_PARTIAL despite
+        // Status.sync being SYNC_SUCCEEDED.
+        // *facepalm*
+        if (Status.sync    == SYNC_SUCCEEDED &&
+            Status.service == STATUS_OK) {
+          // Great. Let's clear our mid-sync 401 note.
+          this._log.trace("Clearing lastSyncReassigned.");
+          Svc.Prefs.reset("lastSyncReassigned");
+        }
+
         if (Status.service == SYNC_FAILED_PARTIAL) {
           this._log.debug("Some engines did not sync correctly.");
           this.resetFileLog(Svc.Prefs.get("log.appender.file.logOnError"),
@@ -584,7 +620,12 @@ let ErrorHandler = {
   },
 
   notifyOnNextTick: function notifyOnNextTick(topic) {
-    Utils.nextTick(function() Svc.Obs.notify(topic));
+    Utils.nextTick(function() {
+      this._log.trace("Notifying " + topic +
+                      ". Status.login is " + Status.login +
+                      ". Status.sync is " + Status.sync);
+      Svc.Obs.notify(topic);
+    }, this);
   },
 
   /**
@@ -704,6 +745,7 @@ let ErrorHandler = {
 
   shouldReportError: function shouldReportError() {
     if (Status.login == MASTER_PASSWORD_LOCKED) {
+      this._log.trace("shouldReportError: false (master password locked).");
       return false;
     }
 
@@ -715,7 +757,17 @@ let ErrorHandler = {
     if (lastSync && ((Date.now() - Date.parse(lastSync)) >
         Svc.Prefs.get("errorhandler.networkFailureReportTimeout") * 1000)) {
       Status.sync = PROLONGED_SYNC_FAILURE;
+      this._log.trace("shouldReportError: true (prolonged sync failure).");
       return true;
+    }
+ 
+    // We got a 401 mid-sync. Wait for the next sync before actually handling
+    // an error. This assumes that we'll get a 401 again on a login fetch in
+    // order to report the error.
+    if (!Weave.Service.clusterURL) {
+      this._log.trace("shouldReportError: false (no cluster URL; " +
+                      "possible node reassignment).");
+      return false;
     }
 
     return ([Status.login, Status.sync].indexOf(SERVER_MAINTENANCE) == -1 &&
@@ -736,7 +788,24 @@ let ErrorHandler = {
 
       case 401:
         Weave.Service.logout();
-        Status.login = LOGIN_FAILED_LOGIN_REJECTED;
+        this._log.info("Got 401 response; resetting clusterURL.");
+        Svc.Prefs.reset("clusterURL");
+
+        let delay = 0;
+        if (Svc.Prefs.get("lastSyncReassigned")) {
+          // We got a 401 in the middle of the previous sync, and we just got
+          // another. Login must have succeeded in order for us to get here, so
+          // the password should be correct.
+          // This is likely to be an intermittent server issue, so back off and
+          // give it time to recover.
+          this._log.warn("Last sync also failed for 401. Delaying next sync.");
+          delay = MINIMUM_BACKOFF_INTERVAL;
+        } else {
+          this._log.debug("New mid-sync 401 failure. Making a note.");
+          Svc.Prefs.set("lastSyncReassigned", true);
+        }
+        this._log.info("Attempting to schedule another sync.");
+        SyncScheduler.scheduleNextSync(delay);
         break;
 
       case 500:
@@ -773,4 +842,96 @@ let ErrorHandler = {
         break;
     }
   },
+};
+
+
+/**
+ * Send credentials over an active J-PAKE channel.
+ * 
+ * This object is designed to take over as the JPAKEClient controller,
+ * presumably replacing one that is UI-based which would either cause
+ * DOM objects to leak or the JPAKEClient to be GC'ed when the DOM
+ * context disappears. This object stays alive for the duration of the
+ * transfer by being strong-ref'ed as an nsIObserver.
+ * 
+ * Credentials are sent after the first sync has been completed
+ * (successfully or not.)
+ * 
+ * Usage:
+ * 
+ *   jpakeclient.controller = new SendCredentialsController(jpakeclient);
+ * 
+ */
+function SendCredentialsController(jpakeclient) {
+  this._log = Log4Moz.repository.getLogger("Sync.SendCredentialsController");
+  this._log.level = Log4Moz.Level[Svc.Prefs.get("log.logger.service.main")];
+
+  this._log.trace("Loading.");
+  this.jpakeclient = jpakeclient;
+
+  // Register ourselves as observers the first Sync finishing (either
+  // successfully or unsuccessfully, we don't care) or for removing
+  // this device's sync configuration, in case that happens while we
+  // haven't finished the first sync yet.
+  Services.obs.addObserver(this, "weave:service:sync:finish", false);
+  Services.obs.addObserver(this, "weave:service:sync:error",  false);
+  Services.obs.addObserver(this, "weave:service:start-over",  false);
+}
+SendCredentialsController.prototype = {
+
+  unload: function unload() {
+    this._log.trace("Unloading.");
+    try {
+      Services.obs.removeObserver(this, "weave:service:sync:finish");
+      Services.obs.removeObserver(this, "weave:service:sync:error");
+      Services.obs.removeObserver(this, "weave:service:start-over");
+    } catch (ex) {
+      // Ignore.
+    }
+  },
+
+  observe: function observe(subject, topic, data) {
+    switch (topic) {
+      case "weave:service:sync:finish":
+      case "weave:service:sync:error":
+        Utils.nextTick(this.sendCredentials, this);
+        break;
+      case "weave:service:start-over":
+        // This will call onAbort which will call unload().
+        this.jpakeclient.abort();
+        break;
+    }
+  },
+
+  sendCredentials: function sendCredentials() {
+    this._log.trace("Sending credentials.");
+    let credentials = {account:   Weave.Service.account,
+                       password:  Weave.Service.password,
+                       synckey:   Weave.Service.passphrase,
+                       serverURL: Weave.Service.serverURL};
+    this.jpakeclient.sendAndComplete(credentials);
+  },
+
+  // JPAKEClient controller API
+
+  onComplete: function onComplete() {
+    this._log.debug("Exchange was completed successfully!");
+    this.unload();
+
+    // Schedule a Sync for soonish to fetch the data uploaded by the
+    // device with which we just paired.
+    SyncScheduler.scheduleNextSync(SyncScheduler.activeInterval);
+  },
+
+  onAbort: function onAbort(error) {
+    // It doesn't really matter why we aborted, but the channel is closed
+    // for sure, so we won't be able to do anything with it.
+    this._log.debug("Exchange was aborted with error: " + error);
+    this.unload();
+  },
+
+  // Irrelevant methods for this controller:
+  displayPIN: function displayPIN() {},
+  onPairingStart: function onPairingStart() {},
+  onPaired: function onPaired() {}
 };

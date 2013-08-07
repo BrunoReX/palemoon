@@ -92,7 +92,7 @@ NS_IMETHODIMP
 nsSystemPrincipal::GetPreferences(char** aPrefName, char** aID,
                                   char** aSubjectName,
                                   char** aGrantedList, char** aDeniedList,
-                                  PRBool* aIsTrusted)
+                                  bool* aIsTrusted)
 {
     // The system principal should never be streamed out
     *aPrefName = nsnull;
@@ -100,33 +100,33 @@ nsSystemPrincipal::GetPreferences(char** aPrefName, char** aID,
     *aSubjectName = nsnull;
     *aGrantedList = nsnull;
     *aDeniedList = nsnull;
-    *aIsTrusted = PR_FALSE;
+    *aIsTrusted = false;
 
     return NS_ERROR_FAILURE; 
 }
 
 NS_IMETHODIMP
-nsSystemPrincipal::Equals(nsIPrincipal *other, PRBool *result)
+nsSystemPrincipal::Equals(nsIPrincipal *other, bool *result)
 {
     *result = (other == this);
     return NS_OK;
 }
 
 NS_IMETHODIMP
-nsSystemPrincipal::EqualsIgnoringDomain(nsIPrincipal *other, PRBool *result)
+nsSystemPrincipal::EqualsIgnoringDomain(nsIPrincipal *other, bool *result)
 {
     return Equals(other, result);
 }
 
 NS_IMETHODIMP
-nsSystemPrincipal::Subsumes(nsIPrincipal *other, PRBool *result)
+nsSystemPrincipal::Subsumes(nsIPrincipal *other, bool *result)
 {
-    *result = PR_TRUE;
+    *result = true;
     return NS_OK;
 }
 
 NS_IMETHODIMP
-nsSystemPrincipal::CheckMayLoad(nsIURI* uri, PRBool aReport)
+nsSystemPrincipal::CheckMayLoad(nsIURI* uri, bool aReport)
 {
     return NS_OK;
 }
@@ -158,9 +158,9 @@ nsSystemPrincipal::SetCanEnableCapability(const char *capability,
 NS_IMETHODIMP 
 nsSystemPrincipal::IsCapabilityEnabled(const char *capability, 
                                        void *annotation, 
-                                       PRBool *result)
+                                       bool *result)
 {
-    *result = PR_TRUE;
+    *result = true;
     return NS_OK;
 }
 
@@ -227,9 +227,9 @@ nsSystemPrincipal::GetCertificate(nsISupports** aCertificate)
 }
 
 NS_IMETHODIMP 
-nsSystemPrincipal::GetHasCertificate(PRBool* aResult)
+nsSystemPrincipal::GetHasCertificate(bool* aResult)
 {
-    *aResult = PR_FALSE;
+    *aResult = false;
     return NS_OK;
 }
 

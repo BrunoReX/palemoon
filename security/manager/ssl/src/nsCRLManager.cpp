@@ -43,14 +43,13 @@
 #include "nsComponentManagerUtils.h"
 #include "nsReadableUtils.h"
 #include "nsNSSComponent.h"
-#include "nsIWindowWatcher.h"
 #include "nsCOMPtr.h"
-#include "nsIPrompt.h"
 #include "nsICertificateDialogs.h"
 #include "nsIMutableArray.h"
 #include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
 #include "nsNSSShutDown.h"
+#include "nsThreadUtils.h"
 
 #include "nsNSSCertHeader.h"
 
@@ -81,8 +80,13 @@ nsCRLManager::~nsCRLManager()
 }
 
 NS_IMETHODIMP 
-nsCRLManager::ImportCrl (PRUint8 *aData, PRUint32 aLength, nsIURI * aURI, PRUint32 aType, PRBool doSilentDownload, const PRUnichar* crlKey)
+nsCRLManager::ImportCrl (PRUint8 *aData, PRUint32 aLength, nsIURI * aURI, PRUint32 aType, bool doSilentDownload, const PRUnichar* crlKey)
 {
+  if (!NS_IsMainThread()) {
+    NS_ERROR("nsCRLManager::ImportCrl called off the main thread");
+    return NS_ERROR_NOT_SAME_THREAD;
+  }
+  
   nsNSSShutDownPreventionLock locker;
   nsresult rv;
   PRArenaPool *arena = NULL;
@@ -94,7 +98,7 @@ nsCRLManager::ImportCrl (PRUint8 *aData, PRUint32 aLength, nsIURI * aURI, PRUint
   CERTSignedCrl *crl;
   nsCAutoString url;
   nsCOMPtr<nsICRLInfo> crlData;
-  PRBool importSuccessful;
+  bool importSuccessful;
   PRInt32 errorCode;
   nsString errorMessage;
   
@@ -145,11 +149,11 @@ nsCRLManager::ImportCrl (PRUint8 *aData, PRUint32 aLength, nsIURI * aURI, PRUint
   SSL_ClearSessionCache();
   SEC_DestroyCrl(crl);
   
-  importSuccessful = PR_TRUE;
+  importSuccessful = true;
   goto done;
 
 loser:
-  importSuccessful = PR_FALSE;
+  importSuccessful = false;
   errorCode = PR_GetError();
   switch (errorCode) {
     case SEC_ERROR_CRL_EXPIRED:
@@ -184,24 +188,14 @@ done:
     if (!importSuccessful){
       nsString message;
       nsString temp;
-      nsCOMPtr<nsIWindowWatcher> wwatch(do_GetService(NS_WINDOWWATCHER_CONTRACTID));
-      nsCOMPtr<nsIPrompt> prompter;
-      if (wwatch){
-        wwatch->GetNewPrompter(0, getter_AddRefs(prompter));
-        nssComponent->GetPIPNSSBundleString("CrlImportFailure1x", message);
-        message.Append(NS_LITERAL_STRING("\n").get());
-        message.Append(errorMessage);
-        nssComponent->GetPIPNSSBundleString("CrlImportFailure2", temp);
-        message.Append(NS_LITERAL_STRING("\n").get());
-        message.Append(temp);
-     
-        if(prompter) {
-          nsPSMUITracker tracker;
-          if (!tracker.isUIForbidden()) {
-            prompter->Alert(0, message.get());
-          }
-        }
-      }
+      nssComponent->GetPIPNSSBundleString("CrlImportFailure1x", message);
+      message.Append(NS_LITERAL_STRING("\n").get());
+      message.Append(errorMessage);
+      nssComponent->GetPIPNSSBundleString("CrlImportFailure2", temp);
+      message.Append(NS_LITERAL_STRING("\n").get());
+      message.Append(temp);
+
+      nsNSSComponent::ShowAlertWithConstructedString(message);
     } else {
       nsCOMPtr<nsICertificateDialogs> certDialogs;
       // Not being able to display the success dialog should not
@@ -262,7 +256,7 @@ done:
       dayCnt = atof(dayCntStr);
       nsMemory::Free(dayCntStr);
 
-      PRBool toBeRescheduled = PR_FALSE;
+      bool toBeRescheduled = false;
       if(NS_SUCCEEDED(ComputeNextAutoUpdateTime(crlData, timingTypePref, dayCnt, &updateTime))){
         updateTimeStr.AssignWithConversion(updateTime);
         nsMemory::Free(updateTime);
@@ -273,9 +267,9 @@ done:
         //session anymore - or else, we land into a loop. It would anyway be
         //imported once the browser is restarted.
         PRTime nextTime;
-        PR_ParseTimeString(updateTimeStr.get(),PR_TRUE, &nextTime);
+        PR_ParseTimeString(updateTimeStr.get(),true, &nextTime);
         if(LL_CMP(nextTime, > , PR_Now())){
-          toBeRescheduled = PR_TRUE;
+          toBeRescheduled = true;
         }
       }
       
@@ -311,22 +305,22 @@ done:
 }
 
 NS_IMETHODIMP 
-nsCRLManager::UpdateCRLFromURL( const PRUnichar *url, const PRUnichar* key, PRBool *res)
+nsCRLManager::UpdateCRLFromURL( const PRUnichar *url, const PRUnichar* key, bool *res)
 {
   nsresult rv;
   nsAutoString downloadUrl(url);
   nsAutoString dbKey(key);
   nsCOMPtr<nsINSSComponent> nssComponent(do_GetService(kNSSComponentCID, &rv));
   if(NS_FAILED(rv)){
-    *res = PR_FALSE;
+    *res = false;
     return rv;
   }
 
   rv = nssComponent->DownloadCRLDirectly(downloadUrl, dbKey);
   if(NS_FAILED(rv)){
-    *res = PR_FALSE;
+    *res = false;
   } else {
-    *res = PR_TRUE;
+    *res = true;
   }
   return NS_OK;
 
@@ -373,9 +367,9 @@ nsCRLManager::GetCrls(nsIArray ** aCrls)
     for (node=head->first; node != nsnull; node = node->next) {
 
       nsCOMPtr<nsICRLInfo> entry = new nsCRLInfo((node->crl));
-      crlsArray->AppendElement(entry, PR_FALSE);
+      crlsArray->AppendElement(entry, false);
     }
-    PORT_FreeArena(head->arena, PR_FALSE);
+    PORT_FreeArena(head->arena, false);
   }
 
   *aCrls = crlsArray;
@@ -414,7 +408,7 @@ nsCRLManager::DeleteCrl(PRUint32 aCrlIndex)
       SEC_DestroyCrl(realCrl);
       SSL_ClearSessionCache();
     }
-    PORT_FreeArena(head->arena, PR_FALSE);
+    PORT_FreeArena(head->arena, false);
   }
   return NS_OK;
 }

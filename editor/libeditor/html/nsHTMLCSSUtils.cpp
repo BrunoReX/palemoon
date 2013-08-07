@@ -195,111 +195,111 @@ void ProcessMarginRightValue(const nsAString * aInputString, nsAString & aOutput
 }
 
 const nsHTMLCSSUtils::CSSEquivTable boldEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_font_weight, ProcessBValue, nsnull, nsnull, nsnull, PR_TRUE, PR_FALSE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_font_weight, ProcessBValue, nsnull, nsnull, nsnull, true, false },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable italicEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_font_style, ProcessDefaultValue, "italic", nsnull, nsnull, PR_TRUE, PR_FALSE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_font_style, ProcessDefaultValue, "italic", nsnull, nsnull, true, false },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable underlineEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_text_decoration, ProcessDefaultValue, "underline", nsnull, nsnull, PR_TRUE, PR_FALSE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_text_decoration, ProcessDefaultValue, "underline", nsnull, nsnull, true, false },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable strikeEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_text_decoration, ProcessDefaultValue, "line-through", nsnull, nsnull, PR_TRUE, PR_FALSE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_text_decoration, ProcessDefaultValue, "line-through", nsnull, nsnull, true, false },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable ttEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_font_family, ProcessDefaultValue, "monospace", nsnull, nsnull, PR_TRUE, PR_FALSE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_font_family, ProcessDefaultValue, "monospace", nsnull, nsnull, true, false },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable fontColorEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_color, ProcessSameValue, nsnull, nsnull, nsnull, PR_TRUE, PR_FALSE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_color, ProcessSameValue, nsnull, nsnull, nsnull, true, false },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable fontFaceEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_font_family, ProcessSameValue, nsnull, nsnull, nsnull, PR_TRUE, PR_FALSE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_font_family, ProcessSameValue, nsnull, nsnull, nsnull, true, false },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable bgcolorEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_background_color, ProcessSameValue, nsnull, nsnull, nsnull, PR_TRUE, PR_FALSE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_background_color, ProcessSameValue, nsnull, nsnull, nsnull, true, false },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable backgroundImageEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_background_image, ProcessExtendedValue, nsnull, "url(", ")", PR_TRUE, PR_TRUE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_background_image, ProcessExtendedValue, nsnull, "url(", ")", true, true },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable textColorEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_color, ProcessSameValue, nsnull, nsnull, nsnull, PR_TRUE, PR_FALSE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_color, ProcessSameValue, nsnull, nsnull, nsnull, true, false },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable borderEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_border, ProcessExtendedValue, nsnull, nsnull, "px solid", PR_TRUE, PR_FALSE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_border, ProcessExtendedValue, nsnull, nsnull, "px solid", true, false },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable textAlignEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_text_align, ProcessSameValue, nsnull, nsnull, nsnull, PR_TRUE, PR_FALSE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_text_align, ProcessSameValue, nsnull, nsnull, nsnull, true, false },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable captionAlignEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_caption_side, ProcessSameValue, nsnull, nsnull, nsnull, PR_TRUE, PR_FALSE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_caption_side, ProcessSameValue, nsnull, nsnull, nsnull, true, false },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable verticalAlignEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_vertical_align, ProcessSameValue, nsnull, nsnull, nsnull, PR_TRUE, PR_FALSE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_vertical_align, ProcessSameValue, nsnull, nsnull, nsnull, true, false },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable nowrapEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_whitespace, ProcessDefaultValue, "nowrap", nsnull, nsnull, PR_TRUE, PR_FALSE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_whitespace, ProcessDefaultValue, "nowrap", nsnull, nsnull, true, false },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable widthEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_width, ProcessLengthValue, nsnull, nsnull, nsnull, PR_TRUE, PR_FALSE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_width, ProcessLengthValue, nsnull, nsnull, nsnull, true, false },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable heightEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_height, ProcessLengthValue, nsnull, nsnull, nsnull, PR_TRUE, PR_FALSE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_height, ProcessLengthValue, nsnull, nsnull, nsnull, true, false },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable listStyleTypeEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_list_style_type, ProcessListStyleTypeValue, nsnull, nsnull, nsnull, PR_TRUE, PR_TRUE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_list_style_type, ProcessListStyleTypeValue, nsnull, nsnull, nsnull, true, true },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable tableAlignEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_text_align, ProcessDefaultValue, "left", nsnull, nsnull, PR_FALSE, PR_FALSE },
-  { nsHTMLCSSUtils::eCSSEditableProperty_margin_left, ProcessMarginLeftValue, nsnull, nsnull, nsnull, PR_TRUE, PR_FALSE },
-  { nsHTMLCSSUtils::eCSSEditableProperty_margin_right, ProcessMarginRightValue, nsnull, nsnull, nsnull, PR_TRUE, PR_FALSE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_text_align, ProcessDefaultValue, "left", nsnull, nsnull, false, false },
+  { nsHTMLCSSUtils::eCSSEditableProperty_margin_left, ProcessMarginLeftValue, nsnull, nsnull, nsnull, true, false },
+  { nsHTMLCSSUtils::eCSSEditableProperty_margin_right, ProcessMarginRightValue, nsnull, nsnull, nsnull, true, false },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 const nsHTMLCSSUtils::CSSEquivTable hrAlignEquivTable[] = {
-  { nsHTMLCSSUtils::eCSSEditableProperty_margin_left, ProcessMarginLeftValue, nsnull, nsnull, nsnull, PR_TRUE, PR_FALSE },
-  { nsHTMLCSSUtils::eCSSEditableProperty_margin_right, ProcessMarginRightValue, nsnull, nsnull, nsnull, PR_TRUE, PR_FALSE },
+  { nsHTMLCSSUtils::eCSSEditableProperty_margin_left, ProcessMarginLeftValue, nsnull, nsnull, nsnull, true, false },
+  { nsHTMLCSSUtils::eCSSEditableProperty_margin_right, ProcessMarginRightValue, nsnull, nsnull, nsnull, true, false },
   { nsHTMLCSSUtils::eCSSEditableProperty_NONE, 0 }
 };
 
 nsHTMLCSSUtils::nsHTMLCSSUtils(nsHTMLEditor* aEditor)
   : mHTMLEditor(aEditor)
-  , mIsCSSPrefChecked(PR_FALSE)
+  , mIsCSSPrefChecked(false)
 {
   // let's retrieve the value of the "CSS editing" pref
   mIsCSSPrefChecked = Preferences::GetBool("editor.use_css", mIsCSSPrefChecked);
@@ -311,7 +311,7 @@ nsHTMLCSSUtils::~nsHTMLCSSUtils()
 
 // Answers true if we have some CSS equivalence for the HTML style defined
 // by aProperty and/or aAttribute for the node aNode
-PRBool
+bool
 nsHTMLCSSUtils::IsCSSEditableProperty(nsIDOMNode * aNode,
                                       nsIAtom * aProperty,
                                       const nsAString * aAttribute)
@@ -324,7 +324,7 @@ nsHTMLCSSUtils::IsCSSEditableProperty(nsIDOMNode * aNode,
     aNode->GetParentNode(getter_AddRefs(node));
   }
   nsCOMPtr<nsIContent> content = do_QueryInterface(node);
-  NS_ENSURE_TRUE(content, PR_FALSE);
+  NS_ENSURE_TRUE(content, false);
 
   nsIAtom *tagName = content->Tag();
   // brade: should the above use nsEditor::GetTag(aNode)?
@@ -339,7 +339,7 @@ nsHTMLCSSUtils::IsCSSEditableProperty(nsIDOMNode * aNode,
       || ((nsEditProperty::font == aProperty) && aAttribute &&
            (aAttribute->EqualsLiteral("color") ||
             aAttribute->EqualsLiteral("face")))) {
-    return PR_TRUE;
+    return true;
   }
 
   // ALIGN attribute on elements supporting it
@@ -362,7 +362,7 @@ nsHTMLCSSUtils::IsCSSEditableProperty(nsIDOMNode * aNode,
        // the same meaning for them
        || nsEditProperty::legend  == tagName
        || nsEditProperty::caption == tagName)) {
-    return PR_TRUE;
+    return true;
   }
 
   if (aAttribute && (aAttribute->EqualsLiteral("valign")) &&
@@ -374,7 +374,7 @@ nsHTMLCSSUtils::IsCSSEditableProperty(nsIDOMNode * aNode,
        || nsEditProperty::tfoot  == tagName
        || nsEditProperty::thead  == tagName
        || nsEditProperty::tr  == tagName)) {
-    return PR_TRUE;
+    return true;
   }
 
   // attributes TEXT, BACKGROUND and BGCOLOR on BODY
@@ -382,12 +382,12 @@ nsHTMLCSSUtils::IsCSSEditableProperty(nsIDOMNode * aNode,
       (aAttribute->EqualsLiteral("text")
        || aAttribute->EqualsLiteral("background")
        || aAttribute->EqualsLiteral("bgcolor"))) {
-    return PR_TRUE;
+    return true;
   }
 
   // attribute BGCOLOR on other elements
   if (aAttribute && aAttribute->EqualsLiteral("bgcolor")) {
-    return PR_TRUE;
+    return true;
   }
 
   // attributes HEIGHT, WIDTH and NOWRAP on TD and TH
@@ -396,21 +396,21 @@ nsHTMLCSSUtils::IsCSSEditableProperty(nsIDOMNode * aNode,
       (aAttribute->EqualsLiteral("height")
        || aAttribute->EqualsLiteral("width")
        || aAttribute->EqualsLiteral("nowrap"))) {
-    return PR_TRUE;
+    return true;
   }
 
   // attributes HEIGHT and WIDTH on TABLE
   if (aAttribute && (nsEditProperty::table == tagName) &&
       (aAttribute->EqualsLiteral("height")
        || aAttribute->EqualsLiteral("width"))) {
-    return PR_TRUE;
+    return true;
   }
 
   // attributes SIZE and WIDTH on HR
   if (aAttribute && (nsEditProperty::hr == tagName) &&
       (aAttribute->EqualsLiteral("size")
        || aAttribute->EqualsLiteral("width"))) {
-    return PR_TRUE;
+    return true;
   }
 
   // attribute TYPE on OL UL LI
@@ -418,14 +418,14 @@ nsHTMLCSSUtils::IsCSSEditableProperty(nsIDOMNode * aNode,
                      || nsEditProperty::ul == tagName
                      || nsEditProperty::li == tagName) &&
       aAttribute->EqualsLiteral("type")) {
-    return PR_TRUE;
+    return true;
   }
 
   if (aAttribute && nsEditProperty::img == tagName &&
       (aAttribute->EqualsLiteral("border")
        || aAttribute->EqualsLiteral("width")
        || aAttribute->EqualsLiteral("height"))) {
-    return PR_TRUE;
+    return true;
   }
 
   // other elements that we can align using CSS even if they
@@ -440,21 +440,21 @@ nsHTMLCSSUtils::IsCSSEditableProperty(nsIDOMNode * aNode,
        || nsEditProperty::address == tagName
        || nsEditProperty::pre == tagName
        || nsEditProperty::ul == tagName)) {
-    return PR_TRUE;
+    return true;
   }
 
-  return PR_FALSE;
+  return false;
 }
 
 // the lowest level above the transaction; adds the css declaration "aProperty : aValue" to
 // the inline styles carried by aElement
 nsresult
 nsHTMLCSSUtils::SetCSSProperty(nsIDOMElement *aElement, nsIAtom * aProperty, const nsAString & aValue,
-                               PRBool aSuppressTransaction)
+                               bool aSuppressTransaction)
 {
   nsRefPtr<ChangeCSSInlineStyleTxn> txn;
   nsresult result = CreateCSSPropertyTxn(aElement, aProperty, aValue,
-                                         getter_AddRefs(txn), PR_FALSE);
+                                         getter_AddRefs(txn), false);
   if (NS_SUCCEEDED(result))  {
     if (aSuppressTransaction) {
       result = txn->DoTransaction();
@@ -470,7 +470,7 @@ nsresult
 nsHTMLCSSUtils::SetCSSPropertyPixels(nsIDOMElement *aElement,
                                      nsIAtom *aProperty,
                                      PRInt32 aIntValue,
-                                     PRBool aSuppressTransaction)
+                                     bool aSuppressTransaction)
 {
   nsAutoString s;
   s.AppendInt(aIntValue);
@@ -483,11 +483,11 @@ nsHTMLCSSUtils::SetCSSPropertyPixels(nsIDOMElement *aElement,
 // property accepts only one value
 nsresult
 nsHTMLCSSUtils::RemoveCSSProperty(nsIDOMElement *aElement, nsIAtom * aProperty, const nsAString & aValue,
-                                  PRBool aSuppressTransaction)
+                                  bool aSuppressTransaction)
 {
   nsRefPtr<ChangeCSSInlineStyleTxn> txn;
   nsresult result = CreateCSSPropertyTxn(aElement, aProperty, aValue,
-                                         getter_AddRefs(txn), PR_TRUE);
+                                         getter_AddRefs(txn), true);
   if (NS_SUCCEEDED(result))  {
     if (aSuppressTransaction) {
       result = txn->DoTransaction();
@@ -504,7 +504,7 @@ nsHTMLCSSUtils::CreateCSSPropertyTxn(nsIDOMElement *aElement,
                                      nsIAtom * aAttribute,
                                      const nsAString& aValue,
                                      ChangeCSSInlineStyleTxn ** aTxn,
-                                     PRBool aRemoveProperty)
+                                     bool aRemoveProperty)
 {
   NS_ENSURE_TRUE(aElement, NS_ERROR_NULL_POINTER);
 
@@ -613,7 +613,7 @@ nsHTMLCSSUtils::RemoveCSSInlineStyle(nsIDOMNode *aNode, nsIAtom *aProperty, cons
   nsCOMPtr<nsIDOMElement> elem = do_QueryInterface(aNode);
 
   // remove the property from the style attribute
-  nsresult res = RemoveCSSProperty(elem, aProperty, aPropertyValue, PR_FALSE);
+  nsresult res = RemoveCSSProperty(elem, aProperty, aPropertyValue, false);
   NS_ENSURE_SUCCESS(res, res);
 
   if (nsEditor::NodeIsType(aNode, nsEditProperty::span)) {
@@ -638,17 +638,17 @@ nsHTMLCSSUtils::RemoveCSSInlineStyle(nsIDOMNode *aNode, nsIAtom *aProperty, cons
 
 // Answers true is the property can be removed by setting a "none" CSS value
 // on a node
-PRBool
+bool
 nsHTMLCSSUtils::IsCSSInvertable(nsIAtom *aProperty, const nsAString *aAttribute)
 {
-  return PRBool(nsEditProperty::b == aProperty);
+  return bool(nsEditProperty::b == aProperty);
 }
 
 // Get the default browser background color if we need it for GetCSSBackgroundColorState
 void
 nsHTMLCSSUtils::GetDefaultBackgroundColor(nsAString & aColor)
 {
-  if (Preferences::GetBool("editor.use_custom_colors", PR_FALSE)) {
+  if (Preferences::GetBool("editor.use_custom_colors", false)) {
     nsresult rv = Preferences::GetString("editor.background_color", &aColor);
     // XXX Why don't you validate the pref value?
     if (NS_FAILED(rv)) {
@@ -658,7 +658,7 @@ nsHTMLCSSUtils::GetDefaultBackgroundColor(nsAString & aColor)
     return;
   }
 
-  if (Preferences::GetBool("browser.display.use_system_colors", PR_FALSE)) {
+  if (Preferences::GetBool("browser.display.use_system_colors", false)) {
     return;
   }
 
@@ -696,7 +696,7 @@ nsHTMLCSSUtils::ParseLength(const nsAString & aString, float * aValue, nsIAtom *
   PRInt8 sign = 1;
   PRInt32 i = 0, j = aString.Length();
   PRUnichar c;
-  PRBool floatingPointFound = PR_FALSE;
+  bool floatingPointFound = false;
   c = *iter;
   if (PRUnichar('-') == c) { sign = -1; iter++; i++; }
   else if (PRUnichar('+') == c) { iter++; i++; }
@@ -716,7 +716,7 @@ nsHTMLCSSUtils::ParseLength(const nsAString & aString, float * aValue, nsIAtom *
       b = b / 10 * a;
     }
     else if (!floatingPointFound && (PRUnichar('.') == c)) {
-      floatingPointFound = PR_TRUE;
+      floatingPointFound = true;
       a = 1.0f; b = 0.1f;
     }
     else break;
@@ -802,7 +802,7 @@ nsHTMLCSSUtils::BuildCSSDeclarations(nsTArray<nsIAtom*> & aPropertyArray,
                                      nsTArray<nsString> & aValueArray,
                                      const CSSEquivTable * aEquivTable,
                                      const nsAString * aValue,
-                                     PRBool aGetOrRemoveRequest)
+                                     bool aGetOrRemoveRequest)
 {
   // clear arrays
   aPropertyArray.Clear();
@@ -847,7 +847,7 @@ nsHTMLCSSUtils::GenerateCSSDeclarationsFromHTMLStyle(nsIDOMNode * aNode,
                                                      const nsAString * aValue,
                                                      nsTArray<nsIAtom*> & cssPropertyArray,
                                                      nsTArray<nsString> & cssValueArray,
-                                                     PRBool aGetOrRemoveRequest)
+                                                     bool aGetOrRemoveRequest)
 {
   nsCOMPtr<nsIDOMNode> node = aNode;
   if (mHTMLEditor->IsTextNode(aNode)) {
@@ -938,7 +938,7 @@ nsHTMLCSSUtils::SetCSSEquivalentToHTMLStyle(nsIDOMNode * aNode,
                                             const nsAString *aAttribute,
                                             const nsAString *aValue,
                                             PRInt32 * aCount,
-                                            PRBool aSuppressTransaction)
+                                            bool aSuppressTransaction)
 {
   nsCOMPtr<nsIDOMElement> theElement = do_QueryInterface(aNode);
   nsresult res = NS_OK;
@@ -951,7 +951,7 @@ nsHTMLCSSUtils::SetCSSEquivalentToHTMLStyle(nsIDOMNode * aNode,
     nsTArray<nsIAtom*> cssPropertyArray;
     nsTArray<nsString> cssValueArray;
     GenerateCSSDeclarationsFromHTMLStyle(aNode, aHTMLProperty, aAttribute, aValue,
-                                         cssPropertyArray, cssValueArray, PR_FALSE);
+                                         cssPropertyArray, cssValueArray, false);
 
     // set the individual CSS inline styles
     *aCount = cssPropertyArray.Length();
@@ -972,7 +972,7 @@ nsHTMLCSSUtils::RemoveCSSEquivalentToHTMLStyle(nsIDOMNode * aNode,
                                                nsIAtom *aHTMLProperty,
                                                const nsAString *aAttribute,
                                                const nsAString *aValue,
-                                               PRBool aSuppressTransaction)
+                                               bool aSuppressTransaction)
 {
   nsCOMPtr<nsIDOMElement> theElement = do_QueryInterface(aNode);
   nsresult res = NS_OK;
@@ -985,7 +985,7 @@ nsHTMLCSSUtils::RemoveCSSEquivalentToHTMLStyle(nsIDOMNode * aNode,
     nsTArray<nsIAtom*> cssPropertyArray;
     nsTArray<nsString> cssValueArray;
     GenerateCSSDeclarationsFromHTMLStyle(aNode, aHTMLProperty, aAttribute, aValue,
-                                         cssPropertyArray, cssValueArray, PR_TRUE);
+                                         cssPropertyArray, cssValueArray, true);
 
     // remove the individual CSS inline styles
     count = cssPropertyArray.Length();
@@ -1003,11 +1003,11 @@ nsHTMLCSSUtils::RemoveCSSEquivalentToHTMLStyle(nsIDOMNode * aNode,
 
 // aReturn is true if the element aElement carries an ID or a class.
 nsresult
-nsHTMLCSSUtils::HasClassOrID(nsIDOMElement * aElement, PRBool & aReturn)
+nsHTMLCSSUtils::HasClassOrID(nsIDOMElement * aElement, bool & aReturn)
 {
   nsAutoString classVal, idVal;
-  PRBool isClassSet, isIdSet;
-  aReturn = PR_FALSE;
+  bool isClassSet, isIdSet;
+  aReturn = false;
 
   nsresult res = mHTMLEditor->GetAttributeValue(aElement,  NS_LITERAL_STRING("class"), classVal, &isClassSet);
   NS_ENSURE_SUCCESS(res, res);
@@ -1047,10 +1047,10 @@ nsHTMLCSSUtils::GetCSSEquivalentToHTMLInlineStyleSet(nsIDOMNode * aNode,
     }
     nsTArray<nsIAtom*> cssPropertyArray;
     nsTArray<nsString> cssValueArray;
-    // get the CSS equivalence with last param PR_TRUE indicating we want only the
+    // get the CSS equivalence with last param true indicating we want only the
     // "gettable" properties
     GenerateCSSDeclarationsFromHTMLStyle(theElement, aHTMLProperty, aAttribute, nsnull,
-                                         cssPropertyArray, cssValueArray, PR_TRUE);
+                                         cssPropertyArray, cssValueArray, true);
     PRInt32 count = cssPropertyArray.Length();
     PRInt32 index;
     for (index = 0; index < count; index++) {
@@ -1076,14 +1076,14 @@ nsresult
 nsHTMLCSSUtils::IsCSSEquivalentToHTMLInlineStyleSet(nsIDOMNode * aNode,
                                                     nsIAtom *aHTMLProperty,
                                                     const nsAString * aHTMLAttribute,
-                                                    PRBool & aIsSet,
+                                                    bool & aIsSet,
                                                     nsAString & valueString,
                                                     PRUint8 aStyleType)
 {
   NS_ENSURE_TRUE(aNode, NS_ERROR_NULL_POINTER);
 
   nsAutoString htmlValueString(valueString);
-  aIsSet = PR_FALSE;
+  aIsSet = false;
   nsCOMPtr<nsIDOMNode> node = aNode;
   NS_NAMED_LITERAL_STRING(boldStr, "bold");
   do {
@@ -1098,13 +1098,13 @@ nsHTMLCSSUtils::IsCSSEquivalentToHTMLInlineStyleSet(nsIDOMNode * aNode,
 
     if (nsEditProperty::b == aHTMLProperty) {
       if (valueString.Equals(boldStr)) {
-        aIsSet = PR_TRUE;
+        aIsSet = true;
       }
       else if (valueString.EqualsLiteral("normal")) {
-        aIsSet = PR_FALSE;
+        aIsSet = false;
       }
       else if (valueString.EqualsLiteral("bolder")) {
-        aIsSet = PR_TRUE;
+        aIsSet = true;
         valueString.Assign(boldStr);
       }
       else {
@@ -1113,11 +1113,11 @@ nsHTMLCSSUtils::IsCSSEquivalentToHTMLInlineStyleSet(nsIDOMNode * aNode,
         nsAutoString value(valueString);
         weight = value.ToInteger(&errorCode, 10);
         if (400 < weight) {
-          aIsSet = PR_TRUE;
+          aIsSet = true;
           valueString.Assign(boldStr);
         }
         else {
-          aIsSet = PR_FALSE;
+          aIsSet = false;
           valueString.AssignLiteral("normal");
         }
       }
@@ -1126,20 +1126,20 @@ nsHTMLCSSUtils::IsCSSEquivalentToHTMLInlineStyleSet(nsIDOMNode * aNode,
     else if (nsEditProperty::i == aHTMLProperty) {
       if (valueString.EqualsLiteral("italic") ||
           valueString.EqualsLiteral("oblique")) {
-        aIsSet= PR_TRUE;
+        aIsSet= true;
       }
     }
 
     else if (nsEditProperty::u == aHTMLProperty) {
       nsAutoString val;
       val.AssignLiteral("underline");
-      aIsSet = PRBool(ChangeCSSInlineStyleTxn::ValueIncludes(valueString, val, PR_FALSE));
+      aIsSet = bool(ChangeCSSInlineStyleTxn::ValueIncludes(valueString, val, false));
     }
 
     else if (nsEditProperty::strike == aHTMLProperty) {
       nsAutoString val;
       val.AssignLiteral("line-through");
-      aIsSet = PRBool(ChangeCSSInlineStyleTxn::ValueIncludes(valueString, val, PR_FALSE));
+      aIsSet = bool(ChangeCSSInlineStyleTxn::ValueIncludes(valueString, val, false));
     }
 
     else if (aHTMLAttribute &&
@@ -1147,7 +1147,7 @@ nsHTMLCSSUtils::IsCSSEquivalentToHTMLInlineStyleSet(nsIDOMNode * aNode,
                 aHTMLAttribute->EqualsLiteral("color")) ||
                aHTMLAttribute->EqualsLiteral("bgcolor"))) {
       if (htmlValueString.IsEmpty())
-        aIsSet = PR_TRUE;
+        aIsSet = true;
       else {
         nscolor rgba;
         nsAutoString subStr;
@@ -1206,17 +1206,17 @@ nsHTMLCSSUtils::IsCSSEquivalentToHTMLInlineStyleSet(nsIDOMNode * aNode,
     }
     else if (aHTMLAttribute
              && aHTMLAttribute->EqualsLiteral("align")) {
-      aIsSet = PR_TRUE;
+      aIsSet = true;
     }
     else {
-      aIsSet = PR_FALSE;
+      aIsSet = false;
       return NS_OK;
     }
 
     if (!htmlValueString.IsEmpty()) {
       if (htmlValueString.Equals(valueString,
                                  nsCaseInsensitiveStringComparator())) {
-        aIsSet = PR_TRUE;
+        aIsSet = true;
       }
     }
 
@@ -1235,13 +1235,13 @@ nsHTMLCSSUtils::IsCSSEquivalentToHTMLInlineStyleSet(nsIDOMNode * aNode,
 }
 
 nsresult
-nsHTMLCSSUtils::SetCSSEnabled(PRBool aIsCSSPrefChecked)
+nsHTMLCSSUtils::SetCSSEnabled(bool aIsCSSPrefChecked)
 {
   mIsCSSPrefChecked = aIsCSSPrefChecked;
   return NS_OK;
 }
 
-PRBool
+bool
 nsHTMLCSSUtils::IsCSSPrefChecked()
 {
   return mIsCSSPrefChecked ;
@@ -1250,7 +1250,7 @@ nsHTMLCSSUtils::IsCSSPrefChecked()
 // ElementsSameStyle compares two elements and checks if they have the same
 // specified CSS declarations in the STYLE attribute 
 // The answer is always negative if at least one of them carries an ID or a class
-PRBool
+bool
 nsHTMLCSSUtils::ElementsSameStyle(nsIDOMNode *aFirstNode, nsIDOMNode *aSecondNode)
 {
   nsresult res;
@@ -1260,17 +1260,17 @@ nsHTMLCSSUtils::ElementsSameStyle(nsIDOMNode *aFirstNode, nsIDOMNode *aSecondNod
   NS_ASSERTION((firstElement && secondElement), "Non element nodes passed to ElementsSameStyle.");
 
   nsAutoString firstID, secondID;
-  PRBool isFirstIDSet, isSecondIDSet;
+  bool isFirstIDSet, isSecondIDSet;
   res = mHTMLEditor->GetAttributeValue(firstElement,  NS_LITERAL_STRING("id"), firstID,  &isFirstIDSet);
   res = mHTMLEditor->GetAttributeValue(secondElement, NS_LITERAL_STRING("id"), secondID, &isSecondIDSet);
   if (isFirstIDSet || isSecondIDSet) {
     // at least one of the spans carries an ID ; suspect a CSS rule applies to it and
     // refuse to merge the nodes
-    return PR_FALSE;
+    return false;
   }
 
   nsAutoString firstClass, secondClass;
-  PRBool isFirstClassSet, isSecondClassSet;
+  bool isFirstClassSet, isSecondClassSet;
   res = mHTMLEditor->GetAttributeValue(firstElement,  NS_LITERAL_STRING("class"), firstClass,  &isFirstClassSet);
   res = mHTMLEditor->GetAttributeValue(secondElement, NS_LITERAL_STRING("class"), secondClass, &isSecondClassSet);
   if (isFirstClassSet && isSecondClassSet) {
@@ -1282,28 +1282,28 @@ nsHTMLCSSUtils::ElementsSameStyle(nsIDOMNode *aFirstNode, nsIDOMNode *aSecondNod
       // attribute to be "a b" for instance ; from a user's point of view, a
       // wysiwyg editor should probably NOT make any difference. CSS people
       // need to discuss this issue before any modification.
-      return PR_FALSE;
+      return false;
     }
   }
   else if (isFirstClassSet || isSecondClassSet) {
     // one span only carries a class, early way out
-    return PR_FALSE;
+    return false;
   }
 
   nsCOMPtr<nsIDOMCSSStyleDeclaration> firstCSSDecl, secondCSSDecl;
   PRUint32 firstLength, secondLength;
   res = GetInlineStyles(firstElement,  getter_AddRefs(firstCSSDecl),  &firstLength);
-  if (NS_FAILED(res) || !firstCSSDecl) return PR_FALSE;
+  if (NS_FAILED(res) || !firstCSSDecl) return false;
   res = GetInlineStyles(secondElement, getter_AddRefs(secondCSSDecl), &secondLength);
-  if (NS_FAILED(res) || !secondCSSDecl) return PR_FALSE;
+  if (NS_FAILED(res) || !secondCSSDecl) return false;
 
   if (firstLength != secondLength) {
     // early way out if we can
-    return PR_FALSE;
+    return false;
   }
   else if (0 == firstLength) {
     // no inline style !
-    return PR_TRUE;
+    return true;
   }
 
   PRUint32 i;
@@ -1314,7 +1314,7 @@ nsHTMLCSSUtils::ElementsSameStyle(nsIDOMNode *aFirstNode, nsIDOMNode *aSecondNod
     firstCSSDecl->GetPropertyValue(propertyNameString, firstValue);
     secondCSSDecl->GetPropertyValue(propertyNameString, secondValue);
     if (!firstValue.Equals(secondValue)) {
-      return PR_FALSE;
+      return false;
     }
   }
   for (i=0; i<secondLength; i++) {
@@ -1322,11 +1322,11 @@ nsHTMLCSSUtils::ElementsSameStyle(nsIDOMNode *aFirstNode, nsIDOMNode *aSecondNod
     secondCSSDecl->GetPropertyValue(propertyNameString, secondValue);
     firstCSSDecl->GetPropertyValue(propertyNameString, firstValue);
     if (!firstValue.Equals(secondValue)) {
-      return PR_FALSE;
+      return false;
     }
   }
 
-  return PR_TRUE;
+  return true;
 }
 
 nsresult
@@ -1401,17 +1401,3 @@ nsHTMLCSSUtils::SetCSSPropertyPixels(nsIDOMElement * aElement,
   s.AppendInt(aIntValue);
   return SetCSSProperty(aElement, aProperty, s + NS_LITERAL_STRING("px"));
 }
-
-nsresult
-nsHTMLCSSUtils::RemoveCSSProperty(nsIDOMElement * aElement,
-                                  const nsAString & aProperty)
-{
-  nsCOMPtr<nsIDOMCSSStyleDeclaration> cssDecl;
-  PRUint32 length;
-  nsresult res = GetInlineStyles(aElement, getter_AddRefs(cssDecl), &length);
-  if (NS_FAILED(res) || !cssDecl) return res;
-
-  nsAutoString returnString;
-  return cssDecl->RemoveProperty(aProperty, returnString);
-}
-

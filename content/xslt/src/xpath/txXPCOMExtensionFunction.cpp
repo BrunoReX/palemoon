@@ -218,14 +218,14 @@ LookupFunction(const char *aContractID, nsIAtom* aName, nsIID &aIID,
     const PRUnichar *name = aName->GetUTF16String();
     nsCAutoString methodName;
     PRUnichar letter;
-    PRBool upperNext = PR_FALSE;
+    bool upperNext = false;
     while ((letter = *name)) {
         if (letter == '-') {
-            upperNext = PR_TRUE;
+            upperNext = true;
         }
         else {
             methodName.Append(upperNext ? nsCRT::ToUpper(letter) : letter);
-            upperNext = PR_FALSE;
+            upperNext = false;
         }
         ++name;
     }
@@ -334,7 +334,7 @@ public:
     }
     ~txParamArrayHolder();
 
-    PRBool Init(PRUint8 aCount);
+    bool Init(PRUint8 aCount);
     operator nsXPTCVariant*() const
     {
       return mArray;
@@ -364,18 +364,18 @@ txParamArrayHolder::~txParamArrayHolder()
     }
 }
 
-PRBool
+bool
 txParamArrayHolder::Init(PRUint8 aCount)
 {
     mCount = aCount;
     mArray = new nsXPTCVariant[mCount];
     if (!mArray) {
-        return PR_FALSE;
+        return false;
     }
 
     memset(mArray, 0, mCount * sizeof(nsXPTCVariant));
 
-    return PR_TRUE;
+    return true;
 }
 
 nsresult
@@ -618,12 +618,12 @@ txXPCOMExtensionFunctionCall::getReturnType()
     return ANY_RESULT;
 }
 
-PRBool
+bool
 txXPCOMExtensionFunctionCall::isSensitiveTo(ContextSensitivity aContext)
 {
     // It doesn't really matter what we return here, but it might
     // be a good idea to try to keep this as unoptimizable as possible
-    return PR_TRUE;
+    return true;
 }
 
 #ifdef TX_TO_STRING

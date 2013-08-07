@@ -95,6 +95,8 @@
  * provide some convenience in writing out data.
  */
 
+class nsIMemoryReporter;
+
 namespace mozilla {
 namespace scache {
 
@@ -110,6 +112,10 @@ struct CacheEntry
 
   ~CacheEntry()
   {
+  }
+
+  size_t SizeOfExcludingThis(nsMallocSizeOfFun mallocSizeOf) {
+    return mallocSizeOf(data, size);
   }
 };
 
@@ -148,6 +154,12 @@ public:
   static StartupCache* GetSingleton();
   static void DeleteSingleton();
 
+  // This measures all the heap memory used by the StartupCache, i.e. it
+  // excludes the mapping.
+  size_t HeapSizeOfIncludingThis(nsMallocSizeOfFun mallocSizeOf);
+
+  size_t SizeOfMapping();
+
 private:
   StartupCache();
   ~StartupCache();
@@ -162,22 +174,30 @@ private:
   static void WriteTimeout(nsITimer *aTimer, void *aClosure);
   static void ThreadedWrite(void *aClosure);
 
+  static size_t SizeOfEntryExcludingThis(const nsACString& key,
+                                         const nsAutoPtr<CacheEntry>& data,
+                                         nsMallocSizeOfFun mallocSizeOf,
+                                         void *);
+
   nsClassHashtable<nsCStringHashKey, CacheEntry> mTable;
-  nsAutoPtr<nsZipArchive> mArchive;
+  nsRefPtr<nsZipArchive> mArchive;
   nsCOMPtr<nsILocalFile> mFile;
   
   nsCOMPtr<nsIObserverService> mObserverService;
   nsRefPtr<StartupCacheListener> mListener;
   nsCOMPtr<nsITimer> mTimer;
 
-  PRBool mStartupWriteInitiated;
+  bool mStartupWriteInitiated;
 
   static StartupCache *gStartupCache;
-  static PRBool gShutdownInitiated;
+  static bool gShutdownInitiated;
   PRThread *mWriteThread;
 #ifdef DEBUG
   nsTHashtable<nsISupportsHashKey> mWriteObjectMap;
 #endif
+
+  nsIMemoryReporter* mMappingMemoryReporter;
+  nsIMemoryReporter* mDataMemoryReporter;
 };
 
 // This debug outputstream attempts to detect if clients are writing multiple
@@ -197,7 +217,7 @@ class StartupCacheDebugOutputStream
   NS_FORWARD_SAFE_NSIBINARYOUTPUTSTREAM(mBinaryStream)
   NS_FORWARD_SAFE_NSIOUTPUTSTREAM(mBinaryStream)
   
-  PRBool CheckReferences(nsISupports* aObject);
+  bool CheckReferences(nsISupports* aObject);
   
   nsCOMPtr<nsIObjectOutputStream> mBinaryStream;
   nsTHashtable<nsISupportsHashKey> *mObjectMap;

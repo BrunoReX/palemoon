@@ -34,6 +34,9 @@
  * the terms of any one of the MPL, the GPL or the LGPL.
  *
  * ***** END LICENSE BLOCK ***** */
+
+#include "mozilla/Util.h"
+
 #include "nsIDOMHTMLDivElement.h"
 #include "nsIDOMEventTarget.h"
 #include "nsGenericHTMLElement.h"
@@ -41,6 +44,8 @@
 #include "nsStyleConsts.h"
 #include "nsMappedAttributes.h"
 #include "nsDOMMemoryReporter.h"
+
+using namespace mozilla;
 
 class nsHTMLDivElement : public nsGenericHTMLElement,
                          public nsIDOMHTMLDivElement
@@ -67,11 +72,11 @@ public:
   NS_DECL_AND_IMPL_DOM_MEMORY_REPORTER_SIZEOF(nsHTMLDivElement,
                                               nsGenericHTMLElement)
 
-  virtual PRBool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(PRInt32 aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
-  NS_IMETHOD_(PRBool) IsAttributeMapped(const nsIAtom* aAttribute) const;
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const;
   virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const;
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
 
@@ -110,7 +115,7 @@ NS_IMPL_ELEMENT_CLONE(nsHTMLDivElement)
 NS_IMPL_STRING_ATTR(nsHTMLDivElement, Align, align)
 
 
-PRBool
+bool
 nsHTMLDivElement::ParseAttribute(PRInt32 aNamespaceID,
                                  nsIAtom* aAttribute,
                                  const nsAString& aValue,
@@ -157,7 +162,7 @@ MapMarqueeAttributesIntoRule(const nsMappedAttributes* aAttributes, nsRuleData* 
   nsGenericHTMLElement::MapBGColorInto(aAttributes, aData);
 }
 
-NS_IMETHODIMP_(PRBool)
+NS_IMETHODIMP_(bool)
 nsHTMLDivElement::IsAttributeMapped(const nsIAtom* aAttribute) const
 {
   if (mNodeInfo->Equals(nsGkAtoms::div)) {
@@ -165,7 +170,7 @@ nsHTMLDivElement::IsAttributeMapped(const nsIAtom* aAttribute) const
       sDivAlignAttributeMap,
       sCommonAttributeMap
     };
-    return FindAttributeDependence(aAttribute, map, NS_ARRAY_LENGTH(map));
+    return FindAttributeDependence(aAttribute, map);
   }
   if (mNodeInfo->Equals(nsGkAtoms::marquee)) {  
     static const MappedAttributeEntry* const map[] = {
@@ -173,7 +178,7 @@ nsHTMLDivElement::IsAttributeMapped(const nsIAtom* aAttribute) const
       sBackgroundColorAttributeMap,
       sCommonAttributeMap
     };
-    return FindAttributeDependence(aAttribute, map, NS_ARRAY_LENGTH(map));
+    return FindAttributeDependence(aAttribute, map);
   }
 
   return nsGenericHTMLElement::IsAttributeMapped(aAttribute);

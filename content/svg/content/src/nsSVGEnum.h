@@ -54,41 +54,37 @@ public:
   void Init(PRUint8 aAttrEnum, PRUint16 aValue) {
     mAnimVal = mBaseVal = PRUint8(aValue);
     mAttrEnum = aAttrEnum;
-    mIsAnimated = PR_FALSE;
-    mIsBaseSet = PR_FALSE;
+    mIsAnimated = false;
+    mIsBaseSet = false;
   }
 
   nsresult SetBaseValueString(const nsAString& aValue,
-                              nsSVGElement *aSVGElement,
-                              PRBool aDoSetAttr);
+                              nsSVGElement *aSVGElement);
   void GetBaseValueString(nsAString& aValue,
                           nsSVGElement *aSVGElement);
 
   nsresult SetBaseValue(PRUint16 aValue,
-                        nsSVGElement *aSVGElement,
-                        PRBool aDoSetAttr);
+                        nsSVGElement *aSVGElement);
   PRUint16 GetBaseValue() const
     { return mBaseVal; }
 
   void SetAnimValue(PRUint16 aValue, nsSVGElement *aSVGElement);
   PRUint16 GetAnimValue() const
     { return mAnimVal; }
-  PRBool IsExplicitlySet() const
+  bool IsExplicitlySet() const
     { return mIsAnimated || mIsBaseSet; }
 
   nsresult ToDOMAnimatedEnum(nsIDOMSVGAnimatedEnumeration **aResult,
                              nsSVGElement* aSVGElement);
-#ifdef MOZ_SMIL
   // Returns a new nsISMILAttr object that the caller must delete
   nsISMILAttr* ToSMILAttr(nsSVGElement* aSVGElement);
-#endif // MOZ_SMIL
 
 private:
   nsSVGEnumValue mAnimVal;
   nsSVGEnumValue mBaseVal;
   PRUint8 mAttrEnum; // element specified tracking for attribute
-  PRPackedBool mIsAnimated;
-  PRPackedBool mIsBaseSet;
+  bool mIsAnimated;
+  bool mIsBaseSet;
 
   nsSVGEnumMapping *GetMapping(nsSVGElement *aSVGElement);
 
@@ -107,21 +103,18 @@ public:
     NS_IMETHOD GetBaseVal(PRUint16* aResult)
       { *aResult = mVal->GetBaseValue(); return NS_OK; }
     NS_IMETHOD SetBaseVal(PRUint16 aValue)
-      { return mVal->SetBaseValue(aValue, mSVGElement, PR_TRUE); }
+      { return mVal->SetBaseValue(aValue, mSVGElement); }
 
     // Script may have modified animation parameters or timeline -- DOM getters
     // need to flush any resample requests to reflect these modifications.
     NS_IMETHOD GetAnimVal(PRUint16* aResult)
     {
-#ifdef MOZ_SMIL
       mSVGElement->FlushAnimations();
-#endif
       *aResult = mVal->GetAnimValue();
       return NS_OK;
     }
   };
 
-#ifdef MOZ_SMIL
   struct SMILEnum : public nsISMILAttr
   {
   public:
@@ -138,12 +131,11 @@ public:
     virtual nsresult ValueFromString(const nsAString& aStr,
                                      const nsISMILAnimationElement* aSrcElement,
                                      nsSMILValue& aValue,
-                                     PRBool& aPreventCachingOfSandwich) const;
+                                     bool& aPreventCachingOfSandwich) const;
     virtual nsSMILValue GetBaseValue() const;
     virtual void ClearAnimValue();
     virtual nsresult SetAnimValue(const nsSMILValue& aValue);
   };
-#endif // MOZ_SMIL
 };
 
 #endif //__NS_SVGENUM_H__

@@ -68,8 +68,8 @@ using namespace mozilla::dom;
 using namespace mozilla::net;
 
 static NS_DEFINE_CID(kDNSServiceCID, NS_DNSSERVICE_CID);
-PRBool sDisablePrefetchHTTPSPref;
-static PRBool sInitialized = PR_FALSE;
+bool sDisablePrefetchHTTPSPref;
+static bool sInitialized = false;
 static nsIDNSService *sDNSService = nsnull;
 static nsHTMLDNSPrefetch::nsDeferrals *sPrefetches = nsnull;
 static nsHTMLDNSPrefetch::nsListener *sDNSListener = nsnull;
@@ -101,7 +101,7 @@ nsHTMLDNSPrefetch::Initialize()
   
   // Default is false, so we need an explicit call to prime the cache.
   sDisablePrefetchHTTPSPref = 
-    Preferences::GetBool("network.dns.disablePrefetchFromHTTPS", PR_TRUE);
+    Preferences::GetBool("network.dns.disablePrefetchFromHTTPS", true);
   
   NS_IF_RELEASE(sDNSService);
   nsresult rv;
@@ -111,7 +111,7 @@ nsHTMLDNSPrefetch::Initialize()
   if (IsNeckoChild())
     NeckoChild::InitNeckoChild();
 
-  sInitialized = PR_TRUE;
+  sInitialized = true;
   return NS_OK;
 }
 
@@ -122,7 +122,7 @@ nsHTMLDNSPrefetch::Shutdown()
     NS_WARNING("Not Initialized");
     return NS_OK;
   }
-  sInitialized = PR_FALSE;
+  sInitialized = false;
   NS_IF_RELEASE(sDNSService);
   NS_IF_RELEASE(sPrefetches);
   NS_IF_RELEASE(sDNSListener);
@@ -130,7 +130,7 @@ nsHTMLDNSPrefetch::Shutdown()
   return NS_OK;
 }
 
-PRBool
+bool
 nsHTMLDNSPrefetch::IsAllowed (nsIDocument *aDocument)
 {
   // There is no need to do prefetch on non UI scenarios such as XMLHttpRequest.
@@ -233,7 +233,7 @@ nsHTMLDNSPrefetch::nsDeferrals::nsDeferrals()
   : mHead(0),
     mTail(0),
     mActiveLoaderCount(0),
-    mTimerArmed(PR_FALSE)
+    mTimerArmed(false)
 {
   mTimer = do_CreateInstance("@mozilla.org/timer;1");
 }
@@ -241,7 +241,7 @@ nsHTMLDNSPrefetch::nsDeferrals::nsDeferrals()
 nsHTMLDNSPrefetch::nsDeferrals::~nsDeferrals()
 {
   if (mTimerArmed) {
-    mTimerArmed = PR_FALSE;
+    mTimerArmed = false;
     mTimer->Cancel();
   }
 
@@ -276,7 +276,7 @@ nsHTMLDNSPrefetch::nsDeferrals::Add(PRUint16 flags, Link *aElement)
   mHead = (mHead + 1) & sMaxDeferredMask;
 
   if (!mActiveLoaderCount && !mTimerArmed && mTimer) {
-    mTimerArmed = PR_TRUE;
+    mTimerArmed = true;
     mTimer->InitWithFuncCallback(Tick, this, 2000, nsITimer::TYPE_ONE_SHOT);
   }
   
@@ -292,7 +292,7 @@ nsHTMLDNSPrefetch::nsDeferrals::SubmitQueue()
 
   while (mHead != mTail) {
     nsCOMPtr<nsIContent> content = do_QueryReferent(mEntries[mTail].mElement);
-    if (content && content->GetOwnerDoc()) {
+    if (content) {
       nsCOMPtr<Link> link = do_QueryInterface(content);
       nsCOMPtr<nsIURI> hrefURI(link ? link->GetURI() : nsnull);
       if (hrefURI)
@@ -312,7 +312,7 @@ nsHTMLDNSPrefetch::nsDeferrals::SubmitQueue()
   }
   
   if (mTimerArmed) {
-    mTimerArmed = PR_FALSE;
+    mTimerArmed = false;
     mTimer->Cancel();
   }
 }
@@ -330,7 +330,7 @@ nsHTMLDNSPrefetch::nsDeferrals::Activate()
   nsCOMPtr<nsIObserverService> observerService =
     mozilla::services::GetObserverService();
   if (observerService)
-    observerService->AddObserver(this, "xpcom-shutdown", PR_TRUE);
+    observerService->AddObserver(this, "xpcom-shutdown", true);
 }
 
 // nsITimer related method
@@ -343,7 +343,7 @@ nsHTMLDNSPrefetch::nsDeferrals::Tick(nsITimer *aTimer, void *aClosure)
   NS_ASSERTION(NS_IsMainThread(), "nsDeferrals::Tick must be on main thread");
   NS_ASSERTION(self->mTimerArmed, "Timer is not armed");
   
-  self->mTimerArmed = PR_FALSE;
+  self->mTimerArmed = false;
 
   // If the queue is not submitted here because there are outstanding pages being loaded,
   // there is no need to rearm the timer as the queue will be submtited when those 
@@ -395,7 +395,8 @@ nsHTMLDNSPrefetch::nsDeferrals::OnProgressChange(nsIWebProgress *aProgress,
 NS_IMETHODIMP
 nsHTMLDNSPrefetch::nsDeferrals::OnLocationChange(nsIWebProgress* aWebProgress,
                                                  nsIRequest* aRequest,
-                                                 nsIURI *location)
+                                                 nsIURI *location,
+                                                 PRUint32 aFlags)
 {
   return NS_OK;
 }

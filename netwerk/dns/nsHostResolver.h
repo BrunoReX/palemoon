@@ -71,19 +71,9 @@ class nsResolveHostCallback;
         return n;                                                            \
     }
 
-#ifdef ANDROID
-// See bug 687367 - pre gingerbread android has race conditions involving stdio.
-// stdio is used as part of the getaddrinfo() implementation. In order to reduce
-// that race window limit ourselves to 1 lookup at a time on android.
-
-#define MAX_RESOLVER_THREADS_FOR_ANY_PRIORITY  0
-#define MAX_RESOLVER_THREADS_FOR_HIGH_PRIORITY 1
-#define MAX_NON_PRIORITY_REQUESTS 0
-#else
 #define MAX_RESOLVER_THREADS_FOR_ANY_PRIORITY  3
 #define MAX_RESOLVER_THREADS_FOR_HIGH_PRIORITY 5
 #define MAX_NON_PRIORITY_REQUESTS 150
-#endif
 
 #define MAX_RESOLVER_THREADS (MAX_RESOLVER_THREADS_FOR_ANY_PRIORITY + \
                               MAX_RESOLVER_THREADS_FOR_HIGH_PRIORITY)
@@ -129,17 +119,17 @@ public:
     int          addr_info_gencnt; /* generation count of |addr_info| */
     PRAddrInfo  *addr_info;
     PRNetAddr   *addr;
-    PRBool       negative;   /* True if this record is a cache of a failed lookup.
+    bool         negative;   /* True if this record is a cache of a failed lookup.
                                 Negative cache entries are valid just like any other
                                 (though never for more than 60 seconds), but a use
                                 of that negative entry forces an asynchronous refresh. */
 
     PRUint32     expiration; /* measured in minutes since epoch */
 
-    PRBool HasResult() const { return addr_info || addr || negative; }
+    bool HasResult() const { return addr_info || addr || negative; }
 
     // hold addr_info_lock when calling the blacklist functions
-    PRBool Blacklisted(PRNetAddr *query);
+    bool Blacklisted(PRNetAddr *query);
     void   ResetBlacklist();
     void   ReportUnusable(PRNetAddr *addr);
 
@@ -148,12 +138,12 @@ private:
 
     PRCList callbacks; /* list of callbacks */
 
-    PRBool  resolving; /* true if this record is being resolved, which means
+    bool    resolving; /* true if this record is being resolved, which means
                         * that it is either on the pending queue or owned by
                         * one of the worker threads. */ 
     
-    PRBool  onQueue;  /* true if pending and on the queue (not yet given to getaddrinfo())*/
-    PRBool  usingAnyThread; /* true if off queue and contributing to mActiveAnyThreadCount */
+    bool    onQueue;  /* true if pending and on the queue (not yet given to getaddrinfo())*/
+    bool    usingAnyThread; /* true if off queue and contributing to mActiveAnyThreadCount */
 
     // a list of addresses associated with this record that have been reported
     // as unusable. the list is kept as a set of strings to make it independent
@@ -212,6 +202,7 @@ public:
      */
     static nsresult Create(PRUint32         maxCacheEntries,  // zero disables cache
                            PRUint32         maxCacheLifetime, // minutes
+                           PRUint32         lifetimeGracePeriod, // minutes
                            nsHostResolver **resolver);
     
     /**
@@ -260,12 +251,13 @@ public:
     };
 
 private:
-    nsHostResolver(PRUint32 maxCacheEntries=50, PRUint32 maxCacheLifetime=1);
+    nsHostResolver(PRUint32 maxCacheEntries = 50, PRUint32 maxCacheLifetime = 1,
+                   PRUint32 lifetimeGracePeriod = 0);
    ~nsHostResolver();
 
     nsresult Init();
     nsresult IssueLookup(nsHostRecord *);
-    PRBool   GetHostToLookup(nsHostRecord **m);
+    bool     GetHostToLookup(nsHostRecord **m);
     void     OnLookupComplete(nsHostRecord *, nsresult, PRAddrInfo *);
     void     DeQueue(PRCList &aQ, nsHostRecord **aResult);
     void     ClearPendingQueue(PRCList *aPendingQueue);
@@ -275,8 +267,19 @@ private:
     
     static void ThreadFunc(void *);
 
+    enum {
+        METHOD_HIT = 1,
+        METHOD_RENEWAL = 2,
+        METHOD_NEGATIVE_HIT = 3,
+        METHOD_LITERAL = 4,
+        METHOD_OVERFLOW = 5,
+        METHOD_NETWORK_FIRST = 6,
+        METHOD_NETWORK_SHARED = 7
+    };
+
     PRUint32      mMaxCacheEntries;
     PRUint32      mMaxCacheLifetime;
+    PRUint32      mGracePeriod;
     Mutex         mLock;
     CondVar       mIdleThreadCV;
     PRUint32      mNumIdleThreads;
@@ -290,7 +293,7 @@ private:
     PRUint32      mEvictionQSize;
     PRUint32      mPendingCount;
     PRTime        mCreationTime;
-    PRBool        mShutdown;
+    bool          mShutdown;
     PRIntervalTime mLongIdleTimeout;
     PRIntervalTime mShortIdleTimeout;
 };

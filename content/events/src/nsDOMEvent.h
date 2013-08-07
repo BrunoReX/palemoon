@@ -49,13 +49,17 @@
 #include "nsGUIEvent.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsAutoPtr.h"
+#include "nsIJSNativeInitializer.h"
 
 class nsIContent;
 class nsPresContext;
+struct JSContext;
+struct JSObject;
  
 class nsDOMEvent : public nsIDOMEvent,
                    public nsIDOMNSEvent,
-                   public nsIPrivateDOMEvent
+                   public nsIPrivateDOMEvent,
+                   public nsIJSNativeInitializer
 {
 public:
 
@@ -65,6 +69,8 @@ public:
     eDOMEvents_mouseup,
     eDOMEvents_click,
     eDOMEvents_dblclick,
+    eDOMEvents_mouseenter,
+    eDOMEvents_mouseleave,
     eDOMEvents_mouseover,
     eDOMEvents_mouseout,
     eDOMEvents_MozMouseHittest,
@@ -147,11 +153,9 @@ public:
     eDOMEvents_SVGResize,
     eDOMEvents_SVGScroll,
     eDOMEvents_SVGZoom,
-#ifdef MOZ_SMIL
     eDOMEvents_beginEvent,
     eDOMEvents_endEvent,
     eDOMEvents_repeatEvent,
-#endif // MOZ_SMIL
 #ifdef MOZ_MEDIA
     eDOMEvents_loadstart,
     eDOMEvents_progress,
@@ -176,9 +180,9 @@ public:
     eDOMEvents_mozaudioavailable,
 #endif
     eDOMEvents_afterpaint,
-    eDOMEvents_beforepaint,
     eDOMEvents_beforeresize,
     eDOMEvents_mozfullscreenchange,
+    eDOMEvents_mozfullscreenerror,
     eDOMEvents_MozSwipeGesture,
     eDOMEvents_MozMagnifyGestureStart,
     eDOMEvents_MozMagnifyGestureUpdate,
@@ -191,6 +195,12 @@ public:
     eDOMEvents_MozTouchDown,
     eDOMEvents_MozTouchMove,
     eDOMEvents_MozTouchUp,
+    eDOMEvents_touchstart,
+    eDOMEvents_touchend,
+    eDOMEvents_touchmove,
+    eDOMEvents_touchcancel,
+    eDOMEvents_touchenter,
+    eDOMEvents_touchleave,
     eDOMEvents_MozScrolledAreaChanged,
     eDOMEvents_transitionend,
     eDOMEvents_animationstart,
@@ -215,12 +225,22 @@ public:
   // nsIPrivateDOMEvent interface
   NS_IMETHOD    DuplicatePrivateData();
   NS_IMETHOD    SetTarget(nsIDOMEventTarget* aTarget);
-  NS_IMETHOD_(PRBool)    IsDispatchStopped();
+  NS_IMETHOD_(bool)    IsDispatchStopped();
   NS_IMETHOD_(nsEvent*)    GetInternalNSEvent();
-  NS_IMETHOD    SetTrusted(PRBool aTrusted);
+  NS_IMETHOD    SetTrusted(bool aTrusted);
 
-  virtual void Serialize(IPC::Message* aMsg, PRBool aSerializeInterfaceType);
-  virtual PRBool Deserialize(const IPC::Message* aMsg, void** aIter);
+  // nsIJSNativeInitializer
+  NS_IMETHOD Initialize(nsISupports* aOwner, JSContext* aCx, JSObject* aObj,
+                        PRUint32 aArgc, jsval* aArgv);
+
+  virtual const nsIID& EventInitIID() { return NS_GET_IID(nsIEventInit); }
+  virtual nsresult InitFromCtor(const nsAString& aType, nsISupports* aDict,
+                                JSContext* aCx, JSObject* aObj);
+
+  void InitPresContextData(nsPresContext* aPresContext);
+
+  virtual void Serialize(IPC::Message* aMsg, bool aSerializeInterfaceType);
+  virtual bool Deserialize(const IPC::Message* aMsg, void** aIter);
 
   static PopupControlState GetEventPopupControlState(nsEvent *aEvent);
 
@@ -229,6 +249,17 @@ public:
   static void Shutdown();
 
   static const char* GetEventName(PRUint32 aEventType);
+  static nsIntPoint GetClientCoords(nsPresContext* aPresContext,
+                                    nsEvent* aEvent,
+                                    nsIntPoint aPoint,
+                                    nsIntPoint aDefaultPoint);
+  static nsIntPoint GetPageCoords(nsPresContext* aPresContext,
+                                  nsEvent* aEvent,
+                                  nsIntPoint aPoint,
+                                  nsIntPoint aDefaultPoint);
+  static nsIntPoint GetScreenCoords(nsPresContext* aPresContext,
+                                    nsEvent* aEvent,
+                                    nsIntPoint aPoint);
 protected:
 
   // Internal helper functions
@@ -240,8 +271,8 @@ protected:
   nsCOMPtr<nsIDOMEventTarget> mTmpRealOriginalTarget;
   nsIDOMEventTarget*          mExplicitOriginalTarget;
   nsString                    mCachedType;
-  PRPackedBool                mEventIsInternal;
-  PRPackedBool                mPrivateDataDuplicated;
+  bool                        mEventIsInternal;
+  bool                        mPrivateDataDuplicated;
 };
 
 #define NS_FORWARD_TO_NSDOMEVENT \

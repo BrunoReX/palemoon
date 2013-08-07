@@ -262,7 +262,7 @@ ARENA_POISON_init()
 #ifdef MOZ_CRASHREPORTER
   nsCOMPtr<nsICrashReporter> cr =
     do_GetService("@mozilla.org/toolkit/crash-reporter;1");
-  PRBool enabled;
+  bool enabled;
   if (cr && NS_SUCCEEDED(cr->GetEnabled(&enabled)) && enabled) {
     cr->AnnotateCrashReport(NS_LITERAL_CSTRING("FramePoisonBase"),
                             nsPrintfCString(17, "%.16llx", PRUint64(rgnbase)));
@@ -294,7 +294,7 @@ protected:
   FreeList(KeyTypePointer aKey) : mEntrySize(0), mKey(aKey) {}
   // Default copy constructor and destructor are ok.
 
-  PRBool KeyEquals(KeyTypePointer const aKey) const
+  bool KeyEquals(KeyTypePointer const aKey) const
   { return mKey == aKey; }
 
   static KeyTypePointer KeyToPointer(KeyType aKey)
@@ -303,7 +303,7 @@ protected:
   static PLDHashNumber HashKey(KeyTypePointer aKey)
   { return NS_PTR_TO_INT32(aKey); }
 
-  enum { ALLOW_MEMMOVE = PR_FALSE };
+  enum { ALLOW_MEMMOVE = false };
   friend class nsTHashtable<FreeList>;
 };
 
@@ -386,20 +386,27 @@ struct nsPresArena::State {
 
     list->mEntries.AppendElement(aPtr);
   }
+
+  size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+  {
+    size_t n = aMallocSizeOf(this, sizeof(*this));
+
+    // The first PLArena is within the PLArenaPool, i.e. within |this|, so we
+    // don't measure it.  Subsequent PLArenas are by themselves and must be
+    // measured.
+    const PLArena *arena = mPool.first.next;
+    while (arena) {
+      n += aMallocSizeOf(arena, arena->limit - arena->base);
+      arena = arena->next;
+    }
+    return n;
+  }
 };
 
-PRUint32
-nsPresArena::Size()
+size_t
+nsPresArena::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const
 {
-  PLArena *arena = &mState->mPool.first;
-  PRUint32 result = 0;
-
-  while (arena) {
-    result += arena->limit - arena->base;
-    arena = arena->next;
-  }
-
-  return result;
+  return mState ? mState->SizeOfIncludingThis(aMallocSizeOf) : 0;
 }
 
 #else
@@ -426,8 +433,8 @@ struct nsPresArena::State
   }
 };
 
-PRUint32
-nsPresArena::Size()
+size_t
+nsPresArena::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const
 {
   return 0;
 }

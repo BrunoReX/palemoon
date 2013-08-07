@@ -36,7 +36,7 @@ std::string str(int i)
 Uniform::Uniform(GLenum type, const std::string &_name, unsigned int arraySize)
     : type(type), _name(_name), name(Program::undecorateUniform(_name)), arraySize(arraySize)
 {
-    int bytes = UniformTypeSize(type) * arraySize;
+    int bytes = UniformInternalSize(type) * arraySize;
     data = new unsigned char[bytes];
     memset(data, 0, bytes);
     dirty = true;
@@ -560,7 +560,7 @@ void transposeMatrix(T *target, const GLfloat *value)
     {
         for (int y = 0; y < copyHeight; y++)
         {
-            target[x * targetWidth + y] = value[y * srcWidth + x];
+            target[x * targetWidth + y] = (T)value[y * srcWidth + x];
         }
     }
     // clear unfilled right side
@@ -568,7 +568,7 @@ void transposeMatrix(T *target, const GLfloat *value)
     {
         for (int x = srcWidth; x < targetWidth; x++)
         {
-            target[y * targetWidth + x] = 0;
+            target[y * targetWidth + x] = (T)0;
         }
     }
     // clear unfilled bottom.
@@ -576,7 +576,7 @@ void transposeMatrix(T *target, const GLfloat *value)
     {
         for (int x = 0; x < targetWidth; x++)
         {
-            target[y * targetWidth + x] = 0;
+            target[y * targetWidth + x] = (T)0;
         }
     }
 }
@@ -911,7 +911,7 @@ bool Program::setUniform4iv(GLint location, GLsizei count, const GLint *v)
     return true;
 }
 
-bool Program::getUniformfv(GLint location, GLfloat *params)
+bool Program::getUniformfv(GLint location, GLsizei *bufSize, GLfloat *params)
 {
     if (location < 0 || location >= (int)mUniformIndex.size())
     {
@@ -919,6 +919,16 @@ bool Program::getUniformfv(GLint location, GLfloat *params)
     }
 
     Uniform *targetUniform = mUniforms[mUniformIndex[location].index];
+
+    // sized queries -- ensure the provided buffer is large enough
+    if (bufSize)
+    {
+        int requiredBytes = UniformExternalSize(targetUniform->type);
+        if (*bufSize < requiredBytes)
+        {
+            return false;
+        }
+    }
 
     switch (targetUniform->type)
     {
@@ -933,7 +943,7 @@ bool Program::getUniformfv(GLint location, GLfloat *params)
         break;
       default:
         {
-            unsigned int count = UniformComponentCount(targetUniform->type);
+            unsigned int count = UniformExternalComponentCount(targetUniform->type);
             unsigned int internalCount = UniformInternalComponentCount(targetUniform->type);
 
             switch (UniformComponentType(targetUniform->type))
@@ -970,7 +980,7 @@ bool Program::getUniformfv(GLint location, GLfloat *params)
     return true;
 }
 
-bool Program::getUniformiv(GLint location, GLint *params)
+bool Program::getUniformiv(GLint location, GLsizei *bufSize, GLint *params)
 {
     if (location < 0 || location >= (int)mUniformIndex.size())
     {
@@ -978,6 +988,16 @@ bool Program::getUniformiv(GLint location, GLint *params)
     }
 
     Uniform *targetUniform = mUniforms[mUniformIndex[location].index];
+
+    // sized queries -- ensure the provided buffer is large enough
+    if (bufSize)
+    {
+        int requiredBytes = UniformExternalSize(targetUniform->type);
+        if (*bufSize < requiredBytes)
+        {
+            return false;
+        }
+    }
 
     switch (targetUniform->type)
     {
@@ -998,7 +1018,7 @@ bool Program::getUniformiv(GLint location, GLint *params)
         break;
       default:
         {
-            unsigned int count = UniformComponentCount(targetUniform->type);
+            unsigned int count = UniformExternalComponentCount(targetUniform->type);
             unsigned int internalCount = UniformInternalComponentCount(targetUniform->type);
 
             switch (UniformComponentType(targetUniform->type))
@@ -1580,13 +1600,20 @@ bool Program::linkVaryings()
     if (mFragmentShader->mUsesFragCoord)
     {
         mPixelHLSL += "    float rhw = 1.0 / input.gl_FragCoord.w;\n";
-        if (sm3) {
+        
+        if (sm3)
+        {
+            // dx_Coord.y contains the render target height. See Context::applyRenderTarget()
             mPixelHLSL += "    gl_FragCoord.x = input.dx_VPos.x + 0.5;\n"
-                          "    gl_FragCoord.y = 2.0 * dx_Viewport.y - input.dx_VPos.y - 0.5;\n";
-        } else {
-            mPixelHLSL += "    gl_FragCoord.x = (input.gl_FragCoord.x * rhw) * dx_Viewport.x + dx_Viewport.z;\n"
-                          "    gl_FragCoord.y = -(input.gl_FragCoord.y * rhw) * dx_Viewport.y + dx_Viewport.w;\n";
+                          "    gl_FragCoord.y = dx_Coord.y - input.dx_VPos.y - 0.5;\n";
         }
+        else
+        {
+            // dx_Coord contains the viewport width/2, height/2, center.x and center.y. See Context::applyRenderTarget()
+            mPixelHLSL += "    gl_FragCoord.x = (input.gl_FragCoord.x * rhw) * dx_Coord.x + dx_Coord.z;\n"
+                          "    gl_FragCoord.y = -(input.gl_FragCoord.y * rhw) * dx_Coord.y + dx_Coord.w;\n";
+        }
+        
         mPixelHLSL += "    gl_FragCoord.z = (input.gl_FragCoord.z * rhw) * dx_Depth.x + dx_Depth.y;\n"
                       "    gl_FragCoord.w = rhw;\n";
     }
@@ -1712,7 +1739,7 @@ void Program::link()
             // are reserved prefixes, and do not receive additional decoration
             mDxDepthRangeLocation = getUniformLocation("dx_DepthRange");
             mDxDepthLocation = getUniformLocation("dx_Depth");
-            mDxViewportLocation = getUniformLocation("dx_Viewport");
+            mDxCoordLocation = getUniformLocation("dx_Coord");
             mDxHalfPixelSizeLocation = getUniformLocation("dx_HalfPixelSize");
             mDxFrontCCWLocation = getUniformLocation("dx_FrontCCW");
             mDxPointsOrLinesLocation = getUniformLocation("dx_PointsOrLines");
@@ -1834,10 +1861,15 @@ bool Program::defineUniform(const D3DXHANDLE &constantHandle, const D3DXCONSTANT
 {
     if (constantDescription.RegisterSet == D3DXRS_SAMPLER)
     {
-        for (unsigned int samplerIndex = constantDescription.RegisterIndex; samplerIndex < constantDescription.RegisterIndex + constantDescription.RegisterCount; samplerIndex++)
+        for (unsigned int i = 0; i < constantDescription.RegisterCount; i++)
         {
-            if (mConstantTablePS->GetConstantByName(NULL, constantDescription.Name) != NULL)
+            D3DXHANDLE psConstant = mConstantTablePS->GetConstantByName(NULL, constantDescription.Name);
+            D3DXHANDLE vsConstant = mConstantTableVS->GetConstantByName(NULL, constantDescription.Name);
+
+            if (psConstant)
             {
+                unsigned int samplerIndex = mConstantTablePS->GetSamplerIndex(psConstant) + i;
+
                 if (samplerIndex < MAX_TEXTURE_IMAGE_UNITS)
                 {
                     mSamplersPS[samplerIndex].active = true;
@@ -1852,8 +1884,10 @@ bool Program::defineUniform(const D3DXHANDLE &constantHandle, const D3DXCONSTANT
                 }
             }
             
-            if (mConstantTableVS->GetConstantByName(NULL, constantDescription.Name) != NULL)
+            if (vsConstant)
             {
+                unsigned int samplerIndex = mConstantTableVS->GetSamplerIndex(vsConstant) + i;
+
                 if (samplerIndex < getContext()->getMaximumVertexTextureImageUnits())
                 {
                     mSamplersVS[samplerIndex].active = true;
@@ -2393,7 +2427,7 @@ void Program::unlink(bool destroy)
 
     mDxDepthRangeLocation = -1;
     mDxDepthLocation = -1;
-    mDxViewportLocation = -1;
+    mDxCoordLocation = -1;
     mDxHalfPixelSizeLocation = -1;
     mDxFrontCCWLocation = -1;
     mDxPointsOrLinesLocation = -1;
@@ -2814,9 +2848,9 @@ GLint Program::getDxDepthLocation() const
     return mDxDepthLocation;
 }
 
-GLint Program::getDxViewportLocation() const
+GLint Program::getDxCoordLocation() const
 {
-    return mDxViewportLocation;
+    return mDxCoordLocation;
 }
 
 GLint Program::getDxHalfPixelSizeLocation() const

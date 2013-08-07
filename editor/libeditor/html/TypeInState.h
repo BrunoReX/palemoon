@@ -74,12 +74,9 @@ public:
   // nsISelectionListener
   NS_DECL_NSISELECTIONLISTENER
 
-  nsresult SetProp(nsIAtom *aProp);
-  nsresult SetProp(nsIAtom *aProp, const nsString &aAttr);
   nsresult SetProp(nsIAtom *aProp, const nsString &aAttr, const nsString &aValue);
 
   nsresult ClearAllProps();
-  nsresult ClearProp(nsIAtom *aProp);
   nsresult ClearProp(nsIAtom *aProp, const nsString &aAttr);
   
   //**************************************************************************
@@ -97,22 +94,20 @@ public:
   //                          cleared out.
   nsresult TakeRelativeFontSize(PRInt32 *outRelSize);
 
-  nsresult GetTypingState(PRBool &isSet, PRBool &theSetting, nsIAtom *aProp);
-  nsresult GetTypingState(PRBool &isSet, PRBool &theSetting, nsIAtom *aProp, 
-                          const nsString &aAttr);
-  nsresult GetTypingState(PRBool &isSet, PRBool &theSetting, nsIAtom *aProp, 
+  nsresult GetTypingState(bool &isSet, bool &theSetting, nsIAtom *aProp);
+  nsresult GetTypingState(bool &isSet, bool &theSetting, nsIAtom *aProp, 
                           const nsString &aAttr, nsString* outValue);
 
-  static   PRBool FindPropInList(nsIAtom *aProp, const nsAString &aAttr, nsAString *outValue, nsTArray<PropItem*> &aList, PRInt32 &outIndex);
+  static   bool FindPropInList(nsIAtom *aProp, const nsAString &aAttr, nsAString *outValue, nsTArray<PropItem*> &aList, PRInt32 &outIndex);
 
 protected:
 
   nsresult RemovePropFromSetList(nsIAtom *aProp, const nsString &aAttr);
   nsresult RemovePropFromClearedList(nsIAtom *aProp, const nsString &aAttr);
-  PRBool IsPropSet(nsIAtom *aProp, const nsString &aAttr, nsString* outValue);
-  PRBool IsPropSet(nsIAtom *aProp, const nsString &aAttr, nsString* outValue, PRInt32 &outIndex);
-  PRBool IsPropCleared(nsIAtom *aProp, const nsString &aAttr);
-  PRBool IsPropCleared(nsIAtom *aProp, const nsString &aAttr, PRInt32 &outIndex);
+  bool IsPropSet(nsIAtom *aProp, const nsString &aAttr, nsString* outValue);
+  bool IsPropSet(nsIAtom *aProp, const nsString &aAttr, nsString* outValue, PRInt32 &outIndex);
+  bool IsPropCleared(nsIAtom *aProp, const nsString &aAttr);
+  bool IsPropCleared(nsIAtom *aProp, const nsString &aAttr, PRInt32 &outIndex);
 
   nsTArray<PropItem*> mSetArray;
   nsTArray<PropItem*> mClearedArray;

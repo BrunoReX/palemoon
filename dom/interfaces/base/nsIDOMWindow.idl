@@ -41,7 +41,7 @@
 
 #include "domstubs.idl"
 
-interface nsIAnimationFrameListener;
+interface nsIFrameRequestCallback;
 interface nsIControllers;
 interface nsIDOMBlob;
 interface nsIDOMLocation;
@@ -70,7 +70,7 @@ interface nsIDOMMozURLProperty : nsISupports
  * @see <http://www.whatwg.org/html/#window>
  */
 
-[scriptable, uuid(3f5b2af2-604e-4253-8d25-6d3cafc13a69)]
+[scriptable, uuid(f6e3b10d-d5f4-4fcd-aa4c-5f98626d428a)]
 interface nsIDOMWindow : nsISupports
 {
   // the current browsing context
@@ -417,8 +417,16 @@ interface nsIDOMWindow : nsISupports
    *
    * @see <http://dvcs.w3.org/hg/webperf/raw-file/tip/specs/RequestAnimationFrame/Overview.html>
    */
-  void
-    mozRequestAnimationFrame([optional] in nsIAnimationFrameListener aListener);
+  // Argument is optional only so we can warn when it's null
+  long
+    mozRequestAnimationFrame([optional] in nsIFrameRequestCallback aCallback);
+
+  /**
+   * Cancel a refresh callback.
+   */
+  void mozCancelAnimationFrame(in long aHandle);
+  // Backwards-compat shim for now to make Google maps work
+  void mozCancelRequestAnimationFrame(in long aHandle);
 
   /**
    * The current animation start time in milliseconds since the epoch.
@@ -462,6 +470,9 @@ interface nsIDOMWindow : nsISupports
    */
   [implicit_jscontext] attribute jsval ondevicemotion;
   [implicit_jscontext] attribute jsval ondeviceorientation;
+
+  [implicit_jscontext] attribute jsval onmouseenter;
+  [implicit_jscontext] attribute jsval onmouseleave;
 };
 
 [scriptable, uuid(2146c906-57f7-486c-a1b4-8cdb57ef577f)]
@@ -477,5 +488,5 @@ interface nsIDOMWindowPerformance : nsISupports
  * Empty interface for compatibility with older versions.
  * @deprecated Use nsIDOMWindow instead
  */
-[scriptable, uuid(8614bdb7-5b07-4d00-a7ba-4d44697a343d)]
+[scriptable, uuid(8da641ab-906a-456e-97f2-b77df4ca2d95)]
 interface nsIDOMWindowInternal : nsIDOMWindow {};

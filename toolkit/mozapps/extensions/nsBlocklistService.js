@@ -546,8 +546,8 @@ Blocklist.prototype = {
     request.QueryInterface(Components.interfaces.nsIJSXMLHttpRequest);
 
     var self = this;
-    request.onerror = function(event) { self.onXMLError(event); };
-    request.onload  = function(event) { self.onXMLLoad(event);  };
+    request.addEventListener("error", function(event) { self.onXMLError(event); }, false);
+    request.addEventListener("load", function(event) { self.onXMLLoad(event);  }, false);
     request.send(null);
 
     // When the blocklist loads we need to compare it to the current copy so
@@ -907,7 +907,7 @@ Blocklist.prototype = {
     var addonList = [];
 
     var self = this;
-    AddonManager.getAddonsByTypes(["extension", "theme", "locale"], function(addons) {
+    AddonManager.getAddonsByTypes(["extension", "theme", "locale", "dictionary"], function(addons) {
 
       for (let i = 0; i < addons.length; i++) {
         let oldState = Ci.nsIBlocklistService.STATE_NOTBLOCKED;

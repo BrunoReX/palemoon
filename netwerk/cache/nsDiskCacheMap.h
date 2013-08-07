@@ -147,11 +147,11 @@ public:
     {
     }
     
-    PRBool  ValidRecord()
+    bool    ValidRecord()
     {
         if ((mDataLocation & eReservedMask) || (mMetaLocation & eReservedMask))
-            return PR_FALSE;
-        return PR_TRUE;
+            return false;
+        return true;
     }
     
     // HashNumber accessors
@@ -163,7 +163,7 @@ public:
     void      SetEvictionRank( PRUint32 rank)   { mEvictionRank = rank ? rank : 1; }
 
     // DataLocation accessors
-    PRBool    DataLocationInitialized() const { return 0 != (mDataLocation & eLocationInitializedMask); }
+    bool      DataLocationInitialized() const { return 0 != (mDataLocation & eLocationInitializedMask); }
     void      ClearDataLocation()       { mDataLocation = 0; }
     
     PRUint32  DataFile() const
@@ -230,7 +230,7 @@ public:
     }
 
     // MetaLocation accessors
-    PRBool    MetaLocationInitialized() const { return 0 != (mMetaLocation & eLocationInitializedMask); }
+    bool      MetaLocationInitialized() const { return 0 != (mMetaLocation & eLocationInitializedMask); }
     void      ClearMetaLocation()             { mMetaLocation = 0; }   
     PRUint32  MetaLocation() const            { return mMetaLocation; }
     
@@ -365,7 +365,7 @@ struct nsDiskCacheHeader {
         : mVersion(nsDiskCache::kCurrentVersion)
         , mDataSize(0)
         , mEntryCount(0)
-        , mIsDirty(PR_TRUE)
+        , mIsDirty(true)
         , mRecordCount(0)
     {}
 
@@ -420,7 +420,7 @@ public:
     { }
 
     ~nsDiskCacheMap() {
-        (void) Close(PR_TRUE);
+        (void) Close(true);
     }
 
 /**
@@ -432,11 +432,11 @@ public:
  *  Returns error if it detects change in format or cache wasn't closed.
  */
     nsresult  Open( nsILocalFile *  cacheDirectory);
-    nsresult  Close(PRBool flush);
+    nsresult  Close(bool flush);
     nsresult  Trim();
 
     nsresult  FlushHeader();
-    nsresult  FlushRecords( PRBool unswap);
+    nsresult  FlushRecords( bool unswap);
 
     void      NotifyCapacityChange(PRUint32 capacity);
 
@@ -456,13 +456,13 @@ public:
     nsresult    DeleteStorage( nsDiskCacheRecord *  record);
 
     nsresult    GetFileForDiskCacheRecord( nsDiskCacheRecord * record,
-                                           PRBool              meta,
-                                           PRBool              createPath,
+                                           bool                meta,
+                                           bool                createPath,
                                            nsIFile **          result);
                                           
     nsresult    GetLocalFileForDiskCacheRecord( nsDiskCacheRecord *  record,
-                                                PRBool               meta,
-                                                PRBool               createPath,
+                                                bool                 meta,
+                                                bool                 createPath,
                                                 nsILocalFile **      result);
 
     // On success, this returns the buffer owned by nsDiskCacheMap,
@@ -473,7 +473,7 @@ public:
     
     nsresult    ReadDataCacheBlocks(nsDiskCacheBinding * binding, char * buffer, PRUint32 size);
     nsresult    WriteDataCacheBlocks(nsDiskCacheBinding * binding, char * buffer, PRUint32 size);
-    nsresult    DeleteStorage( nsDiskCacheRecord * record, PRBool metaData);
+    nsresult    DeleteStorage( nsDiskCacheRecord * record, bool metaData);
     
     /**
      *  Statistical Operations
@@ -481,14 +481,14 @@ public:
     void     IncrementTotalSize( PRUint32  delta)
              {
                 mHeader.mDataSize += delta;
-                mHeader.mIsDirty   = PR_TRUE;
+                mHeader.mIsDirty   = true;
              }
              
     void     DecrementTotalSize( PRUint32  delta)
              {
                 NS_ASSERTION(mHeader.mDataSize >= delta, "disk cache size negative?");
                 mHeader.mDataSize  = mHeader.mDataSize > delta ? mHeader.mDataSize - delta : 0;               
-                mHeader.mIsDirty   = PR_TRUE;
+                mHeader.mIsDirty   = true;
              }
     
     inline void IncrementTotalSize( PRUint32  blocks, PRUint32 blockSize)
@@ -514,8 +514,8 @@ private:
      *  Private methods
      */
     nsresult    OpenBlockFiles();
-    nsresult    CloseBlockFiles(PRBool flush);
-    PRBool      CacheFilesExist();
+    nsresult    CloseBlockFiles(bool flush);
+    bool        CacheFilesExist();
 
     nsresult    CreateCacheSubDirectories();
 

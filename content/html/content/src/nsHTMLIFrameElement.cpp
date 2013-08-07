@@ -34,6 +34,9 @@
  * the terms of any one of the MPL, the GPL or the LGPL.
  *
  * ***** END LICENSE BLOCK ***** */
+
+#include "mozilla/Util.h"
+
 #include "nsIDOMHTMLIFrameElement.h"
 #include "nsGenericHTMLElement.h"
 #include "nsIDOMDocument.h"
@@ -46,6 +49,7 @@
 #include "nsRuleData.h"
 #include "nsStyleConsts.h"
 
+using namespace mozilla;
 using namespace mozilla::dom;
 
 class nsHTMLIFrameElement : public nsGenericHTMLFrameElement
@@ -76,11 +80,11 @@ public:
   NS_DECL_NSIDOMGETSVGDOCUMENT
 
   // nsIContent
-  virtual PRBool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(PRInt32 aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
-  NS_IMETHOD_(PRBool) IsAttributeMapped(const nsIAtom* aAttribute) const;
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const;
   virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const;
 
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
@@ -140,12 +144,18 @@ nsHTMLIFrameElement::GetContentDocument(nsIDOMDocument** aContentDocument)
 }
 
 NS_IMETHODIMP
+nsHTMLIFrameElement::GetContentWindow(nsIDOMWindow** aContentWindow)
+{
+  return nsGenericHTMLFrameElement::GetContentWindow(aContentWindow);
+}
+
+NS_IMETHODIMP
 nsHTMLIFrameElement::GetSVGDocument(nsIDOMDocument **aResult)
 {
   return GetContentDocument(aResult);
 }
 
-PRBool
+bool
 nsHTMLIFrameElement::ParseAttribute(PRInt32 aNamespaceID,
                                     nsIAtom* aAttribute,
                                     const nsAString& aValue,
@@ -235,7 +245,7 @@ MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
   nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aData);
 }
 
-NS_IMETHODIMP_(PRBool)
+NS_IMETHODIMP_(bool)
 nsHTMLIFrameElement::IsAttributeMapped(const nsIAtom* aAttribute) const
 {
   static const MappedAttributeEntry attributes[] = {
@@ -252,7 +262,7 @@ nsHTMLIFrameElement::IsAttributeMapped(const nsIAtom* aAttribute) const
     sCommonAttributeMap,
   };
   
-  return FindAttributeDependence(aAttribute, map, NS_ARRAY_LENGTH(map));
+  return FindAttributeDependence(aAttribute, map);
 }
 
 

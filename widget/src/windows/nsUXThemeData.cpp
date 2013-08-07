@@ -39,6 +39,8 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/Util.h"
+
 #include "nsUXThemeData.h"
 #include "nsDebug.h"
 // For GetWindowsVersion
@@ -66,13 +68,13 @@ nsUXThemeData::sDwmDLL = NULL;
 
 BOOL
 nsUXThemeData::sFlatMenus = FALSE;
-PRPackedBool
-nsUXThemeData::sIsXPOrLater = PR_FALSE;
-PRPackedBool
-nsUXThemeData::sIsVistaOrLater = PR_FALSE;
+bool
+nsUXThemeData::sIsXPOrLater = false;
+bool
+nsUXThemeData::sIsVistaOrLater = false;
 
-PRBool nsUXThemeData::sTitlebarInfoPopulatedAero = PR_FALSE;
-PRBool nsUXThemeData::sTitlebarInfoPopulatedThemed = PR_FALSE;
+bool nsUXThemeData::sTitlebarInfoPopulatedAero = false;
+bool nsUXThemeData::sTitlebarInfoPopulatedThemed = false;
 SIZE nsUXThemeData::sCommandButtons[4];
 
 nsUXThemeData::OpenThemeDataPtr nsUXThemeData::openTheme = NULL;
@@ -148,7 +150,7 @@ nsUXThemeData::Initialize()
     dwmSetWindowAttributePtr = (DwmSetWindowAttributeProc)::GetProcAddress(sDwmDLL, "DwmSetWindowAttribute");
     dwmInvalidateIconicBitmapsPtr = (DwmInvalidateIconicBitmapsProc)::GetProcAddress(sDwmDLL, "DwmInvalidateIconicBitmaps");
     dwmDwmDefWindowProcPtr = (DwmDefWindowProcProc)::GetProcAddress(sDwmDLL, "DwmDefWindowProc");
-    CheckForCompositor(PR_TRUE);
+    CheckForCompositor(true);
   }
 #endif
 
@@ -164,15 +166,15 @@ nsUXThemeData::Invalidate() {
     }
   }
   if (sIsXPOrLater) {
-    BOOL useFlat = PR_FALSE;
+    BOOL useFlat = false;
     sFlatMenus = ::SystemParametersInfo(SPI_GETFLATMENU, 0, &useFlat, 0) ?
-                     useFlat : PR_FALSE;
+                     useFlat : false;
   } else {
     // Contrary to Microsoft's documentation, SPI_GETFLATMENU will not fail
     // on Windows 2000, and it is also possible (though unlikely) for WIN2K
     // to be misconfigured in such a way that it would return true, so we
     // shall give WIN2K special treatment
-    sFlatMenus = PR_FALSE;
+    sFlatMenus = false;
   }
 }
 
@@ -289,7 +291,7 @@ nsUXThemeData::UpdateTitlebarInfo(HWND aWnd)
                                                           sizeof(captionButtons)))) {
       sCommandButtons[CMDBUTTONIDX_BUTTONBOX].cx = captionButtons.right - captionButtons.left - 3;
       sCommandButtons[CMDBUTTONIDX_BUTTONBOX].cy = (captionButtons.bottom - captionButtons.top) - 1;
-      sTitlebarInfoPopulatedAero = PR_TRUE;
+      sTitlebarInfoPopulatedAero = true;
     }
   }
 #endif
@@ -348,7 +350,7 @@ nsUXThemeData::UpdateTitlebarInfo(HWND aWnd)
   sCommandButtons[2].cx = info.rgrect[5].right - info.rgrect[5].left;
   sCommandButtons[2].cy = info.rgrect[5].bottom - info.rgrect[5].top;
 
-  sTitlebarInfoPopulatedThemed = PR_TRUE;
+  sTitlebarInfoPopulatedThemed = true;
 }
 
 // visual style (aero glass, aero basic)
@@ -377,8 +379,8 @@ const THEMELIST knownColors[] = {
 LookAndFeel::WindowsTheme
 nsUXThemeData::sThemeId = LookAndFeel::eWindowsTheme_Generic;
 
-PRBool
-nsUXThemeData::sIsDefaultWindowsTheme = PR_FALSE;
+bool
+nsUXThemeData::sIsDefaultWindowsTheme = false;
 
 // static
 LookAndFeel::WindowsTheme
@@ -388,7 +390,7 @@ nsUXThemeData::GetNativeThemeId()
 }
 
 // static
-PRBool nsUXThemeData::IsDefaultWindowTheme()
+bool nsUXThemeData::IsDefaultWindowTheme()
 {
   return sIsDefaultWindowsTheme;
 }
@@ -400,7 +402,7 @@ nsUXThemeData::UpdateNativeThemeInfo()
   // Trigger a refresh of themed button metrics if needed
   sTitlebarInfoPopulatedThemed = (nsWindow::GetWindowsVersion() < VISTA_VERSION);
 
-  sIsDefaultWindowsTheme = PR_FALSE;
+  sIsDefaultWindowsTheme = false;
   sThemeId = LookAndFeel::eWindowsTheme_Generic;
 
   if (!IsAppThemed() || !getCurrentThemeName) {
@@ -423,7 +425,7 @@ nsUXThemeData::UpdateNativeThemeInfo()
   themeName = themeName ? themeName + 1 : themeFileName;
 
   WindowsTheme theme = WINTHEME_UNRECOGNIZED;
-  for (int i = 0; i < NS_ARRAY_LENGTH(knownThemes); ++i) {
+  for (int i = 0; i < ArrayLength(knownThemes); ++i) {
     if (!lstrcmpiW(themeName, knownThemes[i].name)) {
       theme = (WindowsTheme)knownThemes[i].type;
       break;
@@ -434,7 +436,7 @@ nsUXThemeData::UpdateNativeThemeInfo()
     return;
 
   if (theme == WINTHEME_AERO || theme == WINTHEME_LUNA)
-    sIsDefaultWindowsTheme = PR_TRUE;
+    sIsDefaultWindowsTheme = true;
   
   if (theme != WINTHEME_LUNA) {
     switch(theme) {
@@ -455,7 +457,7 @@ nsUXThemeData::UpdateNativeThemeInfo()
 
   // calculate the luna color scheme
   WindowsThemeColor color = WINTHEMECOLOR_UNRECOGNIZED;
-  for (int i = 0; i < NS_ARRAY_LENGTH(knownColors); ++i) {
+  for (int i = 0; i < ArrayLength(knownColors); ++i) {
     if (!lstrcmpiW(themeColor, knownColors[i].name)) {
       color = (WindowsThemeColor)knownColors[i].type;
       break;

@@ -1,6 +1,5 @@
 pref("startup.homepage_override_url","http://www.palemoon.org/");
 pref("startup.homepage_welcome_url","http://www.palemoon.org/firstrun.shtml");
-pref("browser.panorama.welcome_url", "http://www.mozilla.com/firefox/panorama/");
 // Interval: Time between checks for a new version (in seconds) -- 1 week for Pale Moon
 pref("app.update.interval", 604800);
 pref("app.update.auto", false);
@@ -35,7 +34,7 @@ pref("network.prefetch-next", false); //prefetching engine off by default!
 pref("network.http.pipelining"      , true); //pipelining on by default, haven't seen any issues
 pref("network.http.pipelining.ssl"  , true); 
 pref("network.http.proxy.pipelining", false); // pipeline proxy requests - breaks some proxies! (406)
-pref("network.http.pipelining.maxrequests" , 12);  // Max number of requests in the pipeline
+pref("network.http.pipelining.maxrequests", 12);  // Max number of requests in the pipeline
 
 pref("browser.tabs.insertRelatedAfterCurrent", false); //use old method of tabbed browsing instead of "Chrome" style
 pref("general.warnOnAboutConfig", false); //about:config warning. annoying. I don't give warranty.
@@ -66,15 +65,14 @@ pref("network.dnsCacheExpiration", 3600); //TTL 1 hour
 //Slightly lower default initial rendering delay (368)
 pref("nglayout.initialpaint.delay", 150);
 
-//webGL (4.0)
-//v9: disabled because of kernel/drivers struggling with native OpenGL
-//pref("webgl.prefer-native-gl", true); 
-//enable it even if ANGLE isn't built. Will disable anyway if no driver present.
+//webGL
+//v11: re-enabled for native OpenGL webgl. OpenGL layers are broken.
+pref("webgl.prefer-native-gl", true); 
+//enable it even if ANGLE isn't built. Will disable anyway if no GL driver present.
 pref("webgl.force-enabled", true); 
 
-//D2D/DirectWrite (4.0)
-//Disabled by default after finding the poor IGFX support for it... (402)
-pref("gfx.font_rendering.directwrite.enabled", false);
+//D2D/DirectWrite
+pref("gfx.font_rendering.directwrite.enabled", true); //v11: flipped back on
 //D2D force may cause issues for poor drivers, so off by default.
 pref("gfx.direct2d.force-enabled", false);
 
@@ -120,7 +118,7 @@ pref("extensions.update.autoUpdateDefault", false);
 //Pale Moon 7 specific
 pref("browser.urlbar.trimURLs", false); //stop being a derp, Mozilla!
 
-//Pale Moon 8/9 specific
+//Pale Moon 8/9/11 specific
 
 //cache handling 1GB -> 200MB by default, disable automatic
 //max element size 5MB -> 4MB/1MB, caching anything larger is not recommended
@@ -134,7 +132,8 @@ pref("browser.cache.memory.max_entry_size",1024);
 pref("image.cache.size",256000);
 
 //Barring a better control mechanism for now, accept all add-ons in $instdir\Pale Moon\extensions
-pref("extensions.autoDisableScopes", 11);
+// no longer needed in v11: integrated status bar functionality bypasses extension manager
+//pref("extensions.autoDisableScopes", 11);
 
 //Pale Moon 9 specific
 
@@ -161,3 +160,16 @@ pref("image.mem.max_ms_before_yield", 500);
 //add-on/plugin blocklist -> Palemoon.org
 pref("extensions.blocklist.url","http://blocklist.palemoon.org/%VERSION%/blocklist.xml");
 
+//Pale Moon 11 specific
+
+//store sessions less frequently to prevent redundant mem usage by storing too much
+pref("browser.sessionstore.interval",60000); //every minute instead of every 10 seconds
+pref("browser.sessionstore.privacy_level",1); //don't store session data (forms, etc) for secure sites
+
+//Take removed tools out of the UI
+pref("devtools.errorconsole.enabled",true); //Essential for troubleshooting
+pref("devtools.scratchpad.enabled",false); //Still present but flipped off
+pref("devtools.inspector.enabled",false);
+pref("devtools.styleeditor.enabled",false); //NIIB
+pref("devtools.styleinspector.enabled",false); //NIIB
+pref("devtools.tilt.enabled",false); //Tilt? WHY? NIIB

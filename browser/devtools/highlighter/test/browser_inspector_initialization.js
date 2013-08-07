@@ -39,6 +39,7 @@
 let doc;
 let salutation;
 let closing;
+let winId;
 
 function createDocument()
 {
@@ -76,7 +77,10 @@ function runInspectorTests()
   ok(!InspectorUI.toolbar.hidden, "toolbar is visible");
   ok(InspectorUI.inspecting, "Inspector is inspecting");
   ok(!InspectorUI.treePanel.isOpen(), "Inspector Tree Panel is not open");
+  ok(!InspectorUI.isSidebarOpen, "Inspector Sidebar is not open");
   ok(InspectorUI.highlighter, "Highlighter is up");
+  InspectorUI.inspectNode(doc.body);
+  InspectorUI.stopInspecting();
 
   InspectorUI.treePanel.open();
 }
@@ -85,10 +89,37 @@ function treePanelTests()
 {
   Services.obs.removeObserver(treePanelTests,
     InspectorUI.INSPECTOR_NOTIFICATIONS.TREEPANELREADY);
-  Services.obs.addObserver(runContextMenuTest,
-    InspectorUI.INSPECTOR_NOTIFICATIONS.CLOSED, false);
+  Services.obs.addObserver(stylePanelTests,
+    "StyleInspector-opened", false);
 
   ok(InspectorUI.treePanel.isOpen(), "Inspector Tree Panel is open");
+
+  executeSoon(function() {
+    InspectorUI.showSidebar();
+    document.getElementById(InspectorUI.getToolbarButtonId("styleinspector")).click();
+  });
+}
+
+function stylePanelTests()
+{
+  Services.obs.removeObserver(stylePanelTests, "StyleInspector-opened");
+
+  ok(InspectorUI.isSidebarOpen, "Inspector Sidebar is open");
+  ok(InspectorUI.stylePanel.cssHtmlTree, "Style Panel has a cssHtmlTree");
+
+  InspectorUI.ruleButton.click();
+  executeSoon(function() {
+    ruleViewTests();
+  });
+}
+
+function ruleViewTests()
+{
+  Services.obs.addObserver(runContextMenuTest,
+      InspectorUI.INSPECTOR_NOTIFICATIONS.CLOSED, false);
+
+  ok(InspectorUI.isRuleViewOpen(), "Rule View is open");
+  ok(InspectorUI.ruleView, "InspectorUI has a cssRuleView");
 
   executeSoon(function() {
     InspectorUI.closeInspectorUI();
@@ -121,9 +152,8 @@ function inspectNodesFromContextTest()
   Services.obs.addObserver(openInspectorForContextTest, InspectorUI.INSPECTOR_NOTIFICATIONS.CLOSED, false);
   ok(!InspectorUI.inspecting, "Inspector is not actively highlighting");
   is(InspectorUI.selection, salutation, "Inspector is highlighting salutation");
-  ok(!InspectorUI.isTreePanelOpen, "Inspector Tree Panel is closed");
-  // TODO: These tests depend on the style inspector patches.
-  todo(InspectorUI.isStylePanelOpen, "Inspector Style Panel is open");
+  ok(!InspectorUI.treePanel.isOpen(), "Inspector Tree Panel is closed");
+  ok(!InspectorUI.stylePanel.isOpen(), "Inspector Style Panel is closed");
   executeSoon(function() {
     InspectorUI.closeInspectorUI(true);
   });
@@ -153,11 +183,12 @@ function inspectNodesFromContextTestWhileOpen()
 
 function inspectNodesFromContextTestHighlight()
 {
+  winId = InspectorUI.winID;
   Services.obs.removeObserver(inspectNodesFromContextTestHighlight, InspectorUI.INSPECTOR_NOTIFICATIONS.HIGHLIGHTING);
-  Services.obs.addObserver(finishInspectorTests, InspectorUI.INSPECTOR_NOTIFICATIONS.CLOSED, false);
+  Services.obs.addObserver(finishInspectorTests, InspectorUI.INSPECTOR_NOTIFICATIONS.DESTROYED, false);
   is(InspectorUI.selection, closing, "InspectorUI.selection is header");
   executeSoon(function() {
-    InspectorUI.closeInspectorUI(true);
+    InspectorUI.closeInspectorUI();
   });
 }
 
@@ -167,16 +198,23 @@ function inspectNodesFromContextTestTrap()
   ok(false, "Inspector UI has been opened again. We Should Not Be Here!");
 }
 
-function finishInspectorTests()
+function finishInspectorTests(subject, topic, aWinIdString)
 {
   Services.obs.removeObserver(finishInspectorTests,
-    InspectorUI.INSPECTOR_NOTIFICATIONS.CLOSED);
+    InspectorUI.INSPECTOR_NOTIFICATIONS.DESTROYED);
 
+  is(parseInt(aWinIdString), winId, "winId of destroyed Inspector matches");
   ok(!InspectorUI.highlighter, "Highlighter is gone");
   ok(!InspectorUI.treePanel, "Inspector Tree Panel is closed");
   ok(!InspectorUI.inspecting, "Inspector is not inspecting");
+  ok(!InspectorUI.isSidebarOpen, "Inspector Sidebar is closed");
+  ok(!InspectorUI.stylePanel, "Inspector Style Panel is gone");
+  ok(!InspectorUI.ruleView, "Inspector Rule View is gone");
+  is(InspectorUI.sidebarToolbar.children.length, 0, "No items in the Sidebar toolbar");
+  is(InspectorUI.sidebarDeck.children.length, 0, "No items in the Sidebar deck");
   ok(!InspectorUI.toolbar, "toolbar is hidden");
 
+  Services.obs.removeObserver(inspectNodesFromContextTestTrap, InspectorUI.INSPECTOR_NOTIFICATIONS.OPENED);
   gBrowser.removeCurrentTab();
   finish();
 }

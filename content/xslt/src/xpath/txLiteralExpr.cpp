@@ -75,10 +75,10 @@ txLiteralExpr::setSubExprAt(PRUint32 aPos, Expr* aExpr)
     NS_NOTREACHED("setting bad subexpression index");
 }
 
-PRBool
+bool
 txLiteralExpr::isSensitiveTo(ContextSensitivity aContext)
 {
-    return PR_FALSE;
+    return false;
 }
 
 #ifdef TX_TO_STRING
@@ -103,7 +103,7 @@ txLiteralExpr::toString(nsAString& aStr)
         }
         case txAExprResult::NUMBER:
         {
-            Double::toString(mValue->numberValue(), aStr);
+            txDouble::toString(mValue->numberValue(), aStr);
             return;
         }
         case txAExprResult::STRING:

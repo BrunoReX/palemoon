@@ -40,38 +40,38 @@
 #include "txExprResult.h"
 #include "txSingleNodeContext.h"
 
-PRBool
+bool
 txUnionNodeTest::matches(const txXPathNode& aNode,
                          txIMatchContext* aContext)
 {
     PRUint32 i, len = mNodeTests.Length();
     for (i = 0; i < len; ++i) {
         if (mNodeTests[i]->matches(aNode, aContext)) {
-            return PR_TRUE;
+            return true;
         }
     }
 
-    return PR_FALSE;
+    return false;
 }
 
 double
 txUnionNodeTest::getDefaultPriority()
 {
     NS_ERROR("Don't call getDefaultPriority on txUnionPattern");
-    return Double::NaN;
+    return txDouble::NaN;
 }
 
-PRBool
+bool
 txUnionNodeTest::isSensitiveTo(Expr::ContextSensitivity aContext)
 {
     PRUint32 i, len = mNodeTests.Length();
     for (i = 0; i < len; ++i) {
         if (mNodeTests[i]->isSensitiveTo(aContext)) {
-            return PR_TRUE;
+            return true;
         }
     }
 
-    return PR_FALSE;
+    return false;
 }
 
 #ifdef TX_TO_STRING

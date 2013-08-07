@@ -67,9 +67,11 @@ using mozilla::gfx::SharedDIBSurface;
 #include "gfxUtils.h"
 #include "gfxAlphaRecovery.h"
 
+#include "mozilla/Util.h"
 #include "mozilla/ipc/SyncChannel.h"
 #include "mozilla/AutoRestore.h"
 
+using namespace mozilla;
 using mozilla::ipc::ProcessChild;
 using namespace mozilla::plugins;
 
@@ -116,6 +118,7 @@ static const TCHAR kPluginIgnoreSubclassProperty[] = TEXT("PluginIgnoreSubclassP
 
 #elif defined(XP_MACOSX)
 #include <ApplicationServices/ApplicationServices.h>
+#include "nsCocoaFeatures.h"
 #include "PluginUtilsOSX.h"
 #endif // defined(XP_MACOSX)
 
@@ -165,7 +168,7 @@ PluginInstanceChild::PluginInstanceChild(const NPPluginFuncs* aPluginIface)
     , mHasPainted(false)
     , mSurfaceDifferenceRect(0,0,0,0)
 #if (MOZ_PLATFORM_MAEMO == 5) || (MOZ_PLATFORM_MAEMO == 6)
-    , mMaemoImageRendering(PR_TRUE)
+    , mMaemoImageRendering(true)
 #endif
 {
     memset(&mWindow, 0, sizeof(mWindow));
@@ -198,6 +201,9 @@ PluginInstanceChild::~PluginInstanceChild()
     }
     if (mCGLayer) {
         PluginUtilsOSX::ReleaseCGLayer(mCGLayer);
+    }
+    if (mDrawingModel == NPDrawingModelCoreAnimation) {
+        UnscheduleTimer(mCARefreshTimer);
     }
 #endif
 }
@@ -415,12 +421,12 @@ PluginInstanceChild::NPN_GetValue(NPNVariable aVar,
     }
 
     case NPNVsupportsCoreAnimationBool: {
-        *((NPBool*)aValue) = true;
+        *((NPBool*)aValue) = nsCocoaFeatures::SupportCoreAnimationPlugins();
         return NPERR_NO_ERROR;
     }
 
     case NPNVsupportsInvalidatingCoreAnimationBool: {
-        *((NPBool*)aValue) = true;
+        *((NPBool*)aValue) = nsCocoaFeatures::SupportCoreAnimationPlugins();
         return NPERR_NO_ERROR;
     }
 
@@ -458,6 +464,23 @@ PluginInstanceChild::NPN_GetValue(NPNVariable aVar,
 
 }
 
+#ifdef MOZ_WIDGET_COCOA
+#define DEFAULT_REFRESH_MS 20 // CoreAnimation: 50 FPS
+
+void
+CAUpdate(NPP npp, uint32_t timerID) {
+    static_cast<PluginInstanceChild*>(npp->ndata)->Invalidate();
+}
+
+void
+PluginInstanceChild::Invalidate()
+{
+    NPRect windowRect = {0, 0, uint16_t(mWindow.height),
+        uint16_t(mWindow.width)};
+
+    InvalidateRect(&windowRect);
+}
+#endif
 
 NPError
 PluginInstanceChild::NPN_SetValue(NPPVariable aVar, void* aValue)
@@ -505,6 +528,10 @@ PluginInstanceChild::NPN_SetValue(NPPVariable aVar, void* aValue)
             return NPERR_GENERIC_ERROR;
         mDrawingModel = drawingModel;
 
+        if (drawingModel == NPDrawingModelCoreAnimation) {
+            mCARefreshTimer = ScheduleTimer(DEFAULT_REFRESH_MS, true, CAUpdate);
+        }
+
         PLUGIN_LOG_DEBUG(("  Plugin requested drawing model id  #%i\n",
             mDrawingModel));
 
@@ -542,7 +569,7 @@ PluginInstanceChild::AnswerNPP_GetValue_NPPVpluginWantsAllNetworkStreams(
 {
     AssertPluginThread();
 
-    PRBool value = 0;
+    PRUint32 value = 0;
     if (!mPluginIface->getvalue) {
         *rv = NPERR_GENERIC_ERROR;
     }
@@ -564,11 +591,11 @@ PluginInstanceChild::AnswerNPP_GetValue_NPPVpluginNeedsXEmbed(
     // The documentation on the types for many variables in NP(N|P)_GetValue
     // is vague.  Often boolean values are NPBool (1 byte), but
     // https://developer.mozilla.org/en/XEmbed_Extension_for_Mozilla_Plugins
-    // treats NPPVpluginNeedsXEmbed as PRBool (int), and
+    // treats NPPVpluginNeedsXEmbed as bool (int), and
     // on x86/32-bit, flash stores to this using |movl 0x1,&needsXEmbed|.
     // thus we can't use NPBool for needsXEmbed, or the three bytes above
-    // it on the stack would get clobbered. so protect with the larger PRBool.
-    PRBool needsXEmbed = 0;
+    // it on the stack would get clobbered. so protect with the larger bool.
+    PRUint32 needsXEmbed = 0;
     if (!mPluginIface->getvalue) {
         *rv = NPERR_GENERIC_ERROR;
     }
@@ -889,7 +916,9 @@ PluginInstanceChild::AnswerNPP_HandleEvent_IOSurface(const NPRemoteEvent& event,
                 return false;
             }
 
-            mCARenderer.SetupRenderer(caLayer, mWindow.width, mWindow.height);
+            mCARenderer.SetupRenderer(caLayer, mWindow.width, mWindow.height,
+                            GetQuirks() & PluginModuleChild::QUIRK_ALLOW_OFFLINE_RENDERER ?
+                            ALLOW_OFFLINE_RENDERER : DISALLOW_OFFLINE_RENDERER);
 
             // Flash needs to have the window set again after this step
             if (mPluginIface->setwindow)
@@ -1404,7 +1433,7 @@ NeuteredWindowProc(HWND hwnd,
 const wchar_t kOldWndProcProp[] = L"MozillaIPCOldWndProc";
 
 // static
-PRBool
+bool
 PluginInstanceChild::SetWindowLongHookCheck(HWND hWnd,
                                             int nIndex,
                                             LONG_PTR newLong)
@@ -1422,9 +1451,9 @@ PluginInstanceChild::SetWindowLongHookCheck(HWND hWnd,
       newLong == reinterpret_cast<LONG_PTR>(DefWindowProcW) ||
       // if the subclass is a WindowsMessageLoop subclass restore
       GetProp(hWnd, kOldWndProcProp))
-      return PR_TRUE;
+      return true;
   // prevent the subclass
-  return PR_FALSE;
+  return false;
 }
 
 #ifdef _WIN64
@@ -1540,7 +1569,7 @@ PluginInstanceChild::TrackPopupHookProc(HMENU hMenu,
   // surface within the browser. Prevents resetting the parent on child ui
   // displayed by plugins that have working parent-child relationships.
   PRUnichar szClass[21];
-  bool haveClass = GetClassNameW(hWnd, szClass, NS_ARRAY_LENGTH(szClass));
+  bool haveClass = GetClassNameW(hWnd, szClass, ArrayLength(szClass));
   if (!haveClass || 
       (wcscmp(szClass, L"MozillaWindowClass") &&
        wcscmp(szClass, L"SWFlash_Placeholder"))) {
@@ -2313,7 +2342,7 @@ PluginInstanceChild::NPN_URLRedirectResponse(void* notifyData, NPBool allow)
             return;
         }
     }
-    NS_ASSERTION(PR_FALSE, "Couldn't find stream for redirect response!");
+    NS_ASSERTION(false, "Couldn't find stream for redirect response!");
 }
 
 bool
@@ -2574,7 +2603,7 @@ PluginInstanceChild::MaybeCreatePlatformHelperSurface(void)
             // No helper surface needed, when mMaemoImageRendering is TRUE.
             // we can rendering directly into image memory
             // with NPImageExpose Maemo5 NPAPI
-            return PR_TRUE;
+            return true;
         }
 #endif
         // For image layer surface we should always create helper surface
@@ -2691,8 +2720,10 @@ PluginInstanceChild::EnsureCurrentBuffer(void)
     }
 
     if (!mDoubleBufferCARenderer.HasFrontSurface()) {
-        bool allocSurface = mDoubleBufferCARenderer.InitFrontSurface(mWindow.width, 
-                                                           mWindow.height);
+        bool allocSurface = mDoubleBufferCARenderer.InitFrontSurface(
+                                mWindow.width, mWindow.height,
+                                GetQuirks() & PluginModuleChild::QUIRK_ALLOW_OFFLINE_RENDERER ?
+                                ALLOW_OFFLINE_RENDERER : DISALLOW_OFFLINE_RENDERER);
         if (!allocSurface) {
             PLUGIN_LOG_DEBUG(("Fail to allocate front IOSurface"));
             return false;
@@ -3678,6 +3709,7 @@ PluginInstanceChild::AnswerNPP_Destroy(NPError* aResult)
 {
     PLUGIN_LOG_DEBUG_METHOD;
     AssertPluginThread();
+    *aResult = NPERR_NO_ERROR;
 
 #if defined(OS_WIN)
     SetProp(mPluginWindowHWND, kPluginIgnoreSubclassProperty, (HANDLE)1);

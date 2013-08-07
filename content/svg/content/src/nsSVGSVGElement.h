@@ -53,9 +53,7 @@
 #include "SVGAnimatedPreserveAspectRatio.h"
 #include "mozilla/dom/FromParser.h"
 
-#ifdef MOZ_SMIL
 class nsSMILTimeContainer;
-#endif // MOZ_SMIL
 
 typedef nsSVGStylableElement nsSVGSVGElementBase;
 
@@ -111,7 +109,7 @@ public:
     : width(aWidth)
     , height(aHeight)
   {}
-  PRBool operator!=(const svgFloatSize& rhs) {
+  bool operator!=(const svgFloatSize& rhs) {
     return width != rhs.width || height != rhs.height;
   }
   float width;
@@ -141,9 +139,7 @@ public:
 
   // interfaces:
   NS_DECL_ISUPPORTS_INHERITED
-#ifdef MOZ_SMIL
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsSVGSVGElement, nsSVGSVGElementBase)
-#endif // MOZ_SMIL
   NS_DECL_NSIDOMSVGSVGELEMENT
   NS_DECL_NSIDOMSVGFITTOVIEWBOX
   NS_DECL_NSIDOMSVGLOCATABLE
@@ -181,31 +177,21 @@ public:
   const nsSVGTranslatePoint& GetPreviousTranslate() { return mPreviousTranslate; }
   float GetPreviousScale() { return mPreviousScale; }
 
-#ifdef MOZ_SMIL
   nsSMILTimeContainer* GetTimedDocumentRoot();
-#endif // MOZ_SMIL
 
   // nsIContent interface
-  NS_IMETHOD_(PRBool) IsAttributeMapped(const nsIAtom* aAttribute) const;
-#ifdef MOZ_SMIL
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const;
   virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor);
-#endif // MOZ_SMIL
 
   // nsSVGElement specializations:
   virtual gfxMatrix PrependLocalTransformTo(const gfxMatrix &aMatrix) const;
-  virtual void DidChangeLength(PRUint8 aAttrEnum, PRBool aDoSetAttr);
-  virtual void DidChangeViewBox(PRBool aDoSetAttr);
-  virtual void DidChangePreserveAspectRatio(PRBool aDoSetAttr);
-
-  virtual void DidAnimateViewBox();
-  virtual void DidAnimatePreserveAspectRatio();
   
   // nsSVGSVGElement methods:
   float GetLength(PRUint8 mCtxType);
 
   // public helpers:
   gfxMatrix GetViewBoxTransform() const;
-  PRBool    HasValidViewbox() const { return mViewBox.IsValid(); }
+  bool      HasValidViewbox() const { return mViewBox.IsValid(); }
 
   // This services any pending notifications for the transform on on this root
   // <svg> node needing to be recalculated.  (Only applicable in
@@ -233,28 +219,26 @@ private:
   void ClearImageOverridePreserveAspectRatio();
   const SVGPreserveAspectRatio* GetImageOverridePreserveAspectRatio() const;
 
-  // Returns PR_TRUE if we should synthesize a viewBox for ourselves (that is,
+  // Returns true if we should synthesize a viewBox for ourselves (that is,
   // if we're the outermost <svg> in an image document, and we're not currently
   // being painted by an <svg:image> element). This method also assumes that we
   // lack a valid viewBox attribute.
-  PRBool ShouldSynthesizeViewBox() const;
+  bool ShouldSynthesizeViewBox() const;
 
 protected:
   // nsSVGElement overrides
-  PRBool IsEventName(nsIAtom* aName);
+  bool IsEventName(nsIAtom* aName);
 
-#ifdef MOZ_SMIL
   virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                               nsIContent* aBindingParent,
-                              PRBool aCompileEventHandlers);
-  virtual void UnbindFromTree(PRBool aDeep, PRBool aNullParent);
-#endif // MOZ_SMIL
+                              bool aCompileEventHandlers);
+  virtual void UnbindFromTree(bool aDeep, bool aNullParent);
 
   // implementation helpers:
 
-  PRBool IsRoot() const {
+  bool IsRoot() const {
     NS_ASSERTION((IsInDoc() && !GetParent()) ==
-                 (GetOwnerDoc() && (GetOwnerDoc()->GetRootElement() == this)),
+                 (OwnerDoc() && (OwnerDoc()->GetRootElement() == this)),
                  "Can't determine if we're root");
     return IsInDoc() && !GetParent();
   }
@@ -263,13 +247,12 @@ protected:
    * Returns true if this is an SVG <svg> element that is the child of
    * another non-foreignObject SVG element.
    */
-  PRBool IsInner() const {
+  bool IsInner() const {
     const nsIContent *parent = GetFlattenedTreeParent();
-    return parent && parent->GetNameSpaceID() == kNameSpaceID_SVG &&
+    return parent && parent->IsSVG() &&
            parent->Tag() != nsGkAtoms::foreignObject;
   }
 
-#ifdef MOZ_SMIL
   /* 
    * While binding to the tree we need to determine if we will be the outermost
    * <svg> element _before_ the children are bound (as they want to know what
@@ -279,17 +262,16 @@ protected:
    * basically a simplified version of GetOwnerSVGElement that uses the parent
    * parameters passed in instead.
    */
-  PRBool WillBeOutermostSVG(nsIContent* aParent,
+  bool WillBeOutermostSVG(nsIContent* aParent,
                             nsIContent* aBindingParent) const;
-#endif // MOZ_SMIL
 
   // invalidate viewbox -> viewport xform & inform frames
   void InvalidateTransformNotifyFrame();
 
-  // Returns PR_TRUE if we have at least one of the following:
+  // Returns true if we have at least one of the following:
   // - a (valid or invalid) value for the preserveAspectRatio attribute
   // - a SMIL-animated value for the preserveAspectRatio attribute
-  PRBool HasPreserveAspectRatio();
+  bool HasPreserveAspectRatio();
 
   virtual LengthAttributesInfo GetLengthInfo();
 
@@ -322,11 +304,9 @@ protected:
   // XXXjwatt our frame should probably reset these when it's destroyed.
   float mViewportWidth, mViewportHeight;
 
-#ifdef MOZ_SMIL
   // The time container for animations within this SVG document fragment. Set
   // for all outermost <svg> elements (not nested <svg> elements).
   nsAutoPtr<nsSMILTimeContainer> mTimedDocumentRoot;
-#endif // MOZ_SMIL
 
   // zoom and pan
   // IMPORTANT: see the comment in RecordCurrentScaleTranslate before writing
@@ -337,15 +317,13 @@ protected:
   float                             mPreviousScale;
   PRInt32                           mRedrawSuspendCount;
 
-#ifdef MOZ_SMIL
   // For outermost <svg> elements created from parsing, animation is started by
   // the onload event in accordance with the SVG spec, but for <svg> elements
   // created by script or promoted from inner <svg> to outermost <svg> we need
   // to manually kick off animation when they are bound to the tree.
-  PRPackedBool                      mStartAnimationOnBindToTree;
-#endif // MOZ_SMIL
-  PRPackedBool                      mImageNeedsTransformInvalidation;
-  PRPackedBool                      mIsPaintingSVGImageElement;
+  bool                              mStartAnimationOnBindToTree;
+  bool                              mImageNeedsTransformInvalidation;
+  bool                              mIsPaintingSVGImageElement;
 };
 
 #endif

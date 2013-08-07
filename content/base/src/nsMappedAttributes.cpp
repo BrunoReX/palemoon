@@ -81,7 +81,7 @@ nsMappedAttributes::~nsMappedAttributes()
 
 
 nsMappedAttributes*
-nsMappedAttributes::Clone(PRBool aWillAddAttr)
+nsMappedAttributes::Clone(bool aWillAddAttr)
 {
   PRUint32 extra = aWillAddAttr ? 1 : 0;
 
@@ -151,26 +151,26 @@ nsMappedAttributes::GetAttr(nsIAtom* aAttrName) const
   return nsnull;
 }
 
-PRBool
+bool
 nsMappedAttributes::Equals(const nsMappedAttributes* aOther) const
 {
   if (this == aOther) {
-    return PR_TRUE;
+    return true;
   }
 
   if (mRuleMapper != aOther->mRuleMapper || mAttrCount != aOther->mAttrCount) {
-    return PR_FALSE;
+    return false;
   }
 
   PRUint32 i;
   for (i = 0; i < mAttrCount; ++i) {
     if (!Attrs()[i].mName.Equals(aOther->Attrs()[i].mName) ||
         !Attrs()[i].mValue.Equals(aOther->Attrs()[i].mValue)) {
-      return PR_FALSE;
+      return false;
     }
   }
 
-  return PR_TRUE;
+  return true;
 }
 
 PRUint32

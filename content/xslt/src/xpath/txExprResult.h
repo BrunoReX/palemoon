@@ -104,10 +104,10 @@ public:
     virtual const nsString* stringValuePointer() = 0;
 
     /**
-     * Converts this ExprResult to a Boolean (MBool) value
+     * Converts this ExprResult to a Boolean (bool) value
      * @return the Boolean value
     **/
-    virtual MBool booleanValue()          = 0;
+    virtual bool booleanValue()          = 0;
 
     /**
      * Converts this ExprResult to a Number (double) value
@@ -124,19 +124,19 @@ private:
     virtual short getResultType();                                \
     virtual void stringValue(nsString& aString);                  \
     virtual const nsString* stringValuePointer();                 \
-    virtual PRBool booleanValue();                                \
+    virtual bool booleanValue();                                \
     virtual double numberValue();                                 \
 
 
 class BooleanResult : public txAExprResult {
 
 public:
-    BooleanResult(MBool aValue);
+    BooleanResult(bool aValue);
 
     TX_DECL_EXPRRESULT
 
 private:
-    MBool value;
+    bool value;
 };
 
 class NumberResult : public txAExprResult {

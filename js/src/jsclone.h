@@ -41,9 +41,10 @@
 
 #include "jsapi.h"
 #include "jscntxt.h"
-#include "jshashtable.h"
 #include "jsstdint.h"
-#include "jsvector.h"
+
+#include "js/HashTable.h"
+#include "js/Vector.h"
 
 JS_FRIEND_API(uint64_t)
 js_GetSCOffset(JSStructuredCloneWriter* writer);
@@ -188,7 +189,7 @@ struct JSStructuredCloneWriter {
     // The "memory" list described in the HTML5 internal structured cloning algorithm.
     // memory is a superset of objs; items are never removed from Memory
     // until a serialization operation is finished
-    typedef js::HashMap<JSObject *, uint32> CloneMemory;
+    typedef js::HashMap<JSObject *, uint32_t> CloneMemory;
     CloneMemory memory;
 
     // The user defined callbacks that will be used for cloning.

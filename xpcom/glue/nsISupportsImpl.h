@@ -226,7 +226,7 @@ public:
     mTagged = NS_CCAR_REFCNT_TO_TAGGED(refcount);
   }
 
-  PRBool IsPurple() const
+  bool IsPurple() const
   {
     NS_ASSERTION(mTagged != NS_CCAR_TAGGED_STABILIZED_REFCNT,
                  "should have checked for stabilization first");
@@ -323,13 +323,14 @@ public:
  */
 #define NS_INLINE_DECL_REFCOUNTING(_class)                                    \
 public:                                                                       \
-  void AddRef(void) {                                                         \
+  NS_METHOD_(nsrefcnt) AddRef(void) {                                         \
     NS_PRECONDITION(PRInt32(mRefCnt) >= 0, "illegal refcnt");                 \
     NS_ASSERT_OWNINGTHREAD_AND_NOT_CCTHREAD(_class);                          \
     ++mRefCnt;                                                                \
     NS_LOG_ADDREF(this, mRefCnt, #_class, sizeof(*this));                     \
+    return mRefCnt;                                                           \
   }                                                                           \
-  void Release(void) {                                                        \
+  NS_METHOD_(nsrefcnt) Release(void) {                                        \
     NS_PRECONDITION(0 != mRefCnt, "dup release");                             \
     NS_ASSERT_OWNINGTHREAD_AND_NOT_CCTHREAD(_class);                          \
     --mRefCnt;                                                                \
@@ -338,7 +339,9 @@ public:                                                                       \
       NS_ASSERT_OWNINGTHREAD(_class);                                         \
       mRefCnt = 1; /* stabilize */                                            \
       delete this;                                                            \
+      return 0;                                                               \
     }                                                                         \
+    return mRefCnt;                                                           \
   }                                                                           \
 protected:                                                                    \
   nsAutoRefCnt mRefCnt;                                                       \

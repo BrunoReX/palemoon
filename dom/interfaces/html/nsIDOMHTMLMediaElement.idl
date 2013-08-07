@@ -57,7 +57,7 @@
 #endif
 %}
 
-[scriptable, uuid(1b38c0a1-e532-41f1-9ec8-c76236d42cb7)]
+[scriptable, uuid(1f312b70-c1e1-40ca-94d4-5f70cac773da)]  
 interface nsIDOMHTMLMediaElement : nsIDOMHTMLElement
 {
   // error state
@@ -94,6 +94,7 @@ interface nsIDOMHTMLMediaElement : nsIDOMHTMLElement
   readonly attribute boolean ended;
   readonly attribute boolean mozAutoplayEnabled;
            attribute boolean autoplay;
+           attribute boolean loop;
   void play();
   void pause();
 
@@ -101,6 +102,7 @@ interface nsIDOMHTMLMediaElement : nsIDOMHTMLElement
            attribute boolean controls;
            attribute double volume;
            attribute boolean muted;
+           attribute boolean defaultMuted;
 
   // Mozilla extension: extra stream metadata information, used as part
   // of MozAudioAvailable events and the mozWriteAudio() method.  The

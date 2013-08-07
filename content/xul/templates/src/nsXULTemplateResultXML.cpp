@@ -80,18 +80,18 @@ nsXULTemplateResultXML::nsXULTemplateResultXML(nsXMLQuery* aQuery,
 }
 
 NS_IMETHODIMP
-nsXULTemplateResultXML::GetIsContainer(PRBool* aIsContainer)
+nsXULTemplateResultXML::GetIsContainer(bool* aIsContainer)
 {
     // a node is considered a container if it has children
     if (mNode)
         mNode->HasChildNodes(aIsContainer);
     else
-        *aIsContainer = PR_FALSE;
+        *aIsContainer = false;
     return NS_OK;
 }
 
 NS_IMETHODIMP
-nsXULTemplateResultXML::GetIsEmpty(PRBool* aIsEmpty)
+nsXULTemplateResultXML::GetIsEmpty(bool* aIsEmpty)
 {
     // a node is considered empty if it has no elements as children
     nsCOMPtr<nsIContent> content = do_QueryInterface(mNode);
@@ -100,20 +100,20 @@ nsXULTemplateResultXML::GetIsEmpty(PRBool* aIsEmpty)
              child;
              child = child->GetNextSibling()) {
             if (child->IsElement()) {
-                *aIsEmpty = PR_FALSE;
+                *aIsEmpty = false;
                 return NS_OK;
             }
         }
     }
 
-    *aIsEmpty = PR_TRUE;
+    *aIsEmpty = true;
     return NS_OK;
 }
 
 NS_IMETHODIMP
-nsXULTemplateResultXML::GetMayProcessChildren(PRBool* aMayProcessChildren)
+nsXULTemplateResultXML::GetMayProcessChildren(bool* aMayProcessChildren)
 {
-    *aMayProcessChildren = PR_TRUE;
+    *aMayProcessChildren = true;
     return NS_OK;
 }
 

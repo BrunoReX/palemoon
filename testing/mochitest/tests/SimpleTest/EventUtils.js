@@ -44,9 +44,6 @@ function sendMouseEvent(aEvent, aTarget, aWindow) {
     aTarget = aWindow.document.getElementById(aTarget);
   }
 
-  // For events to trigger the UA's default actions they need to be "trusted"
-  netscape.security.PrivilegeManager.enablePrivilege('UniversalBrowserWrite');
-
   var event = aWindow.document.createEvent('MouseEvent');
 
   var typeArg          = aEvent.type;
@@ -72,112 +69,43 @@ function sendMouseEvent(aEvent, aTarget, aWindow) {
                        ctrlKeyArg, altKeyArg, shiftKeyArg, metaKeyArg,
                        buttonArg, relatedTargetArg);
 
-  aTarget.dispatchEvent(event);
+  SpecialPowers.dispatchEvent(aWindow, aTarget, event);
 }
 
 /**
- * Send the char aChar to the node with id aTarget.  If aTarget is not
- * provided, use "target".  This method handles casing of chars (sends the
- * right charcode, and sends a shift key for uppercase chars).  No other
- * modifiers are handled at this point.
+ * Send the char aChar to the focused element.  This method handles casing of
+ * chars (sends the right charcode, and sends a shift key for uppercase chars).
+ * No other modifiers are handled at this point.
  *
  * For now this method only works for English letters (lower and upper case)
  * and the digits 0-9.
- *
- * Returns true if the keypress event was accepted (no calls to preventDefault
- * or anything like that), false otherwise.
  */
-function sendChar(aChar, aTarget) {
+function sendChar(aChar, aWindow) {
   // DOM event charcodes match ASCII (JS charcodes) for a-zA-Z0-9.
   var hasShift = (aChar == aChar.toUpperCase());
-  var charCode = aChar.charCodeAt(0);
-  var keyCode = charCode;
-  if (!hasShift) {
-    // For lowercase letters, the keyCode is actually 32 less than the charCode
-    keyCode -= 0x20;
-  }
-
-  return __doEventDispatch(aTarget, charCode, keyCode, hasShift);
+  synthesizeKey(aChar, { shiftKey: hasShift }, aWindow);
 }
 
 /**
- * Send the string aStr to the node with id aTarget.  If aTarget is not
- * provided, use "target".
+ * Send the string aStr to the focused element.
  *
  * For now this method only works for English letters (lower and upper case)
  * and the digits 0-9.
  */
-function sendString(aStr, aTarget) {
+function sendString(aStr, aWindow) {
   for (var i = 0; i < aStr.length; ++i) {
-    sendChar(aStr.charAt(i), aTarget);
+    sendChar(aStr.charAt(i), aWindow);
   }
 }
 
 /**
- * Send the non-character key aKey to the node with id aTarget. If aTarget is
- * not provided, use "target".  The name of the key should be a lowercase
- * version of the part that comes after "DOM_VK_" in the KeyEvent constant
- * name for this key.  No modifiers are handled at this point.
- *
- * Returns true if the keypress event was accepted (no calls to preventDefault
- * or anything like that), false otherwise.
+ * Send the non-character key aKey to the focused node.  The name of the key
+ * should be a lowercase version of the part that comes after "DOM_VK_" in the
+ * KeyEvent constant name for this key.  No modifiers are handled at this point.
  */
-function sendKey(aKey, aTarget) {
-  keyName = "DOM_VK_" + aKey.toUpperCase();
-
-  if (!KeyEvent[keyName]) {
-    throw "Unknown key: " + keyName;
-  }
-
-  return __doEventDispatch(aTarget, 0, KeyEvent[keyName], false);
-}
-
-/**
- * Actually perform event dispatch given a charCode, keyCode, and boolean for
- * whether "shift" was pressed.  Send the event to the node with id aTarget.  If
- * aTarget is not provided, use "target".
- *
- * Returns true if the keypress event was accepted (no calls to preventDefault
- * or anything like that), false otherwise.
- */
-function __doEventDispatch(aTarget, aCharCode, aKeyCode, aHasShift) {
-  if (aTarget === undefined) {
-    aTarget = "target";
-  }
-
-  // Make our events trusted
-  netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
-
-  var event = document.createEvent("KeyEvents");
-  event.initKeyEvent("keydown", true, true, document.defaultView,
-                     false, false, aHasShift, false,
-                     aKeyCode, 0);
-  var accepted = $(aTarget).dispatchEvent(event);
-
-  // Preventing the default keydown action also prevents the default
-  // keypress action.
-  event = document.createEvent("KeyEvents");
-  if (aCharCode) {
-    event.initKeyEvent("keypress", true, true, document.defaultView,
-                       false, false, aHasShift, false,
-                       0, aCharCode);
-  } else {
-    event.initKeyEvent("keypress", true, true, document.defaultView,
-                       false, false, aHasShift, false,
-                       aKeyCode, 0);
-  }
-  if (!accepted) {
-    event.preventDefault();
-  }
-  accepted = $(aTarget).dispatchEvent(event);
-
-  // Always send keyup
-  var event = document.createEvent("KeyEvents");
-  event.initKeyEvent("keyup", true, true, document.defaultView,
-                     false, false, aHasShift, false,
-                     aKeyCode, 0);
-  $(aTarget).dispatchEvent(event);
-  return accepted;
+function sendKey(aKey, aWindow) {
+  keyName = "VK_" + aKey.toUpperCase();
+  synthesizeKey(keyName, { shiftKey: false }, aWindow);
 }
 
 /**
@@ -218,13 +146,8 @@ function _parseModifiers(aEvent)
  */
 function synthesizeMouse(aTarget, aOffsetX, aOffsetY, aEvent, aWindow)
 {
-  netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
+  var utils = _getDOMWindowUtils(aWindow);
 
-  if (!aWindow)
-    aWindow = window;
-
-  var utils = aWindow.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-                      getInterface(Components.interfaces.nsIDOMWindowUtils);
   if (utils) {
     var button = aEvent.button || 0;
     var clickCount = aEvent.clickCount || 1;
@@ -278,13 +201,8 @@ function synthesizeMouseAtCenter(aTarget, aEvent, aWindow)
  */
 function synthesizeMouseScroll(aTarget, aOffsetX, aOffsetY, aEvent, aWindow)
 {
-  netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
+  var utils = _getDOMWindowUtils(aWindow);
 
-  if (!aWindow)
-    aWindow = window;
-
-  var utils = aWindow.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-                      getInterface(Components.interfaces.nsIDOMWindowUtils);
   if (utils) {
     // See nsMouseScrollFlags in nsGUIEvent.h
     const kIsVertical = 0x02;
@@ -406,18 +324,15 @@ function _computeKeyCodeFromChar(aChar)
  */
 function synthesizeKey(aKey, aEvent, aWindow)
 {
-  netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
-
-  if (!aWindow)
-    aWindow = window;
-
-  var utils = aWindow.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-                      getInterface(Components.interfaces.nsIDOMWindowUtils);
+  var utils = _getDOMWindowUtils(aWindow);
   if (utils) {
     var keyCode = 0, charCode = 0;
-    if (aKey.indexOf("VK_") == 0)
+    if (aKey.indexOf("VK_") == 0) {
       keyCode = KeyEvent["DOM_" + aKey];
-    else {
+      if (!keyCode) {
+        throw "Unknown key: " + aKey;
+      }
+    } else {
       charCode = aKey.charCodeAt(0);
       keyCode = _computeKeyCodeFromChar(aKey.charAt(0));
     }
@@ -432,6 +347,7 @@ function synthesizeKey(aKey, aEvent, aWindow)
     } else {
       var keyDownDefaultHappened =
           utils.sendKeyEvent("keydown", keyCode, 0, modifiers);
+      // XXX Shouldn't dispatch keypress event if the key is a modifier key.
       utils.sendKeyEvent("keypress", charCode ? 0 : keyCode, charCode,
                          modifiers, !keyDownDefaultHappened);
       utils.sendKeyEvent("keyup", keyCode, 0, modifiers);
@@ -531,13 +447,8 @@ function synthesizeKeyExpectEvent(key, aEvent, aExpectedTarget, aExpectedEvent,
 
 function disableNonTestMouseEvents(aDisable)
 {
-  netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
-
-  var utils =
-    window.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-           getInterface(Components.interfaces.nsIDOMWindowUtils);
-  if (utils)
-    utils.disableNonTestMouseEvents(aDisable);
+  var domutils = _getDOMWindowUtils();
+  domutils.disableNonTestMouseEvents(aDisable);
 }
 
 function _getDOMWindowUtils(aWindow)
@@ -545,9 +456,27 @@ function _getDOMWindowUtils(aWindow)
   if (!aWindow) {
     aWindow = window;
   }
+
+  // we need parent.SpecialPowers for:
+  //  layout/base/tests/test_reftests_with_caret.html
+  //  chrome: toolkit/content/tests/chrome/test_findbar.xul
+  //  chrome: toolkit/content/tests/chrome/test_popup_anchor.xul
+  if ("SpecialPowers" in window && window.SpecialPowers != undefined) {
+    return SpecialPowers.getDOMWindowUtils(aWindow);
+  } else if ("SpecialPowers" in parent && parent.SpecialPowers != undefined) {
+    return parent.SpecialPowers.getDOMWindowUtils(aWindow);
+  }
+
+  //TODO: this is assuming we are in chrome space
   return aWindow.QueryInterface(Components.interfaces.nsIInterfaceRequestor).
-                 getInterface(Components.interfaces.nsIDOMWindowUtils);
+                               getInterface(Components.interfaces.nsIDOMWindowUtils);
 }
+
+// Must be synchronized with nsIDOMWindowUtils.
+const COMPOSITION_ATTR_RAWINPUT              = 0x02;
+const COMPOSITION_ATTR_SELECTEDRAWTEXT       = 0x03;
+const COMPOSITION_ATTR_CONVERTEDTEXT         = 0x04;
+const COMPOSITION_ATTR_SELECTEDCONVERTEDTEXT = 0x05;
 
 /**
  * Synthesize a composition event.
@@ -565,8 +494,6 @@ function _getDOMWindowUtils(aWindow)
  */
 function synthesizeComposition(aEvent, aWindow)
 {
-  netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
-
   var utils = _getDOMWindowUtils(aWindow);
   if (!utils) {
     return;
@@ -575,7 +502,6 @@ function synthesizeComposition(aEvent, aWindow)
   utils.sendCompositionEvent(aEvent.type, aEvent.data ? aEvent.data : "",
                              aEvent.locale ? aEvent.locale : "");
 }
-
 /**
  * Synthesize a text event.
  *
@@ -618,8 +544,6 @@ function synthesizeComposition(aEvent, aWindow)
  */
 function synthesizeText(aEvent, aWindow)
 {
-  netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
-
   var utils = _getDOMWindowUtils(aWindow);
   if (!utils) {
     return;
@@ -668,8 +592,6 @@ function synthesizeText(aEvent, aWindow)
  */
 function synthesizeQuerySelectedText(aWindow)
 {
-  netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
-
   var utils = _getDOMWindowUtils(aWindow);
   if (!utils) {
     return nsnull;

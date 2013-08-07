@@ -44,6 +44,7 @@
 #include <string.h>
 
 #include "mozilla/RangedPtr.h"
+#include "mozilla/Util.h"
 
 #include "jstypes.h"
 #include "jsstdint.h"
@@ -52,16 +53,16 @@
 #include "jsprf.h"
 #include "jsapi.h"
 #include "jsatom.h"
-#include "jsbit.h"
 #include "jscntxt.h"
 #include "jsgc.h"
 #include "jsgcmark.h"
 #include "jslock.h"
 #include "jsnum.h"
-#include "jsparse.h"
 #include "jsstr.h"
 #include "jsversion.h"
 #include "jsxml.h"
+
+#include "frontend/Parser.h"
 
 #include "jsstrinlines.h"
 #include "jsatominlines.h"
@@ -69,6 +70,7 @@
 
 #include "vm/String-inl.h"
 
+using namespace mozilla;
 using namespace js;
 using namespace js::gc;
 
@@ -364,7 +366,7 @@ js_InitCommonAtoms(JSContext *cx)
 {
     JSAtomState *state = &cx->runtime->atomState;
     JSAtom **atoms = state->commonAtomsStart();
-    for (size_t i = 0; i < JS_ARRAY_LENGTH(js_common_atom_names); i++, atoms++) {
+    for (size_t i = 0; i < ArrayLength(js_common_atom_names); i++, atoms++) {
         JSAtom *atom = js_Atomize(cx, js_common_atom_names[i], strlen(js_common_atom_names[i]),
                                   InternAtom);
         if (!atom)
@@ -387,7 +389,7 @@ js_FinishCommonAtoms(JSContext *cx)
 void
 js_TraceAtomState(JSTracer *trc)
 {
-    JSRuntime *rt = trc->context->runtime;
+    JSRuntime *rt = trc->runtime;
     JSAtomState *state = &rt->atomState;
 
 #ifdef DEBUG
@@ -397,7 +399,7 @@ js_TraceAtomState(JSTracer *trc)
     if (rt->gcKeepAtoms) {
         for (AtomSet::Range r = state->atoms.all(); !r.empty(); r.popFront()) {
             JS_SET_TRACING_INDEX(trc, "locked_atom", number++);
-            MarkString(trc, r.front().asPtr());
+            MarkAtom(trc, r.front().asPtr());
         }
     } else {
         for (AtomSet::Range r = state->atoms.all(); !r.empty(); r.popFront()) {
@@ -406,7 +408,7 @@ js_TraceAtomState(JSTracer *trc)
                 continue;
 
             JS_SET_TRACING_INDEX(trc, "interned_atom", number++);
-            MarkString(trc, entry.asPtr());
+            MarkAtom(trc, entry.asPtr());
         }
     }
 }
@@ -495,7 +497,7 @@ AtomizeInline(JSContext *cx, const jschar **pchars, size_t length,
 
     /*
      * We have to relookup the key as the last ditch GC invoked from the
-     * string allocation or OOM handling may unlock the atomsCompartment.
+     * string allocation or OOM handling unlocks the atomsCompartment.
      *
      * N.B. this avoids recomputing the hash but still has a potential
      * (# collisions * # chars) comparison cost in the case of a hash
@@ -555,7 +557,7 @@ js_Atomize(JSContext *cx, const char *bytes, size_t length, InternBehavior ib, F
 {
     CHECK_REQUEST(cx);
 
-    if (!CheckStringLength(cx, length))
+    if (!JSString::validateLength(cx, length))
         return NULL;
 
     /*
@@ -597,7 +599,7 @@ js_AtomizeChars(JSContext *cx, const jschar *chars, size_t length, InternBehavio
 {
     CHECK_REQUEST(cx);
 
-    if (!CheckStringLength(cx, length))
+    if (!JSString::validateLength(cx, length))
         return NULL;
 
     return AtomizeInline(cx, &chars, length, ib);
@@ -673,12 +675,12 @@ js_InitAtomMap(JSContext *cx, AtomIndexMap *indices, JSAtom **atoms)
 namespace js {
 
 bool
-IndexToIdSlow(JSContext *cx, uint32 index, jsid *idp)
+IndexToIdSlow(JSContext *cx, uint32_t index, jsid *idp)
 {
     JS_ASSERT(index > JSID_INT_MAX);
 
     jschar buf[UINT32_CHAR_BUFFER_LENGTH];
-    RangedPtr<jschar> end(buf + JS_ARRAY_LENGTH(buf), buf, buf + JS_ARRAY_LENGTH(buf));
+    RangedPtr<jschar> end(ArrayEnd(buf), buf, ArrayEnd(buf));
     RangedPtr<jschar> start = BackfillIndexInCharBuffer(index, end);
 
     JSAtom *atom = js_AtomizeChars(cx, start.get(), end - start);

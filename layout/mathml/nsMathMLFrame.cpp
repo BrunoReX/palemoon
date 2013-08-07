@@ -150,7 +150,7 @@ nsMathMLFrame::ResolveMathMLCharStyle(nsPresContext*  aPresContext,
                                       nsIContent*      aContent,
                                       nsStyleContext*  aParentStyleContext,
                                       nsMathMLChar*    aMathMLChar,
-                                      PRBool           aIsMutableChar)
+                                      bool             aIsMutableChar)
 {
   nsCSSPseudoElements::Type pseudoType = (aIsMutableChar) ?
     nsCSSPseudoElements::ePseudo_mozMathStretchy :
@@ -188,7 +188,7 @@ nsMathMLFrame::GetEmbellishDataFrom(nsIFrame*        aFrame,
 /* static */ void
 nsMathMLFrame::GetPresentationDataFrom(nsIFrame*           aFrame,
                                        nsPresentationData& aPresentationData,
-                                       PRBool              aClimbTree)
+                                       bool                aClimbTree)
 {
   // initialize OUT params
   aPresentationData.flags = 0;
@@ -231,7 +231,7 @@ nsMathMLFrame::GetPresentationDataFrom(nsIFrame*           aFrame,
 }
 
 // helper to get an attribute from the content or the surrounding <mstyle> hierarchy
-/* static */ PRBool
+/* static */ bool
 nsMathMLFrame::GetAttribute(nsIContent* aContent,
                             nsIFrame*   aMathMLmstyleFrame,
                             nsIAtom*    aAttributeAtom,
@@ -240,12 +240,12 @@ nsMathMLFrame::GetAttribute(nsIContent* aContent,
   // see if we can get the attribute from the content
   if (aContent && aContent->GetAttr(kNameSpaceID_None, aAttributeAtom,
                                     aValue)) {
-    return PR_TRUE;
+    return true;
   }
 
   // see if we can get the attribute from the mstyle frame
   if (!aMathMLmstyleFrame) {
-    return PR_FALSE;
+    return false;
   }
 
   nsIFrame* mstyleParent = aMathMLmstyleFrame->GetParent();
@@ -340,14 +340,14 @@ nsMathMLFrame::CalcLength(nsPresContext*   aPresContext,
   return 0;
 }
 
-/* static */ PRBool
+/* static */ bool
 nsMathMLFrame::ParseNamedSpaceValue(nsIFrame*   aMathMLmstyleFrame,
                                     nsString&   aString,
                                     nsCSSValue& aCSSValue)
 {
   aCSSValue.Reset();
   aString.CompressWhitespace(); //  aString is not a const in this code...
-  if (!aString.Length()) return PR_FALSE;
+  if (!aString.Length()) return false;
 
   // See if it is one of the 'namedspace' (ranging 1/18em...7/18em)
   PRInt32 i = 0;
@@ -418,17 +418,17 @@ nsMathMLFrame::ParseNamedSpaceValue(nsIFrame*   aMathMLmstyleFrame,
       if (!value.IsEmpty()) {
         if (ParseNumericValue(value, aCSSValue) &&
             aCSSValue.IsLengthUnit()) {
-          return PR_TRUE;
+          return true;
         }
       }
     }
 
     // fall back to the default value
     aCSSValue.SetFloatValue(float(i)/float(18), eCSSUnit_EM);
-    return PR_TRUE;
+    return true;
   }
 
-  return PR_FALSE;
+  return false;
 }
 
 // ================
@@ -516,7 +516,7 @@ void nsDisplayMathMLBar::Paint(nsDisplayListBuilder* aBuilder,
                                nsRenderingContext* aCtx)
 {
   // paint the bar with the current text color
-  aCtx->SetColor(mFrame->GetStyleColor()->mColor);
+  aCtx->SetColor(mFrame->GetVisitedDependentColor(eCSSProperty_color));
   aCtx->FillRect(mRect + ToReferenceFrame());
 }
 

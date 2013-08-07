@@ -45,7 +45,6 @@
 #include "nsGUIEvent.h"
 #include "nsIServiceManager.h"
 #include "nsComponentManagerUtils.h"
-#include "nsWidgetAtoms.h"
 #include <objbase.h>
 #include <initguid.h>
 
@@ -54,20 +53,14 @@
 // unknwn.h is needed to build with WIN32_LEAN_AND_MEAN
 #include <unknwn.h>
 
-NS_IMPL_ISUPPORTS1(nsToolkit, nsIToolkit)
-
-//
-// Static thread local storage index of the Toolkit 
-// object associated with a given thread...
-//
-static PRUintn gToolkitTLSIndex = 0;
-
-
+nsToolkit* nsToolkit::gToolkit = nsnull;
 HINSTANCE nsToolkit::mDllInstance = 0;
-PRBool    nsToolkit::mIsWinXP     = PR_FALSE;
-static PRBool dummy = nsToolkit::InitVersionInfo();
-
 static const unsigned long kD3DUsageDelay = 5000;
+
+// SHCreateItemFromParsingName is only available on vista and up.
+nsToolkit::SHCreateItemFromParsingNamePtr nsToolkit::createItemFromParsingName = nsnull;
+const PRUnichar nsToolkit::kSehllLibraryName[] =  L"shell32.dll";
+HMODULE nsToolkit::sShellDll = nsnull;
 
 static void
 StartAllowingD3D9(nsITimer *aTimer, void *aClosure)
@@ -75,40 +68,7 @@ StartAllowingD3D9(nsITimer *aTimer, void *aClosure)
   nsWindow::StartAllowingD3D9(true);
 }
 
-//
-// main for the message pump thread
-//
-PRBool gThreadState = PR_FALSE;
-
-struct ThreadInitInfo {
-    PRMonitor *monitor;
-    nsToolkit *toolkit;
-};
-
 MouseTrailer*       nsToolkit::gMouseTrailer;
-
-void RunPump(void* arg)
-{
-    ThreadInitInfo *info = (ThreadInitInfo*)arg;
-    ::PR_EnterMonitor(info->monitor);
-
-    // do registration and creation in this thread
-    info->toolkit->CreateInternalWindow(PR_GetCurrentThread());
-
-    gThreadState = PR_TRUE;
-
-    ::PR_Notify(info->monitor);
-    ::PR_ExitMonitor(info->monitor);
-
-    delete info;
-
-    // Process messages
-    MSG msg;
-    while (::GetMessageW(&msg, NULL, 0, 0)) {
-        TranslateMessage(&msg);
-        ::DispatchMessageW(&msg);
-    }
-}
 
 //-------------------------------------------------------------------------
 //
@@ -117,14 +77,19 @@ void RunPump(void* arg)
 //-------------------------------------------------------------------------
 nsToolkit::nsToolkit()  
 {
-    mGuiThread  = NULL;
-    mDispatchWnd = 0;
+    MOZ_COUNT_CTOR(nsToolkit);
 
 #if defined(MOZ_STATIC_COMPONENT_LIBS)
     nsToolkit::Startup(GetModuleHandle(NULL));
 #endif
 
-    gMouseTrailer = new MouseTrailer();
+    gMouseTrailer = &mMouseTrailer;
+
+    mD3D9Timer = do_CreateInstance("@mozilla.org/timer;1");
+    mD3D9Timer->InitWithFuncCallback(::StartAllowingD3D9,
+                                     NULL,
+                                     kD3DUsageDelay,
+                                     nsITimer::TYPE_ONE_SHOT);
 }
 
 
@@ -135,266 +100,72 @@ nsToolkit::nsToolkit()
 //-------------------------------------------------------------------------
 nsToolkit::~nsToolkit()
 {
-    NS_PRECONDITION(::IsWindow(mDispatchWnd), "Invalid window handle");
-
-    // Destroy the Dispatch Window
-    ::DestroyWindow(mDispatchWnd);
-    mDispatchWnd = NULL;
-
-    // Remove the TLS reference to the toolkit...
-    PR_SetThreadPrivate(gToolkitTLSIndex, nsnull);
-
-    if (gMouseTrailer) {
-      gMouseTrailer->DestroyTimer();
-      delete gMouseTrailer;
-      gMouseTrailer = nsnull;
-    }
-
-#if defined (MOZ_STATIC_COMPONENT_LIBS)
-    nsToolkit::Shutdown();
-#endif
+    MOZ_COUNT_DTOR(nsToolkit);
+    gMouseTrailer = nsnull;
 }
 
 void
 nsToolkit::Startup(HMODULE hModule)
 {
     nsToolkit::mDllInstance = hModule;
-
-    //
-    // register the internal window class
-    //
-    WNDCLASSW wc;
-    wc.style            = CS_GLOBALCLASS;
-    wc.lpfnWndProc      = nsToolkit::WindowProc;
-    wc.cbClsExtra       = 0;
-    wc.cbWndExtra       = 0;
-    wc.hInstance        = nsToolkit::mDllInstance;
-    wc.hIcon            = NULL;
-    wc.hCursor          = NULL;
-    wc.hbrBackground    = NULL;
-    wc.lpszMenuName     = NULL;
-    wc.lpszClassName    = L"nsToolkitClass";
-    VERIFY(::RegisterClassW(&wc) || 
-           GetLastError() == ERROR_CLASS_ALREADY_EXISTS);
-
     nsUXThemeData::Initialize();
 }
-
 
 void
 nsToolkit::Shutdown()
 {
-    // Crashes on certain XP machines/profiles - see bug 448104 for details
-    //nsUXThemeData::Teardown();
-    //VERIFY(::UnregisterClass("nsToolkitClass", nsToolkit::mDllInstance));
-    ::UnregisterClassW(L"nsToolkitClass", nsToolkit::mDllInstance);
+    delete gToolkit;
+    gToolkit = nsnull;
 }
 
 void
 nsToolkit::StartAllowingD3D9()
 {
-  nsIToolkit *toolkit;
-  NS_GetCurrentToolkit(&toolkit);
-  static_cast<nsToolkit*>(toolkit)->mD3D9Timer->Cancel();
+  nsToolkit::GetToolkit()->mD3D9Timer->Cancel();
   nsWindow::StartAllowingD3D9(false);
 }
 
-//-------------------------------------------------------------------------
-//
-// Register the window class for the internal window and create the window
-//
-//-------------------------------------------------------------------------
-void nsToolkit::CreateInternalWindow(PRThread *aThread)
+// Load and store Vista+ SHCreateItemFromParsingName
+bool
+nsToolkit::VistaCreateItemFromParsingNameInit()
 {
-    
-    NS_PRECONDITION(aThread, "null thread");
-    mGuiThread  = aThread;
-
-    //
-    // create the internal window
-    //
-
-    mDispatchWnd = ::CreateWindowW(L"nsToolkitClass",
-                                   L"NetscapeDispatchWnd",
-                                  WS_DISABLED,
-                                  -50, -50,
-                                  10, 10,
-                                  NULL,
-                                  NULL,
-                                  nsToolkit::mDllInstance,
-                                  NULL);
-
-    VERIFY(mDispatchWnd);
-}
-
-
-//-------------------------------------------------------------------------
-//
-// Create a new thread and run the message pump in there
-//
-//-------------------------------------------------------------------------
-void nsToolkit::CreateUIThread()
-{
-    PRMonitor *monitor = ::PR_NewMonitor();
-
-    ::PR_EnterMonitor(monitor);
-
-    ThreadInitInfo *ti = new ThreadInitInfo();
-    ti->monitor = monitor;
-    ti->toolkit = this;
-
-    // create a gui thread
-    mGuiThread = ::PR_CreateThread(PR_SYSTEM_THREAD,
-                                    RunPump,
-                                    (void*)ti,
-                                    PR_PRIORITY_NORMAL,
-                                    PR_LOCAL_THREAD,
-                                    PR_UNJOINABLE_THREAD,
-                                    0);
-
-    // wait for the gui thread to start
-    while(!gThreadState) {
-        ::PR_Wait(monitor, PR_INTERVAL_NO_TIMEOUT);
-    }
-
-    // at this point the thread is running
-    ::PR_ExitMonitor(monitor);
-    ::PR_DestroyMonitor(monitor);
-}
-
-
-//-------------------------------------------------------------------------
-//
-//
-//-------------------------------------------------------------------------
-NS_METHOD nsToolkit::Init(PRThread *aThread)
-{
-    // Store the thread ID of the thread containing the message pump.  
-    // If no thread is provided create one
-    if (NULL != aThread) {
-        CreateInternalWindow(aThread);
-    } else {
-        // create a thread where the message pump will run
-        CreateUIThread();
-    }
-
-    mD3D9Timer = do_CreateInstance("@mozilla.org/timer;1");
-    mD3D9Timer->InitWithFuncCallback(::StartAllowingD3D9,
-                                     NULL,
-                                     kD3DUsageDelay,
-                                     nsITimer::TYPE_ONE_SHOT);
-
-    nsWidgetAtoms::RegisterAtoms();
-
-    return NS_OK;
+  if (createItemFromParsingName)
+    return true;
+  if (sShellDll)
+    return false;
+  sShellDll = LoadLibraryW(kSehllLibraryName);
+  if (!sShellDll)
+    return false;
+  createItemFromParsingName = (SHCreateItemFromParsingNamePtr)
+    GetProcAddress(sShellDll, "SHCreateItemFromParsingName");
+  if (createItemFromParsingName == nsnull)
+    return false;
+  return true;
 }
 
 //-------------------------------------------------------------------------
 //
-// nsToolkit WindowProc. Used to call methods on the "main GUI thread"...
-//
-//-------------------------------------------------------------------------
-LRESULT CALLBACK nsToolkit::WindowProc(HWND hWnd, UINT msg, WPARAM wParam, 
-                                       LPARAM lParam)
-{
-    switch (msg) {
-        case WM_SYSCOLORCHANGE:
-        {
-          // WM_SYSCOLORCHANGE messages are only dispatched to top
-          // level windows but NS_SYSCOLORCHANGE messages must be dispatched
-          // to all windows including child windows. We dispatch these messages 
-          // from the nsToolkit because if we are running embedded we may not 
-          // have a top-level nsIWidget window.
-          
-          // On WIN32 all windows are automatically invalidated after the 
-          // WM_SYSCOLORCHANGE is dispatched so the window is drawn using
-          // the current system colors.
-          nsWindow::GlobalMsgWindowProc(hWnd, msg, wParam, lParam);
-        }
-    }
-
-    return ::DefWindowProcW(hWnd, msg, wParam, lParam);
-}
-
-
-
-//-------------------------------------------------------------------------
-//
-// Return the nsIToolkit for the current thread.  If a toolkit does not
+// Return the nsToolkit for the current thread.  If a toolkit does not
 // yet exist, then one will be created...
 //
 //-------------------------------------------------------------------------
-NS_METHOD NS_GetCurrentToolkit(nsIToolkit* *aResult)
+// static
+nsToolkit* nsToolkit::GetToolkit()
 {
-  nsIToolkit* toolkit = nsnull;
-  nsresult rv = NS_OK;
-  PRStatus status;
-
-  // Create the TLS index the first time through...
-  if (0 == gToolkitTLSIndex) {
-    status = PR_NewThreadPrivateIndex(&gToolkitTLSIndex, NULL);
-    if (PR_FAILURE == status) {
-      rv = NS_ERROR_FAILURE;
-    }
+  if (!gToolkit) {
+    gToolkit = new nsToolkit();
   }
 
-  if (NS_SUCCEEDED(rv)) {
-    toolkit = (nsIToolkit*)PR_GetThreadPrivate(gToolkitTLSIndex);
-
-    //
-    // Create a new toolkit for this thread...
-    //
-    if (!toolkit) {
-      toolkit = new nsToolkit();
-
-      if (!toolkit) {
-        rv = NS_ERROR_OUT_OF_MEMORY;
-      } else {
-        NS_ADDREF(toolkit);
-        toolkit->Init(PR_GetCurrentThread());
-        //
-        // The reference stored in the TLS is weak.  It is removed in the
-        // nsToolkit destructor...
-        //
-        PR_SetThreadPrivate(gToolkitTLSIndex, (void*)toolkit);
-      }
-    } else {
-      NS_ADDREF(toolkit);
-    }
-    *aResult = toolkit;
-  }
-
-  return rv;
+  return gToolkit;
 }
 
-
-PRBool nsToolkit::InitVersionInfo()
-{
-  static PRBool isInitialized = PR_FALSE;
-
-  if (!isInitialized)
-  {
-    isInitialized = PR_TRUE;
-
-    OSVERSIONINFO osversion;
-    osversion.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-
-    ::GetVersionEx(&osversion);
-
-    if (osversion.dwMajorVersion == 5)  { 
-      nsToolkit::mIsWinXP = (osversion.dwMinorVersion == 1);
-    }
-  }
-
-  return PR_TRUE;
-}
 
 //-------------------------------------------------------------------------
 //
 //
 //-------------------------------------------------------------------------
 MouseTrailer::MouseTrailer() : mMouseTrailerWindow(nsnull), mCaptureWindow(nsnull),
-  mIsInCaptureMode(PR_FALSE), mEnabled(PR_TRUE)
+  mIsInCaptureMode(false), mEnabled(true)
 {
 }
 //-------------------------------------------------------------------------
@@ -427,7 +198,7 @@ void MouseTrailer::SetCaptureWindow(HWND aWnd)
 { 
   mCaptureWindow = aWnd;
   if (mCaptureWindow) {
-    mIsInCaptureMode = PR_TRUE;
+    mIsInCaptureMode = true;
   }
 }
 
@@ -485,7 +256,7 @@ void MouseTrailer::TimerProc(nsITimer* aTimer, void* aClosure)
       // it if we were capturing and now this is the first timer callback 
       // since we canceled the capture
       mtrailer->mMouseTrailerWindow = nsnull;
-      mtrailer->mIsInCaptureMode = PR_FALSE;
+      mtrailer->mIsInCaptureMode = false;
       return;
     }
   }

@@ -35,6 +35,7 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/Util.h"
 
 #include "nsPlaintextEditor.h"
 
@@ -70,6 +71,8 @@
 #include "nsEventDispatcher.h"
 #include "nsContentUtils.h"
 
+using namespace mozilla;
+
 NS_IMETHODIMP nsPlaintextEditor::PrepareTransferable(nsITransferable **transferable)
 {
   // Create generic Transferable for getting the data
@@ -87,7 +90,7 @@ NS_IMETHODIMP nsPlaintextEditor::PrepareTransferable(nsITransferable **transfera
 nsresult nsPlaintextEditor::InsertTextAt(const nsAString &aStringToInsert,
                                          nsIDOMNode *aDestinationNode,
                                          PRInt32 aDestOffset,
-                                         PRBool aDoDeleteSelection)
+                                         bool aDoDeleteSelection)
 {
   if (aDestinationNode)
   {
@@ -118,7 +121,7 @@ nsresult nsPlaintextEditor::InsertTextAt(const nsAString &aStringToInsert,
 NS_IMETHODIMP nsPlaintextEditor::InsertTextFromTransferable(nsITransferable *aTransferable,
                                                             nsIDOMNode *aDestinationNode,
                                                             PRInt32 aDestOffset,
-                                                            PRBool aDoDeleteSelection)
+                                                            bool aDoDeleteSelection)
 {
   FireTrustedInputEvent trusted(this);
 
@@ -152,7 +155,7 @@ NS_IMETHODIMP nsPlaintextEditor::InsertTextFromTransferable(nsITransferable *aTr
   // After ScrollSelectionIntoView(), the pending notifications might be flushed
   // and PresShell/PresContext/Frames may be dead. See bug 418470.
   if (NS_SUCCEEDED(rv))
-    ScrollSelectionIntoView(PR_FALSE);
+    ScrollSelectionIntoView(false);
 
   return rv;
 }
@@ -189,7 +192,7 @@ NS_IMETHODIMP nsPlaintextEditor::InsertFromDrop(nsIDOMEvent* aDropEvent)
   // Combine any deletion and drop insertion into one transaction
   nsAutoEditBatch beginBatching(this);
 
-  PRBool deleteSelection = PR_FALSE;
+  bool deleteSelection = false;
 
   // We have to figure out whether to delete and relocate caret only once
   // Parent and offset are under the mouse cursor
@@ -210,7 +213,7 @@ NS_IMETHODIMP nsPlaintextEditor::InsertFromDrop(nsIDOMEvent* aDropEvent)
   NS_ENSURE_SUCCESS(rv, rv);
   NS_ENSURE_TRUE(selection, NS_ERROR_FAILURE);
 
-  PRBool isCollapsed;
+  bool isCollapsed;
   rv = selection->GetIsCollapsed(&isCollapsed);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -220,7 +223,7 @@ NS_IMETHODIMP nsPlaintextEditor::InsertFromDrop(nsIDOMEvent* aDropEvent)
   if (!isCollapsed)
   {
     // We never have to delete if selection is already collapsed
-    PRBool cursorIsInSelection = PR_FALSE;
+    bool cursorIsInSelection = false;
 
     PRInt32 rangeCount;
     rv = selection->GetRangeCount(&rangeCount);
@@ -254,7 +257,7 @@ NS_IMETHODIMP nsPlaintextEditor::InsertFromDrop(nsIDOMEvent* aDropEvent)
       // Dragging from another window onto a selection
       // XXX Decision made to NOT do this,
       //     note that 4.x does replace if dropped on
-      //deleteSelection = PR_TRUE;
+      //deleteSelection = true;
     }
     else 
     {
@@ -269,7 +272,7 @@ NS_IMETHODIMP nsPlaintextEditor::InsertFromDrop(nsIDOMEvent* aDropEvent)
       else
       {
         // Different source doc: Don't delete
-        deleteSelection = PR_FALSE;
+        deleteSelection = false;
       }
     }
   }
@@ -306,20 +309,20 @@ NS_IMETHODIMP nsPlaintextEditor::InsertFromDrop(nsIDOMEvent* aDropEvent)
   return rv;
 }
 
-NS_IMETHODIMP nsPlaintextEditor::CanDrag(nsIDOMEvent *aDragEvent, PRBool *aCanDrag)
+NS_IMETHODIMP nsPlaintextEditor::CanDrag(nsIDOMEvent *aDragEvent, bool *aCanDrag)
 {
   NS_ENSURE_TRUE(aCanDrag, NS_ERROR_NULL_POINTER);
   /* we really should be checking the XY coordinates of the mouseevent and ensure that
    * that particular point is actually within the selection (not just that there is a selection)
    */
-  *aCanDrag = PR_FALSE;
+  *aCanDrag = false;
  
   // KLUDGE to work around bug 50703
   // After double click and object property editing, 
   //  we get a spurious drag event
   if (mIgnoreSpuriousDragEvent)
   {
-    mIgnoreSpuriousDragEvent = PR_FALSE;
+    mIgnoreSpuriousDragEvent = false;
     return NS_OK;
   }
    
@@ -327,7 +330,7 @@ NS_IMETHODIMP nsPlaintextEditor::CanDrag(nsIDOMEvent *aDragEvent, PRBool *aCanDr
   nsresult res = GetSelection(getter_AddRefs(selection));
   NS_ENSURE_SUCCESS(res, res);
     
-  PRBool isCollapsed;
+  bool isCollapsed;
   res = selection->GetIsCollapsed(&isCollapsed);
   NS_ENSURE_SUCCESS(res, res);
   
@@ -348,8 +351,8 @@ NS_IMETHODIMP nsPlaintextEditor::CanDrag(nsIDOMEvent *aDragEvent, PRBool *aCanDr
     nsCOMPtr<nsIDOMNode> eventTargetDomNode = do_QueryInterface(eventTarget);
     if ( eventTargetDomNode )
     {
-      PRBool isTargetedCorrectly = PR_FALSE;
-      res = selection->ContainsNode(eventTargetDomNode, PR_FALSE, &isTargetedCorrectly);
+      bool isTargetedCorrectly = false;
+      res = selection->ContainsNode(eventTargetDomNode, false, &isTargetedCorrectly);
       NS_ENSURE_SUCCESS(res, res);
 
       *aCanDrag = isTargetedCorrectly;
@@ -439,7 +442,7 @@ NS_IMETHODIMP nsPlaintextEditor::Paste(PRInt32 aSelectionType)
 
       // Beware! This may flush notifications via synchronous
       // ScrollSelectionIntoView.
-      rv = InsertTextFromTransferable(trans, nsnull, nsnull, PR_TRUE);
+      rv = InsertTextFromTransferable(trans, nsnull, nsnull, true);
     }
   }
 
@@ -462,13 +465,13 @@ NS_IMETHODIMP nsPlaintextEditor::PasteTransferable(nsITransferable *aTransferabl
 
   // Beware! This may flush notifications via synchronous
   // ScrollSelectionIntoView.
-  return InsertTextFromTransferable(aTransferable, nsnull, nsnull, PR_TRUE);
+  return InsertTextFromTransferable(aTransferable, nsnull, nsnull, true);
 }
 
-NS_IMETHODIMP nsPlaintextEditor::CanPaste(PRInt32 aSelectionType, PRBool *aCanPaste)
+NS_IMETHODIMP nsPlaintextEditor::CanPaste(PRInt32 aSelectionType, bool *aCanPaste)
 {
   NS_ENSURE_ARG_POINTER(aCanPaste);
-  *aCanPaste = PR_FALSE;
+  *aCanPaste = false;
 
   // can't paste if readonly
   if (!IsModifiable())
@@ -481,9 +484,9 @@ NS_IMETHODIMP nsPlaintextEditor::CanPaste(PRInt32 aSelectionType, PRBool *aCanPa
   // the flavors that we can deal with
   const char* textEditorFlavors[] = { kUnicodeMime };
 
-  PRBool haveFlavors;
+  bool haveFlavors;
   rv = clipboard->HasDataMatchingFlavors(textEditorFlavors,
-                                         NS_ARRAY_LENGTH(textEditorFlavors),
+                                         ArrayLength(textEditorFlavors),
                                          aSelectionType, &haveFlavors);
   NS_ENSURE_SUCCESS(rv, rv);
   
@@ -492,19 +495,19 @@ NS_IMETHODIMP nsPlaintextEditor::CanPaste(PRInt32 aSelectionType, PRBool *aCanPa
 }
 
 
-NS_IMETHODIMP nsPlaintextEditor::CanPasteTransferable(nsITransferable *aTransferable, PRBool *aCanPaste)
+NS_IMETHODIMP nsPlaintextEditor::CanPasteTransferable(nsITransferable *aTransferable, bool *aCanPaste)
 {
   NS_ENSURE_ARG_POINTER(aCanPaste);
 
   // can't paste if readonly
   if (!IsModifiable()) {
-    *aCanPaste = PR_FALSE;
+    *aCanPaste = false;
     return NS_OK;
   }
 
   // If |aTransferable| is null, assume that a paste will succeed.
   if (!aTransferable) {
-    *aCanPaste = PR_TRUE;
+    *aCanPaste = true;
     return NS_OK;
   }
 
@@ -514,9 +517,9 @@ NS_IMETHODIMP nsPlaintextEditor::CanPasteTransferable(nsITransferable *aTransfer
                                                getter_AddRefs(data),
                                                &dataLen);
   if (NS_SUCCEEDED(rv) && data)
-    *aCanPaste = PR_TRUE;
+    *aCanPaste = true;
   else
-    *aCanPaste = PR_FALSE;
+    *aCanPaste = false;
   
   return NS_OK;
 }

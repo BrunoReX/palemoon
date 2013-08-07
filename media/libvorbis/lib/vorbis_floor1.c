@@ -11,7 +11,7 @@
  ********************************************************************
 
  function: floor backend 1 implementation
- last mod: $Id: floor1.c 17555 2010-10-21 18:14:51Z tterribe $
+ last mod: $Id: floor1.c 17688 2010-11-29 23:53:30Z tterribe $
 
  ********************************************************************/
 
@@ -167,6 +167,7 @@ static vorbis_info_floor *floor1_unpack (vorbis_info *vi,oggpack_buffer *opb){
 
   for(j=0,k=0;j<info->partitions;j++){
     count+=info->class_dim[info->partitionclass[j]];
+    if(count>VIF_POSIT) goto err_out;
     for(;k<count;k++){
       int t=info->postlist[k+2]=oggpack_read(opb,rangebits);
       if(t<0 || t>=(1<<rangebits))

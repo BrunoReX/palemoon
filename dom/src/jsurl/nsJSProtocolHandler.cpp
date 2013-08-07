@@ -133,16 +133,16 @@ nsresult nsJSThunk::Init(nsIURI* uri)
     return NS_OK;
 }
 
-static PRBool
+static bool
 IsISO88591(const nsString& aString)
 {
     for (nsString::const_char_iterator c = aString.BeginReading(),
                                    c_end = aString.EndReading();
          c < c_end; ++c) {
         if (*c > 255)
-            return PR_FALSE;
+            return false;
     }
-    return PR_TRUE;
+    return true;
 }
 
 static
@@ -199,7 +199,7 @@ nsresult nsJSThunk::EvaluateScript(nsIChannel *aChannel,
     rv = principal->GetCsp(getter_AddRefs(csp));
     NS_ENSURE_SUCCESS(rv, rv);
     if (csp) {
-		PRBool allowsInline;
+		bool allowsInline;
 		rv = csp->GetAllowsInlineScript(&allowsInline);
 		NS_ENSURE_SUCCESS(rv, rv);
 
@@ -259,7 +259,7 @@ nsresult nsJSThunk::EvaluateScript(nsIChannel *aChannel,
     if (NS_FAILED(rv))
         return rv;
 
-    PRBool useSandbox =
+    bool useSandbox =
         (aExecutionPolicy == nsIScriptChannel::EXECUTE_IN_SANDBOX);
 
     if (!useSandbox) {
@@ -273,7 +273,7 @@ nsresult nsJSThunk::EvaluateScript(nsIChannel *aChannel,
         if (NS_FAILED(rv))
             return rv;
 
-        PRBool subsumes;
+        bool subsumes;
         rv = principal->Subsumes(objectPrincipal, &subsumes);
         if (NS_FAILED(rv))
             return rv;
@@ -282,7 +282,7 @@ nsresult nsJSThunk::EvaluateScript(nsIChannel *aChannel,
     }
 
     nsString result;
-    PRBool isUndefined;
+    bool isUndefined;
 
     // Finally, we have everything needed to evaluate the expression.
 
@@ -297,7 +297,7 @@ nsresult nsJSThunk::EvaluateScript(nsIChannel *aChannel,
         JSContext *cx = scriptContext->GetNativeContext();
         JSAutoRequest ar(cx);
 
-        PRBool ok;
+        bool ok;
         rv = securityManager->CanExecuteScripts(cx, principal, &ok);
         if (NS_FAILED(rv)) {
             return rv;
@@ -330,13 +330,13 @@ nsresult nsJSThunk::EvaluateScript(nsIChannel *aChannel,
         }
 
         rv = xpc->EvalInSandboxObject(NS_ConvertUTF8toUTF16(script), cx,
-                                      sandbox, PR_TRUE, &rval);
+                                      sandbox, true, &rval);
 
         // Propagate and report exceptions that happened in the
         // sandbox.
         if (JS_IsExceptionPending(cx)) {
             JS_ReportPendingException(cx);
-            isUndefined = PR_TRUE;
+            isUndefined = true;
         } else {
             isUndefined = rval == JSVAL_VOID;
         }
@@ -347,7 +347,7 @@ nsresult nsJSThunk::EvaluateScript(nsIChannel *aChannel,
             nsDependentJSString depStr;
             if (!depStr.init(cx, JSVAL_TO_STRING(rval))) {
                 JS_ReportPendingException(cx);
-                isUndefined = PR_TRUE;
+                isUndefined = true;
             } else {
                 result = depStr;
             }
@@ -466,9 +466,9 @@ protected:
     nsRefPtr<nsJSThunk>     mIOThunk;
     PopupControlState       mPopupState;
     PRUint32                mExecutionPolicy;
-    PRPackedBool            mIsAsync;
-    PRPackedBool            mIsActive;
-    PRPackedBool            mOpenedStreamChannel;
+    bool                    mIsAsync;
+    bool                    mIsActive;
+    bool                    mOpenedStreamChannel;
 };
 
 nsJSChannel::nsJSChannel() :
@@ -477,9 +477,9 @@ nsJSChannel::nsJSChannel() :
     mActualLoadFlags(LOAD_NORMAL),
     mPopupState(openOverridden),
     mExecutionPolicy(EXECUTE_IN_SANDBOX),
-    mIsAsync(PR_TRUE),
-    mIsActive(PR_FALSE),
-    mOpenedStreamChannel(PR_FALSE)
+    mIsAsync(true),
+    mIsActive(false),
+    mOpenedStreamChannel(false)
 {
 }
 
@@ -558,7 +558,7 @@ nsJSChannel::GetName(nsACString &aResult)
 }
 
 NS_IMETHODIMP
-nsJSChannel::IsPending(PRBool *aResult)
+nsJSChannel::IsPending(bool *aResult)
 {
     *aResult = mIsActive;
     return NS_OK;
@@ -658,7 +658,7 @@ nsJSChannel::AsyncOpen(nsIStreamListener *aListener, nsISupports *aContext)
     mListener = aListener;
     mContext = aContext;
 
-    mIsActive = PR_TRUE;
+    mIsActive = true;
 
     // Temporarily set the LOAD_BACKGROUND flag to suppress load group observer
     // notifications (and hence nsIWebProgressListener notifications) from
@@ -675,7 +675,7 @@ nsJSChannel::AsyncOpen(nsIStreamListener *aListener, nsISupports *aContext)
     if (loadGroup) {
         nsresult rv = loadGroup->AddRequest(this, nsnull);
         if (NS_FAILED(rv)) {
-            mIsActive = PR_FALSE;
+            mIsActive = false;
             CleanupStrongRefs();
             return rv;
         }
@@ -739,7 +739,7 @@ nsJSChannel::AsyncOpen(nsIStreamListener *aListener, nsISupports *aContext)
 
     if (NS_FAILED(rv)) {
         loadGroup->RemoveRequest(this, nsnull, rv);
-        mIsActive = PR_FALSE;
+        mIsActive = false;
         CleanupStrongRefs();
     }
     return rv;
@@ -781,7 +781,7 @@ nsJSChannel::EvaluateScript()
 
     // We're no longer active, it's now up to the stream channel to do
     // the loading, if needed.
-    mIsActive = PR_FALSE;
+    mIsActive = false;
 
     if (NS_FAILED(mStatus)) {
         if (mIsAsync) {
@@ -810,9 +810,9 @@ nsJSChannel::EvaluateScript()
             docShell->GetContentViewer(getter_AddRefs(cv));
 
             if (cv) {
-                PRBool okToUnload;
+                bool okToUnload;
 
-                if (NS_SUCCEEDED(cv->PermitUnload(PR_FALSE, &okToUnload)) &&
+                if (NS_SUCCEEDED(cv->PermitUnload(false, &okToUnload)) &&
                     !okToUnload) {
                     // The user didn't want to unload the current
                     // page, translate this into an undefined
@@ -838,11 +838,11 @@ nsJSChannel::EvaluateScript()
     if (NS_SUCCEEDED(mStatus)) {
         // mStreamChannel will call OnStartRequest and OnStopRequest on
         // us, so we'll be sure to call them on our listener.
-        mOpenedStreamChannel = PR_TRUE;
+        mOpenedStreamChannel = true;
 
         // Now readd ourselves to the loadgroup so we can receive
         // cancellation notifications.
-        mIsActive = PR_TRUE;
+        mIsActive = true;
         if (loadGroup) {
             mStatus = loadGroup->AddRequest(this, nsnull);
 
@@ -875,7 +875,7 @@ nsJSChannel::CleanupStrongRefs()
     mContext = nsnull;
     mOriginalInnerWindow = nsnull;
     if (mDocumentOnloadBlockedOn) {
-        mDocumentOnloadBlockedOn->UnblockOnload(PR_FALSE);
+        mDocumentOnloadBlockedOn->UnblockOnload(false);
         mDocumentOnloadBlockedOn = nsnull;
     }
 }
@@ -893,13 +893,13 @@ nsJSChannel::SetLoadFlags(nsLoadFlags aLoadFlags)
 {
     // Figure out whether the LOAD_BACKGROUND bit in aLoadFlags is
     // actually right.
-    PRBool bogusLoadBackground = PR_FALSE;
+    bool bogusLoadBackground = false;
     if (mIsActive && !(mActualLoadFlags & LOAD_BACKGROUND) &&
         (aLoadFlags & LOAD_BACKGROUND)) {
         // We're getting a LOAD_BACKGROUND, but it's probably just our own fake
         // flag being mirrored to us.  The one exception is if our loadgroup is
         // LOAD_BACKGROUND.
-        PRBool loadGroupIsBackground = PR_FALSE;
+        bool loadGroupIsBackground = false;
         nsCOMPtr<nsILoadGroup> loadGroup;
         mStreamChannel->GetLoadGroup(getter_AddRefs(loadGroup));
         if (loadGroup) {
@@ -949,7 +949,7 @@ NS_IMETHODIMP
 nsJSChannel::SetLoadGroup(nsILoadGroup* aLoadGroup)
 {
     if (aLoadGroup) {
-        PRBool streamPending;
+        bool streamPending;
         nsresult rv = mStreamChannel->IsPending(&streamPending);
         NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1103,7 +1103,7 @@ nsJSChannel::OnStopRequest(nsIRequest* aRequest,
         loadGroup->RemoveRequest(this, nsnull, mStatus);
     }
 
-    mIsActive = PR_FALSE;
+    mIsActive = false;
 
     return rv;
 }
@@ -1125,7 +1125,7 @@ nsJSChannel::GetExecutionPolicy(PRUint32* aPolicy)
 }
 
 NS_IMETHODIMP
-nsJSChannel::SetExecuteAsync(PRBool aIsAsync)
+nsJSChannel::SetExecuteAsync(bool aIsAsync)
 {
     if (!mIsActive) {
         mIsAsync = aIsAsync;
@@ -1137,7 +1137,7 @@ nsJSChannel::SetExecuteAsync(PRBool aIsAsync)
 }
 
 NS_IMETHODIMP
-nsJSChannel::GetExecuteAsync(PRBool* aIsAsync)
+nsJSChannel::GetExecuteAsync(bool* aIsAsync)
 {
     *aIsAsync = mIsAsync;
     return NS_OK;
@@ -1285,10 +1285,10 @@ nsJSProtocolHandler::NewChannel(nsIURI* uri, nsIChannel* *result)
 }
 
 NS_IMETHODIMP 
-nsJSProtocolHandler::AllowPort(PRInt32 port, const char *scheme, PRBool *_retval)
+nsJSProtocolHandler::AllowPort(PRInt32 port, const char *scheme, bool *_retval)
 {
     // don't override anything.  
-    *_retval = PR_FALSE;
+    *_retval = false;
     return NS_OK;
 }
 
@@ -1322,12 +1322,12 @@ nsJSURI::Read(nsIObjectInputStream* aStream)
     nsresult rv = nsSimpleURI::Read(aStream);
     if (NS_FAILED(rv)) return rv;
 
-    PRBool haveBase;
+    bool haveBase;
     rv = aStream->ReadBoolean(&haveBase);
     if (NS_FAILED(rv)) return rv;
 
     if (haveBase) {
-        rv = aStream->ReadObject(PR_TRUE, getter_AddRefs(mBaseURI));
+        rv = aStream->ReadObject(true, getter_AddRefs(mBaseURI));
         if (NS_FAILED(rv)) return rv;
     }
 
@@ -1344,7 +1344,7 @@ nsJSURI::Write(nsIObjectOutputStream* aStream)
     if (NS_FAILED(rv)) return rv;
 
     if (mBaseURI) {
-        rv = aStream->WriteObject(mBaseURI, PR_TRUE);
+        rv = aStream->WriteObject(mBaseURI, true);
         if (NS_FAILED(rv)) return rv;
     }
 
@@ -1370,7 +1370,7 @@ nsJSURI::StartClone(nsSimpleURI::RefHandlingEnum /* ignored */)
 /* virtual */ nsresult
 nsJSURI::EqualsInternal(nsIURI* aOther,
                         nsSimpleURI::RefHandlingEnum aRefHandlingMode,
-                        PRBool* aResult)
+                        bool* aResult)
 {
     NS_ENSURE_ARG_POINTER(aOther);
     NS_PRECONDITION(aResult, "null pointer for outparam");
@@ -1379,13 +1379,13 @@ nsJSURI::EqualsInternal(nsIURI* aOther,
     nsresult rv = aOther->QueryInterface(kJSURICID,
                                          getter_AddRefs(otherJSURI));
     if (NS_FAILED(rv)) {
-        *aResult = PR_FALSE; // aOther is not a nsJSURI --> not equal.
+        *aResult = false; // aOther is not a nsJSURI --> not equal.
         return NS_OK;
     }
 
     // Compare the member data that our base class knows about.
     if (!nsSimpleURI::EqualsInternal(otherJSURI, aRefHandlingMode)) {
-        *aResult = PR_FALSE;
+        *aResult = false;
         return NS_OK;
     }
 

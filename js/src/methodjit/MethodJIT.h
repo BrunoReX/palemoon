@@ -39,6 +39,10 @@
 #if !defined jsjaeger_h__ && defined JS_METHODJIT
 #define jsjaeger_h__
 
+#ifdef JSGC_INCREMENTAL
+#define JSGC_INCREMENTAL_MJ
+#endif
+
 #include "jscntxt.h"
 #include "jscompartment.h"
 
@@ -101,14 +105,31 @@ struct VMFrame
             void *ptr2;
         } x;
         struct {
-            uint32 lazyArgsObj;
-            uint32 dynamicArgc;
+            uint32_t lazyArgsObj;
+            uint32_t dynamicArgc;
         } call;
     } u;
+
+    static size_t offsetOfLazyArgsObj() {
+        return offsetof(VMFrame, u.call.lazyArgsObj);
+    }
+
+    static size_t offsetOfDynamicArgc() {
+        return offsetof(VMFrame, u.call.dynamicArgc);
+    }
 
     VMFrame      *previous;
     void         *scratch;
     FrameRegs    regs;
+
+    static size_t offsetOfRegsSp() {
+        return offsetof(VMFrame, regs.sp);
+    }
+
+    static size_t offsetOfRegsPc() {
+        return offsetof(VMFrame, regs.pc);
+    }
+
     JSContext    *cx;
     Value        *stackLimit;
     StackFrame   *entryfp;
@@ -137,7 +158,7 @@ struct VMFrame
 # endif
 
     /* The gap between ebp and esp in JaegerTrampoline frames on X86 platforms. */
-    static const uint32 STACK_BASE_DIFFERENCE = 0x38;
+    static const uint32_t STACK_BASE_DIFFERENCE = 0x38;
 
 #elif defined(JS_CPU_X64)
     void *savedRBX;
@@ -225,7 +246,7 @@ namespace mjit {
 
 /*
  * For a C++ or scripted call made from JIT code, indicates properties of the
- * register and stack state after the call finishes, which RejoinInterpreter
+ * register and stack state after the call finishes, which js_InternalInterpret
  * must use to construct a coherent state for rejoining into the interpreter.
  */
 enum RejoinState {
@@ -441,10 +462,21 @@ class JaegerCompartment {
         return result;
     }
 
+    /*
+     * To force the top StackFrame in a VMFrame to return, when that VMFrame
+     * has called an extern "C" function (say, js_InternalThrow or
+     * js_InternalInterpret), change the extern "C" function's return address
+     * to the value this method returns.
+     */
     void *forceReturnFromExternC() const {
         return JS_FUNC_TO_DATA_PTR(void *, trampolines.forceReturn);
     }
 
+    /*
+     * To force the top StackFrame in a VMFrame to return, when that VMFrame has
+     * called a fastcall function (say, most stubs:: functions), change the
+     * fastcall function's return address to the value this method returns.
+     */
     void *forceReturnFromFastCall() const {
 #if (defined(JS_NO_FASTCALL) && defined(JS_CPU_X86)) || defined(_WIN64)
         return JS_FUNC_TO_DATA_PTR(void *, trampolines.forceReturnFast);
@@ -500,7 +532,6 @@ namespace ic {
     struct GetGlobalNameIC;
     struct SetGlobalNameIC;
     struct EqualityICInfo;
-    struct TraceICInfo;
     struct CallICInfo;
 # endif
 }
@@ -508,30 +539,29 @@ namespace ic {
 
 typedef void (JS_FASTCALL *VoidStub)(VMFrame &);
 typedef void (JS_FASTCALL *VoidVpStub)(VMFrame &, Value *);
-typedef void (JS_FASTCALL *VoidStubUInt32)(VMFrame &, uint32);
-typedef void (JS_FASTCALL *VoidStubInt32)(VMFrame &, int32);
+typedef void (JS_FASTCALL *VoidStubUInt32)(VMFrame &, uint32_t);
+typedef void (JS_FASTCALL *VoidStubInt32)(VMFrame &, int32_t);
 typedef JSBool (JS_FASTCALL *BoolStub)(VMFrame &);
 typedef void * (JS_FASTCALL *VoidPtrStub)(VMFrame &);
 typedef void * (JS_FASTCALL *VoidPtrStubPC)(VMFrame &, jsbytecode *);
-typedef void * (JS_FASTCALL *VoidPtrStubUInt32)(VMFrame &, uint32);
+typedef void * (JS_FASTCALL *VoidPtrStubUInt32)(VMFrame &, uint32_t);
 typedef JSObject * (JS_FASTCALL *JSObjStub)(VMFrame &);
-typedef JSObject * (JS_FASTCALL *JSObjStubUInt32)(VMFrame &, uint32);
+typedef JSObject * (JS_FASTCALL *JSObjStubUInt32)(VMFrame &, uint32_t);
 typedef JSObject * (JS_FASTCALL *JSObjStubFun)(VMFrame &, JSFunction *);
 typedef void (JS_FASTCALL *VoidStubFun)(VMFrame &, JSFunction *);
 typedef JSObject * (JS_FASTCALL *JSObjStubJSObj)(VMFrame &, JSObject *);
 typedef void (JS_FASTCALL *VoidStubAtom)(VMFrame &, JSAtom *);
 typedef JSString * (JS_FASTCALL *JSStrStub)(VMFrame &);
-typedef JSString * (JS_FASTCALL *JSStrStubUInt32)(VMFrame &, uint32);
+typedef JSString * (JS_FASTCALL *JSStrStubUInt32)(VMFrame &, uint32_t);
 typedef void (JS_FASTCALL *VoidStubJSObj)(VMFrame &, JSObject *);
 typedef void (JS_FASTCALL *VoidStubPC)(VMFrame &, jsbytecode *);
-typedef JSBool (JS_FASTCALL *BoolStubUInt32)(VMFrame &f, uint32);
+typedef JSBool (JS_FASTCALL *BoolStubUInt32)(VMFrame &f, uint32_t);
 #ifdef JS_MONOIC
 typedef void (JS_FASTCALL *VoidStubCallIC)(VMFrame &, js::mjit::ic::CallICInfo *);
 typedef void * (JS_FASTCALL *VoidPtrStubCallIC)(VMFrame &, js::mjit::ic::CallICInfo *);
 typedef void (JS_FASTCALL *VoidStubGetGlobal)(VMFrame &, js::mjit::ic::GetGlobalNameIC *);
 typedef void (JS_FASTCALL *VoidStubSetGlobal)(VMFrame &, js::mjit::ic::SetGlobalNameIC *);
 typedef JSBool (JS_FASTCALL *BoolStubEqualityIC)(VMFrame &, js::mjit::ic::EqualityICInfo *);
-typedef void * (JS_FASTCALL *VoidPtrStubTraceIC)(VMFrame &, js::mjit::ic::TraceICInfo *);
 #endif
 #ifdef JS_POLYIC
 typedef void (JS_FASTCALL *VoidStubPIC)(VMFrame &, js::mjit::ic::PICInfo *);
@@ -600,23 +630,21 @@ struct JITScript {
      * Therefore, do not change the section ordering in finishThisUp() without
      * changing nMICs() et al as well.
      */
-    uint32          nNmapPairs:31;      /* The NativeMapEntrys are sorted by .bcOff.
+    uint32_t        nNmapPairs:31;      /* The NativeMapEntrys are sorted by .bcOff.
                                            .ncode values may not be NULL. */
     bool            singleStepMode:1;   /* compiled in "single step mode" */
-    uint32          nInlineFrames;
-    uint32          nCallSites;
-    uint32          nRootedObjects;
+    uint32_t        nInlineFrames;
+    uint32_t        nCallSites;
 #ifdef JS_MONOIC
-    uint32          nGetGlobalNames;
-    uint32          nSetGlobalNames;
-    uint32          nCallICs;
-    uint32          nEqualityICs;
-    uint32          nTraceICs;
+    uint32_t        nGetGlobalNames;
+    uint32_t        nSetGlobalNames;
+    uint32_t        nCallICs;
+    uint32_t        nEqualityICs;
 #endif
 #ifdef JS_POLYIC
-    uint32          nGetElems;
-    uint32          nSetElems;
-    uint32          nPICs;
+    uint32_t        nGetElems;
+    uint32_t        nSetElems;
+    uint32_t        nPICs;
 #endif
 
 #ifdef JS_MONOIC
@@ -643,13 +671,11 @@ struct JITScript {
     NativeMapEntry *nmap() const;
     js::mjit::InlineFrame *inlineFrames() const;
     js::mjit::CallSite *callSites() const;
-    JSObject **rootedObjects() const;
 #ifdef JS_MONOIC
     ic::GetGlobalNameIC *getGlobalNames() const;
     ic::SetGlobalNameIC *setGlobalNames() const;
     ic::CallICInfo *callICs() const;
     ic::EqualityICInfo *equalityICs() const;
-    ic::TraceICInfo *traceICs() const;
 #endif
 #ifdef JS_POLYIC
     ic::GetElementIC *getElems() const;
@@ -666,15 +692,9 @@ struct JITScript {
     }
 
     void nukeScriptDependentICs();
-    void sweepCallICs(JSContext *cx, bool purgeAll);
-    void purgeMICs();
-    void purgePICs();
-    void purgeNativeCallStubs();
 
-    void trace(JSTracer *trc);
-
-    /* |usf| can be NULL here, in which case the fallback size computation will be used. */
-    size_t scriptDataSize(JSUsableSizeFun usf);
+    /* |mallocSizeOf| can be NULL here, in which case the fallback size computation will be used. */
+    size_t scriptDataSize(JSMallocSizeOfFun mallocSizeOf);
 
     jsbytecode *nativeToPC(void *returnAddress, CallSite **pinline) const;
 
@@ -740,21 +760,22 @@ struct InlineFrame
 {
     InlineFrame *parent;
     jsbytecode *parentpc;
-    JSFunction *fun;
+    HeapPtrFunction fun;
 
     // Total distance between the start of the outer JSStackFrame and the start
     // of this frame, in multiples of sizeof(Value).
-    uint32 depth;
+    uint32_t depth;
 };
 
 struct CallSite
 {
-    uint32 codeOffset;
-    uint32 inlineIndex;
-    uint32 pcOffset;
+    uint32_t codeOffset;
+    uint32_t inlineIndex;
+    uint32_t pcOffset;
     RejoinState rejoin;
 
-    void initialize(uint32 codeOffset, uint32 inlineIndex, uint32 pcOffset, RejoinState rejoin) {
+    void initialize(uint32_t codeOffset, uint32_t inlineIndex, uint32_t pcOffset,
+                    RejoinState rejoin) {
         this->codeOffset = codeOffset;
         this->inlineIndex = inlineIndex;
         this->pcOffset = pcOffset;
@@ -765,13 +786,6 @@ struct CallSite
         return rejoin == REJOIN_TRAP;
     }
 };
-
-/*
- * Re-enables a tracepoint in the method JIT. When full is true, we
- * also reset the iteration counter.
- */
-void
-ResetTraceHint(JSScript *script, jsbytecode *pc, uint16_t index, bool full);
 
 uintN
 GetCallTargetCount(JSScript *script, jsbytecode *pc);

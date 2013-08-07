@@ -98,12 +98,12 @@ public:
   /**
    * @return true if aElement was added, false if we failed due to OOM
    */
-  PRBool AddElement(mozilla::dom::Element* aElement);
+  bool AddElement(mozilla::dom::Element* aElement);
   /**
    * @return true if aElement was removed and it was the last content for
    * this ref, so this entry should be removed from the map
    */
-  PRBool RemoveElement(mozilla::dom::Element* aElement);
+  bool RemoveElement(mozilla::dom::Element* aElement);
 
 private:
   nsSmallVoidArray mRefContentList;
@@ -136,7 +136,7 @@ public:
                                        nsILoadGroup* aLoadGroup,
                                        nsISupports* aContainer,
                                        nsIStreamListener **aDocListener,
-                                       PRBool aReset = PR_TRUE,
+                                       bool aReset = true,
                                        nsIContentSink* aSink = nsnull);
 
     virtual void SetContentType(const nsAString& aContentType);
@@ -161,11 +161,11 @@ public:
                                      nsIXULTemplateBuilder* aBuilder);
     NS_IMETHOD GetTemplateBuilderFor(nsIContent* aContent,
                                      nsIXULTemplateBuilder** aResult);
-    NS_IMETHOD OnPrototypeLoadDone(PRBool aResumeWalk);
-    PRBool OnDocumentParserError();
+    NS_IMETHOD OnPrototypeLoadDone(bool aResumeWalk);
+    bool OnDocumentParserError();
 
     // nsIDOMNode interface overrides
-    NS_IMETHOD CloneNode(PRBool deep, nsIDOMNode **_retval);
+    NS_IMETHOD CloneNode(bool deep, nsIDOMNode **_retval);
 
     // nsIDOMDocument
     NS_IMETHOD GetContentType(nsAString& aContentType);
@@ -182,12 +182,12 @@ public:
 
     // nsICSSLoaderObserver
     NS_IMETHOD StyleSheetLoaded(nsCSSStyleSheet* aSheet,
-                                PRBool aWasAlternate,
+                                bool aWasAlternate,
                                 nsresult aStatus);
 
     virtual void EndUpdate(nsUpdateType aUpdateType);
 
-    virtual PRBool IsDocumentRightToLeft();
+    virtual bool IsDocumentRightToLeft();
 
     virtual void ResetDocumentDirection();
 
@@ -195,7 +195,7 @@ public:
 
     virtual void ResetDocumentLWTheme() { mDocLWTheme = Doc_Theme_Uninitialized; }
 
-    static PRBool
+    static bool
     MatchAttribute(nsIContent* aContent,
                    PRInt32 aNameSpaceID,
                    nsIAtom* aAttrName,
@@ -232,8 +232,8 @@ protected:
                            nsIParser** aResult);
 
     nsresult 
-    LoadOverlayInternal(nsIURI* aURI, PRBool aIsDynamic, PRBool* aShouldReturn,
-                        PRBool* aFailureFromContent);
+    LoadOverlayInternal(nsIURI* aURI, bool aIsDynamic, bool* aShouldReturn,
+                        bool* aFailureFromContent);
 
     nsresult ApplyPersistentAttributes();
     nsresult ApplyPersistentAttributesInternal();
@@ -260,11 +260,6 @@ protected:
 
     already_AddRefed<nsPIWindowRoot> GetWindowRoot();
 
-    PRInt32 GetDefaultNamespaceID() const
-    {
-        return kNameSpaceID_XUL;
-    }
-
     static NS_HIDDEN_(int) DirectionChanged(const char* aPrefName, void* aData);
 
     // pseudo constants
@@ -281,7 +276,7 @@ protected:
 
     static PRLogModuleInfo* gXULLog;
 
-    PRBool
+    bool
     IsCapabilityEnabled(const char* aCapabilityLabel);
 
     nsresult
@@ -301,9 +296,9 @@ protected:
     // the element's namespace has no registered ID attribute name.
     nsTHashtable<nsRefMapEntry> mRefMap;
     nsCOMPtr<nsIRDFDataSource> mLocalStore;
-    PRPackedBool               mApplyingPersistedAttrs;
-    PRPackedBool               mIsWritingFastLoad;
-    PRPackedBool               mDocumentLoaded;
+    bool                       mApplyingPersistedAttrs;
+    bool                       mIsWritingFastLoad;
+    bool                       mDocumentLoaded;
     /**
      * Since ResumeWalk is interruptible, it's possible that last
      * stylesheet finishes loading while the PD walk is still in
@@ -311,7 +306,7 @@ protected:
      * mStillWalking prevents DoneLoading (and StartLayout) from being
      * called in this situation.
      */
-    PRPackedBool               mStillWalking;
+    bool                       mStillWalking;
 
     /**
      * An array of style sheets, that will be added (preserving order) to the
@@ -362,8 +357,6 @@ protected:
         nsresult Peek(nsXULPrototypeElement** aPrototype, nsIContent** aElement, PRInt32* aIndex);
 
         nsresult SetTopIndex(PRInt32 aIndex);
-
-        PRBool IsInsideXULTemplate();
     };
 
     friend class ContextStack;
@@ -390,13 +383,13 @@ protected:
      * prototype construction must 'block' until the load has
      * completed, aBlock will be set to true.
      */
-    nsresult LoadScript(nsXULPrototypeScript *aScriptProto, PRBool* aBlock);
+    nsresult LoadScript(nsXULPrototypeScript *aScriptProto, bool* aBlock);
 
     /**
      * Execute the precompiled script object scoped by this XUL document's
      * containing window object, and using its associated script context.
      */
-    nsresult ExecuteScript(nsIScriptContext *aContext, void* aScriptObject);
+    nsresult ExecuteScript(nsIScriptContext *aContext, JSScript* aScriptObject);
 
     /**
      * Helper method for the above that uses aScript to find the appropriate
@@ -435,7 +428,7 @@ protected:
      * Check if a XUL template builder has already been hooked up.
      */
     static nsresult
-    CheckTemplateBuilderHookup(nsIContent* aElement, PRBool* aNeedsHookup);
+    CheckTemplateBuilderHookup(nsIContent* aElement, bool* aNeedsHookup);
 
     /**
      * Create a XUL template builder on the specified node.
@@ -486,14 +479,14 @@ protected:
     protected:
         nsXULDocument* mDocument;              // [WEAK]
         nsRefPtr<mozilla::dom::Element> mObservesElement; // [OWNER]
-        PRBool mResolved;
+        bool mResolved;
 
     public:
         BroadcasterHookup(nsXULDocument* aDocument,
                           mozilla::dom::Element* aObservesElement)
             : mDocument(aDocument),
               mObservesElement(aObservesElement),
-              mResolved(PR_FALSE)
+              mResolved(false)
         {
         }
 
@@ -514,13 +507,13 @@ protected:
     protected:
         nsXULDocument* mDocument;      // [WEAK]
         nsCOMPtr<nsIContent> mOverlay; // [OWNER]
-        PRBool mResolved;
+        bool mResolved;
 
-        nsresult Merge(nsIContent* aTargetNode, nsIContent* aOverlayNode, PRBool aNotify);
+        nsresult Merge(nsIContent* aTargetNode, nsIContent* aOverlayNode, bool aNotify);
 
     public:
         OverlayForwardReference(nsXULDocument* aDocument, nsIContent* aOverlay)
-            : mDocument(aDocument), mOverlay(aOverlay), mResolved(PR_FALSE) {}
+            : mDocument(aDocument), mOverlay(aOverlay), mResolved(false) {}
 
         virtual ~OverlayForwardReference();
 
@@ -558,8 +551,8 @@ protected:
 
     nsresult
     CheckBroadcasterHookup(mozilla::dom::Element* aElement,
-                           PRBool* aNeedsHookup,
-                           PRBool* aDidResolve);
+                           bool* aNeedsHookup,
+                           bool* aDidResolve);
 
     void
     SynchronizeBroadcastListener(nsIDOMElement   *aBroadcaster,
@@ -568,7 +561,7 @@ protected:
 
     static
     nsresult
-    InsertElement(nsIContent* aParent, nsIContent* aChild, PRBool aNotify);
+    InsertElement(nsIContent* aParent, nsIContent* aChild, bool aNotify);
 
     static 
     nsresult
@@ -658,13 +651,13 @@ protected:
     class CachedChromeStreamListener : public nsIStreamListener {
     protected:
         nsXULDocument* mDocument;
-        PRPackedBool   mProtoLoaded;
+        bool           mProtoLoaded;
 
         virtual ~CachedChromeStreamListener();
 
     public:
         CachedChromeStreamListener(nsXULDocument* aDocument,
-                                   PRBool aProtoLoaded);
+                                   bool aProtoLoaded);
 
         NS_DECL_ISUPPORTS
         NS_DECL_NSIREQUESTOBSERVER
@@ -698,7 +691,7 @@ protected:
     nsInterfaceHashtable<nsURIHashKey,nsIObserver> mOverlayLoadObservers;
     nsInterfaceHashtable<nsURIHashKey,nsIObserver> mPendingOverlayLoadNotifications;
     
-    PRBool mInitialLayoutComplete;
+    bool mInitialLayoutComplete;
 
     class nsDelayedBroadcastUpdate
     {
@@ -707,14 +700,14 @@ protected:
                                nsIDOMElement* aListener,
                                const nsAString &aAttr)
       : mBroadcaster(aBroadcaster), mListener(aListener), mAttr(aAttr),
-        mSetAttr(PR_FALSE), mNeedsAttrChange(PR_FALSE) {}
+        mSetAttr(false), mNeedsAttrChange(false) {}
 
       nsDelayedBroadcastUpdate(nsIDOMElement* aBroadcaster,
                                nsIDOMElement* aListener,
                                nsIAtom* aAttrName,
                                const nsAString &aAttr,
-                               PRBool aSetAttr,
-                               PRBool aNeedsAttrChange)
+                               bool aSetAttr,
+                               bool aNeedsAttrChange)
       : mBroadcaster(aBroadcaster), mListener(aListener), mAttr(aAttr),
         mAttrName(aAttrName), mSetAttr(aSetAttr),
         mNeedsAttrChange(aNeedsAttrChange) {}
@@ -730,12 +723,12 @@ protected:
       // this is the value of the attribute.
       nsString                mAttr;
       nsCOMPtr<nsIAtom>       mAttrName;
-      PRPackedBool            mSetAttr;
-      PRPackedBool            mNeedsAttrChange;
+      bool                    mSetAttr;
+      bool                    mNeedsAttrChange;
 
       class Comparator {
         public:
-          static PRBool Equals(const nsDelayedBroadcastUpdate& a, const nsDelayedBroadcastUpdate& b) {
+          static bool Equals(const nsDelayedBroadcastUpdate& a, const nsDelayedBroadcastUpdate& b) {
             return a.mBroadcaster == b.mBroadcaster && a.mListener == b.mListener && a.mAttrName == b.mAttrName;
           }
       };
@@ -743,8 +736,8 @@ protected:
 
     nsTArray<nsDelayedBroadcastUpdate> mDelayedBroadcasters;
     nsTArray<nsDelayedBroadcastUpdate> mDelayedAttrChangeBroadcasts;
-    PRPackedBool                       mHandlingDelayedAttrChange;
-    PRPackedBool                       mHandlingDelayedBroadcasters;
+    bool                               mHandlingDelayedAttrChange;
+    bool                               mHandlingDelayedBroadcasters;
 
     void MaybeBroadcast();
 private:

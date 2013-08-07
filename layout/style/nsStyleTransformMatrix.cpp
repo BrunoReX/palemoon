@@ -75,7 +75,7 @@ static double FlushToZero(double aVal)
 static nscoord CalcLength(const nsCSSValue &aValue,
                           nsStyleContext* aContext,
                           nsPresContext* aPresContext,
-                          PRBool &aCanStoreInRuleTree)
+                          bool &aCanStoreInRuleTree)
 {
   if (aValue.GetUnit() == eCSSUnit_Pixel ||
       aValue.GetUnit() == eCSSUnit_Number) {
@@ -96,7 +96,7 @@ static float
 ProcessTranslatePart(const nsCSSValue& aValue,
                      nsStyleContext* aContext,
                      nsPresContext* aPresContext,
-                     PRBool& aCanStoreInRuleTree,
+                     bool& aCanStoreInRuleTree,
                      nscoord aSize, float aAppUnitsPerMatrixUnit)
 {
   nscoord offset = 0;
@@ -131,7 +131,7 @@ ProcessMatrix(gfx3DMatrix& aMatrix,
               const nsCSSValue::Array* aData,
               nsStyleContext* aContext,
               nsPresContext* aPresContext,
-              PRBool& aCanStoreInRuleTree,
+              bool& aCanStoreInRuleTree,
               nsRect& aBounds, float aAppUnitsPerMatrixUnit)
 {
   NS_PRECONDITION(aData->Count() == 7, "Invalid array!");
@@ -164,7 +164,7 @@ ProcessMatrix3D(gfx3DMatrix& aMatrix,
                 const nsCSSValue::Array* aData,
                 nsStyleContext* aContext,
                 nsPresContext* aPresContext,
-                PRBool& aCanStoreInRuleTree,
+                bool& aCanStoreInRuleTree,
                 nsRect& aBounds, float aAppUnitsPerMatrixUnit)
 {
   NS_PRECONDITION(aData->Count() == 17, "Invalid array!");
@@ -204,7 +204,7 @@ ProcessInterpolateMatrix(gfx3DMatrix& aMatrix,
                          const nsCSSValue::Array* aData,
                          nsStyleContext* aContext,
                          nsPresContext* aPresContext,
-                         PRBool& aCanStoreInRuleTree,
+                         bool& aCanStoreInRuleTree,
                          nsRect& aBounds, float aAppUnitsPerMatrixUnit)
 {
   NS_PRECONDITION(aData->Count() == 4, "Invalid array!");
@@ -233,7 +233,7 @@ ProcessTranslateX(gfx3DMatrix& aMatrix,
                   const nsCSSValue::Array* aData,
                   nsStyleContext* aContext,
                   nsPresContext* aPresContext,
-                  PRBool& aCanStoreInRuleTree,
+                  bool& aCanStoreInRuleTree,
                   nsRect& aBounds, float aAppUnitsPerMatrixUnit)
 {
   NS_PRECONDITION(aData->Count() == 2, "Invalid array!");
@@ -252,7 +252,7 @@ ProcessTranslateY(gfx3DMatrix& aMatrix,
                   const nsCSSValue::Array* aData,
                   nsStyleContext* aContext,
                   nsPresContext* aPresContext,
-                  PRBool& aCanStoreInRuleTree,
+                  bool& aCanStoreInRuleTree,
                   nsRect& aBounds, float aAppUnitsPerMatrixUnit)
 {
   NS_PRECONDITION(aData->Count() == 2, "Invalid array!");
@@ -270,7 +270,7 @@ ProcessTranslateZ(gfx3DMatrix& aMatrix,
                   const nsCSSValue::Array* aData,
                   nsStyleContext* aContext,
                                           nsPresContext* aPresContext,
-                                          PRBool& aCanStoreInRuleTree,
+                                          bool& aCanStoreInRuleTree,
                                           float aAppUnitsPerMatrixUnit)
 {
   NS_PRECONDITION(aData->Count() == 2, "Invalid array!");
@@ -289,7 +289,7 @@ ProcessTranslate(gfx3DMatrix& aMatrix,
                  const nsCSSValue::Array* aData,
                  nsStyleContext* aContext,
                  nsPresContext* aPresContext,
-                 PRBool& aCanStoreInRuleTree,
+                 bool& aCanStoreInRuleTree,
                  nsRect& aBounds, float aAppUnitsPerMatrixUnit)
 {
   NS_PRECONDITION(aData->Count() == 2 || aData->Count() == 3, "Invalid array!");
@@ -314,7 +314,7 @@ ProcessTranslate3D(gfx3DMatrix& aMatrix,
                    const nsCSSValue::Array* aData,
                    nsStyleContext* aContext,
                    nsPresContext* aPresContext,
-                   PRBool& aCanStoreInRuleTree,
+                   bool& aCanStoreInRuleTree,
                    nsRect& aBounds, float aAppUnitsPerMatrixUnit)
 {
   NS_PRECONDITION(aData->Count() == 4, "Invalid array!");
@@ -472,7 +472,12 @@ ProcessRotate3D(gfx3DMatrix& aMatrix, const nsCSSValue::Array* aData)
    * |                                0                                  0                                 0   1 |
    * (see http://www.w3.org/TR/css3-3d-transforms/#transform-functions)
    */
-  double theta = aData->Item(4).GetAngleValueInRadians();
+
+  /* The current spec specifies a matrix that rotates in the wrong direction. For now we just negate
+   * the angle provided to get the correct rotation direction until the spec is updated.
+   * See bug 704468.
+   */
+  double theta = -aData->Item(4).GetAngleValueInRadians();
   float cosTheta = FlushToZero(cos(theta));
   float sinTheta = FlushToZero(sin(theta));
 
@@ -517,7 +522,7 @@ ProcessPerspective(gfx3DMatrix& aMatrix,
                    const nsCSSValue::Array* aData,
                    nsStyleContext *aContext,
                    nsPresContext *aPresContext,
-                   PRBool &aCanStoreInRuleTree,
+                   bool &aCanStoreInRuleTree,
                    float aAppUnitsPerMatrixUnit)
 {
   NS_PRECONDITION(aData->Count() == 2, "Invalid array!");
@@ -538,7 +543,7 @@ MatrixForTransformFunction(gfx3DMatrix& aMatrix,
                            const nsCSSValue::Array * aData,
                            nsStyleContext* aContext,
                            nsPresContext* aPresContext,
-                           PRBool& aCanStoreInRuleTree,
+                           bool& aCanStoreInRuleTree,
                            nsRect& aBounds, 
                            float aAppUnitsPerMatrixUnit)
 {
@@ -644,7 +649,7 @@ gfx3DMatrix
 ReadTransforms(const nsCSSValueList* aList,
                nsStyleContext* aContext,
                nsPresContext* aPresContext,
-               PRBool &aCanStoreInRuleTree,
+               bool &aCanStoreInRuleTree,
                nsRect& aBounds,
                float aAppUnitsPerMatrixUnit)
 {

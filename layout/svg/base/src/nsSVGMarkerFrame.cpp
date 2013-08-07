@@ -110,9 +110,9 @@ nsSVGMarkerFrame::GetCanvasTM()
 
   nsSVGMarkerElement *content = static_cast<nsSVGMarkerElement*>(mContent);
   
-  mInUse2 = PR_TRUE;
+  mInUse2 = true;
   gfxMatrix markedTM = mMarkedFrame->GetCanvasTM();
-  mInUse2 = PR_FALSE;
+  mInUse2 = false;
 
   gfxMatrix markerTM = content->GetMarkerTransform(mStrokeWidth, mX, mY, mAutoAngle);
   gfxMatrix viewBoxTM = content->GetViewBoxTransform();
@@ -175,35 +175,55 @@ nsSVGMarkerFrame::PaintMark(nsSVGRenderState *aContext,
   return NS_OK;
 }
 
-
-nsRect
-nsSVGMarkerFrame::RegionMark(nsSVGPathGeometryFrame *aMarkedFrame,
-                             const nsSVGMark *aMark, float aStrokeWidth)
+gfxRect
+nsSVGMarkerFrame::GetMarkBBoxContribution(const gfxMatrix &aToBBoxUserspace,
+                                          PRUint32 aFlags,
+                                          nsSVGPathGeometryFrame *aMarkedFrame,
+                                          const nsSVGMark *aMark,
+                                          float aStrokeWidth)
 {
   // If the flag is set when we get here, it means this marker frame
-  // has already been used in calculating the current mark region, and
+  // has already been used in calculating the current mark bbox, and
   // the document has a marker reference loop.
   if (mInUse)
-    return nsRect(0,0,0,0);
+    return gfxRect();
 
   AutoMarkerReferencer markerRef(this, aMarkedFrame);
+
+  nsSVGMarkerElement *content = static_cast<nsSVGMarkerElement*>(mContent);
+
+  const nsSVGViewBoxRect viewBox = content->GetViewBoxRect();
+
+  if (viewBox.width <= 0.0f || viewBox.height <= 0.0f) {
+    return gfxRect();
+  }
 
   mStrokeWidth = aStrokeWidth;
   mX = aMark->x;
   mY = aMark->y;
   mAutoAngle = aMark->angle;
 
-  // Force children to update their covered region
+  gfxRect bbox;
+
+  gfxMatrix markerTM =
+    content->GetMarkerTransform(mStrokeWidth, mX, mY, mAutoAngle);
+  gfxMatrix viewBoxTM = content->GetViewBoxTransform();
+
+  gfxMatrix tm = viewBoxTM * markerTM * aToBBoxUserspace;
+
   for (nsIFrame* kid = mFrames.FirstChild();
        kid;
        kid = kid->GetNextSibling()) {
     nsISVGChildFrame* child = do_QueryFrame(kid);
-    if (child)
-      child->UpdateCoveredRegion();
+    if (child) {
+      // When we're being called to obtain the invalidation area, we need to
+      // pass down all the flags so that stroke is included. However, once DOM
+      // getBBox() accepts flags, maybe we should strip some of those here?
+      bbox.UnionRect(bbox, child->GetBBoxContribution(tm, aFlags));
+    }
   }
 
-  // Now get the combined covered region
-  return nsSVGUtils::GetCoveredRegion(mFrames);
+  return bbox;
 }
 
 void
@@ -221,7 +241,7 @@ nsSVGMarkerFrame::AutoMarkerReferencer::AutoMarkerReferencer(
     nsSVGPathGeometryFrame *aMarkedFrame)
       : mFrame(aFrame)
 {
-  mFrame->mInUse = PR_TRUE;
+  mFrame->mInUse = true;
   mFrame->mMarkedFrame = aMarkedFrame;
 
   nsSVGSVGElement *ctx =
@@ -234,5 +254,5 @@ nsSVGMarkerFrame::AutoMarkerReferencer::~AutoMarkerReferencer()
   mFrame->SetParentCoordCtxProvider(nsnull);
 
   mFrame->mMarkedFrame = nsnull;
-  mFrame->mInUse = PR_FALSE;
+  mFrame->mInUse = false;
 }

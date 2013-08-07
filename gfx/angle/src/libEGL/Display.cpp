@@ -88,6 +88,7 @@ Display::Display(EGLNativeDisplayType displayId, HDC deviceContext, bool softwar
     mMaxSwapInterval = 1;
     mSoftwareDevice = software;
     mDisplayId = displayId;
+    mDeviceLost = false;
 }
 
 Display::~Display()
@@ -304,7 +305,7 @@ void Display::terminate()
     if (mDevice)
     {
         // If the device is lost, reset it first to prevent leaving the driver in an unstable state
-        if (isDeviceLost())
+        if (testDeviceLost())
         {
             resetDevice();
         }
@@ -446,33 +447,66 @@ bool Display::createDevice()
         ASSERT(SUCCEEDED(result));
     }
 
-    // Permanent non-default states
-    mDevice->SetRenderState(D3DRS_POINTSPRITEENABLE, TRUE);
-
-    mSceneStarted = false;
+    initializeDevice();
 
     return true;
+}
+
+// do any one-time device initialization
+// NOTE: this is also needed after a device lost/reset
+// to reset the scene status and ensure the default states are reset.
+void Display::initializeDevice()
+{
+    // Permanent non-default states
+    mDevice->SetRenderState(D3DRS_POINTSPRITEENABLE, TRUE);
+    mDevice->SetRenderState(D3DRS_LASTPIXEL, FALSE);
+
+    mSceneStarted = false;
 }
 
 bool Display::resetDevice()
 {
     D3DPRESENT_PARAMETERS presentParameters = getDefaultPresentParameters();
-    HRESULT result;
-    
-    do
-    {
-        Sleep(0);   // Give the graphics driver some CPU time
 
-        result = mDevice->Reset(&presentParameters);
+    HRESULT result = D3D_OK;
+    bool lost = testDeviceLost();
+    int attempts = 3;    
+
+    while (lost && attempts > 0)
+    {
+        if (mDeviceEx)
+        {
+            Sleep(500);   // Give the graphics driver some CPU time
+            result = mDeviceEx->ResetEx(&presentParameters, NULL);
+        }
+        else
+        {
+            result = mDevice->TestCooperativeLevel();
+            
+            while (result == D3DERR_DEVICELOST)
+            {
+                Sleep(100);   // Give the graphics driver some CPU time
+                result = mDevice->TestCooperativeLevel();
+            }
+
+            if (result == D3DERR_DEVICENOTRESET)
+            {
+                result = mDevice->Reset(&presentParameters);
+            }
+        }
+
+        lost = testDeviceLost();
+        attempts --;
     }
-    while (result == D3DERR_DEVICELOST);
 
     if (FAILED(result))
     {
+        ERR("Reset/ResetEx failed multiple times: 0x%08X", result);
         return error(EGL_BAD_ALLOC, false);
     }
 
-    ASSERT(SUCCEEDED(result));
+    // reset device defaults
+    initializeDevice();
 
     return true;
 }
@@ -480,6 +514,7 @@ bool Display::resetDevice()
 EGLSurface Display::createWindowSurface(HWND window, EGLConfig config, const EGLint *attribList)
 {
     const Config *configuration = mConfigSet.get(config);
+    EGLint postSubBufferSupported = EGL_FALSE;
 
     if (attribList)
     {
@@ -498,6 +533,9 @@ EGLSurface Display::createWindowSurface(HWND window, EGLConfig config, const EGL
                     return error(EGL_BAD_ATTRIBUTE, EGL_NO_SURFACE);
                 }
                 break;
+              case EGL_POST_SUB_BUFFER_SUPPORTED_NV:
+                postSubBufferSupported = attribList[1];
+                break;
               case EGL_VG_COLORSPACE:
                 return error(EGL_BAD_MATCH, EGL_NO_SURFACE);
               case EGL_VG_ALPHA_FORMAT:
@@ -515,12 +553,13 @@ EGLSurface Display::createWindowSurface(HWND window, EGLConfig config, const EGL
         return error(EGL_BAD_ALLOC, EGL_NO_SURFACE);
     }
 
-    if (isDeviceLost()) {
+    if (testDeviceLost()) 
+    {
         if (!restoreLostDevice())
             return EGL_NO_SURFACE;
     }
 
-    Surface *surface = new Surface(this, configuration, window);
+    Surface *surface = new Surface(this, configuration, window, postSubBufferSupported);
 
     if (!surface->initialize())
     {
@@ -627,7 +666,8 @@ EGLSurface Display::createOffscreenSurface(EGLConfig config, HANDLE shareHandle,
         return error(EGL_BAD_ATTRIBUTE, EGL_NO_SURFACE);
     }
 
-    if (isDeviceLost()) {
+    if (testDeviceLost()) 
+    {
         if (!restoreLostDevice())
             return EGL_NO_SURFACE;
     }
@@ -645,7 +685,7 @@ EGLSurface Display::createOffscreenSurface(EGLConfig config, HANDLE shareHandle,
     return success(surface);
 }
 
-EGLContext Display::createContext(EGLConfig configHandle, const gl::Context *shareContext)
+EGLContext Display::createContext(EGLConfig configHandle, const gl::Context *shareContext, bool notifyResets, bool robustAccess)
 {
     if (!mDevice)
     {
@@ -654,7 +694,7 @@ EGLContext Display::createContext(EGLConfig configHandle, const gl::Context *sha
             return NULL;
         }
     }
-    else if (isDeviceLost())   // Lost device
+    else if (testDeviceLost())   // Lost device
     {
         if (!restoreLostDevice())
             return NULL;
@@ -662,14 +702,21 @@ EGLContext Display::createContext(EGLConfig configHandle, const gl::Context *sha
 
     const egl::Config *config = mConfigSet.get(configHandle);
 
-    gl::Context *context = glCreateContext(config, shareContext);
+    gl::Context *context = glCreateContext(config, shareContext, notifyResets, robustAccess);
     mContextSet.insert(context);
+    mDeviceLost = false;
 
     return context;
 }
 
 bool Display::restoreLostDevice()
 {
+    for (ContextSet::iterator ctx = mContextSet.begin(); ctx != mContextSet.end(); ctx++)
+    {
+        if ((*ctx)->isResetNotificationEnabled())
+            return false;   // If reset notifications have been requested, application must delete all contexts first
+    }
+ 
     // Release surface resources to make the Reset() succeed
     for (SurfaceSet::iterator surface = mSurfaceSet.begin(); surface != mSurfaceSet.end(); surface++)
     {
@@ -701,6 +748,21 @@ void Display::destroyContext(gl::Context *context)
 {
     glDestroyContext(context);
     mContextSet.erase(context);
+}
+
+void Display::notifyDeviceLost()
+{
+    for (ContextSet::iterator context = mContextSet.begin(); context != mContextSet.end(); context++)
+    {
+        (*context)->markContextLost();
+    }
+    mDeviceLost = true;
+    error(EGL_CONTEXT_LOST);
+}
+
+bool Display::isDeviceLost()
+{
+    return mDeviceLost;
 }
 
 bool Display::isInitialized() const
@@ -769,18 +831,41 @@ D3DADAPTER_IDENTIFIER9 *Display::getAdapterIdentifier()
     return &mAdapterIdentifier;
 }
 
-bool Display::isDeviceLost()
+bool Display::testDeviceLost()
 {
     if (mDeviceEx)
     {
         return FAILED(mDeviceEx->CheckDeviceState(NULL));
     }
-    else if(mDevice)
+    else if (mDevice)
     {
         return FAILED(mDevice->TestCooperativeLevel());
     }
 
     return false;   // No device yet, so no reset required
+}
+
+bool Display::testDeviceResettable()
+{
+    HRESULT status = D3D_OK;
+
+    if (mDeviceEx)
+    {
+        status = mDeviceEx->CheckDeviceState(NULL);
+    }
+    else if (mDevice)
+    {
+        status = mDevice->TestCooperativeLevel();
+    }
+
+    switch (status)
+    {
+      case D3DERR_DEVICENOTRESET:
+      case D3DERR_DEVICEHUNG:
+        return true;
+      default:
+        return false;
+    }
 }
 
 void Display::getMultiSampleSupport(D3DFORMAT format, bool *multiSampleArray)
@@ -818,7 +903,7 @@ bool Display::getDXT5TextureSupport()
     return SUCCEEDED(mD3d9->CheckDeviceFormat(mAdapter, mDeviceType, currentDisplayMode.Format, 0, D3DRTYPE_TEXTURE, D3DFMT_DXT5));
 }
 
-bool Display::getFloatTextureSupport(bool *filtering, bool *renderable)
+bool Display::getFloat32TextureSupport(bool *filtering, bool *renderable)
 {
     D3DDISPLAYMODE currentDisplayMode;
     mD3d9->GetAdapterDisplayMode(mAdapter, &currentDisplayMode);
@@ -846,7 +931,7 @@ bool Display::getFloatTextureSupport(bool *filtering, bool *renderable)
     }
 }
 
-bool Display::getHalfFloatTextureSupport(bool *filtering, bool *renderable)
+bool Display::getFloat16TextureSupport(bool *filtering, bool *renderable)
 {
     D3DDISPLAYMODE currentDisplayMode;
     mD3d9->GetAdapterDisplayMode(mAdapter, &currentDisplayMode);
@@ -907,6 +992,23 @@ D3DPOOL Display::getBufferPool(DWORD usage) const
     return D3DPOOL_DEFAULT;
 }
 
+D3DPOOL Display::getTexturePool(bool renderable) const
+{
+    if (mD3d9Ex != NULL)
+    {
+        return D3DPOOL_DEFAULT;
+    }
+    else
+    {
+        if (!renderable)
+        {
+            return D3DPOOL_MANAGED;
+        }
+    }
+
+    return D3DPOOL_DEFAULT;
+}
+
 bool Display::getEventQuerySupport()
 {
     IDirect3DQuery9 *query;
@@ -948,7 +1050,12 @@ void Display::initExtensionString()
 
     mExtensionString = "";
 
-    if (isd3d9ex) {
+    // Multi-vendor (EXT) extensions
+    mExtensionString += "EGL_EXT_create_context_robustness ";
+
+    // ANGLE-specific extensions
+    if (isd3d9ex)
+    {
         mExtensionString += "EGL_ANGLE_d3d_share_handle_client_buffer ";
     }
 
@@ -956,12 +1063,15 @@ void Display::initExtensionString()
 
     if (swiftShader)
     {
-      mExtensionString += "EGL_ANGLE_software_display ";
+        mExtensionString += "EGL_ANGLE_software_display ";
     }
 
-    if (isd3d9ex) {
+    if (isd3d9ex)
+    {
         mExtensionString += "EGL_ANGLE_surface_d3d_texture_2d_share_handle ";
     }
+
+    mExtensionString += "EGL_NV_post_sub_buffer";
 
     std::string::size_type end = mExtensionString.find_last_not_of(' ');
     if (end != std::string::npos)

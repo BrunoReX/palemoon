@@ -55,8 +55,8 @@
 #include "nsIAtom.h"
 
 #define NS_IPARSER_IID \
-{ 0xcbc0cbd8, 0xbbb7, 0x46d6, \
-  { 0xa5, 0x51, 0x37, 0x8a, 0x69, 0x53, 0xa7, 0x14 } }
+{ 0xc9169398, 0x897a, 0x481d, \
+  { 0xa9, 0x5f, 0xd6, 0x60, 0x6e, 0xf8, 0x37, 0x56 } }
 
 // {41421C60-310A-11d4-816F-000064657374}
 #define NS_IDEBUG_DUMP_CONTENT_IID \
@@ -91,7 +91,7 @@ enum eParserDocType {
 #define kCharsetUninitialized           0
 #define kCharsetFromWeakDocTypeDefault  1
 #define kCharsetFromUserDefault         2
-#define kCharsetFromDocTypeDefault      3
+#define kCharsetFromDocTypeDefault      3 // This and up confident for XHR
 #define kCharsetFromCache               4
 #define kCharsetFromParentFrame         5
 #define kCharsetFromAutoDetection       6
@@ -196,10 +196,8 @@ class nsIParser : public nsISupports {
     
     /**
      * Get the nsIStreamListener for this parser
-     * @param aDTD out param that will contain the result
-     * @return NS_OK if successful
      */
-    NS_IMETHOD GetStreamListener(nsIStreamListener** aListener) = 0;
+    virtual nsIStreamListener* GetStreamListener() = 0;
 
     /**************************************************************************
      *  Parse methods always begin with an input source, and perform
@@ -224,8 +222,8 @@ class nsIParser : public nsISupports {
     // the parsing engine.
     NS_IMETHOD_(void) UnblockParser() = 0;
 
-    NS_IMETHOD_(PRBool) IsParserEnabled() = 0;
-    NS_IMETHOD_(PRBool) IsComplete() = 0;
+    NS_IMETHOD_(bool) IsParserEnabled() = 0;
+    NS_IMETHOD_(bool) IsComplete() = 0;
     
     NS_IMETHOD Parse(nsIURI* aURL,
                      nsIRequestObserver* aListener = nsnull,
@@ -234,7 +232,7 @@ class nsIParser : public nsISupports {
     NS_IMETHOD Parse(const nsAString& aSourceBuffer,
                      void* aKey,
                      const nsACString& aMimeType,
-                     PRBool aLastCall,
+                     bool aLastCall,
                      nsDTDMode aMode = eDTDMode_autodetect) = 0;
 
     // Return a key, suitable for passing into one of the Parse methods above,
@@ -281,12 +279,12 @@ class nsIParser : public nsISupports {
      * True if the parser can currently be interrupted. Returns false when
      * parsing for example document.write or innerHTML.
      */
-    virtual PRBool CanInterrupt() = 0;
+    virtual bool CanInterrupt() = 0;
 
     /**
      * True if the insertion point (per HTML5) is defined.
      */
-    virtual PRBool IsInsertionPointDefined() = 0;
+    virtual bool IsInsertionPointDefined() = 0;
 
     /**
      * Call immediately before starting to evaluate a parser-inserted script.
@@ -301,12 +299,12 @@ class nsIParser : public nsISupports {
     /**
      * Marks the HTML5 parser as not a script-created parser.
      */
-    virtual void MarkAsNotScriptCreated() = 0;
+    virtual void MarkAsNotScriptCreated(const char* aCommand) = 0;
 
     /**
      * True if this is a script-created HTML5 parser.
      */
-    virtual PRBool IsScriptCreated() = 0;
+    virtual bool IsScriptCreated() = 0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIParser, NS_IPARSER_IID)

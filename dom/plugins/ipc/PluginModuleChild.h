@@ -40,6 +40,8 @@
 #ifndef dom_plugins_PluginModuleChild_h
 #define dom_plugins_PluginModuleChild_h 1
 
+#include "mozilla/Attributes.h"
+
 #include <string>
 #include <vector>
 
@@ -91,6 +93,10 @@ typedef NS_NPAPIPLUGIN_CALLBACK(NPError, NP_PLUGINUNIXINIT) (const NPNetscapeFun
 typedef NS_NPAPIPLUGIN_CALLBACK(NPError, NP_PLUGINSHUTDOWN) (void);
 
 namespace mozilla {
+namespace dom {
+class PCrashReporterChild;
+}
+
 namespace plugins {
 
 #ifdef MOZ_WIDGET_QT
@@ -103,6 +109,7 @@ class PluginInstanceChild;
 
 class PluginModuleChild : public PPluginModuleChild
 {
+    typedef mozilla::dom::PCrashReporterChild PCrashReporterChild;
 protected:
     NS_OVERRIDE
     virtual mozilla::ipc::RPCChannel::RacyRPCPolicy
@@ -116,7 +123,7 @@ protected:
 
     // Implement the PPluginModuleChild interface
     virtual bool AnswerNP_GetEntryPoints(NPError* rv);
-    virtual bool AnswerNP_Initialize(NativeThreadId* tid, NPError* rv);
+    virtual bool AnswerNP_Initialize(NPError* rv);
 
     virtual PPluginIdentifierChild*
     AllocPPluginIdentifier(const nsCString& aString,
@@ -174,10 +181,20 @@ protected:
     virtual bool
     RecvSetParentHangTimeout(const uint32_t& aSeconds);
 
+    virtual PCrashReporterChild*
+    AllocPCrashReporter(mozilla::dom::NativeThreadId* id,
+                        PRUint32* processType);
+    virtual bool
+    DeallocPCrashReporter(PCrashReporterChild* actor);
+    virtual bool
+    AnswerPCrashReporterConstructor(PCrashReporterChild* actor,
+                                    mozilla::dom::NativeThreadId* id,
+                                    PRUint32* processType);
+
     virtual void
     ActorDestroy(ActorDestroyReason why);
 
-    NS_NORETURN void QuickExit();
+    MOZ_NORETURN void QuickExit();
 
     NS_OVERRIDE virtual bool
     RecvProcessNativeEventsInRPCCall();
@@ -304,6 +321,9 @@ public:
         // set focus on the child. Addresses a full screen dialog prompt
         // problem in Silverlight.
         QUIRK_SILVERLIGHT_FOCUS_CHECK_PARENT            = 1 << 8,
+        // Mac: Allow the plugin to use offline renderer mode.
+        // Use this only if the plugin is certified the support the offline renderer.
+        QUIRK_ALLOW_OFFLINE_RENDERER                    = 1 << 9,
     };
 
     int GetQuirks() { return mQuirks; }

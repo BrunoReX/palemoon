@@ -78,7 +78,7 @@ public:
    */
   virtual nsIAtom* GetType() const;
 
-  virtual PRBool IsLeaf() const;
+  virtual bool IsLeaf() const;
 
 #ifdef DEBUG
   NS_IMETHOD GetFrameName(nsAString& aResult) const
@@ -86,6 +86,9 @@ public:
     return MakeFrameName(NS_LITERAL_STRING("SVGUse"), aResult);
   }
 #endif
+
+  // nsISVGChildFrame interface:
+  virtual void NotifySVGChanged(PRUint32 aFlags);
 
   // nsIAnonymousContentCreator
   virtual nsresult CreateAnonymousContent(nsTArray<ContentInfo>& aElements);
@@ -138,14 +141,24 @@ nsSVGUseFrame::AttributeChanged(PRInt32         aNameSpaceID,
                                 nsIAtom*        aAttribute,
                                 PRInt32         aModType)
 {
-  if (aNameSpaceID == kNameSpaceID_None &&
-      (aAttribute == nsGkAtoms::x ||
-       aAttribute == nsGkAtoms::y)) {
-    // make sure our cached transform matrix gets (lazily) updated
-    mCanvasTM = nsnull;
+  if (aNameSpaceID == kNameSpaceID_None) {
+    if (aAttribute == nsGkAtoms::x ||
+        aAttribute == nsGkAtoms::y) {
+      // make sure our cached transform matrix gets (lazily) updated
+      mCanvasTM = nsnull;
     
-    nsSVGUtils::NotifyChildrenOfSVGChange(this, TRANSFORM_CHANGED);
-    return NS_OK;
+      nsSVGUtils::NotifyChildrenOfSVGChange(this, TRANSFORM_CHANGED);
+    } else if (aAttribute == nsGkAtoms::width ||
+               aAttribute == nsGkAtoms::height) {
+      static_cast<nsSVGUseElement*>(mContent)->SyncWidthHeight(aAttribute);
+    }
+  } else if (aNameSpaceID == kNameSpaceID_XLink &&
+             aAttribute == nsGkAtoms::href) {
+    // we're changing our nature, clear out the clone information
+    nsSVGUseElement *use = static_cast<nsSVGUseElement*>(mContent);
+    use->mOriginal = nsnull;
+    use->UnlinkSource();
+    use->TriggerReclone();
   }
 
   return nsSVGUseFrameBase::AttributeChanged(aNameSpaceID,
@@ -160,12 +173,32 @@ nsSVGUseFrame::DestroyFrom(nsIFrame* aDestructRoot)
   use->DestroyAnonymousContent();
 }
 
-PRBool
+bool
 nsSVGUseFrame::IsLeaf() const
 {
-  return PR_TRUE;
+  return true;
 }
 
+
+//----------------------------------------------------------------------
+// nsISVGChildFrame methods
+
+void
+nsSVGUseFrame::NotifySVGChanged(PRUint32 aFlags)
+{
+  if (aFlags & COORD_CONTEXT_CHANGED &&
+      !(aFlags & TRANSFORM_CHANGED)) {
+    // Coordinate context changes affect mCanvasTM if we have a
+    // percentage 'x' or 'y'
+    nsSVGUseElement *use = static_cast<nsSVGUseElement*>(mContent);
+    if (use->mLengthAttributes[nsSVGUseElement::X].IsPercentage() ||
+        use->mLengthAttributes[nsSVGUseElement::Y].IsPercentage()) {
+      aFlags |= TRANSFORM_CHANGED;
+    }
+  }
+
+  nsSVGUseFrameBase::NotifySVGChanged(aFlags);
+}
 
 //----------------------------------------------------------------------
 // nsIAnonymousContentCreator methods:

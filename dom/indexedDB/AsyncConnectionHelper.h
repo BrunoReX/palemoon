@@ -41,21 +41,58 @@
 #define mozilla_dom_indexeddb_asyncconnectionhelper_h__
 
 // Only meant to be included in IndexedDB source files, not exported.
+#include "DatabaseInfo.h"
 #include "IndexedDatabase.h"
 #include "IDBDatabase.h"
 #include "IDBRequest.h"
 
 #include "mozIStorageProgressHandler.h"
 #include "nsIRunnable.h"
-#include "nsIThread.h"
 
-#include "mozilla/TimeStamp.h"
+#include "nsDOMEvent.h"
 
 class mozIStorageConnection;
+class nsIEventTarget;
 
 BEGIN_INDEXEDDB_NAMESPACE
 
 class IDBTransaction;
+
+// A common base class for AsyncConnectionHelper and OpenDatabaseHelper that
+// IDBRequest can use.
+class HelperBase : public nsIRunnable
+{
+  friend class IDBRequest;
+public:
+  virtual nsresult GetResultCode() = 0;
+
+  virtual nsresult GetSuccessResult(JSContext* aCx,
+                                    jsval* aVal) = 0;
+
+protected:
+  HelperBase(IDBRequest* aRequest)
+    : mRequest(aRequest)
+  { }
+
+  virtual ~HelperBase();
+
+  /**
+   * Helper to wrap a native into a jsval. Uses the global object of the request
+   * to parent the native.
+   */
+  nsresult WrapNative(JSContext* aCx,
+                      nsISupports* aNative,
+                      jsval* aResult);
+
+  /**
+   * Gives the subclass a chance to release any objects that must be released
+   * on the main thread, regardless of success or failure. Subclasses that
+   * implement this method *MUST* call the base class implementation as well.
+   */
+  virtual void ReleaseMainThreadObjects();
+
+  nsRefPtr<IDBRequest> mRequest;
+};
 
 /**
  * Must be subclassed. The subclass must implement DoDatabaseWork. It may then
@@ -66,11 +103,9 @@ class IDBTransaction;
  * and Dispatched from the main thread only. Target thread may not be the main
  * thread.
  */
-class AsyncConnectionHelper : public nsIRunnable,
+class AsyncConnectionHelper : public HelperBase,
                               public mozIStorageProgressHandler
 {
-  friend class IDBRequest;
-
 public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIRUNNABLE
@@ -88,6 +123,11 @@ public:
   }
 
   static IDBTransaction* GetCurrentTransaction();
+
+  bool HasTransaction()
+  {
+    return mTransaction;
+  }
 
   nsISupports* GetSource()
   {
@@ -109,14 +149,6 @@ protected:
   virtual ~AsyncConnectionHelper();
 
   /**
-   * Set the timeout duration in milliseconds.
-   */
-  void SetTimeoutMS(PRUint32 aTimeoutMS)
-  {
-    mTimeoutDuration = TimeDuration::FromMilliseconds(aTimeoutMS);
-  }
-
-  /**
    * This is called on the main thread after Dispatch is called but before the
    * runnable is actually dispatched to the database thread. Allows the subclass
    * to initialize itself.
@@ -127,6 +159,13 @@ protected:
    * This callback is run on the database thread.
    */
   virtual nsresult DoDatabaseWork(mozIStorageConnection* aConnection) = 0;
+
+  /**
+   * This function returns the event to be dispatched at the request when
+   * OnSuccess is called.  A subclass can override this to fire an event other
+   * than "success" at the request.
+   */
+  virtual already_AddRefed<nsDOMEvent> CreateSuccessEvent();
 
   /**
    * This callback is run on the main thread if DoDatabaseWork returned NS_OK.
@@ -158,34 +197,21 @@ protected:
   virtual void ReleaseMainThreadObjects();
 
   /**
-   * Helper to wrap a native into a jsval. Uses the global object of the request
-   * to parent the native.
-   */
-  nsresult WrapNative(JSContext* aCx,
-                      nsISupports* aNative,
-                      jsval* aResult);
-
-  /**
    * Helper to make a JS array object out of an array of clone buffers.
    */
-  static nsresult ConvertCloneBuffersToArray(
+  static nsresult ConvertCloneReadInfosToArray(
                                 JSContext* aCx,
-                                nsTArray<JSAutoStructuredCloneBuffer>& aBuffers,
+                                nsTArray<StructuredCloneReadInfo>& aReadInfos,
                                 jsval* aResult);
 
 protected:
   nsRefPtr<IDBDatabase> mDatabase;
   nsRefPtr<IDBTransaction> mTransaction;
-  nsRefPtr<IDBRequest> mRequest;
 
 private:
   nsCOMPtr<mozIStorageProgressHandler> mOldProgressHandler;
-
-  mozilla::TimeStamp mStartTime;
-  mozilla::TimeDuration mTimeoutDuration;
-
   nsresult mResultCode;
-  PRPackedBool mDispatched;
+  bool mDispatched;
 };
 
 END_INDEXEDDB_NAMESPACE

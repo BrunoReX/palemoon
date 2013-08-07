@@ -81,7 +81,6 @@ nsHTMLCSSStyleSheet::RulesMatching(ElementRuleProcessorData* aData)
     aData->mRuleWalker->Forward(rule);
   }
 
-#ifdef MOZ_SMIL
   rule = element->GetSMILOverrideStyleRule();
   if (rule) {
     if (aData->mPresContext->IsProcessingRestyles() &&
@@ -98,7 +97,6 @@ nsHTMLCSSStyleSheet::RulesMatching(ElementRuleProcessorData* aData)
       aData->mRuleWalker->Forward(rule);
     }
   }
-#endif // MOZ_SMIL
 }
 
 /* virtual */ void
@@ -140,10 +138,10 @@ nsHTMLCSSStyleSheet::HasStateDependentStyle(StateRuleProcessorData* aData)
   return nsRestyleHint(0);
 }
 
-/* virtual */ PRBool
+/* virtual */ bool
 nsHTMLCSSStyleSheet::HasDocumentStateDependentStyle(StateRuleProcessorData* aData)
 {
-  return PR_FALSE;
+  return false;
 }
 
 // Test if style is dependent on attribute
@@ -159,12 +157,24 @@ nsHTMLCSSStyleSheet::HasAttributeDependentStyle(AttributeRuleProcessorData* aDat
   return nsRestyleHint(0);
 }
 
-/* virtual */ PRBool
+/* virtual */ bool
 nsHTMLCSSStyleSheet::MediumFeaturesChanged(nsPresContext* aPresContext)
 {
-  return PR_FALSE;
+  return false;
 }
 
+/* virtual */ size_t
+nsHTMLCSSStyleSheet::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  return 0;
+}
+
+/* virtual */ size_t
+nsHTMLCSSStyleSheet::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  return aMallocSizeOf(this, sizeof(nsHTMLCSSStyleSheet)) +
+         SizeOfExcludingThis(aMallocSizeOf);
+}
 
 void
 nsHTMLCSSStyleSheet::Reset(nsIURI* aURL)
@@ -196,28 +206,28 @@ nsHTMLCSSStyleSheet::GetType(nsString& aType) const
   aType.AssignLiteral("text/html");
 }
 
-/* virtual */ PRBool
+/* virtual */ bool
 nsHTMLCSSStyleSheet::HasRules() const
 {
   // Say we always have rules, since we don't know.
-  return PR_TRUE;
+  return true;
 }
 
-/* virtual */ PRBool
+/* virtual */ bool
 nsHTMLCSSStyleSheet::IsApplicable() const
 {
-  return PR_TRUE;
+  return true;
 }
 
 /* virtual */ void
-nsHTMLCSSStyleSheet::SetEnabled(PRBool aEnabled)
+nsHTMLCSSStyleSheet::SetEnabled(bool aEnabled)
 { // these can't be disabled
 }
 
-/* virtual */ PRBool
+/* virtual */ bool
 nsHTMLCSSStyleSheet::IsComplete() const
 {
-  return PR_TRUE;
+  return true;
 }
 
 /* virtual */ void

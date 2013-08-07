@@ -37,6 +37,7 @@
 #
 # ***** END LICENSE BLOCK *****
 
+from __future__ import with_statement
 import codecs
 from datetime import datetime, timedelta
 import itertools
@@ -50,7 +51,6 @@ import subprocess
 import sys
 import threading
 import tempfile
-import zipfile
 import sqlite3
 
 SCRIPT_DIR = os.path.abspath(os.path.realpath(os.path.dirname(sys.argv[0])))
@@ -340,6 +340,7 @@ user_pref("browser.ui.layout.tablet", 0); // force tablet UI off
 user_pref("dom.allow_scripts_to_close_windows", true);
 user_pref("dom.disable_open_during_load", false);
 user_pref("dom.max_script_run_time", 0); // no slow script dialogs
+user_pref("hangmonitor.timeout", 0); // no hang monitor
 user_pref("dom.max_chrome_script_run_time", 0);
 user_pref("dom.popup_maximum", -1);
 user_pref("dom.send_after_paint_to_content", true);
@@ -354,10 +355,7 @@ user_pref("javascript.options.showInConsole", true);
 user_pref("devtools.errorconsole.enabled", true);
 user_pref("layout.debug.enable_data_xbl", true);
 user_pref("browser.EULA.override", true);
-user_pref("javascript.options.tracejit.content", true);
-user_pref("javascript.options.methodjit.content", true);
-user_pref("javascript.options.jitprofiling.content", true);
-user_pref("javascript.options.methodjit_always", false);
+user_pref("javascript.options.jit_hardening", true);
 user_pref("gfx.color_management.force_srgb", true);
 user_pref("network.manage-offline-status", false);
 user_pref("test.mousescroll", true);
@@ -369,6 +367,9 @@ user_pref("app.update.enabled", false);
 user_pref("browser.panorama.experienced_first_run", true); // Assume experienced
 user_pref("dom.w3c_touch_events.enabled", true);
 user_pref("toolkit.telemetry.prompted", 2);
+// Existing tests assume there is no font size inflation.
+user_pref("font.size.inflation.emPerLine", 0);
+user_pref("font.size.inflation.minTwips", 0);
 
 // Only load extensions from the application and user profile
 // AddonManager.SCOPE_PROFILE + AddonManager.SCOPE_APPLICATION
@@ -395,8 +396,15 @@ user_pref("browser.safebrowsing.provider.0.updateURL", "http://%(server)s/safebr
 // Point update checks to the local testing server for fast failures
 user_pref("extensions.update.url", "http://%(server)s/extensions-dummy/updateURL");
 user_pref("extensions.blocklist.url", "http://%(server)s/extensions-dummy/blocklistURL");
+user_pref("extensions.hotfix.url", "http://%(server)s/extensions-dummy/hotfixURL");
 // Make sure opening about:addons won't hit the network
 user_pref("extensions.webservice.discoverURL", "http://%(server)s/extensions-dummy/discoveryURL");
+// Make sure AddonRepository won't hit the network
+user_pref("extensions.getAddons.maxResults", 0);
+user_pref("extensions.getAddons.get.url", "http://%(server)s/extensions-dummy/repositoryGetURL");
+user_pref("extensions.getAddons.getWithPerformance.url", "http://%(server)s/extensions-dummy/repositoryGetWithPerformanceURL");
+user_pref("extensions.getAddons.search.browseURL", "http://%(server)s/extensions-dummy/repositoryBrowseURL");
+user_pref("extensions.getAddons.search.url", "http://%(server)s/extensions-dummy/repositorySearchURL");
 """ % { "server" : self.webServer + ":" + str(self.httpPort) }
     prefs.append(part)
 
@@ -524,6 +532,7 @@ user_pref("camino.use_system_proxy_settings", false); // Camino-only, harmless t
       if loc.scheme == "https" and "nocert" not in loc.options:
         customCertRE = re.compile("^cert=(?P<nickname>[0-9a-zA-Z_ ]+)")
         clientAuthRE = re.compile("^clientauth=(?P<clientauth>[a-z]+)")
+        redirRE      = re.compile("^redir=(?P<redirhost>[0-9a-zA-Z_ .]+)")
         for option in loc.options:
           match = customCertRE.match(option)
           if match:
@@ -536,6 +545,12 @@ user_pref("camino.use_system_proxy_settings", false); // Camino-only, harmless t
             clientauth = match.group("clientauth");
             sslTunnelConfig.write("clientauth:%s:%s:%s:%s\n" %
                       (loc.host, loc.port, self.sslPort, clientauth))
+
+          match = redirRE.match(option)
+          if match:
+            redirhost = match.group("redirhost")
+            sslTunnelConfig.write("redirhost:%s:%s:%s:%s\n" %
+                      (loc.host, loc.port, self.sslPort, redirhost))
 
     sslTunnelConfig.close()
 
@@ -594,12 +609,7 @@ user_pref("camino.use_system_proxy_settings", false); // Camino-only, harmless t
 
     env['GNOME_DISABLE_CRASH_DIALOG'] = '1'
     env['XRE_NO_WINDOWS_CRASH_DIALOG'] = '1'
-
-    # Don't do this for Mac since it makes the Mac OS X 10.5 (32-bit)
-    # trace-malloc leak test hang.  (It doesn't make the 10.6 (64-bit)
-    # leak test hang, though.)
-    if not self.IS_MAC:
-      env['NS_TRACE_MALLOC_DISABLE_STACKS'] = '1'
+    env['NS_TRACE_MALLOC_DISABLE_STACKS'] = '1'
     return env
 
   if IS_WIN32:
@@ -684,32 +694,56 @@ user_pref("camino.use_system_proxy_settings", false); // Camino-only, harmless t
     def killPid(self, pid):
       os.kill(pid, signal.SIGKILL)
 
-  if UNIXISH:
-    def dumpScreen(self, utilityPath):
-      self.haveDumpedScreen = True;
+  def dumpScreen(self, utilityPath):
+    self.haveDumpedScreen = True;
 
-      screentopng = os.path.join(utilityPath, "screentopng")
-      try:
-        dumper = self.Process([screentopng], bufsize=-1,
+    # Need to figure out what tool and whether it write to a file or stdout
+    if self.UNIXISH:
+      utility = [os.path.join(utilityPath, "screentopng")]
+      imgoutput = 'stdout'
+    elif self.IS_MAC:
+      utility = ['/usr/sbin/screencapture', '-C', '-x', '-t', 'png']
+      imgoutput = 'file'
+    elif self.IS_WIN32:
+      self.log.info("If you fixed bug 589668, you'd get a screenshot here")
+      return
+
+    # Run the capture correctly for the type of capture
+    try:
+      if imgoutput == 'file':
+        tmpfd, imgfilename = tempfile.mkstemp(prefix='mozilla-test-fail_')
+        os.close(tmpfd)
+        dumper = self.Process(utility + [imgfilename])
+      elif imgoutput == 'stdout':
+        dumper = self.Process(utility, bufsize=-1,
                               stdout=subprocess.PIPE, close_fds=True)
-      except OSError, err:
-        self.log.info("Failed to start %s for screenshot: %s",
-                      screentopng, err.strerror)
-        return
+    except OSError, err:
+      self.log.info("Failed to start %s for screenshot: %s",
+                    utility[0], err.strerror)
+      return
 
-      image = dumper.stdout.read()
-      status = dumper.wait()
-      if status != 0:
-        self.log.info("screentopng exited with code %d", status)
-        return
+    # Check whether the capture utility ran successfully
+    dumper_out, dumper_err = dumper.communicate()
+    if dumper.returncode != 0:
+      self.log.info("%s exited with code %d", utility, dumper.returncode)
+      return
 
-      import base64
-      encoded = base64.b64encode(image)
-      self.log.info("SCREENSHOT: data:image/png;base64,%s", encoded)
+    try:
+      if imgoutput == 'stdout':
+        image = dumper_out
+      elif imgoutput == 'file':
+        with open(imgfilename) as imgfile:
+          image = imgfile.read()
+    except IOError, err:
+        self.log.info("Failed to read image from %s", imgoutput)
+
+    import base64
+    encoded = base64.b64encode(image)
+    self.log.info("SCREENSHOT: data:image/png;base64,%s", encoded)
 
   def killAndGetStack(self, proc, utilityPath, debuggerInfo):
     """Kill the process, preferrably in a way that gets us a stack trace."""
-    if self.UNIXISH and not debuggerInfo and not self.haveDumpedScreen:
+    if not debuggerInfo and not self.haveDumpedScreen:
       self.dumpScreen(utilityPath)
 
     if self.CRASHREPORTER and not debuggerInfo:
@@ -765,7 +799,7 @@ user_pref("camino.use_system_proxy_settings", false); // Camino-only, harmless t
         if stackFixerFunction:
           line = stackFixerFunction(line)
         self.log.info(line.rstrip().decode("UTF-8", "ignore"))
-        if self.UNIXISH and not debuggerInfo and not self.haveDumpedScreen and "TEST-UNEXPECTED-FAIL" in line and "Test timed out" in line:
+        if not debuggerInfo and not self.haveDumpedScreen and "TEST-UNEXPECTED-FAIL" in line and "Test timed out" in line:
           self.dumpScreen(utilityPath)
 
         (line, didTimeout) = self.readWithTimeout(logsource, timeout)
@@ -923,35 +957,87 @@ user_pref("camino.use_system_proxy_settings", false); // Camino-only, harmless t
 
     return status
 
-  """
-   Copies an extension into the extensions directory of the given profile.
-   extensionSource - the source location of the extension files.  This can be either
-                     a directory or a path to an xpi file.
-   profileDir      - the profile directory we are copying into.  We will create the
-                     "extensions" directory there if it doesn't exist.
-   extensionID     - the id of the extension to be used as the containing directory for the
-                     extension, if extensionSource is a directory, i.e.
-                 this is the name of the folder in the <profileDir>/extensions/<extensionID>
-  """
+  def getExtensionIDFromRDF(self, rdfSource):
+    """
+    Retrieves the extension id from an install.rdf file (or string).
+    """
+    from xml.dom.minidom import parse, parseString, Node
+
+    if isinstance(rdfSource, file):
+      document = parse(rdfSource)
+    else:
+      document = parseString(rdfSource)
+
+    # Find the <em:id> element. There can be multiple <em:id> tags
+    # within <em:targetApplication> tags, so we have to check this way.
+    for rdfChild in document.documentElement.childNodes:
+      if rdfChild.nodeType == Node.ELEMENT_NODE and rdfChild.tagName == "Description":
+        for descChild in rdfChild.childNodes:
+          if descChild.nodeType == Node.ELEMENT_NODE and descChild.tagName == "em:id":
+            return descChild.childNodes[0].data
+
+    return None
+
   def installExtension(self, extensionSource, profileDir, extensionID = None):
+    """
+    Copies an extension into the extensions directory of the given profile.
+    extensionSource - the source location of the extension files.  This can be either
+                      a directory or a path to an xpi file.
+    profileDir      - the profile directory we are copying into.  We will create the
+                      "extensions" directory there if it doesn't exist.
+    extensionID     - the id of the extension to be used as the containing directory for the
+                      extension, if extensionSource is a directory, i.e.
+                  this is the name of the folder in the <profileDir>/extensions/<extensionID>
+    """
     if not os.path.isdir(profileDir):
       self.log.info("INFO | automation.py | Cannot install extension, invalid profileDir at: %s", profileDir)
       return
 
-    extnsdir = os.path.join(profileDir, "extensions", "staged")
+    installRDFFilename = "install.rdf"
+
+    extensionsRootDir = os.path.join(profileDir, "extensions", "staged")
+    if not os.path.isdir(extensionsRootDir):
+      os.makedirs(extensionsRootDir)
 
     if os.path.isfile(extensionSource):
-      # Copy extension xpi directly.
-      # "destination file is created or overwritten".
-      shutil.copy2(extensionSource, extnsdir)
-    elif os.path.isdir(extensionSource):
-      if extensionID == None:
+      reader = automationutils.ZipFileReader(extensionSource)
+
+      for filename in reader.namelist():
+        # Sanity check the zip file.
+        if os.path.isabs(filename):
+          self.log.info("INFO | automation.py | Cannot install extension, bad files in xpi")
+          return
+
+        # We may need to dig the extensionID out of the zip file...
+        if extensionID is None and filename == installRDFFilename:
+          extensionID = self.getExtensionIDFromRDF(reader.read(filename))
+
+      # We must know the extensionID now.
+      if extensionID is None:
         self.log.info("INFO | automation.py | Cannot install extension, missing extensionID")
         return
 
+      # Make the extension directory.
+      extensionDir = os.path.join(extensionsRootDir, extensionID)
+      os.mkdir(extensionDir)
+
+      # Extract all files.
+      reader.extractall(extensionDir)
+
+    elif os.path.isdir(extensionSource):
+      if extensionID is None:
+        filename = os.path.join(extensionSource, installRDFFilename)
+        if os.path.isfile(filename):
+          with open(filename, "r") as installRDF:
+            extensionID = self.getExtensionIDFromRDF(installRDF)
+
+        if extensionID is None:
+          self.log.info("INFO | automation.py | Cannot install extension, missing extensionID")
+          return
+
       # Copy extension tree into its own directory.
       # "destination directory must not already exist".
-      shutil.copytree(extensionSource, os.path.join(extnsdir, extensionID))
+      shutil.copytree(extensionSource, os.path.join(extensionsRootDir, extensionID))
+
     else:
       self.log.info("INFO | automation.py | Cannot install extension, invalid extensionSource at: %s", extensionSource)
-      return

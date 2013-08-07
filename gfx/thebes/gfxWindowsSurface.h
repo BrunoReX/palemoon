@@ -92,6 +92,8 @@ public:
 
     virtual PRInt32 GetDefaultContextFlags() const;
 
+    const gfxIntSize GetSize() const;
+
     void MovePixels(const nsIntRect& aSourceRect,
                     const nsIntPoint& aDestTopLeft)
     {
@@ -103,8 +105,10 @@ public:
     virtual gfxASurface::MemoryLocation GetMemoryLocation() const;
 
 private:
-    PRPackedBool mOwnsDC;
-    PRPackedBool mForPrinting;
+    void MakeInvalid(gfxIntSize& size);
+
+    bool mOwnsDC;
+    bool mForPrinting;
 
     HDC mDC;
     HWND mWnd;

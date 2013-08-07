@@ -62,6 +62,7 @@ class nsAHttpTransaction : public nsISupports
 public:
     // called by the connection when it takes ownership of the transaction.
     virtual void SetConnection(nsAHttpConnection *) = 0;
+    virtual nsAHttpConnection *Connection() = 0;
 
     // called by the connection to get security callbacks to set on the
     // socket transport.
@@ -73,7 +74,7 @@ public:
                                    nsresult status, PRUint64 progress) = 0;
 
     // called to check the transaction status.
-    virtual PRBool   IsDone() = 0;
+    virtual bool     IsDone() = 0;
     virtual nsresult Status() = 0;
 
     // called to find out how much request data is available for writing.
@@ -95,22 +96,29 @@ public:
     
     // called to retrieve the request headers of the transaction
     virtual nsHttpRequestHead *RequestHead() = 0;
+
+    // determine the number of real http/1.x transactions on this
+    // abstract object. Pipelines may have multiple, SPDY has 0,
+    // normal http transactions have 1.
+    virtual PRUint32 Http1xTransactionCount() = 0;
 };
 
 #define NS_DECL_NSAHTTPTRANSACTION \
     void SetConnection(nsAHttpConnection *); \
+    nsAHttpConnection *Connection(); \
     void GetSecurityCallbacks(nsIInterfaceRequestor **, \
                               nsIEventTarget **);       \
     void OnTransportStatus(nsITransport* transport, \
                            nsresult status, PRUint64 progress); \
-    PRBool   IsDone(); \
+    bool     IsDone(); \
     nsresult Status(); \
     PRUint32 Available(); \
     nsresult ReadSegments(nsAHttpSegmentReader *, PRUint32, PRUint32 *); \
     nsresult WriteSegments(nsAHttpSegmentWriter *, PRUint32, PRUint32 *); \
     void     Close(nsresult reason);                                    \
     void     SetSSLConnectFailed();                                     \
-    nsHttpRequestHead *RequestHead();
+    nsHttpRequestHead *RequestHead();                                   \
+    PRUint32 Http1xTransactionCount();
 
 //-----------------------------------------------------------------------------
 // nsAHttpSegmentReader

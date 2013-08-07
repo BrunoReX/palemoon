@@ -74,27 +74,23 @@ public:
                     nsNativeWidget    aNativeParent,
                     const nsIntRect&  aRect,
                     EVENT_CALLBACK    aHandleEventFunction,
-                    nsDeviceContext* aContext,
-                    nsIAppShell*      aAppShell = nsnull,
-                    nsIToolkit*       aToolkit = nsnull,
+                    nsDeviceContext*  aContext,
                     nsWidgetInitData* aInitData = nsnull);
 
   virtual already_AddRefed<nsIWidget>
   CreateChild(const nsIntRect  &aRect,
               EVENT_CALLBACK   aHandleEventFunction,
-              nsDeviceContext *aContext,
-              nsIAppShell      *aAppShell = nsnull,
-              nsIToolkit       *aToolkit = nsnull,
+              nsDeviceContext  *aContext,
               nsWidgetInitData *aInitData = nsnull,
-              PRBool           aForceUseIWidgetParent = PR_FALSE);
+              bool             aForceUseIWidgetParent = false);
 
   NS_IMETHOD Destroy();
 
-  NS_IMETHOD Show(PRBool aState);
-  NS_IMETHOD IsVisible(PRBool& aState)
+  NS_IMETHOD Show(bool aState);
+  NS_IMETHOD IsVisible(bool& aState)
   { aState = mVisible; return NS_OK; }
 
-  NS_IMETHOD ConstrainPosition(PRBool   /*ignored aAllowSlop*/,
+  NS_IMETHOD ConstrainPosition(bool     /*ignored aAllowSlop*/,
                                PRInt32* aX,
                                PRInt32* aY)
   { *aX = kMaxDimension;  *aY = kMaxDimension;  return NS_OK; }
@@ -105,29 +101,29 @@ public:
 
   NS_IMETHOD Resize(PRInt32 aWidth,
                     PRInt32 aHeight,
-                    PRBool  aRepaint);
+                    bool    aRepaint);
   NS_IMETHOD Resize(PRInt32 aX,
                     PRInt32 aY,
                     PRInt32 aWidth,
                     PRInt32 aHeight,
-                    PRBool  aRepaint)
+                    bool    aRepaint)
   // (we're always at <0, 0>)
   { return Resize(aWidth, aHeight, aRepaint); }
 
   // XXX/cjones: copying gtk behavior here; unclear what disabling a
   // widget is supposed to entail
-  NS_IMETHOD Enable(PRBool aState)
+  NS_IMETHOD Enable(bool aState)
   { mEnabled = aState;  return NS_OK; }
-  NS_IMETHOD IsEnabled(PRBool *aState)
+  NS_IMETHOD IsEnabled(bool *aState)
   { *aState = mEnabled;  return NS_OK; }
 
-  NS_IMETHOD SetFocus(PRBool aRaise = PR_FALSE);
+  NS_IMETHOD SetFocus(bool aRaise = false);
 
   // PuppetWidgets don't care about children.
   virtual nsresult ConfigureChildren(const nsTArray<Configuration>& aConfigurations)
   { return NS_OK; }
 
-  NS_IMETHOD Invalidate(const nsIntRect& aRect, PRBool aIsSynchronous);
+  NS_IMETHOD Invalidate(const nsIntRect& aRect, bool aIsSynchronous);
 
   NS_IMETHOD Update();
 
@@ -154,15 +150,15 @@ public:
 
   NS_IMETHOD DispatchEvent(nsGUIEvent* event, nsEventStatus& aStatus);
 
-  NS_IMETHOD CaptureRollupEvents(nsIRollupListener* aListener, nsIMenuRollup* aMenuRollup,
-                                 PRBool aDoCapture, PRBool aConsumeRollupEvent)
+  NS_IMETHOD CaptureRollupEvents(nsIRollupListener* aListener,
+                                 bool aDoCapture, bool aConsumeRollupEvent)
   { return NS_ERROR_UNEXPECTED; }
 
   //
   // nsBaseWidget methods we override
   //
 
-//NS_IMETHOD              CaptureMouse(PRBool aCapture);
+//NS_IMETHOD              CaptureMouse(bool aCapture);
   virtual LayerManager*
   GetLayerManager(PLayersChild* aShadowManager = nsnull,
                   LayersBackend aBackendHint = LayerManager::LAYERS_NONE,
@@ -172,12 +168,11 @@ public:
   virtual gfxASurface*      GetThebesSurface();
 
   NS_IMETHOD ResetInputState();
-  NS_IMETHOD SetIMEOpenState(PRBool aState);
-  NS_IMETHOD GetIMEOpenState(PRBool *aState);
-  NS_IMETHOD SetInputMode(const IMEContext& aContext);
-  NS_IMETHOD GetInputMode(IMEContext& aContext);
+  NS_IMETHOD_(void) SetInputContext(const InputContext& aContext,
+                                    const InputContextAction& aAction);
+  NS_IMETHOD_(InputContext) GetInputContext();
   NS_IMETHOD CancelComposition();
-  NS_IMETHOD OnIMEFocusChange(PRBool aFocus);
+  NS_IMETHOD OnIMEFocusChange(bool aFocus);
   NS_IMETHOD OnIMETextChange(PRUint32 aOffset, PRUint32 aEnd,
                              PRUint32 aNewEnd);
   NS_IMETHOD OnIMESelectionChange(void);
@@ -196,7 +191,7 @@ private:
 
   void SetChild(PuppetWidget* aChild);
 
-  nsresult IMEEndComposition(PRBool aCancel);
+  nsresult IMEEndComposition(bool aCancel);
 
   class PaintTask : public nsRunnable {
   public:
@@ -219,14 +214,14 @@ private:
   nsRefPtr<PuppetWidget> mChild;
   nsIntRegion mDirtyRegion;
   nsRevocableEventPtr<PaintTask> mPaintTask;
-  PRPackedBool mEnabled;
-  PRPackedBool mVisible;
+  bool mEnabled;
+  bool mVisible;
   // XXX/cjones: keeping this around until we teach LayerManager to do
   // retained-content-only transactions
   nsRefPtr<gfxASurface> mSurface;
   // IME
   nsIMEUpdatePreference mIMEPreference;
-  PRPackedBool mIMEComposing;
+  bool mIMEComposing;
   // Latest seqno received through events
   PRUint32 mIMELastReceivedSeqno;
   // Chrome's seqno value when last blur occurred

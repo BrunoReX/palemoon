@@ -76,6 +76,7 @@
 #include "nsIOService.h"
 #include "nsAsyncRedirectVerifyHelper.h"
 #include "nsSocketTransportService2.h"
+#include "nsAlgorithm.h"
 
 #include "nsIXULAppInfo.h"
 
@@ -99,6 +100,7 @@
 #endif
 
 //-----------------------------------------------------------------------------
+using namespace mozilla;
 using namespace mozilla::net;
 #include "mozilla/net/HttpChannelChild.h"
 
@@ -122,7 +124,6 @@ static NS_DEFINE_CID(kSocketProviderServiceCID, NS_SOCKETPROVIDERSERVICE_CID);
 
 #define HTTP_PREF_PREFIX        "network.http."
 #define INTL_ACCEPT_LANGUAGES   "intl.accept_languages"
-#define INTL_ACCEPT_CHARSET     "intl.charset.default"
 #define NETWORK_ENABLEIDN       "network.enableIDN"
 #define BROWSER_PREF_PREFIX     "browser.cache."
 #define DONOTTRACK_HEADER_ENABLED "privacy.donottrackheader.enabled"
@@ -171,8 +172,9 @@ nsHttpHandler::nsHttpHandler()
     , mCapabilities(NS_HTTP_ALLOW_KEEPALIVE)
     , mProxyCapabilities(NS_HTTP_ALLOW_KEEPALIVE)
     , mReferrerLevel(0xff) // by default we always send a referrer
-    , mFastFallbackToIPv4(PR_FALSE)
+    , mFastFallbackToIPv4(false)
     , mIdleTimeout(10)
+    , mSpdyTimeout(180)
     , mMaxRequestAttempts(10)
     , mMaxRequestDelay(10)
     , mIdleSynTimeout(250)
@@ -184,19 +186,22 @@ nsHttpHandler::nsHttpHandler()
     , mRedirectionLimit(10)
     , mPhishyUserPassLength(1)
     , mQoSBits(0x00)
-    , mPipeliningOverSSL(PR_FALSE)
+    , mPipeliningOverSSL(false)
     , mInPrivateBrowsingMode(PRIVATE_BROWSING_UNKNOWN)
     , mLastUniqueID(NowInSeconds())
     , mSessionStartTime(0)
     , mLegacyAppName("Mozilla")
     , mLegacyAppVersion("5.0")
     , mProduct("Gecko")
-    , mUserAgentIsDirty(PR_TRUE)
-    , mUseCache(PR_TRUE)
-    , mPromptTempRedirect(PR_TRUE)
-    , mSendSecureXSiteReferrer(PR_TRUE)
-    , mEnablePersistentHttpsCaching(PR_FALSE)
-    , mDoNotTrackEnabled(PR_FALSE)
+    , mUserAgentIsDirty(true)
+    , mUseCache(true)
+    , mPromptTempRedirect(true)
+    , mSendSecureXSiteReferrer(true)
+    , mEnablePersistentHttpsCaching(false)
+    , mDoNotTrackEnabled(false)
+    , mEnableSpdy(false)
+    , mCoalesceSpdy(true)
+    , mUseAlternateProtocol(false)
 {
 #if defined(PR_LOGGING)
     gHttpLog = PR_NewLogModule("nsHttp");
@@ -253,13 +258,12 @@ nsHttpHandler::Init()
     // monitor some preference changes
     nsCOMPtr<nsIPrefBranch2> prefBranch = do_GetService(NS_PREFSERVICE_CONTRACTID);
     if (prefBranch) {
-        prefBranch->AddObserver(HTTP_PREF_PREFIX, this, PR_TRUE);
-        prefBranch->AddObserver(UA_PREF_PREFIX, this, PR_TRUE);
-        prefBranch->AddObserver(INTL_ACCEPT_LANGUAGES, this, PR_TRUE); 
-        prefBranch->AddObserver(INTL_ACCEPT_CHARSET, this, PR_TRUE);
-        prefBranch->AddObserver(NETWORK_ENABLEIDN, this, PR_TRUE);
-        prefBranch->AddObserver(BROWSER_PREF("disk_cache_ssl"), this, PR_TRUE);
-        prefBranch->AddObserver(DONOTTRACK_HEADER_ENABLED, this, PR_TRUE);
+        prefBranch->AddObserver(HTTP_PREF_PREFIX, this, true);
+        prefBranch->AddObserver(UA_PREF_PREFIX, this, true);
+        prefBranch->AddObserver(INTL_ACCEPT_LANGUAGES, this, true); 
+        prefBranch->AddObserver(NETWORK_ENABLEIDN, this, true);
+        prefBranch->AddObserver(BROWSER_PREF("disk_cache_ssl"), this, true);
+        prefBranch->AddObserver(DONOTTRACK_HEADER_ENABLED, this, true);
 
         PrefsChanged(prefBranch, nsnull);
     }
@@ -301,7 +305,11 @@ nsHttpHandler::Init()
     rv = InitConnectionMgr();
     if (NS_FAILED(rv)) return rv;
 
+#ifdef ANDROID
+    mProductSub.AssignLiteral(MOZILLA_UAVERSION);
+#else
     mProductSub.AssignLiteral(MOZ_UA_BUILDID);
+#endif
     if (mProductSub.IsEmpty() && appInfo)
         appInfo->GetPlatformBuildID(mProductSub);
     if (mProductSub.Length() > 8)
@@ -315,12 +323,12 @@ nsHttpHandler::Init()
     
     mObserverService = mozilla::services::GetObserverService();
     if (mObserverService) {
-        mObserverService->AddObserver(this, "profile-change-net-teardown", PR_TRUE);
-        mObserverService->AddObserver(this, "profile-change-net-restore", PR_TRUE);
-        mObserverService->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, PR_TRUE);
-        mObserverService->AddObserver(this, "net:clear-active-logins", PR_TRUE);
-        mObserverService->AddObserver(this, NS_PRIVATE_BROWSING_SWITCH_TOPIC, PR_TRUE);
-        mObserverService->AddObserver(this, "net:prune-dead-connections", PR_TRUE);
+        mObserverService->AddObserver(this, "profile-change-net-teardown", true);
+        mObserverService->AddObserver(this, "profile-change-net-restore", true);
+        mObserverService->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, true);
+        mObserverService->AddObserver(this, "net:clear-active-logins", true);
+        mObserverService->AddObserver(this, NS_PRIVATE_BROWSING_SWITCH_TOPIC, true);
+        mObserverService->AddObserver(this, "net:prune-dead-connections", true);
     }
  
     return NS_OK;
@@ -353,7 +361,7 @@ nsHttpHandler::InitConnectionMgr()
 nsresult
 nsHttpHandler::AddStandardRequestHeaders(nsHttpHeaderArray *request,
                                          PRUint8 caps,
-                                         PRBool useProxy)
+                                         bool useProxy)
 {
     nsresult rv;
 
@@ -375,10 +383,6 @@ nsHttpHandler::AddStandardRequestHeaders(nsHttpHeaderArray *request,
 
     // Add the "Accept-Encoding" header
     rv = request->SetHeader(nsHttp::Accept_Encoding, mAcceptEncodings);
-    if (NS_FAILED(rv)) return rv;
-
-    // Add the "Accept-Charset" header
-    rv = request->SetHeader(nsHttp::Accept_Charset, mAcceptCharsets);
     if (NS_FAILED(rv)) return rv;
 
     // RFC2616 section 19.6.2 states that the "Connection: keep-alive"
@@ -414,11 +418,11 @@ nsHttpHandler::AddStandardRequestHeaders(nsHttpHeaderArray *request,
     return request->SetHeader(header, *connectionType);
 }
 
-PRBool
+bool
 nsHttpHandler::IsAcceptableEncoding(const char *enc)
 {
     if (!enc)
-        return PR_FALSE;
+        return false;
 
     // HTTP 1.1 allows servers to send x-gzip and x-compress instead
     // of gzip and compress, for example.  So, we'll always strip off
@@ -467,7 +471,7 @@ nsHttpHandler::GetCacheSession(nsCacheStoragePolicy storagePolicy,
                              getter_AddRefs(cacheSession));
     if (NS_FAILED(rv)) return rv;
 
-    rv = cacheSession->SetDoomEntriesIfExpired(PR_FALSE);
+    rv = cacheSession->SetDoomEntriesIfExpired(false);
     if (NS_FAILED(rv)) return rv;
 
     NS_ADDREF(*result = cacheSession);
@@ -475,7 +479,7 @@ nsHttpHandler::GetCacheSession(nsCacheStoragePolicy storagePolicy,
     return NS_OK;
 }
 
-PRBool
+bool
 nsHttpHandler::InPrivateBrowsingMode()
 {
     if (PRIVATE_BROWSING_UNKNOWN == mInPrivateBrowsingMode) {
@@ -485,7 +489,7 @@ nsHttpHandler::InPrivateBrowsingMode()
         if (!pbs)
             return PRIVATE_BROWSING_OFF;
 
-        PRBool p = PR_FALSE;
+        bool p = false;
         pbs->GetPrivateBrowsingEnabled(&p);
         mInPrivateBrowsingMode = p ? PRIVATE_BROWSING_ON : PRIVATE_BROWSING_OFF;
     }
@@ -588,7 +592,7 @@ nsHttpHandler::UserAgent()
 
     if (mUserAgentIsDirty) {
         BuildUserAgent();
-        mUserAgentIsDirty = PR_FALSE;
+        mUserAgentIsDirty = false;
     }
 
     return mUserAgent;
@@ -619,6 +623,7 @@ nsHttpHandler::BuildUserAgent()
                            mAppName.Length() +
                            mAppVersion.Length() +
                            mCompatFirefox.Length() +
+                           mCompatDevice.Length() +
                            13);
 
     // Application portion
@@ -633,8 +638,15 @@ nsHttpHandler::BuildUserAgent()
     mUserAgent += mPlatform;
     mUserAgent.AppendLiteral("; ");
 #endif
+#ifdef ANDROID
+    if (!mCompatDevice.IsEmpty()) {
+        mUserAgent += mCompatDevice;
+        mUserAgent.AppendLiteral("; ");
+    }
+#else
     mUserAgent += mOscpu;
     mUserAgent.AppendLiteral("; ");
+#endif
     mUserAgent += mMisc;
     mUserAgent += ')';
 
@@ -667,8 +679,7 @@ typedef BOOL (WINAPI *IsWow64ProcessP) (HANDLE, PBOOL);
 void
 nsHttpHandler::InitUserAgentComponents()
 {
-
-      // Gather platform.
+    // Gather platform.
     mPlatform.AssignLiteral(
 #if defined(ANDROID)
     "Android"
@@ -686,6 +697,18 @@ nsHttpHandler::InitUserAgentComponents()
     "?"
 #endif
     );
+
+#if defined(ANDROID)
+    nsCOMPtr<nsIPropertyBag2> infoService = do_GetService("@mozilla.org/system-info;1");
+    NS_ASSERTION(infoService, "Could not find a system info service");
+
+    bool isTablet;
+    infoService->GetPropertyAsBool(NS_LITERAL_STRING("tablet"), &isTablet);
+    if (isTablet)
+        mCompatDevice.AssignLiteral("Tablet");
+    else
+        mCompatDevice.AssignLiteral("Mobile");
+#endif
 
     // Gather OS/CPU.
 #if defined(XP_OS2)
@@ -776,7 +799,25 @@ nsHttpHandler::InitUserAgentComponents()
     }
 #endif
 
-    mUserAgentIsDirty = PR_TRUE;
+    mUserAgentIsDirty = true;
+}
+
+PRUint32
+nsHttpHandler::MaxSocketCount()
+{
+    PR_CallOnce(&nsSocketTransportService::gMaxCountInitOnce,
+                nsSocketTransportService::DiscoverMaxCount);
+    // Don't use the full max count because sockets can be held in
+    // the persistent connection pool for a long time and that could
+    // starve other users.
+
+    PRUint32 maxCount = nsSocketTransportService::gMaxCount;
+    if (maxCount <= 8)
+        maxCount = 1;
+    else
+        maxCount -= 8;
+
+    return maxCount;
 }
 
 void
@@ -795,7 +836,7 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
     // UA components
     //
 
-    PRBool cVar = PR_FALSE;
+    bool cVar = false;
 
     if (PREF_CHANGED(UA_PREF("compatMode.firefox"))) {
         rv = prefs->GetBoolPref(UA_PREF("compatMode.firefox"), &cVar);
@@ -804,14 +845,14 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
         } else {
             mCompatFirefox.Truncate();
         }
-        mUserAgentIsDirty = PR_TRUE;
+        mUserAgentIsDirty = true;
     }
 
     // general.useragent.override
     if (PREF_CHANGED(UA_PREF("override"))) {
         prefs->GetCharPref(UA_PREF("override"),
                             getter_Copies(mUserAgentOverride));
-        mUserAgentIsDirty = PR_TRUE;
+        mUserAgentIsDirty = true;
     }
 
     //
@@ -821,19 +862,19 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
     if (PREF_CHANGED(HTTP_PREF("keep-alive.timeout"))) {
         rv = prefs->GetIntPref(HTTP_PREF("keep-alive.timeout"), &val);
         if (NS_SUCCEEDED(rv))
-            mIdleTimeout = (PRUint16) NS_CLAMP(val, 1, 0xffff);
+            mIdleTimeout = (PRUint16) clamped(val, 1, 0xffff);
     }
 
     if (PREF_CHANGED(HTTP_PREF("request.max-attempts"))) {
         rv = prefs->GetIntPref(HTTP_PREF("request.max-attempts"), &val);
         if (NS_SUCCEEDED(rv))
-            mMaxRequestAttempts = (PRUint16) NS_CLAMP(val, 1, 0xffff);
+            mMaxRequestAttempts = (PRUint16) clamped(val, 1, 0xffff);
     }
 
     if (PREF_CHANGED(HTTP_PREF("request.max-start-delay"))) {
         rv = prefs->GetIntPref(HTTP_PREF("request.max-start-delay"), &val);
         if (NS_SUCCEEDED(rv)) {
-            mMaxRequestDelay = (PRUint16) NS_CLAMP(val, 0, 0xffff);
+            mMaxRequestDelay = (PRUint16) clamped(val, 0, 0xffff);
             if (mConnMgr)
                 mConnMgr->UpdateParam(nsHttpConnectionMgr::MAX_REQUEST_DELAY,
                                       mMaxRequestDelay);
@@ -843,11 +884,10 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
     if (PREF_CHANGED(HTTP_PREF("max-connections"))) {
         rv = prefs->GetIntPref(HTTP_PREF("max-connections"), &val);
         if (NS_SUCCEEDED(rv)) {
-            PR_CallOnce(&nsSocketTransportService::gMaxCountInitOnce,
-                        nsSocketTransportService::DiscoverMaxCount);
-            mMaxConnections =
-                (PRUint16) NS_CLAMP((PRUint32)val, 1,
-                                    nsSocketTransportService::gMaxCount);
+
+            mMaxConnections = (PRUint16) clamped((PRUint32)val,
+                                                 (PRUint32)1, MaxSocketCount());
+
             if (mConnMgr)
                 mConnMgr->UpdateParam(nsHttpConnectionMgr::MAX_CONNECTIONS,
                                       mMaxConnections);
@@ -857,7 +897,7 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
     if (PREF_CHANGED(HTTP_PREF("max-connections-per-server"))) {
         rv = prefs->GetIntPref(HTTP_PREF("max-connections-per-server"), &val);
         if (NS_SUCCEEDED(rv)) {
-            mMaxConnectionsPerServer = (PRUint8) NS_CLAMP(val, 1, 0xff);
+            mMaxConnectionsPerServer = (PRUint8) clamped(val, 1, 0xff);
             if (mConnMgr) {
                 mConnMgr->UpdateParam(nsHttpConnectionMgr::MAX_CONNECTIONS_PER_HOST,
                                       mMaxConnectionsPerServer);
@@ -870,7 +910,7 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
     if (PREF_CHANGED(HTTP_PREF("max-persistent-connections-per-server"))) {
         rv = prefs->GetIntPref(HTTP_PREF("max-persistent-connections-per-server"), &val);
         if (NS_SUCCEEDED(rv)) {
-            mMaxPersistentConnectionsPerServer = (PRUint8) NS_CLAMP(val, 1, 0xff);
+            mMaxPersistentConnectionsPerServer = (PRUint8) clamped(val, 1, 0xff);
             if (mConnMgr)
                 mConnMgr->UpdateParam(nsHttpConnectionMgr::MAX_PERSISTENT_CONNECTIONS_PER_HOST,
                                       mMaxPersistentConnectionsPerServer);
@@ -880,7 +920,7 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
     if (PREF_CHANGED(HTTP_PREF("max-persistent-connections-per-proxy"))) {
         rv = prefs->GetIntPref(HTTP_PREF("max-persistent-connections-per-proxy"), &val);
         if (NS_SUCCEEDED(rv)) {
-            mMaxPersistentConnectionsPerProxy = (PRUint8) NS_CLAMP(val, 1, 0xff);
+            mMaxPersistentConnectionsPerProxy = (PRUint8) clamped(val, 1, 0xff);
             if (mConnMgr)
                 mConnMgr->UpdateParam(nsHttpConnectionMgr::MAX_PERSISTENT_CONNECTIONS_PER_PROXY,
                                       mMaxPersistentConnectionsPerProxy);
@@ -890,19 +930,19 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
     if (PREF_CHANGED(HTTP_PREF("sendRefererHeader"))) {
         rv = prefs->GetIntPref(HTTP_PREF("sendRefererHeader"), &val);
         if (NS_SUCCEEDED(rv))
-            mReferrerLevel = (PRUint8) NS_CLAMP(val, 0, 0xff);
+            mReferrerLevel = (PRUint8) clamped(val, 0, 0xff);
     }
 
     if (PREF_CHANGED(HTTP_PREF("redirection-limit"))) {
         rv = prefs->GetIntPref(HTTP_PREF("redirection-limit"), &val);
         if (NS_SUCCEEDED(rv))
-            mRedirectionLimit = (PRUint8) NS_CLAMP(val, 0, 0xff);
+            mRedirectionLimit = (PRUint8) clamped(val, 0, 0xff);
     }
 
     if (PREF_CHANGED(HTTP_PREF("connection-retry-timeout"))) {
         rv = prefs->GetIntPref(HTTP_PREF("connection-retry-timeout"), &val);
         if (NS_SUCCEEDED(rv))
-            mIdleSynTimeout = (PRUint16) NS_CLAMP(val, 0, 3000);
+            mIdleSynTimeout = (PRUint16) clamped(val, 0, 3000);
     }
 
     if (PREF_CHANGED(HTTP_PREF("fast-fallback-to-IPv4"))) {
@@ -969,7 +1009,7 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
     if (PREF_CHANGED(HTTP_PREF("pipelining.maxrequests"))) {
         rv = prefs->GetIntPref(HTTP_PREF("pipelining.maxrequests"), &val);
         if (NS_SUCCEEDED(rv)) {
-            mMaxPipelinedRequests = NS_CLAMP(val, 1, NS_HTTP_MAX_PIPELINED_REQUESTS);
+            mMaxPipelinedRequests = clamped(val, 1, NS_HTTP_MAX_PIPELINED_REQUESTS);
             if (mConnMgr)
                 mConnMgr->UpdateParam(nsHttpConnectionMgr::MAX_PIPELINED_REQUESTS,
                                       mMaxPipelinedRequests);
@@ -995,7 +1035,7 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
     if (PREF_CHANGED(HTTP_PREF("qos"))) {
         rv = prefs->GetIntPref(HTTP_PREF("qos"), &val);
         if (NS_SUCCEEDED(rv))
-            mQoSBits = (PRUint8) NS_CLAMP(val, 0, 0xff);
+            mQoSBits = (PRUint8) clamped(val, 0, 0xff);
     }
 
     if (PREF_CHANGED(HTTP_PREF("sendSecureXSiteReferrer"))) {
@@ -1059,7 +1099,7 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
 
     // enable Persistent caching for HTTPS - bug#205921    
     if (PREF_CHANGED(BROWSER_PREF("disk_cache_ssl"))) {
-        cVar = PR_FALSE;
+        cVar = false;
         rv = prefs->GetBoolPref(BROWSER_PREF("disk_cache_ssl"), &cVar);
         if (NS_SUCCEEDED(rv))
             mEnablePersistentHttpsCaching = cVar;
@@ -1068,7 +1108,32 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
     if (PREF_CHANGED(HTTP_PREF("phishy-userpass-length"))) {
         rv = prefs->GetIntPref(HTTP_PREF("phishy-userpass-length"), &val);
         if (NS_SUCCEEDED(rv))
-            mPhishyUserPassLength = (PRUint8) NS_CLAMP(val, 0, 0xff);
+            mPhishyUserPassLength = (PRUint8) clamped(val, 0, 0xff);
+    }
+
+    if (PREF_CHANGED(HTTP_PREF("spdy.enabled"))) {
+        rv = prefs->GetBoolPref(HTTP_PREF("spdy.enabled"), &cVar);
+        if (NS_SUCCEEDED(rv))
+            mEnableSpdy = cVar;
+    }
+
+    if (PREF_CHANGED(HTTP_PREF("spdy.coalesce-hostnames"))) {
+        rv = prefs->GetBoolPref(HTTP_PREF("spdy.coalesce-hostnames"), &cVar);
+        if (NS_SUCCEEDED(rv))
+            mCoalesceSpdy = cVar;
+    }
+
+    if (PREF_CHANGED(HTTP_PREF("spdy.use-alternate-protocol"))) {
+        rv = prefs->GetBoolPref(HTTP_PREF("spdy.use-alternate-protocol"),
+                                &cVar);
+        if (NS_SUCCEEDED(rv))
+            mUseAlternateProtocol = cVar;
+    }
+
+    if (PREF_CHANGED(HTTP_PREF("spdy.timeout"))) {
+        rv = prefs->GetIntPref(HTTP_PREF("spdy.timeout"), &val);
+        if (NS_SUCCEEDED(rv))
+            mSpdyTimeout = (PRUint16) clamped(val, 1, 0xffff);
     }
 
     //
@@ -1088,25 +1153,12 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
         } 
     }
 
-    if (PREF_CHANGED(INTL_ACCEPT_CHARSET)) {
-        nsCOMPtr<nsIPrefLocalizedString> pls;
-        prefs->GetComplexValue(INTL_ACCEPT_CHARSET,
-                                NS_GET_IID(nsIPrefLocalizedString),
-                                getter_AddRefs(pls));
-        if (pls) {
-            nsXPIDLString uval;
-            pls->ToString(getter_Copies(uval));
-            if (uval)
-                SetAcceptCharsets(NS_ConvertUTF16toUTF8(uval).get());
-        } 
-    }
-
     //
     // IDN options
     //
 
     if (PREF_CHANGED(NETWORK_ENABLEIDN)) {
-        PRBool enableIDN = PR_FALSE;
+        bool enableIDN = false;
         prefs->GetBoolPref(NETWORK_ENABLEIDN, &enableIDN);
         // No locking is required here since this method runs in the main
         // UI thread, and so do all the methods in nsHttpChannel.cpp
@@ -1124,7 +1176,7 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
     //
 
     if (PREF_CHANGED(DONOTTRACK_HEADER_ENABLED)) {
-        cVar = PR_FALSE;
+        cVar = false;
         rv = prefs->GetBoolPref(DONOTTRACK_HEADER_ENABLED, &cVar);
         if (NS_SUCCEEDED(rv)) {
             mDoNotTrackEnabled = cVar;
@@ -1220,136 +1272,6 @@ nsHttpHandler::SetAcceptLanguages(const char *aAcceptLanguages)
     return rv;
 }
 
-/**
- *  Allocates a C string into that contains a character set/encoding list
- *  notated with HTTP "q" values for output with a HTTP Accept-Charset
- *  header. If the UTF-8 character set is not present, it will be added.
- *  If a wildcard catch-all is not present, it will be added. If more than
- *  one charset is set (as of 2001-02-07, only one is used), they will be
- *  comma delimited and with q values set for each charset in decending order.
- *
- *  Ex: passing: "euc-jp"
- *      returns: "euc-jp,utf-8;q=0.6,*;q=0.6"
- *
- *      passing: "UTF-8"
- *      returns: "UTF-8, *"
- */
-static nsresult
-PrepareAcceptCharsets(const char *i_AcceptCharset, nsACString &o_AcceptCharset)
-{
-    PRUint32 n, size, wrote, u;
-    PRInt32 available;
-    double q, dec;
-    char *p, *p2, *token, *q_Accept, *o_Accept;
-    const char *acceptable, *comma;
-    PRBool add_utf = PR_FALSE;
-    PRBool add_asterisk = PR_FALSE;
-
-    if (!i_AcceptCharset)
-        acceptable = "";
-    else
-        acceptable = i_AcceptCharset;
-    o_Accept = nsCRT::strdup(acceptable);
-    if (nsnull == o_Accept)
-        return NS_ERROR_OUT_OF_MEMORY;
-    for (p = o_Accept, n = size = 0; '\0' != *p; p++) {
-        if (*p == ',') n++;
-            size++;
-    }
-
-    // only add "utf-8" and "*" to the list if they aren't
-    // already specified.
-
-    if (PL_strcasestr(acceptable, "utf-8") == NULL) {
-        n++;
-        add_utf = PR_TRUE;
-    }
-    if (PL_strchr(acceptable, '*') == NULL) {
-        n++;
-        add_asterisk = PR_TRUE;
-    }
-
-    available = size + ++n * 11 + 1;
-    q_Accept = new char[available];
-    if ((char *) 0 == q_Accept)
-        return NS_ERROR_OUT_OF_MEMORY;
-    *q_Accept = '\0';
-    q = 1.0;
-    dec = q / (double) n;
-    n = 0;
-    p2 = q_Accept;
-    for (token = nsCRT::strtok(o_Accept, ",", &p);
-         token != (char *) 0;
-         token = nsCRT::strtok(p, ",", &p)) {
-        token = net_FindCharNotInSet(token, HTTP_LWS);
-        char* trim;
-        trim = net_FindCharInSet(token, ";" HTTP_LWS);
-        if (trim != (char*)0)  // remove "; q=..." if present
-            *trim = '\0';
-
-        if (*token != '\0') {
-            comma = n++ != 0 ? "," : ""; // delimiter if not first item
-            u = QVAL_TO_UINT(q);
-            if (u < 10)
-                wrote = PR_snprintf(p2, available, "%s%s;q=0.%u", comma, token, u);
-            else
-                wrote = PR_snprintf(p2, available, "%s%s", comma, token);
-            q -= dec;
-            p2 += wrote;
-            available -= wrote;
-            NS_ASSERTION(available > 0, "allocated string not long enough");
-        }
-    }
-    if (add_utf) {
-        comma = n++ != 0 ? "," : ""; // delimiter if not first item
-        u = QVAL_TO_UINT(q);
-        if (u < 10)
-            wrote = PR_snprintf(p2, available, "%sutf-8;q=0.%u", comma, u);
-        else
-            wrote = PR_snprintf(p2, available, "%sutf-8", comma);
-        q -= dec;
-        p2 += wrote;
-        available -= wrote;
-        NS_ASSERTION(available > 0, "allocated string not long enough");
-    }
-    if (add_asterisk) {
-        comma = n++ != 0 ? "," : ""; // delimiter if not first item
-
-        // keep q of "*" equal to the lowest q value
-        // in the event of a tie between the q of "*" and a non-wildcard
-        // the non-wildcard always receives preference.
-
-        q += dec;
-        u = QVAL_TO_UINT(q);
-        if (u < 10)
-            wrote = PR_snprintf(p2, available, "%s*;q=0.%u", comma, u);
-        else
-            wrote = PR_snprintf(p2, available, "%s*", comma);
-        available -= wrote;
-        p2 += wrote;
-        NS_ASSERTION(available > 0, "allocated string not long enough");
-    }
-    nsCRT::free(o_Accept);
-
-    // change alloc from C++ new/delete to nsCRT::strdup's way
-    o_AcceptCharset.Assign(q_Accept);
-#if defined DEBUG_havill
-    printf("Accept-Charset: %s\n", q_Accept);
-#endif
-    delete [] q_Accept;
-    return NS_OK;
-}
-
-nsresult
-nsHttpHandler::SetAcceptCharsets(const char *aAcceptCharsets) 
-{
-    nsCString buf;
-    nsresult rv = PrepareAcceptCharsets(aAcceptCharsets, buf);
-    if (NS_SUCCEEDED(rv))
-        mAcceptCharsets.Assign(buf);
-    return rv;
-}
-
 nsresult
 nsHttpHandler::SetAccept(const char *aAccept) 
 {
@@ -1418,7 +1340,7 @@ nsHttpHandler::NewChannel(nsIURI *uri, nsIChannel **result)
     NS_ENSURE_ARG_POINTER(uri);
     NS_ENSURE_ARG_POINTER(result);
 
-    PRBool isHttp = PR_FALSE, isHttps = PR_FALSE;
+    bool isHttp = false, isHttps = false;
 
     // Verify that we have been given a valid scheme
     nsresult rv = uri->SchemeIs("http", &isHttp);
@@ -1436,10 +1358,10 @@ nsHttpHandler::NewChannel(nsIURI *uri, nsIChannel **result)
 }
 
 NS_IMETHODIMP 
-nsHttpHandler::AllowPort(PRInt32 port, const char *scheme, PRBool *_retval)
+nsHttpHandler::AllowPort(PRInt32 port, const char *scheme, bool *_retval)
 {
     // don't override anything.  
-    *_retval = PR_FALSE;
+    *_retval = false;
     return NS_OK;
 }
 
@@ -1463,7 +1385,7 @@ nsHttpHandler::NewProxiedChannel(nsIURI *uri,
         NS_ENSURE_ARG(proxyInfo);
     }
 
-    PRBool https;
+    bool https;
     nsresult rv = uri->SchemeIs("https", &https);
     if (NS_FAILED(rv))
         return rv;
@@ -1674,9 +1596,9 @@ nsHttpsHandler::NewChannel(nsIURI *aURI, nsIChannel **_retval)
 }
 
 NS_IMETHODIMP
-nsHttpsHandler::AllowPort(PRInt32 aPort, const char *aScheme, PRBool *_retval)
+nsHttpsHandler::AllowPort(PRInt32 aPort, const char *aScheme, bool *_retval)
 {
     // don't override anything.  
-    *_retval = PR_FALSE;
+    *_retval = false;
     return NS_OK;
 }

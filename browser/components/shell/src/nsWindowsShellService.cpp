@@ -28,6 +28,7 @@
  *  Ryan Jones     <sciguyryan@gmail.com>
  *  Paul O'Shannessy <paul@oshannessy.com>
  *  Jim Mathies    <jmathies@mozilla.com>
+ *  Moonchild      <moonchild@palemoon.org>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -262,6 +263,9 @@ nsWindowsShellService::ShortcutMaintenance()
 {
   nsresult rv;
 
+  // XXX App ids were updated to a constant install path hash,
+  // XXX this code can be removed after a few upgrade cycles.
+
   // Launch helper.exe so it can update the application user model ids on
   // shortcuts in the user's taskbar and start menu. This keeps older pinned
   // shortcuts grouped correctly after major updates. Note, we also do this
@@ -275,7 +279,7 @@ nsWindowsShellService::ShortcutMaintenance()
     return NS_OK;
 
   // Avoid if this isn't Win7+
-  PRBool isSupported = PR_FALSE;
+  bool isSupported = false;
   taskbarInfo->GetAvailable(&isSupported);
   if (!isSupported)
     return NS_OK;
@@ -331,8 +335,8 @@ nsWindowsShellService::ShortcutMaintenance()
   return LaunchHelper(appHelperPath);
 }
 
-PRBool
-nsWindowsShellService::IsDefaultBrowserVista(PRBool* aIsDefaultBrowser)
+bool
+nsWindowsShellService::IsDefaultBrowserVista(bool* aIsDefaultBrowser)
 {
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   IApplicationAssociationRegistration* pAAR;
@@ -351,26 +355,26 @@ nsWindowsShellService::IsDefaultBrowserVista(PRBool* aIsDefaultBrowser)
     *aIsDefaultBrowser = res;
 
     pAAR->Release();
-    return PR_TRUE;
+    return true;
   }
 #endif  
-  return PR_FALSE;
+  return false;
 }
 
 NS_IMETHODIMP
-nsWindowsShellService::IsDefaultBrowser(PRBool aStartupCheck,
-                                        PRBool* aIsDefaultBrowser)
+nsWindowsShellService::IsDefaultBrowser(bool aStartupCheck,
+                                        bool* aIsDefaultBrowser)
 {
   // If this is the first browser window, maintain internal state that we've
   // checked this session (so that subsequent window opens don't show the 
   // default browser dialog).
   if (aStartupCheck)
-    mCheckedThisSession = PR_TRUE;
+    mCheckedThisSession = true;
 
   SETTING* settings;
   SETTING* end = gSettings + sizeof(gSettings)/sizeof(SETTING);
 
-  *aIsDefaultBrowser = PR_TRUE;
+  *aIsDefaultBrowser = true;
 
   PRUnichar exePath[MAX_BUF];
   if (!::GetModuleFileNameW(0, exePath, MAX_BUF))
@@ -396,7 +400,7 @@ nsWindowsShellService::IsDefaultBrowser(PRBool aStartupCheck,
     HKEY theKey;
     rv = OpenKeyForReading(HKEY_CLASSES_ROOT, key, &theKey);
     if (NS_FAILED(rv)) {
-      *aIsDefaultBrowser = PR_FALSE;
+      *aIsDefaultBrowser = false;
       return NS_OK;
     }
 
@@ -408,7 +412,7 @@ nsWindowsShellService::IsDefaultBrowser(PRBool aStartupCheck,
     if (REG_FAILED(res) ||
         !dataLongPath.Equals(currValue, CaseInsensitiveCompare)) {
       // Key wasn't set, or was set to something other than our registry entry
-      *aIsDefaultBrowser = PR_FALSE;
+      *aIsDefaultBrowser = false;
       return NS_OK;
     }
   }
@@ -422,7 +426,7 @@ nsWindowsShellService::IsDefaultBrowser(PRBool aStartupCheck,
 }
 
 NS_IMETHODIMP
-nsWindowsShellService::SetDefaultBrowser(PRBool aClaimAllTypes, PRBool aForAllUsers)
+nsWindowsShellService::SetDefaultBrowser(bool aClaimAllTypes, bool aForAllUsers)
 {
   nsAutoString appHelperPath;
   if (NS_FAILED(GetHelperPath(appHelperPath)))
@@ -438,36 +442,41 @@ nsWindowsShellService::SetDefaultBrowser(PRBool aClaimAllTypes, PRBool aForAllUs
 }
 
 NS_IMETHODIMP
-nsWindowsShellService::GetShouldCheckDefaultBrowser(PRBool* aResult)
+nsWindowsShellService::GetShouldCheckDefaultBrowser(bool* aResult)
 {
+  NS_ENSURE_ARG_POINTER(aResult);
+
   // If we've already checked, the browser has been started and this is a 
   // new window open, and we don't want to check again.
   if (mCheckedThisSession) {
-    *aResult = PR_FALSE;
+    *aResult = false;
     return NS_OK;
   }
 
   nsCOMPtr<nsIPrefBranch> prefs;
-  nsCOMPtr<nsIPrefService> pserve(do_GetService(NS_PREFSERVICE_CONTRACTID));
-  if (pserve)
-    pserve->GetBranch("", getter_AddRefs(prefs));
+  nsresult rv;
+  nsCOMPtr<nsIPrefService> pserve(do_GetService(NS_PREFSERVICE_CONTRACTID, &rv));
+  NS_ENSURE_SUCCESS(rv, rv);
 
-  prefs->GetBoolPref(PREF_CHECKDEFAULTBROWSER, aResult);
+  rv = pserve->GetBranch("", getter_AddRefs(prefs));
+  NS_ENSURE_SUCCESS(rv, rv);
 
-  return NS_OK;
+  return prefs->GetBoolPref(PREF_CHECKDEFAULTBROWSER, aResult);
 }
 
 NS_IMETHODIMP
-nsWindowsShellService::SetShouldCheckDefaultBrowser(PRBool aShouldCheck)
+nsWindowsShellService::SetShouldCheckDefaultBrowser(bool aShouldCheck)
 {
   nsCOMPtr<nsIPrefBranch> prefs;
-  nsCOMPtr<nsIPrefService> pserve(do_GetService(NS_PREFSERVICE_CONTRACTID));
-  if (pserve)
-    pserve->GetBranch("", getter_AddRefs(prefs));
+  nsresult rv;
 
-  prefs->SetBoolPref(PREF_CHECKDEFAULTBROWSER, aShouldCheck);
+  nsCOMPtr<nsIPrefService> pserve(do_GetService(NS_PREFSERVICE_CONTRACTID, &rv));
+  NS_ENSURE_SUCCESS(rv, rv);
+  
+  rv = pserve->GetBranch("", getter_AddRefs(prefs));
+  NS_ENSURE_SUCCESS(rv, rv);
 
-  return NS_OK;
+  return prefs->SetBoolPref(PREF_CHECKDEFAULTBROWSER, aShouldCheck);
 }
 
 static nsresult
@@ -609,7 +618,7 @@ nsWindowsShellService::SetDesktopBackground(nsIDOMElement* aElement,
 
   // if the file was written successfully, set it as the system wallpaper
   if (NS_SUCCEEDED(rv)) {
-     PRBool result = PR_FALSE;
+     bool result = false;
      DWORD  dwDisp = 0;
      HKEY   key;
      // Try to create/open a subkey under HKCU.
@@ -771,7 +780,7 @@ nsWindowsShellService::SetDesktopBackgroundColor(PRUint32 aColor)
 
   ::SetSysColors(sizeof(aParameters) / sizeof(int), aParameters, colors);
 
-  PRBool result = PR_FALSE;
+  bool result = false;
   DWORD  dwDisp = 0;
   HKEY   key;
   // Try to create/open a subkey under HKCU.
@@ -796,66 +805,6 @@ nsWindowsShellService::SetDesktopBackgroundColor(PRUint32 aColor)
 }
 
 NS_IMETHODIMP
-nsWindowsShellService::GetUnreadMailCount(PRUint32* aCount)
-{
-  *aCount = 0;
-
-  HKEY accountKey;
-  if (GetMailAccountKey(&accountKey)) {
-    DWORD type, unreadCount;
-    DWORD len = sizeof unreadCount;
-    DWORD res = ::RegQueryValueExW(accountKey, L"MessageCount", 0,
-                                   &type, (LPBYTE)&unreadCount, &len);
-    if (REG_SUCCEEDED(res))
-      *aCount = unreadCount;
-
-    // Close the key we opened.
-    ::RegCloseKey(accountKey);
-  }
-
-  return NS_OK;
-}
-
-PRBool
-nsWindowsShellService::GetMailAccountKey(HKEY* aResult)
-{
-  NS_NAMED_LITERAL_STRING(unread,
-    "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\UnreadMail\\");
-
-  HKEY mailKey;
-  DWORD res = ::RegOpenKeyExW(HKEY_CURRENT_USER, unread.get(), 0,
-                              KEY_ENUMERATE_SUB_KEYS, &mailKey);
-
-  PRInt32 i = 0;
-  do {
-    PRUnichar subkeyName[MAX_BUF];
-    DWORD len = sizeof subkeyName;
-    res = ::RegEnumKeyExW(mailKey, i++, subkeyName, &len, NULL, NULL,
-                          NULL, NULL);
-    if (REG_SUCCEEDED(res)) {
-      HKEY accountKey;
-      res = ::RegOpenKeyExW(mailKey, PromiseFlatString(subkeyName).get(),
-                            0, KEY_READ, &accountKey);
-      if (REG_SUCCEEDED(res)) {
-        *aResult = accountKey;
-    
-        // Close the key we opened.
-        ::RegCloseKey(mailKey);
-	 
-        return PR_TRUE;
-      }
-    }
-    else
-      break;
-  }
-  while (1);
-
-  // Close the key we opened.
-  ::RegCloseKey(mailKey);
-  return PR_FALSE;
-}
-
-NS_IMETHODIMP
 nsWindowsShellService::OpenApplicationWithURI(nsILocalFile* aApplication,
                                               const nsACString& aURI)
 {
@@ -871,7 +820,7 @@ nsWindowsShellService::OpenApplicationWithURI(nsILocalFile* aApplication,
   
   const nsCString spec(aURI);
   const char* specStr = spec.get();
-  return process->Run(PR_FALSE, &specStr, 1);
+  return process->Run(false, &specStr, 1);
 }
 
 NS_IMETHODIMP
@@ -911,7 +860,7 @@ nsWindowsShellService::GetDefaultFeedReader(nsILocalFile** _retval)
   rv = defaultReader->InitWithPath(path);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  PRBool exists;
+  bool exists;
   rv = defaultReader->Exists(&exists);
   NS_ENSURE_SUCCESS(rv, rv);
   if (!exists)

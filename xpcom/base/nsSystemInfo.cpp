@@ -36,18 +36,28 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/Util.h"
+
 #include "nsSystemInfo.h"
 #include "prsystem.h"
 #include "nsString.h"
 #include "prprf.h"
+#include "mozilla/SSE.h"
+#include "mozilla/arm.h"
 
 #ifdef MOZ_WIDGET_GTK2
 #include <gtk/gtk.h>
 #endif
 
-#ifdef ANDROID
+#ifdef MOZ_WIDGET_ANDROID
 #include "AndroidBridge.h"
+
+extern "C" {
+extern int android_sdk_version;
+}
 #endif
+
+using namespace mozilla;
 
 nsSystemInfo::nsSystemInfo()
 {
@@ -56,6 +66,26 @@ nsSystemInfo::nsSystemInfo()
 nsSystemInfo::~nsSystemInfo()
 {
 }
+
+// CPU-specific information.
+static const struct PropItems {
+    const char *name;
+    bool (*propfun)(void);
+} cpuPropItems[] = {
+    // x86-specific bits.
+    { "hasMMX", mozilla::supports_mmx },
+    { "hasSSE", mozilla::supports_sse },
+    { "hasSSE2", mozilla::supports_sse2 },
+    { "hasSSE3", mozilla::supports_sse3 },
+    { "hasSSSE3", mozilla::supports_ssse3 },
+    { "hasSSE4A", mozilla::supports_sse4a },
+    { "hasSSE4_1", mozilla::supports_sse4_1 },
+    { "hasSSE4_2", mozilla::supports_sse4_2 },
+    // ARM-specific bits.
+    { "hasEDSP", mozilla::supports_edsp },
+    { "hasARMv6", mozilla::supports_armv6 },
+    { "hasNEON", mozilla::supports_neon }
+};
 
 nsresult
 nsSystemInfo::Init()
@@ -91,6 +121,12 @@ nsSystemInfo::Init()
     SetInt32Property(NS_LITERAL_STRING("memmapalign"), PR_GetMemMapAlignment());
     SetInt32Property(NS_LITERAL_STRING("cpucount"), PR_GetNumberOfProcessors());
     SetUint64Property(NS_LITERAL_STRING("memsize"), PR_GetPhysicalMemorySize());
+
+    for (PRUint32 i = 0; i < ArrayLength(cpuPropItems); i++) {
+        rv = SetPropertyAsBool(NS_ConvertASCIItoUTF16(cpuPropItems[i].name),
+                               cpuPropItems[i].propfun());
+        NS_ENSURE_SUCCESS(rv, rv);
+    }
 
 #ifdef MOZ_WIDGET_GTK2
     // This must be done here because NSPR can only separate OS's when compiled, not libraries.
@@ -142,7 +178,7 @@ nsSystemInfo::Init()
     }
 #endif
 
-#ifdef ANDROID
+#ifdef MOZ_WIDGET_ANDROID
     if (mozilla::AndroidBridge::Bridge()) {
         nsAutoString str;
         if (mozilla::AndroidBridge::Bridge()->GetStaticStringField("android/os/Build", "MODEL", str))
@@ -152,6 +188,7 @@ nsSystemInfo::Init()
         PRInt32 version;
         if (!mozilla::AndroidBridge::Bridge()->GetStaticIntField("android/os/Build$VERSION", "SDK_INT", &version))
             version = 0;
+        android_sdk_version = version;
         if (version >= 8 && mozilla::AndroidBridge::Bridge()->GetStaticStringField("android/os/Build", "HARDWARE", str))
             SetPropertyAsAString(NS_LITERAL_STRING("hardware"), str);
         SetPropertyAsAString(NS_LITERAL_STRING("shellName"), NS_LITERAL_STRING("Android"));
@@ -160,11 +197,11 @@ nsSystemInfo::Init()
                 str.Append(NS_LITERAL_STRING(" ("));
                 str.AppendInt(version);
                 str.Append(NS_LITERAL_STRING(")"));
-            }   
+            }
             SetPropertyAsAString(NS_LITERAL_STRING("shellVersion"), str);
         }
-                
-        
+        bool isTablet = mozilla::AndroidBridge::Bridge()->IsTablet();
+        SetPropertyAsBool(NS_LITERAL_STRING("tablet"), isTablet);
     }
 #endif
     return NS_OK;

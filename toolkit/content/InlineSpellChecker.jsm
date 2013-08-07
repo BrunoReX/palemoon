@@ -60,6 +60,7 @@ InlineSpellChecker.prototype = {
   // call this to clear state
   uninit: function()
   {
+    this.mEditor = null;
     this.mInlineSpellChecker = null;
     this.mOverMisspelling = false;
     this.mMisspelling = "";
@@ -69,6 +70,7 @@ InlineSpellChecker.prototype = {
     this.mDictionaryMenu = null;
     this.mDictionaryNames = [];
     this.mDictionaryItems = [];
+    this.mWordNode = null;
   },
 
   // for each UI event, you must call this function, it will compute the

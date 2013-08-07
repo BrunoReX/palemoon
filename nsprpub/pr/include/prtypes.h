@@ -354,6 +354,12 @@ typedef long PRInt32;
 **      for all the supported compilers topday). If PRInt64 and PRUint64
 **      are defined as structs, the LL_INIT macro defined in prlong.h has
 **      to be used.
+**
+** MACROS:      PR_INT64_MAX
+**              PR_INT64_MIN
+**              PR_UINT64_MAX
+** DESCRIPTION:
+**  The maximum and minimum values of a PRInt64 or PRUint64.
 ************************************************************************/
 #ifdef HAVE_LONG_LONG
 /* Keep this in sync with prlong.h. */
@@ -378,6 +384,10 @@ typedef unsigned long long PRUint64;
 #define PR_INT64(x)  x ## LL
 #define PR_UINT64(x) x ## ULL
 #endif /* PR_BYTES_PER_LONG == 8 */
+
+#define PR_INT64_MAX PR_INT64(0x7fffffffffffffff)
+#define PR_INT64_MIN (-PR_INT64_MAX - 1)
+#define PR_UINT64_MAX PR_UINT64(-1)
 #else  /* !HAVE_LONG_LONG */
 typedef struct {
 #ifdef IS_LITTLE_ENDIAN
@@ -387,6 +397,11 @@ typedef struct {
 #endif
 } PRInt64;
 typedef PRInt64 PRUint64;
+
+#define PR_INT64_MAX (PRInt64){0x7fffffff, 0xffffffff}
+#define PR_INT64_MIN (PRInt64){0xffffffff, 0xffffffff}
+#define PR_UINT64_MAX (PRUint64){0xffffffff, 0xffffffff}
+
 #endif /* !HAVE_LONG_LONG */
 
 /************************************************************************

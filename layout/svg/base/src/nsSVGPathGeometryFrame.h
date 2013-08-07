@@ -41,11 +41,9 @@
 
 #include "nsFrame.h"
 #include "nsISVGChildFrame.h"
-#include "nsWeakReference.h"
+#include "nsSVGUtils.h"
 #include "nsGkAtoms.h"
 #include "nsSVGGeometryFrame.h"
-#include "gfxRect.h"
-#include "gfxMatrix.h"
 
 class nsSVGMarkerFrame;
 class nsSVGMarkerProperty;
@@ -100,9 +98,12 @@ protected:
   virtual void NotifySVGChanged(PRUint32 aFlags);
   NS_IMETHOD NotifyRedrawSuspended();
   NS_IMETHOD NotifyRedrawUnsuspended();
-  virtual gfxRect GetBBoxContribution(const gfxMatrix &aToBBoxUserspace);
-  NS_IMETHOD_(PRBool) IsDisplayContainer() { return PR_FALSE; }
-  NS_IMETHOD_(PRBool) HasValidCoveredRect() { return PR_TRUE; }
+  virtual gfxRect GetBBoxContribution(const gfxMatrix &aToBBoxUserspace,
+                                      PRUint32 aFlags);
+  NS_IMETHOD_(bool) IsDisplayContainer() { return false; }
+  NS_IMETHOD_(bool) HasValidCoveredRect() {
+    return !(GetStateBits() & NS_STATE_SVG_NONDISPLAY_CHILD);
+  }
 
 protected:
   void GeneratePath(gfxContext *aContext,
@@ -116,7 +117,7 @@ private:
     nsSVGMarkerProperty* mMarkerMid;
     nsSVGMarkerProperty* mMarkerEnd;
 
-    PRBool MarkersExist() const {
+    bool MarkersExist() const {
       return mMarkerStart || mMarkerMid || mMarkerEnd;
     }
 

@@ -43,7 +43,11 @@
 #include "nsTArray.h"
 #include "nsITimer.h"
 #include "nsCOMPtr.h"
+#include "nsAutoPtr.h"
 #include "nsComponentManagerUtils.h"
+#include "nsIObserver.h"
+#include "nsIObserverService.h"
+#include "mozilla/Services.h"
 
 /**
  * Data used to track the expiration state of an object. We promise that this
@@ -55,7 +59,7 @@ struct nsExpirationState {
          MAX_INDEX_IN_GENERATION = (1U << 28) - 1 };
 
   nsExpirationState() : mGeneration(NOT_TRACKED) {}
-  PRBool IsTracked() { return mGeneration != NOT_TRACKED; }
+  bool IsTracked() { return mGeneration != NOT_TRACKED; }
 
   /**
    * The generation that this object belongs to, or NOT_TRACKED.
@@ -105,13 +109,16 @@ template <class T, PRUint32 K> class nsExpirationTracker {
      */
     nsExpirationTracker(PRUint32 aTimerPeriod)
       : mTimerPeriod(aTimerPeriod), mNewestGeneration(0),
-        mInAgeOneGeneration(PR_FALSE) {
+        mInAgeOneGeneration(false) {
       PR_STATIC_ASSERT(K >= 2 && K <= nsExpirationState::NOT_TRACKED);
+      mObserver = new ExpirationTrackerObserver();
+      mObserver->Init(this);
     }
     ~nsExpirationTracker() {
       if (mTimer) {
         mTimer->Cancel();
       }
+      mObserver->Destroy();
     }
 
     /**
@@ -187,7 +194,7 @@ template <class T, PRUint32 K> class nsExpirationTracker {
         return;
       }
       
-      mInAgeOneGeneration = PR_TRUE;
+      mInAgeOneGeneration = true;
       PRUint32 reapGeneration = 
         mNewestGeneration > 0 ? mNewestGeneration - 1 : K - 1;
       nsTArray<T*>& generation = mGenerations[reapGeneration];
@@ -218,7 +225,7 @@ template <class T, PRUint32 K> class nsExpirationTracker {
       // just removed most or all of its elements.
       generation.Compact();
       mNewestGeneration = reapGeneration;
-      mInAgeOneGeneration = PR_FALSE;
+      mInAgeOneGeneration = false;
     }
 
     /**
@@ -259,12 +266,12 @@ template <class T, PRUint32 K> class nsExpirationTracker {
     
     friend class Iterator;
 
-    PRBool IsEmpty() {
+    bool IsEmpty() {
       for (PRUint32 i = 0; i < K; ++i) {
         if (!mGenerations[i].IsEmpty())
-          return PR_FALSE;
+          return false;
       }
-      return PR_TRUE;
+      return true;
     }
 
   protected:
@@ -296,12 +303,38 @@ template <class T, PRUint32 K> class nsExpirationTracker {
     virtual void NotifyExpired(T* aObj) = 0;
 
   private:
+    class ExpirationTrackerObserver;
+    nsRefPtr<ExpirationTrackerObserver> mObserver;
     nsTArray<T*>       mGenerations[K];
     nsCOMPtr<nsITimer> mTimer;
     PRUint32           mTimerPeriod;
     PRUint32           mNewestGeneration;
-    PRPackedBool       mInAgeOneGeneration;
+    bool               mInAgeOneGeneration;
 
+    /**
+     * Whenever "memory-pressure" is observed, it calls AgeAllGenerations()
+     * to minimize memory usage.
+     */
+    class ExpirationTrackerObserver : public nsIObserver {
+    public:
+      void Init(nsExpirationTracker<T,K> *obj) {
+        mOwner = obj;
+        nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+        if (obs) {
+          obs->AddObserver(this, "memory-pressure", false);
+        }
+      }
+      void Destroy() {
+        nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+        if (obs)
+          obs->RemoveObserver(this, "memory-pressure");
+      }
+      NS_DECL_ISUPPORTS
+      NS_DECL_NSIOBSERVER
+    private:
+      nsExpirationTracker<T,K> *mOwner;
+    };
+  
     static void TimerCallback(nsITimer* aTimer, void* aThis) {
       nsExpirationTracker* tracker = static_cast<nsExpirationTracker*>(aThis);
       tracker->AgeOneGeneration();
@@ -323,5 +356,56 @@ template <class T, PRUint32 K> class nsExpirationTracker {
       return NS_OK;
     }
 };
+
+template<class T, PRUint32 K>
+NS_IMETHODIMP
+nsExpirationTracker<T, K>::ExpirationTrackerObserver::Observe(nsISupports     *aSubject,
+                                                              const char      *aTopic,
+                                                              const PRUnichar *aData)
+{
+  if (!strcmp(aTopic, "memory-pressure"))
+    mOwner->AgeAllGenerations();
+  return NS_OK;
+}
+
+template <class T, PRUint32 K>
+NS_IMETHODIMP_(nsrefcnt)
+nsExpirationTracker<T,K>::ExpirationTrackerObserver::AddRef(void)
+{
+  NS_PRECONDITION(PRInt32(mRefCnt) >= 0, "illegal refcnt");
+  NS_ASSERT_OWNINGTHREAD_AND_NOT_CCTHREAD(ExpirationTrackerObserver);
+  ++mRefCnt;
+  NS_LOG_ADDREF(this, mRefCnt, "ExpirationTrackerObserver", sizeof(*this));
+  return mRefCnt;
+}
+
+template <class T, PRUint32 K>
+NS_IMETHODIMP_(nsrefcnt)
+nsExpirationTracker<T,K>::ExpirationTrackerObserver::Release(void)
+{
+  NS_PRECONDITION(0 != mRefCnt, "dup release");
+  NS_ASSERT_OWNINGTHREAD_AND_NOT_CCTHREAD(ExpirationTrackerObserver);
+  --mRefCnt;
+  NS_LOG_RELEASE(this, mRefCnt, "ExpirationTrackerObserver");
+  if (mRefCnt == 0) {
+    NS_ASSERT_OWNINGTHREAD(ExpirationTrackerObserver);
+    mRefCnt = 1; /* stabilize */
+    delete (this);
+    return 0;
+  }
+  return mRefCnt;
+}
+
+template <class T, PRUint32 K>
+NS_IMETHODIMP
+nsExpirationTracker<T,K>::ExpirationTrackerObserver::QueryInterface(REFNSIID aIID, 
+                                                                    void** aInstancePtr)
+{
+  NS_ASSERTION(aInstancePtr,
+               "QueryInterface requires a non-NULL destination!");            
+  nsresult rv = NS_ERROR_FAILURE;
+  NS_INTERFACE_TABLE1(ExpirationTrackerObserver, nsIObserver)
+  return rv;
+}
 
 #endif /*NSEXPIRATIONTRACKER_H_*/

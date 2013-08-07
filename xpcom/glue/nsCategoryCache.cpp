@@ -36,6 +36,7 @@
  * ***** END LICENSE BLOCK ***** */
 
 #include "nsIObserverService.h"
+#include "mozilla/Services.h"
 #include "nsISupportsPrimitives.h"
 
 #include "nsXPCOMCID.h"
@@ -88,12 +89,12 @@ nsCategoryObserver::nsCategoryObserver(const char* aCategory,
 
   // Now, listen for changes
   nsCOMPtr<nsIObserverService> serv =
-    do_GetService(NS_OBSERVERSERVICE_CONTRACTID);
+    mozilla::services::GetObserverService();
   if (serv) {
-    serv->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, PR_FALSE);
-    serv->AddObserver(this, NS_XPCOM_CATEGORY_ENTRY_ADDED_OBSERVER_ID, PR_FALSE);
-    serv->AddObserver(this, NS_XPCOM_CATEGORY_ENTRY_REMOVED_OBSERVER_ID, PR_FALSE);
-    serv->AddObserver(this, NS_XPCOM_CATEGORY_CLEARED_OBSERVER_ID, PR_FALSE);
+    serv->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
+    serv->AddObserver(this, NS_XPCOM_CATEGORY_ENTRY_ADDED_OBSERVER_ID, false);
+    serv->AddObserver(this, NS_XPCOM_CATEGORY_ENTRY_REMOVED_OBSERVER_ID, false);
+    serv->AddObserver(this, NS_XPCOM_CATEGORY_CLEARED_OBSERVER_ID, false);
   }
 
   for (PRInt32 i = entries.Length() - 1; i >= 0; --i)
@@ -118,7 +119,7 @@ nsCategoryObserver::RemoveObservers() {
 
   mObserversRemoved = true;
   nsCOMPtr<nsIObserverService> obsSvc =
-    do_GetService(NS_OBSERVERSERVICE_CONTRACTID);
+    mozilla::services::GetObserverService();
   if (obsSvc) {
     obsSvc->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
     obsSvc->RemoveObserver(this, NS_XPCOM_CATEGORY_ENTRY_ADDED_OBSERVER_ID);

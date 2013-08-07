@@ -57,6 +57,7 @@
             onpaneload="gSyncPane.init()">
 
     <preferences>
+      <preference id="engine.addons"    name="services.sync.engine.addons"    type="bool"/>
       <preference id="engine.bookmarks" name="services.sync.engine.bookmarks" type="bool"/>
       <preference id="engine.history"   name="services.sync.engine.history"   type="bool"/>
       <preference id="engine.tabs"      name="services.sync.engine.tabs"      type="bool"/>
@@ -74,14 +75,17 @@
       <deck id="weavePrefsDeck">
         <vbox id="noAccount" align="center">
           <spacer flex="1"/>
-          <button id="setupButton"
-                  label="&setupButton.label;"
-                  accesskey="&setupButton.accesskey;"
-                  oncommand="gSyncPane.openSetup();"/>
-          <separator/>
-          <description id="syncDesc" flex="1">
+          <description id="syncDesc">
             &weaveDesc.label;
           </description>
+          <separator/>
+          <label class="text-link"
+                 onclick="event.stopPropagation(); gSyncPane.openSetup(null);"
+                 value="&setupButton.label;"/>
+          <separator/>
+          <label class="text-link"
+                 onclick="event.stopPropagation(); gSyncPane.openSetup('pair');"
+                 value="&pairDevice.label;"/>
           <spacer flex="3"/>
         </vbox>
 
@@ -116,7 +120,7 @@
               <label id="syncAddDeviceLabel"
                      class="text-link"
                      onclick="gSyncPane.openAddDevice(); return false;"
-                     value="&addDevice.label;"/>
+                     value="&pairDevice.label;"/>
             </hbox>
 
             <vbox>
@@ -124,6 +128,11 @@
               <richlistbox id="syncEnginesList"
                            orient="vertical"
                            onselect="if (this.selectedCount) this.clearSelection();">
+                <richlistitem>
+                  <checkbox label="&engine.addons.label;"
+                            accesskey="&engine.addons.accesskey;"
+                            preference="engine.addons"/>
+                </richlistitem>
                 <richlistitem>
                   <checkbox label="&engine.bookmarks.label;"
                             accesskey="&engine.bookmarks.accesskey;"

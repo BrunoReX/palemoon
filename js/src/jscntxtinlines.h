@@ -43,12 +43,13 @@
 
 #include "jscntxt.h"
 #include "jscompartment.h"
-#include "jsstaticcheck.h"
+#include "jsfriendapi.h"
+#include "jsinterp.h"
 #include "jsxml.h"
-#include "jsregexp.h"
 #include "jsgc.h"
 
 #include "frontend/ParseMaps.h"
+#include "vm/RegExpObject.h"
 
 namespace js {
 
@@ -74,21 +75,11 @@ struct PreserveRegsGuard
 static inline GlobalObject *
 GetGlobalForScopeChain(JSContext *cx)
 {
-    /*
-     * This is essentially GetScopeChain(cx)->getGlobal(), but without
-     * falling off trace.
-     *
-     * This use of cx->fp, possibly on trace, is deliberate:
-     * cx->fp->scopeChain->getGlobal() returns the same object whether we're on
-     * trace or not, since we do not trace calls across global objects.
-     */
-    VOUCH_DOES_NOT_REQUIRE_STACK();
-
     if (cx->hasfp())
         return cx->fp()->scopeChain().getGlobal();
 
-    JSObject *scope = cx->globalObject;
-    if (!NULLABLE_OBJ_TO_INNER_OBJECT(cx, scope))
+    JSObject *scope = JS_ObjectToInnerObject(cx, cx->globalObject);
+    if (!scope)
         return NULL;
     return scope->asGlobal();
 }
@@ -109,25 +100,48 @@ class AutoNamespaceArray : protected AutoGCRooter {
         array.finish(context);
     }
 
-    uint32 length() const { return array.length; }
+    uint32_t length() const { return array.length; }
 
   public:
     friend void AutoGCRooter::trace(JSTracer *trc);
 
-    JSXMLArray array;
+    JSXMLArray<JSObject> array;
+};
+
+template <typename T>
+class AutoPtr
+{
+    JSContext *cx;
+    T *value;
+
+    AutoPtr(const AutoPtr &other) MOZ_DELETE;
+
+  public:
+    explicit AutoPtr(JSContext *cx) : cx(cx), value(NULL) {}
+    ~AutoPtr() {
+        cx->delete_<T>(value);
+    }
+
+    void operator=(T *ptr) { value = ptr; }
+
+    typedef void ***** ConvertibleToBool;
+    operator ConvertibleToBool() const { return (ConvertibleToBool) value; }
+
+    const T *operator->() const { return value; }
+    T *operator->() { return value; }
+
+    T *get() { return value; }
 };
 
 #ifdef DEBUG
 class CompartmentChecker
 {
-  private:
     JSContext *context;
     JSCompartment *compartment;
 
   public:
     explicit CompartmentChecker(JSContext *cx) : context(cx), compartment(cx->compartment) {
         check(cx->hasfp() ? JS_GetGlobalForScopeChain(cx) : cx->globalObject);
-        VOUCH_DOES_NOT_REQUIRE_STACK();
     }
 
     /*
@@ -207,13 +221,14 @@ class CompartmentChecker
     void check(JSScript *script) {
         if (script) {
             check(script->compartment());
-            if (script->u.object)
-                check(script->u.object);
+            if (!script->isCachedEval && script->globalObject)
+                check(script->globalObject);
         }
     }
 
     void check(StackFrame *fp) {
-        check(&fp->scopeChain());
+        if (fp)
+            check(&fp->scopeChain());
     }
 };
 
@@ -293,7 +308,7 @@ CallJSNative(JSContext *cx, Native native, const CallArgs &args)
     JSBool alreadyThrowing = cx->isExceptionPending();
 #endif
     assertSameCompartment(cx, args);
-    JSBool ok = native(cx, args.argc(), args.base());
+    bool ok = native(cx, args.length(), args.base());
     if (ok) {
         assertSameCompartment(cx, args.rval());
         JS_ASSERT_IF(!alreadyThrowing, !cx->isExceptionPending());
@@ -333,7 +348,7 @@ CallJSNativeConstructor(JSContext *cx, Native native, const CallArgs &args)
     JS_ASSERT_IF(native != FunctionProxyClass.construct &&
                  native != CallableObjectClass.construct &&
                  native != js::CallOrConstructBoundFunction &&
-                 (!callee.isFunction() || callee.getFunctionPrivate()->u.n.clasp != &ObjectClass),
+                 (!callee.isFunction() || callee.toFunction()->u.n.clasp != &ObjectClass),
                  !args.rval().isPrimitive() && callee != args.rval().toObject());
 
     return true;
@@ -372,33 +387,82 @@ CallSetter(JSContext *cx, JSObject *obj, jsid id, StrictPropertyOp op, uintN att
     return CallJSPropertyOpSetter(cx, op, obj, id, strict, vp);
 }
 
-#ifdef JS_TRACER
-/*
- * Reconstruct the JS stack and clear cx->tracecx. We must be currently in a
- * _FAIL builtin from trace on cx or another context on the same thread. The
- * machine code for the trace remains on the C stack when js_DeepBail returns.
- *
- * Implemented in jstracer.cpp.
- */
-JS_FORCES_STACK JS_FRIEND_API(void)
-DeepBail(JSContext *cx);
-#endif
-
-static JS_INLINE void
-LeaveTraceIfGlobalObject(JSContext *cx, JSObject *obj)
+static inline JSAtom **
+FrameAtomBase(JSContext *cx, js::StackFrame *fp)
 {
-    if (!obj->getParent())
-        LeaveTrace(cx);
-}
-
-static JS_INLINE void
-LeaveTraceIfArgumentsObject(JSContext *cx, JSObject *obj)
-{
-    if (obj->isArguments())
-        LeaveTrace(cx);
+    return fp->script()->atoms;
 }
 
 }  /* namespace js */
+
+inline JSVersion
+JSContext::findVersion() const
+{
+    if (hasVersionOverride)
+        return versionOverride;
+
+    if (stack.hasfp()) {
+        /* There may be a scripted function somewhere on the stack! */
+        js::StackFrame *f = fp();
+        while (f && !f->isScriptFrame())
+            f = f->prev();
+        if (f)
+            return f->script()->getVersion();
+    }
+
+    return defaultVersion;
+}
+
+inline bool
+JSContext::canSetDefaultVersion() const
+{
+    return !stack.hasfp() && !hasVersionOverride;
+}
+
+inline void
+JSContext::overrideVersion(JSVersion newVersion)
+{
+    JS_ASSERT(!canSetDefaultVersion());
+    versionOverride = newVersion;
+    hasVersionOverride = true;
+}
+
+inline bool
+JSContext::maybeOverrideVersion(JSVersion newVersion)
+{
+    if (canSetDefaultVersion()) {
+        setDefaultVersion(newVersion);
+        return false;
+    }
+    overrideVersion(newVersion);
+    return true;
+}
+
+inline uintN
+JSContext::getCompileOptions() const { return js::VersionFlagsToOptions(findVersion()); }
+
+inline uintN
+JSContext::allOptions() const { return getRunOptions() | getCompileOptions(); }
+
+inline void
+JSContext::setCompileOptions(uintN newcopts)
+{
+    JS_ASSERT((newcopts & JSCOMPILEOPTION_MASK) == newcopts);
+    if (JS_LIKELY(getCompileOptions() == newcopts))
+        return;
+    JSVersion version = findVersion();
+    JSVersion newVersion = js::OptionFlagsToVersion(newcopts, version);
+    maybeOverrideVersion(newVersion);
+}
+
+inline void
+JSContext::assertValidStackDepth(uintN depth)
+{
+#ifdef DEBUG
+    JS_ASSERT(0 <= regs().sp - fp()->base());
+    JS_ASSERT(depth <= uintptr_t(regs().sp - fp()->base()));
+#endif
+}
 
 #ifdef JS_METHODJIT
 inline js::mjit::JaegerCompartment *JSContext::jaegerCompartment()
@@ -407,6 +471,12 @@ inline js::mjit::JaegerCompartment *JSContext::jaegerCompartment()
 }
 #endif
 
+inline js::LifoAlloc &
+JSContext::typeLifoAlloc()
+{
+    return compartment->typeLifoAlloc;
+}
+
 inline bool
 JSContext::ensureGeneratorStackSpace()
 {
@@ -414,12 +484,6 @@ JSContext::ensureGeneratorStackSpace()
     if (!ok)
         js_ReportOutOfMemory(this);
     return ok;
-}
-
-inline js::RegExpStatics *
-JSContext::regExpStatics()
-{
-    return js::RegExpStatics::extractFrom(js::GetGlobalForScopeChain(this));
 }
 
 inline void
@@ -436,6 +500,21 @@ JSContext::ensureParseMapPool()
         return true;
     parseMapPool_ = js::OffTheBooks::new_<js::ParseMapPool>(this);
     return parseMapPool_;
+}
+
+/*
+ * Get the current frame, first lazily instantiating stack frames if needed.
+ * (Do not access cx->fp() directly except in JS_REQUIRES_STACK code.)
+ */
+static JS_FORCES_STACK JS_INLINE js::StackFrame *
+js_GetTopStackFrame(JSContext *cx, FrameExpandKind expand)
+{
+#ifdef JS_METHODJIT
+    if (expand)
+        js::mjit::ExpandInlineFrames(cx->compartment);
+#endif
+
+    return cx->maybefp();
 }
 
 #endif /* jscntxtinlines_h___ */

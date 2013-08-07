@@ -75,6 +75,7 @@
 #include "nsGkAtoms.h"
 #include "nsDebug.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/dom/Element.h"
 
 // Drag & Drop, Clipboard
 #include "nsIClipboard.h"
@@ -87,9 +88,9 @@ using namespace mozilla;
 
 nsPlaintextEditor::nsPlaintextEditor()
 : nsEditor()
-, mIgnoreSpuriousDragEvent(PR_FALSE)
+, mIgnoreSpuriousDragEvent(false)
 , mRules(nsnull)
-, mWrapToWindow(PR_FALSE)
+, mWrapToWindow(false)
 , mWrapColumn(0)
 , mMaxTextLength(-1)
 , mInitTriggerCounter(0)
@@ -221,8 +222,8 @@ nsPlaintextEditor::EndEditorInit()
     if (NS_SUCCEEDED(res)) {
       // Throw away the old transaction manager if this is not the first time that
       // we're initializing the editor.
-      EnableUndo(PR_FALSE);
-      EnableUndo(PR_TRUE);
+      EnableUndo(false);
+      EnableUndo(true);
     }
   }
   return res;
@@ -242,7 +243,7 @@ nsPlaintextEditor::SetDocumentCharacterSet(const nsACString & characterSet)
     if (NS_SUCCEEDED(result) && domdoc) { 
       nsCOMPtr<nsIDOMNodeList>metaList; 
       nsCOMPtr<nsIDOMElement>metaElement; 
-      PRBool newMetaCharset = PR_TRUE; 
+      bool newMetaCharset = true; 
 
       // get a list of META tags 
       result = domdoc->GetElementsByTagName(NS_LITERAL_STRING("meta"), getter_AddRefs(metaList)); 
@@ -278,7 +279,7 @@ nsPlaintextEditor::SetDocumentCharacterSet(const nsACString & characterSet)
                                               Substring(originalStart, start) +
                                               charsetEquals + NS_ConvertASCIItoUTF16(characterSet)); 
               if (NS_SUCCEEDED(result)) 
-                newMetaCharset = PR_FALSE; 
+                newMetaCharset = false; 
               break; 
             } 
           } 
@@ -329,18 +330,18 @@ NS_IMETHODIMP nsPlaintextEditor::InitRules()
 
 
 NS_IMETHODIMP
-nsPlaintextEditor::GetIsDocumentEditable(PRBool *aIsDocumentEditable)
+nsPlaintextEditor::GetIsDocumentEditable(bool *aIsDocumentEditable)
 {
   NS_ENSURE_ARG_POINTER(aIsDocumentEditable);
 
   nsCOMPtr<nsIDOMDocument> doc;
   GetDocument(getter_AddRefs(doc));
-  *aIsDocumentEditable = doc ? IsModifiable() : PR_FALSE;
+  *aIsDocumentEditable = doc ? IsModifiable() : false;
 
   return NS_OK;
 }
 
-PRBool nsPlaintextEditor::IsModifiable()
+bool nsPlaintextEditor::IsModifiable()
 {
   return !IsReadonly();
 }
@@ -500,13 +501,13 @@ NS_IMETHODIMP nsPlaintextEditor::CreateBRImpl(nsCOMPtr<nsIDOMNode> *aInOutParent
     if (aSelect == eNext)
     {
       // position selection after br
-      selPriv->SetInterlinePosition(PR_TRUE);
+      selPriv->SetInterlinePosition(true);
       res = selection->Collapse(parent, offset+1);
     }
     else if (aSelect == ePrevious)
     {
       // position selection before br
-      selPriv->SetInterlinePosition(PR_TRUE);
+      selPriv->SetInterlinePosition(true);
       res = selection->Collapse(parent, offset);
     }
   }
@@ -532,7 +533,7 @@ NS_IMETHODIMP nsPlaintextEditor::InsertBR(nsCOMPtr<nsIDOMNode> *outBRNode)
   nsCOMPtr<nsISelection> selection;
   nsresult res = GetSelection(getter_AddRefs(selection));
   NS_ENSURE_SUCCESS(res, res);
-  PRBool bCollapsed;
+  bool bCollapsed;
   res = selection->GetIsCollapsed(&bCollapsed);
   NS_ENSURE_SUCCESS(res, res);
   if (!bCollapsed)
@@ -552,7 +553,7 @@ NS_IMETHODIMP nsPlaintextEditor::InsertBR(nsCOMPtr<nsIDOMNode> *outBRNode)
   res = GetNodeLocation(*outBRNode, address_of(selNode), &selOffset);
   NS_ENSURE_SUCCESS(res, res);
   nsCOMPtr<nsISelectionPrivate> selPriv(do_QueryInterface(selection));
-  selPriv->SetInterlinePosition(PR_TRUE);
+  selPriv->SetInterlinePosition(true);
   return selection->Collapse(selNode, selOffset+1);
 }
 
@@ -571,7 +572,8 @@ nsPlaintextEditor::GetTextSelectionOffsets(nsISelection *aSelection,
   aSelection->GetFocusNode(getter_AddRefs(endNode));
   aSelection->GetFocusOffset(&endNodeOffset);
 
-  nsIDOMElement* rootNode = GetRoot();
+  dom::Element *rootElement = GetRoot();
+  nsCOMPtr<nsIDOMNode> rootNode = do_QueryInterface(rootElement);
   NS_ENSURE_TRUE(rootNode, NS_ERROR_NULL_POINTER);
 
   PRInt32 startOffset = -1;
@@ -585,8 +587,7 @@ nsPlaintextEditor::GetTextSelectionOffsets(nsISelection *aSelection,
   PRInt32 nodeCount = 0; // only needed for the assertions below
 #endif
   PRUint32 totalLength = 0;
-  nsCOMPtr<nsIContent> rootContent = do_QueryInterface(rootNode);
-  iter->Init(rootContent);
+  iter->Init(rootElement);
   for (; !iter->IsDone() && (startOffset == -1 || endOffset == -1); iter->Next()) {
     nsCOMPtr<nsIDOMNode> currentNode = do_QueryInterface(iter->GetCurrentNode());
     nsCOMPtr<nsIDOMCharacterData> textNode = do_QueryInterface(currentNode);
@@ -594,7 +595,7 @@ nsPlaintextEditor::GetTextSelectionOffsets(nsISelection *aSelection,
       // Note that sometimes we have an empty #text-node as start/endNode,
       // which we regard as not editable because the frame width == 0,
       // see nsEditor::IsEditable().
-      PRBool editable = IsEditable(currentNode);
+      bool editable = IsEditable(currentNode);
       if (currentNode == startNode) {
         startOffset = totalLength + (editable ? startNodeOffset : 0);
       }
@@ -650,7 +651,7 @@ nsPlaintextEditor::ExtendSelectionForDelete(nsISelection *aSelection,
 {
   nsresult result;
 
-  PRBool bCollapsed;
+  bool bCollapsed;
   result = aSelection->GetIsCollapsed(&bCollapsed);
   NS_ENSURE_SUCCESS(result, result);
 
@@ -666,13 +667,13 @@ nsPlaintextEditor::ExtendSelectionForDelete(nsISelection *aSelection,
     switch (*aAction)
     {
       case eNextWord:
-        result = selCont->WordExtendForDelete(PR_TRUE);
+        result = selCont->WordExtendForDelete(true);
         // DeleteSelectionImpl doesn't handle these actions
         // because it's inside batching, so don't confuse it:
         *aAction = eNone;
         break;
       case ePreviousWord:
-        result = selCont->WordExtendForDelete(PR_FALSE);
+        result = selCont->WordExtendForDelete(false);
         *aAction = eNone;
         break;
       case eNext:
@@ -707,12 +708,12 @@ nsPlaintextEditor::ExtendSelectionForDelete(nsISelection *aSelection,
         break;
       }
       case eToBeginningOfLine:
-        selCont->IntraLineMove(PR_TRUE, PR_FALSE);          // try to move to end
-        result = selCont->IntraLineMove(PR_FALSE, PR_TRUE); // select to beginning
+        selCont->IntraLineMove(true, false);          // try to move to end
+        result = selCont->IntraLineMove(false, true); // select to beginning
         *aAction = eNone;
         break;
       case eToEndOfLine:
-        result = selCont->IntraLineMove(PR_TRUE, PR_TRUE);
+        result = selCont->IntraLineMove(true, true);
         *aAction = eNext;
         break;
       default:       // avoid several compiler warnings
@@ -749,7 +750,7 @@ NS_IMETHODIMP nsPlaintextEditor::DeleteSelection(nsIEditor::EDirection aAction)
   //  selection to the  start and then create a new selection.
   //  Platforms that use "selection-style" caret positioning just delete the
   //  existing selection without extending it.
-  PRBool bCollapsed;
+  bool bCollapsed;
   result  = selection->GetIsCollapsed(&bCollapsed);
   NS_ENSURE_SUCCESS(result, result);
   if (!bCollapsed &&
@@ -769,7 +770,7 @@ NS_IMETHODIMP nsPlaintextEditor::DeleteSelection(nsIEditor::EDirection aAction)
 
   nsTextRulesInfo ruleInfo(nsTextEditRules::kDeleteSelection);
   ruleInfo.collapsedAction = aAction;
-  PRBool cancel, handled;
+  bool cancel, handled;
   result = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   NS_ENSURE_SUCCESS(result, result);
   if (!cancel && !handled)
@@ -816,7 +817,7 @@ NS_IMETHODIMP nsPlaintextEditor::InsertText(const nsAString &aStringToInsert)
   ruleInfo.outString = &resultString;
   ruleInfo.maxLength = mMaxTextLength;
 
-  PRBool cancel, handled;
+  bool cancel, handled;
   result = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   NS_ENSURE_SUCCESS(result, result);
   if (!cancel && !handled)
@@ -856,7 +857,7 @@ NS_IMETHODIMP nsPlaintextEditor::InsertLineBreak()
 
   nsTextRulesInfo ruleInfo(nsTextEditRules::kInsertBreak);
   ruleInfo.maxLength = mMaxTextLength;
-  PRBool cancel, handled;
+  bool cancel, handled;
   res = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   NS_ENSURE_SUCCESS(res, res);
   if (!cancel && !handled)
@@ -898,19 +899,19 @@ NS_IMETHODIMP nsPlaintextEditor::InsertLineBreak()
 
         if (NS_SUCCEEDED(res) && endNode == selNode && endOffset == selOffset)
         {
-          // SetInterlinePosition(PR_TRUE) means we want the caret to stick to the content on the "right".
+          // SetInterlinePosition(true) means we want the caret to stick to the content on the "right".
           // We want the caret to stick to whatever is past the break.  This is
           // because the break is on the same line we were on, but the next content
           // will be on the following line.
           nsCOMPtr<nsISelectionPrivate> selPriv(do_QueryInterface(selection));
-          selPriv->SetInterlinePosition(PR_TRUE);
+          selPriv->SetInterlinePosition(true);
         }
       }
     }
   }
   if (!cancel)
   {
-    // post-process, always called if WillInsertBreak didn't return cancel==PR_TRUE
+    // post-process, always called if WillInsertBreak didn't return cancel==true
     res = mRules->DidDoAction(selection, &ruleInfo, res);
   }
 
@@ -993,7 +994,7 @@ nsPlaintextEditor::UpdateIMEComposition(const nsAString& aCompositionString,
 }
 
 NS_IMETHODIMP
-nsPlaintextEditor::GetDocumentIsEmpty(PRBool *aDocumentIsEmpty)
+nsPlaintextEditor::GetDocumentIsEmpty(bool *aDocumentIsEmpty)
 {
   NS_ENSURE_TRUE(aDocumentIsEmpty, NS_ERROR_NULL_POINTER);
   
@@ -1014,22 +1015,21 @@ nsPlaintextEditor::GetTextLength(PRInt32 *aCount)
   *aCount = 0;
   
   // special-case for empty document, to account for the bogus node
-  PRBool docEmpty;
+  bool docEmpty;
   nsresult rv = GetDocumentIsEmpty(&docEmpty);
   NS_ENSURE_SUCCESS(rv, rv);
   if (docEmpty)
     return NS_OK;
 
-  nsIDOMElement* rootNode = GetRoot();
-  NS_ENSURE_TRUE(rootNode, NS_ERROR_NULL_POINTER);
+  dom::Element *rootElement = GetRoot();
+  NS_ENSURE_TRUE(rootElement, NS_ERROR_NULL_POINTER);
 
   nsCOMPtr<nsIContentIterator> iter =
     do_CreateInstance("@mozilla.org/content/post-content-iterator;1", &rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
   PRUint32 totalLength = 0;
-  nsCOMPtr<nsIContent> rootContent = do_QueryInterface(rootNode);
-  iter->Init(rootContent);
+  iter->Init(rootElement);
   for (; !iter->IsDone(); iter->Next()) {
     nsCOMPtr<nsIDOMNode> currentNode = do_QueryInterface(iter->GetCurrentNode());
     nsCOMPtr<nsIDOMCharacterData> textNode = do_QueryInterface(currentNode);
@@ -1078,10 +1078,10 @@ nsPlaintextEditor::GetWrapWidth(PRInt32 *aWrapColumn)
 static void CutStyle(const char* stylename, nsString& styleValue)
 {
   // Find the current wrapping type:
-  PRInt32 styleStart = styleValue.Find(stylename, PR_TRUE);
+  PRInt32 styleStart = styleValue.Find(stylename, true);
   if (styleStart >= 0)
   {
-    PRInt32 styleEnd = styleValue.Find(";", PR_FALSE, styleStart);
+    PRInt32 styleEnd = styleValue.Find(";", false, styleStart);
     if (styleEnd > styleStart)
       styleValue.Cut(styleStart, styleEnd - styleStart + 1);
     else
@@ -1104,13 +1104,12 @@ nsPlaintextEditor::SetWrapWidth(PRInt32 aWrapColumn)
 
   // Ought to set a style sheet here ...
   // Probably should keep around an mPlaintextStyleSheet for this purpose.
-  nsIDOMElement *rootElement = GetRoot();
+  dom::Element *rootElement = GetRoot();
   NS_ENSURE_TRUE(rootElement, NS_ERROR_NULL_POINTER);
 
   // Get the current style for this root element:
-  NS_NAMED_LITERAL_STRING(styleName, "style");
   nsAutoString styleValue;
-  nsresult res = rootElement->GetAttribute(styleName, styleValue);
+  nsresult res = rootElement->GetAttr(kNameSpaceID_None, nsGkAtoms::style, styleValue);
   NS_ENSURE_SUCCESS(res, res);
 
   // We'll replace styles for these values:
@@ -1122,7 +1121,7 @@ nsPlaintextEditor::SetWrapWidth(PRInt32 aWrapColumn)
   // or whitespace, then add a known semicolon-space:
   if (!styleValue.IsEmpty())
   {
-    styleValue.Trim("; \t", PR_FALSE, PR_TRUE);
+    styleValue.Trim("; \t", false, true);
     styleValue.AppendLiteral("; ");
   }
 
@@ -1154,7 +1153,7 @@ nsPlaintextEditor::SetWrapWidth(PRInt32 aWrapColumn)
   else
     styleValue.AppendLiteral("white-space: pre;");
 
-  return rootElement->SetAttribute(styleName, styleValue);
+  return rootElement->SetAttr(kNameSpaceID_None, nsGkAtoms::style, styleValue, true);
 }
 
 NS_IMETHODIMP 
@@ -1204,7 +1203,7 @@ nsPlaintextEditor::Undo(PRUint32 aCount)
   nsTextRulesInfo ruleInfo(nsTextEditRules::kUndo);
   nsCOMPtr<nsISelection> selection;
   GetSelection(getter_AddRefs(selection));
-  PRBool cancel, handled;
+  bool cancel, handled;
   nsresult result = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   
   if (!cancel && NS_SUCCEEDED(result))
@@ -1234,7 +1233,7 @@ nsPlaintextEditor::Redo(PRUint32 aCount)
   nsTextRulesInfo ruleInfo(nsTextEditRules::kRedo);
   nsCOMPtr<nsISelection> selection;
   GetSelection(getter_AddRefs(selection));
-  PRBool cancel, handled;
+  bool cancel, handled;
   nsresult result = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   
   if (!cancel && NS_SUCCEEDED(result))
@@ -1247,33 +1246,33 @@ nsPlaintextEditor::Redo(PRUint32 aCount)
   return result;
 }
 
-PRBool
+bool
 nsPlaintextEditor::CanCutOrCopy()
 {
   nsCOMPtr<nsISelection> selection;
   if (NS_FAILED(GetSelection(getter_AddRefs(selection))))
-    return PR_FALSE;
+    return false;
 
-  PRBool isCollapsed;
+  bool isCollapsed;
   selection->GetIsCollapsed(&isCollapsed);
   return !isCollapsed;
 }
 
-PRBool
+bool
 nsPlaintextEditor::FireClipboardEvent(PRInt32 aType)
 {
   if (aType == NS_PASTE)
     ForceCompositionEnd();
 
   nsCOMPtr<nsIPresShell> presShell = GetPresShell();
-  NS_ENSURE_TRUE(presShell, PR_FALSE);
+  NS_ENSURE_TRUE(presShell, false);
 
   nsCOMPtr<nsISelection> selection;
   if (NS_FAILED(GetSelection(getter_AddRefs(selection))))
-    return PR_FALSE;
+    return false;
 
   if (!nsCopySupport::FireClipboardEvent(aType, presShell, selection))
-    return PR_FALSE;
+    return false;
 
   // If the event handler caused the editor to be destroyed, return false.
   // Otherwise return true to indicate that the event was not cancelled.
@@ -1289,7 +1288,7 @@ NS_IMETHODIMP nsPlaintextEditor::Cut()
   return NS_OK;
 }
 
-NS_IMETHODIMP nsPlaintextEditor::CanCut(PRBool *aCanCut)
+NS_IMETHODIMP nsPlaintextEditor::CanCut(bool *aCanCut)
 {
   NS_ENSURE_ARG_POINTER(aCanCut);
   *aCanCut = IsModifiable() && CanCutOrCopy();
@@ -1302,7 +1301,7 @@ NS_IMETHODIMP nsPlaintextEditor::Copy()
   return NS_OK;
 }
 
-NS_IMETHODIMP nsPlaintextEditor::CanCopy(PRBool *aCanCopy)
+NS_IMETHODIMP nsPlaintextEditor::CanCopy(bool *aCanCopy)
 {
   NS_ENSURE_ARG_POINTER(aCanCopy);
   *aCanCopy = CanCutOrCopy();
@@ -1354,7 +1353,7 @@ nsPlaintextEditor::GetAndInitDocEncoder(const nsAString& aFormatType,
   // in which case we set the selection to encompass the root.
   else
   {
-    nsIDOMElement *rootElement = GetRoot();
+    nsCOMPtr<nsIDOMElement> rootElement = do_QueryInterface(GetRoot());
     NS_ENSURE_TRUE(rootElement, NS_ERROR_FAILURE);
     if (!nsTextEditUtils::IsBody(rootElement))
     {
@@ -1382,7 +1381,7 @@ nsPlaintextEditor::OutputToString(const nsAString& aFormatType,
   // XXX Struct should store a nsAReadable*
   nsAutoString str(aFormatType);
   ruleInfo.outputFormat = &str;
-  PRBool cancel, handled;
+  bool cancel, handled;
   nsresult rv = mRules->WillDoAction(nsnull, &ruleInfo, &cancel, &handled);
   if (cancel || NS_FAILED(rv)) { return rv; }
   if (handled)
@@ -1415,7 +1414,7 @@ nsPlaintextEditor::OutputToStream(nsIOutputStream* aOutputStream,
   // XXX Should there be a similar test in OutputToString?
   if (aFormatType.EqualsLiteral("text/plain"))
   {
-    PRBool docEmpty;
+    bool docEmpty;
     rv = GetDocumentIsEmpty(&docEmpty);
     NS_ENSURE_SUCCESS(rv, rv);
     
@@ -1519,7 +1518,7 @@ nsPlaintextEditor::InsertAsQuotation(const nsAString& aQuotedText,
 
   // give rules a chance to handle or cancel
   nsTextRulesInfo ruleInfo(nsTextEditRules::kInsertElement);
-  PRBool cancel, handled;
+  bool cancel, handled;
   rv = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   NS_ENSURE_SUCCESS(rv, rv);
   if (cancel) return NS_OK; // rules canceled the operation
@@ -1547,7 +1546,7 @@ nsPlaintextEditor::PasteAsCitedQuotation(const nsAString& aCitation,
 NS_IMETHODIMP
 nsPlaintextEditor::InsertAsCitedQuotation(const nsAString& aQuotedText,
                                           const nsAString& aCitation,
-                                          PRBool aInsertHTML,
+                                          bool aInsertHTML,
                                           nsIDOMNode **aNodeInserted)
 {
   return InsertAsQuotation(aQuotedText, aNodeInserted);
@@ -1555,7 +1554,7 @@ nsPlaintextEditor::InsertAsCitedQuotation(const nsAString& aQuotedText,
 
 nsresult
 nsPlaintextEditor::SharedOutputString(PRUint32 aFlags,
-                                      PRBool* aIsCollapsed,
+                                      bool* aIsCollapsed,
                                       nsAString& aResult)
 {
   nsCOMPtr<nsISelection> selection;
@@ -1574,7 +1573,7 @@ nsPlaintextEditor::SharedOutputString(PRUint32 aFlags,
 }
 
 NS_IMETHODIMP
-nsPlaintextEditor::Rewrap(PRBool aRespectNewlines)
+nsPlaintextEditor::Rewrap(bool aRespectNewlines)
 {
   PRInt32 wrapCol;
   nsresult rv = GetWrapWidth(&wrapCol);
@@ -1589,7 +1588,7 @@ nsPlaintextEditor::Rewrap(PRBool aRespectNewlines)
 #endif
 
   nsAutoString current;
-  PRBool isCollapsed;
+  bool isCollapsed;
   rv = SharedOutputString(nsIDocumentEncoder::OutputFormatted
                           | nsIDocumentEncoder::OutputLFLineBreak,
                           &isCollapsed, current);
@@ -1615,7 +1614,7 @@ nsPlaintextEditor::StripCites()
 #endif
 
   nsAutoString current;
-  PRBool isCollapsed;
+  bool isCollapsed;
   nsresult rv = SharedOutputString(nsIDocumentEncoder::OutputFormatted,
                                    &isCollapsed, current);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -1680,11 +1679,11 @@ nsPlaintextEditor::SelectEntireDocument(nsISelection *aSelection)
   nsCOMPtr<nsIEditRules> kungFuDeathGrip(mRules);
 
   // is doc empty?
-  PRBool bDocIsEmpty;
+  bool bDocIsEmpty;
   if (NS_SUCCEEDED(mRules->DocumentIsEmpty(&bDocIsEmpty)) && bDocIsEmpty)
   {
     // get root node
-    nsIDOMElement *rootElement = GetRoot();
+    nsCOMPtr<nsIDOMElement> rootElement = do_QueryInterface(GetRoot());
     NS_ENSURE_TRUE(rootElement, NS_ERROR_FAILURE);
 
     // if it's empty don't select entire doc - that would select the bogus node
@@ -1726,7 +1725,7 @@ nsresult
 nsPlaintextEditor::SetAttributeOrEquivalent(nsIDOMElement * aElement,
                                             const nsAString & aAttribute,
                                             const nsAString & aValue,
-                                            PRBool aSuppressTransaction)
+                                            bool aSuppressTransaction)
 {
   return nsEditor::SetAttribute(aElement, aAttribute, aValue);
 }
@@ -1734,7 +1733,7 @@ nsPlaintextEditor::SetAttributeOrEquivalent(nsIDOMElement * aElement,
 nsresult
 nsPlaintextEditor::RemoveAttributeOrEquivalent(nsIDOMElement * aElement,
                                                const nsAString & aAttribute,
-                                               PRBool aSuppressTransaction)
+                                               bool aSuppressTransaction)
 {
   return nsEditor::RemoveAttribute(aElement, aAttribute);
 }

@@ -43,6 +43,7 @@
 #include <gfxPoint3D.h>
 #include <gfxPointH3D.h>
 #include <gfxMatrix.h>
+#include <gfxQuad.h>
 
 /**
  * This class represents a 3D transformation. The matrix is laid
@@ -106,8 +107,8 @@ public:
    * (i.e. as obtained by From2D). If it is, optionally returns the 2D
    * matrix in aMatrix.
    */
-  PRBool Is2D(gfxMatrix* aMatrix) const;
-  PRBool Is2D() const;
+  bool Is2D(gfxMatrix* aMatrix) const;
+  bool Is2D() const;
 
   /**
    * Returns true if the matrix can be reduced to a 2D affine transformation
@@ -118,13 +119,19 @@ public:
    * Since drawing is to a 2d plane, any 3d transform without perspective
    * can be reduced by dropping the z row and column.
    */
-  PRBool CanDraw2D(gfxMatrix* aMatrix = nsnull) const;
+  bool CanDraw2D(gfxMatrix* aMatrix = nsnull) const;
+
+  /**
+   * Converts the matrix to one that doesn't modify the z coordinate of points,
+   * but leaves the rest of the transformation unchanged.
+   */
+  gfx3DMatrix& ProjectTo2D();
 
   /**
    * Returns true if the matrix is the identity matrix. The most important
    * property we require is that gfx3DMatrix().IsIdentity() returns true.
    */
-  PRBool IsIdentity() const;
+  bool IsIdentity() const;
 
   /**
    * Pre-multiplication transformation functions:
@@ -247,6 +254,9 @@ public:
    */
   gfxRect TransformBounds(const gfxRect& rect) const;
 
+
+  gfxQuad TransformRect(const gfxRect& aRect) const;
+
   /** 
    * Transforms a 3D vector according to this matrix.
    */
@@ -297,9 +307,15 @@ public:
   gfxPoint3D GetNormalVector() const;
 
   /**
+   * Returns true if a plane transformed by this matrix will
+   * have it's back face visible.
+   */
+  bool IsBackfaceVisible() const;
+
+  /**
    * Check if matrix is singular (no inverse exists).
    */
-  PRBool IsSingular() const;
+  bool IsSingular() const;
 
   /**
    * Create a translation matrix.

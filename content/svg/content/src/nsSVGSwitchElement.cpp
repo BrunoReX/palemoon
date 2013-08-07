@@ -34,6 +34,8 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/Util.h"
+
 #include "nsSVGFeatures.h"
 #include "nsSVGSwitchElement.h"
 #include "nsIFrame.h"
@@ -114,7 +116,7 @@ NS_IMPL_ELEMENT_CLONE_WITH_INIT(nsSVGSwitchElement)
 nsresult
 nsSVGSwitchElement::InsertChildAt(nsIContent* aKid,
                                   PRUint32 aIndex,
-                                  PRBool aNotify)
+                                  bool aNotify)
 {
   nsresult rv = nsSVGSwitchElementBase::InsertChildAt(aKid, aIndex, aNotify);
   if (NS_SUCCEEDED(rv)) {
@@ -124,7 +126,7 @@ nsSVGSwitchElement::InsertChildAt(nsIContent* aKid,
 }
 
 nsresult
-nsSVGSwitchElement::RemoveChildAt(PRUint32 aIndex, PRBool aNotify)
+nsSVGSwitchElement::RemoveChildAt(PRUint32 aIndex, bool aNotify)
 {
   nsresult rv = nsSVGSwitchElementBase::RemoveChildAt(aIndex, aNotify);
   if (NS_SUCCEEDED(rv)) {
@@ -136,7 +138,7 @@ nsSVGSwitchElement::RemoveChildAt(PRUint32 aIndex, PRBool aNotify)
 //----------------------------------------------------------------------
 // nsIContent methods
 
-NS_IMETHODIMP_(PRBool)
+NS_IMETHODIMP_(bool)
 nsSVGSwitchElement::IsAttributeMapped(const nsIAtom* name) const
 {
   static const MappedAttributeEntry* const map[] = {
@@ -150,7 +152,7 @@ nsSVGSwitchElement::IsAttributeMapped(const nsIAtom* name) const
     sViewportsMap
   };
 
-  return FindAttributeDependence(name, map, NS_ARRAY_LENGTH(map)) ||
+  return FindAttributeDependence(name, map) ||
     nsSVGSwitchElementBase::IsAttributeMapped(name);
 }
 
@@ -160,7 +162,7 @@ nsSVGSwitchElement::IsAttributeMapped(const nsIAtom* name) const
 nsIContent *
 nsSVGSwitchElement::FindActiveChild() const
 {
-  PRBool allowReorder = AttrValueIs(kNameSpaceID_None,
+  bool allowReorder = AttrValueIs(kNameSpaceID_None,
                                     nsGkAtoms::allowReorder,
                                     nsGkAtoms::yes, eCaseMatters);
 

@@ -46,7 +46,6 @@
 #include "jsprvtd.h"
 #include "jspubtd.h"
 #include "jsopcode.h"
-#include "jsscript.h"
 
 #include "vm/Stack.h"
 
@@ -75,24 +74,6 @@ extern JSObject *
 GetScopeChainFast(JSContext *cx, StackFrame *fp, JSOp op, size_t oplen);
 
 /*
- * Report an error that the this value passed as |this| in the given arguments
- * vector is not compatible with the specified class.
- */
-void
-ReportIncompatibleMethod(JSContext *cx, Value *vp, Class *clasp);
-
-/*
- * Given a context and a vector of [callee, this, args...] for a function
- * whose JSFUN_PRIMITIVE_THIS flag is set, set |*v| to the primitive value
- * of |this|. If |this| is an object, insist that it be an instance of the
- * appropriate wrapper class for T, and set |*v| to its private slot value.
- * If |this| is a primitive, unbox it into |*v| if it's of the required
- * type, and throw an error otherwise.
- */
-template <typename T>
-bool GetPrimitiveThis(JSContext *cx, Value *vp, T *v);
-
-/*
  * ScriptPrologue/ScriptEpilogue must be called in pairs. ScriptPrologue
  * must be called before the script executes. ScriptEpilogue must be called
  * after the script returns or exits via exception.
@@ -119,7 +100,24 @@ ScriptEpilogueOrGeneratorYield(JSContext *cx, StackFrame *fp, bool ok);
 
 /* Implemented in jsdbgapi: */
 
-extern void
+/*
+ * Announce to the debugger that the thread has entered a new JavaScript frame,
+ * |fp|. Call whatever hooks have been registered to observe new frames, and
+ * return a JSTrapStatus code indication how execution should proceed:
+ *
+ * - JSTRAP_CONTINUE: Continue execution normally.
+ * 
+ * - JSTRAP_THROW: Throw an exception. ScriptDebugPrologue has set |cx|'s
+ *   pending exception to the value to be thrown.
+ *
+ * - JSTRAP_ERROR: Terminate execution (as is done when a script is terminated
+ *   for running too long). ScriptDebugPrologue has cleared |cx|'s pending
+ *   exception.
+ *
+ * - JSTRAP_RETURN: Return from the new frame immediately. ScriptDebugPrologue
+ *   has set |cx->fp()|'s return value appropriately.
+ */
+extern JSTrapStatus
 ScriptDebugPrologue(JSContext *cx, StackFrame *fp);
 
 extern bool
@@ -154,7 +152,7 @@ enum MaybeConstruct {
  * have already been marked 'active'.
  */
 extern bool
-InvokeKernel(JSContext *cx, const CallArgs &args, MaybeConstruct construct = NO_CONSTRUCT);
+InvokeKernel(JSContext *cx, CallArgs args, MaybeConstruct construct = NO_CONSTRUCT);
 
 /*
  * Invoke assumes that 'args' has been pushed (via ContextStack::pushInvokeArgs)
@@ -234,10 +232,9 @@ enum InterpMode
 {
     JSINTERP_NORMAL    = 0, /* interpreter is running normally */
     JSINTERP_RECORD    = 1, /* interpreter has been started to record/run traces */
-    JSINTERP_SAFEPOINT = 2, /* interpreter should leave on a method JIT safe point */
-    JSINTERP_PROFILE   = 3, /* interpreter should profile a loop */
-    JSINTERP_REJOIN    = 4, /* as normal, but the frame has already started */
-    JSINTERP_SKIP_TRAP = 5  /* as REJOIN, but skip trap at first opcode */
+    JSINTERP_PROFILE   = 2, /* interpreter should profile a loop */
+    JSINTERP_REJOIN    = 3, /* as normal, but the frame has already started */
+    JSINTERP_SKIP_TRAP = 4  /* as REJOIN, but skip trap at first opcode */
 };
 
 /*
@@ -320,10 +317,7 @@ class InterpreterFrames {
     ~InterpreterFrames();
 
     /* If this js::Interpret frame is running |script|, enable interrupts. */
-    void enableInterruptsIfRunning(JSScript *script) {
-        if (script == regs->fp()->script())
-            enabler.enableInterrupts();
-    }
+    inline void enableInterruptsIfRunning(JSScript *script);
 
     InterpreterFrames *older;
 
@@ -348,81 +342,6 @@ IsActiveWithOrBlock(JSContext *cx, JSObject &obj, int stackDepth);
 
 /************************************************************************/
 
-static JS_ALWAYS_INLINE void
-ClearValueRange(Value *vec, uintN len, bool useHoles)
-{
-    if (useHoles) {
-        for (uintN i = 0; i < len; i++)
-            vec[i].setMagic(JS_ARRAY_HOLE);
-    } else {
-        for (uintN i = 0; i < len; i++)
-            vec[i].setUndefined();
-    }
-}
-
-static JS_ALWAYS_INLINE void
-MakeRangeGCSafe(Value *vec, size_t len)
-{
-    PodZero(vec, len);
-}
-
-static JS_ALWAYS_INLINE void
-MakeRangeGCSafe(Value *beg, Value *end)
-{
-    PodZero(beg, end - beg);
-}
-
-static JS_ALWAYS_INLINE void
-MakeRangeGCSafe(jsid *beg, jsid *end)
-{
-    for (jsid *id = beg; id != end; ++id)
-        *id = INT_TO_JSID(0);
-}
-
-static JS_ALWAYS_INLINE void
-MakeRangeGCSafe(jsid *vec, size_t len)
-{
-    MakeRangeGCSafe(vec, vec + len);
-}
-
-static JS_ALWAYS_INLINE void
-MakeRangeGCSafe(const Shape **beg, const Shape **end)
-{
-    PodZero(beg, end - beg);
-}
-
-static JS_ALWAYS_INLINE void
-MakeRangeGCSafe(const Shape **vec, size_t len)
-{
-    PodZero(vec, len);
-}
-
-static JS_ALWAYS_INLINE void
-SetValueRangeToUndefined(Value *beg, Value *end)
-{
-    for (Value *v = beg; v != end; ++v)
-        v->setUndefined();
-}
-
-static JS_ALWAYS_INLINE void
-SetValueRangeToUndefined(Value *vec, size_t len)
-{
-    SetValueRangeToUndefined(vec, vec + len);
-}
-
-static JS_ALWAYS_INLINE void
-SetValueRangeToNull(Value *beg, Value *end)
-{
-    for (Value *v = beg; v != end; ++v)
-        v->setNull();
-}
-
-static JS_ALWAYS_INLINE void
-SetValueRangeToNull(Value *vec, size_t len)
-{
-    SetValueRangeToNull(vec, vec + len);
-}
-
 /*
  * To really poison a set of values, using 'magic' or 'undefined' isn't good
  * enough since often these will just be ignored by buggy code (see bug 629974)
@@ -443,6 +362,14 @@ Debug_SetValueRangeToCrashOnTouch(Value *vec, size_t len)
 {
 #ifdef DEBUG
     Debug_SetValueRangeToCrashOnTouch(vec, vec + len);
+#endif
+}
+
+static JS_ALWAYS_INLINE void
+Debug_SetValueRangeToCrashOnTouch(HeapValue *vec, size_t len)
+{
+#ifdef DEBUG
+    Debug_SetValueRangeToCrashOnTouch((Value *) vec, len);
 #endif
 }
 

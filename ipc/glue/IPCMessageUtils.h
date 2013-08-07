@@ -41,6 +41,8 @@
 
 #include "chrome/common/ipc_message_utils.h"
 
+#include "mozilla/Util.h"
+
 #include "prtypes.h"
 #include "nsID.h"
 #include "nsMemory.h"
@@ -93,6 +95,37 @@ struct null_t {
 } // namespace mozilla
 
 namespace IPC {
+
+/**
+ * Generic enum serializer.
+ * E is the enum type.
+ * lowBound is the lowest allowed value of the enum.
+ * highBound is the value higher than highest allowed value of the enum.
+ *  In other words, it's the lowest unallowed value.
+ */
+template <typename E, E lowBound, E highBound>
+struct EnumSerializer {
+  typedef E paramType;
+
+  static bool IsLegalValue(const paramType &aValue) {
+    return lowBound <= aValue && aValue < highBound;
+  }
+
+  static void Write(Message* aMsg, const paramType& aValue) {
+    MOZ_ASSERT(IsLegalValue(aValue));
+    WriteParam(aMsg, (int32)aValue);
+  }
+
+  static bool Read(const Message* aMsg, void** aIter, paramType* aResult) {
+    int32 value;
+    if(!ReadParam(aMsg, aIter, &value) ||
+       !IsLegalValue(paramType(value))) {
+      return false;
+    }
+    *aResult = paramType(value);
+    return true;
+  }
+};
 
 template<>
 struct ParamTraits<PRInt8>
@@ -178,7 +211,7 @@ struct ParamTraits<nsACString>
       return false;
 
     if (isVoid) {
-      aResult->SetIsVoid(PR_TRUE);
+      aResult->SetIsVoid(true);
       return true;
     }
 
@@ -228,7 +261,7 @@ struct ParamTraits<nsAString>
       return false;
 
     if (isVoid) {
-      aResult->SetIsVoid(PR_TRUE);
+      aResult->SetIsVoid(true);
       return true;
     }
 
@@ -736,7 +769,7 @@ struct ParamTraits<nsID>
     WriteParam(aMsg, aParam.m0);
     WriteParam(aMsg, aParam.m1);
     WriteParam(aMsg, aParam.m2);
-    for (unsigned int i = 0; i < NS_ARRAY_LENGTH(aParam.m3); i++) {
+    for (unsigned int i = 0; i < mozilla::ArrayLength(aParam.m3); i++) {
       WriteParam(aMsg, aParam.m3[i]);
     }
   }
@@ -748,7 +781,7 @@ struct ParamTraits<nsID>
        !ReadParam(aMsg, aIter, &(aResult->m2)))
       return false;
 
-    for (unsigned int i = 0; i < NS_ARRAY_LENGTH(aResult->m3); i++)
+    for (unsigned int i = 0; i < mozilla::ArrayLength(aResult->m3); i++)
       if (!ReadParam(aMsg, aIter, &(aResult->m3[i])))
         return false;
 
@@ -762,7 +795,7 @@ struct ParamTraits<nsID>
                               aParam.m0,
                               aParam.m1,
                               aParam.m2));
-    for (unsigned int i = 0; i < NS_ARRAY_LENGTH(aParam.m3); i++)
+    for (unsigned int i = 0; i < mozilla::ArrayLength(aParam.m3); i++)
       aLog->append(StringPrintf(L"%2.2X", aParam.m3[i]));
     aLog->append(L"}");
   }

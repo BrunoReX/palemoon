@@ -64,6 +64,7 @@ using namespace mozilla;
 
 static const char kPrefDnsCacheEntries[]    = "network.dnsCacheEntries";
 static const char kPrefDnsCacheExpiration[] = "network.dnsCacheExpiration";
+static const char kPrefDnsCacheGrace[]      = "network.dnsCacheExpirationGracePeriod";
 static const char kPrefEnableIDN[]          = "network.enableIDN";
 static const char kPrefIPv4OnlyDomains[]    = "network.dns.ipv4OnlyDomains";
 static const char kPrefDisableIPv6[]        = "network.dns.disableIPv6";
@@ -82,7 +83,7 @@ public:
         , mIter(nsnull)
         , mLastIter(nsnull)
         , mIterGenCnt(-1)
-        , mDone(PR_FALSE) {}
+        , mDone(false) {}
 
 private:
     virtual ~nsDNSRecord() {}
@@ -94,7 +95,7 @@ private:
     int                     mIterGenCnt; // the generation count of
                                          // mHostRecord->addr_info when we
                                          // start iterating
-    PRBool                  mDone;
+    bool                    mDone;
 };
 
 NS_IMPL_THREADSAFE_ISUPPORTS1(nsDNSRecord, nsIDNSRecord)
@@ -130,7 +131,7 @@ nsDNSRecord::GetNextAddr(PRUint16 port, PRNetAddr *addr)
         return NS_ERROR_NOT_AVAILABLE;
 
     mHostRecord->addr_info_lock.Lock();
-    PRBool startedFresh = !mIter;
+    bool startedFresh = !mIter;
 
     if (mHostRecord->addr_info) {
         if (!mIter)
@@ -140,7 +141,7 @@ nsDNSRecord::GetNextAddr(PRUint16 port, PRNetAddr *addr)
             // Restart the iteration.  Alternatively, we could just fail.
             mIter = nsnull;
             mIterGenCnt = mHostRecord->addr_info_gencnt;
-            startedFresh = PR_TRUE;
+            startedFresh = true;
         }
 
         do {
@@ -162,7 +163,7 @@ nsDNSRecord::GetNextAddr(PRUint16 port, PRNetAddr *addr)
             
         mHostRecord->addr_info_lock.Unlock();
         if (!mIter) {
-            mDone = PR_TRUE;
+            mDone = true;
             return NS_ERROR_NOT_AVAILABLE;
         }
     }
@@ -181,7 +182,7 @@ nsDNSRecord::GetNextAddr(PRUint16 port, PRNetAddr *addr)
             addr->inet.port = port;
         else
             addr->ipv6.port = port;
-        mDone = PR_TRUE; // no iterations
+        mDone = true; // no iterations
     }
         
     return NS_OK; 
@@ -204,10 +205,10 @@ nsDNSRecord::GetNextAddrAsString(nsACString &result)
 }
 
 NS_IMETHODIMP
-nsDNSRecord::HasMore(PRBool *result)
+nsDNSRecord::HasMore(bool *result)
 {
     if (mDone)
-        *result = PR_FALSE;
+        *result = false;
     else {
         // unfortunately, NSPR does not provide a way for us to determine if
         // there is another address other than to simply get the next address.
@@ -217,7 +218,7 @@ nsDNSRecord::HasMore(PRBool *result)
         *result = NS_SUCCEEDED(GetNextAddr(0, &addr));
         mIter = iterCopy; // backup iterator
         mLastIter = iterLastCopy; // backup iterator
-        mDone = PR_FALSE;
+        mDone = false;
     }
     return NS_OK;
 }
@@ -228,7 +229,7 @@ nsDNSRecord::Rewind()
     mIter = nsnull;
     mLastIter = nsnull;
     mIterGenCnt = -1;
-    mDone = PR_FALSE;
+    mDone = false;
     return NS_OK;
 }
 
@@ -326,14 +327,14 @@ class nsDNSSyncRequest : public nsResolveHostCallback
 {
 public:
     nsDNSSyncRequest(PRMonitor *mon)
-        : mDone(PR_FALSE)
+        : mDone(false)
         , mStatus(NS_OK)
         , mMonitor(mon) {}
     virtual ~nsDNSSyncRequest() {}
 
     void OnLookupComplete(nsHostResolver *, nsHostRecord *, nsresult);
 
-    PRBool                 mDone;
+    bool                   mDone;
     nsresult               mStatus;
     nsRefPtr<nsHostRecord> mHostRecord;
 
@@ -348,7 +349,7 @@ nsDNSSyncRequest::OnLookupComplete(nsHostResolver *resolver,
 {
     // store results, and wake up nsDNSService::Resolve to process results.
     PR_EnterMonitor(mMonitor);
-    mDone = PR_TRUE;
+    mDone = true;
     mStatus = status;
     mHostRecord = hostRecord;
     PR_Notify(mMonitor);
@@ -359,7 +360,7 @@ nsDNSSyncRequest::OnLookupComplete(nsHostResolver *resolver,
 
 nsDNSService::nsDNSService()
     : mLock("nsDNSServer.mLock")
-    , mFirstTime(PR_TRUE)
+    , mFirstTime(true)
 {
 }
 
@@ -379,10 +380,11 @@ nsDNSService::Init()
 
     // prefs
     PRUint32 maxCacheEntries  = 400;
-    PRUint32 maxCacheLifetime = 3; // minutes
-    PRBool   enableIDN        = PR_TRUE;
-    PRBool   disableIPv6      = PR_FALSE;
-    PRBool   disablePrefetch  = PR_FALSE;
+    PRUint32 maxCacheLifetime = 2; // minutes
+    PRUint32 lifetimeGracePeriod = 1;
+    bool     enableIDN        = true;
+    bool     disableIPv6      = false;
+    bool     disablePrefetch  = false;
     int      proxyType        = nsIProtocolProxyService::PROXYCONFIG_DIRECT;
     
     nsAdoptingCString ipv4OnlyDomains;
@@ -395,6 +397,8 @@ nsDNSService::Init()
             maxCacheEntries = (PRUint32) val;
         if (NS_SUCCEEDED(prefs->GetIntPref(kPrefDnsCacheExpiration, &val)))
             maxCacheLifetime = val / 60; // convert from seconds to minutes
+        if (NS_SUCCEEDED(prefs->GetIntPref(kPrefDnsCacheGrace, &val)))
+            lifetimeGracePeriod = val / 60; // convert from seconds to minutes
 
         // ASSUMPTION: pref branch does not modify out params on failure
         prefs->GetBoolPref(kPrefEnableIDN, &enableIDN);
@@ -407,20 +411,21 @@ nsDNSService::Init()
     }
 
     if (mFirstTime) {
-        mFirstTime = PR_FALSE;
+        mFirstTime = false;
 
         // register as prefs observer
         if (prefs) {
-            prefs->AddObserver(kPrefDnsCacheEntries, this, PR_FALSE);
-            prefs->AddObserver(kPrefDnsCacheExpiration, this, PR_FALSE);
-            prefs->AddObserver(kPrefEnableIDN, this, PR_FALSE);
-            prefs->AddObserver(kPrefIPv4OnlyDomains, this, PR_FALSE);
-            prefs->AddObserver(kPrefDisableIPv6, this, PR_FALSE);
-            prefs->AddObserver(kPrefDisablePrefetch, this, PR_FALSE);
+            prefs->AddObserver(kPrefDnsCacheEntries, this, false);
+            prefs->AddObserver(kPrefDnsCacheExpiration, this, false);
+            prefs->AddObserver(kPrefDnsCacheGrace, this, false);
+            prefs->AddObserver(kPrefEnableIDN, this, false);
+            prefs->AddObserver(kPrefIPv4OnlyDomains, this, false);
+            prefs->AddObserver(kPrefDisableIPv6, this, false);
+            prefs->AddObserver(kPrefDisablePrefetch, this, false);
 
             // Monitor these to see if there is a change in proxy configuration
             // If a manual proxy is in use, disable prefetch implicitly
-            prefs->AddObserver("network.proxy.type", this, PR_FALSE);
+            prefs->AddObserver("network.proxy.type", this, false);
         }
     }
 
@@ -440,6 +445,7 @@ nsDNSService::Init()
     nsRefPtr<nsHostResolver> res;
     nsresult rv = nsHostResolver::Create(maxCacheEntries,
                                          maxCacheLifetime,
+                                         lifetimeGracePeriod,
                                          getter_AddRefs(res));
     if (NS_SUCCEEDED(rv)) {
         // now, set all of our member variables while holding the lock

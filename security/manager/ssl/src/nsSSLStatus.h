@@ -69,12 +69,15 @@ public:
   PRUint32 mSecretKeyLength;
   nsXPIDLCString mCipherName;
 
-  PRBool mIsDomainMismatch;
-  PRBool mIsNotValidAtThisTime;
-  PRBool mIsUntrusted;
+  bool mIsDomainMismatch;
+  bool mIsNotValidAtThisTime;
+  bool mIsUntrusted;
 
-  PRBool mHaveKeyLengthAndCipher;
-  PRBool mHaveCertErrorBits;
+  bool mHaveKeyLengthAndCipher;
+
+  /* mHaveCertErrrorBits is relied on to determine whether or not a SPDY
+     connection is eligible for joining in nsNSSSocketInfo::JoinConnection() */
+  bool mHaveCertErrorBits;
 };
 
 // 2c3837af-8b85-4a68-b0d8-0aed88985b32

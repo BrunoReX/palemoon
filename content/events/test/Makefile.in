@@ -46,8 +46,6 @@ include $(topsrcdir)/config/rules.mk
 
 # Disabled due to timeouts.
 # 		test_bug563329.html
-# Disabled due to lack of present support for JSD in JM
-#		test_bug448602.html
 _TEST_FILES = \
 		test_bug226361.xhtml \
 		     bug226361_iframe.xhtml \
@@ -71,8 +69,10 @@ _TEST_FILES = \
 		test_bug412567.html \
 		test_bug426082.html \
 		test_bug427537.html \
+		test_bug432698.html \
 		test_bug443985.html \
 		test_bug447736.html \
+		test_bug448602.html \
 		test_bug450876.html \
 		test_bug456273.html \
 		test_bug457672.html \
@@ -111,6 +111,8 @@ _TEST_FILES = \
 		test_bug667612.html \
 		empty.js \
 		test_bug689564.html \
+		test_bug698929.html \
+		test_eventctors.html \
 		$(NULL)
 
 #bug 585630
@@ -127,6 +129,12 @@ _TEST_FILES += \
 		$(NULL)
 endif
 
+ifeq (android,$(MOZ_WIDGET_TOOLKIT))
+_TEST_FILES += \
+		test_bug603008.html \
+		$(NULL)
+endif
+
 _CHROME_FILES = \
 		test_bug336682_2.xul \
 		test_bug336682.js \
@@ -135,12 +143,15 @@ _CHROME_FILES = \
 		test_bug415498.xul \
 		bug415498-doc1.html \
 		bug415498-doc2.html \
+		test_bug591249.xul \
+		bug591249_iframe.xul \
 		bug602962.xul \
 		test_bug602962.xul \
 		test_bug617528.xul \
 		window_bug617528.xul \
 		test_bug679494.xul \
 		file_bug679494.html \
+		test_eventctors.xul \
 		$(NULL)
 
 libs:: $(_TEST_FILES)

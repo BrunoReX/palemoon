@@ -95,8 +95,8 @@ mjit::Compiler::tryBinaryConstantFold(JSContext *cx, FrameState &frame, JSOp op,
      * is infallible.
      */
     if (needInt) {
-        JS_ALWAYS_TRUE(ValueToECMAInt32(cx, L, &nL));
-        JS_ALWAYS_TRUE(ValueToECMAInt32(cx, R, &nR));
+        JS_ALWAYS_TRUE(ToInt32(cx, L, &nL));
+        JS_ALWAYS_TRUE(ToInt32(cx, R, &nR));
     } else {
         JS_ALWAYS_TRUE(ToNumber(cx, L, &dL));
         JS_ALWAYS_TRUE(ToNumber(cx, R, &dR));
@@ -592,7 +592,7 @@ mjit::Compiler::jsop_binary_full(FrameEntry *lhs, FrameEntry *rhs, JSOp op,
     }
 
     /* Time to do the integer path. Figure out the immutable side. */
-    int32 value = 0;
+    int32_t value = 0;
     JSOp origOp = op;
     MaybeRegisterID reg;
     MaybeJump preOverflow;
@@ -732,7 +732,7 @@ mjit::Compiler::jsop_binary_full(FrameEntry *lhs, FrameEntry *rhs, JSOp op,
             stubcc.masm.neg32(reg.reg());
         } else {
             JS_ASSERT(op == JSOP_ADD || op == JSOP_SUB);
-            int32 fixValue = (op == JSOP_ADD) ? -value : value;
+            int32_t fixValue = (op == JSOP_ADD) ? -value : value;
             stubcc.masm.add32(Imm32(fixValue), regs.result);
         }
     }
@@ -974,7 +974,7 @@ mjit::Compiler::jsop_mod()
     /* Get RHS into anything but EDX - could avoid more spilling? */
     MaybeRegisterID temp;
     RegisterID rhsReg;
-    uint32 mask = Registers::AvailRegs & ~Registers::maskReg(X86Registers::edx);
+    uint32_t mask = Registers::AvailRegs & ~Registers::maskReg(X86Registers::edx);
     if (!rhs->isConstant()) {
         rhsReg = frame.tempRegInMaskForData(rhs, mask).reg();
         JS_ASSERT(rhsReg != X86Registers::edx);
@@ -1162,7 +1162,7 @@ mjit::Compiler::jsop_equality_int_string(JSOp op, BoolStub stub,
         ic.stubEntry = stubEntry;
         ic.stub = stub;
 
-        bool useIC = (!addTraceHints || target >= PC) && !a->parent;
+        bool useIC = !a->parent;
 
         /* Call the IC stub, which may generate a fast path. */
         if (useIC) {
@@ -1230,10 +1230,10 @@ mjit::Compiler::jsop_equality_int_string(JSOp op, BoolStub stub,
 #endif
 
         /*
-         * NB: jumpAndTrace emits to the OOL path, so make sure not to use it
+         * NB: jumpAndRun emits to the OOL path, so make sure not to use it
          * in the middle of an in-progress slow path.
          */
-        if (!jumpAndTrace(fast, target, &stubBranch, ptrampoline))
+        if (!jumpAndRun(fast, target, &stubBranch, ptrampoline))
             return false;
 
 #ifdef JS_MONOIC
@@ -1298,7 +1298,7 @@ mjit::Compiler::jsop_equality_int_string(JSOp op, BoolStub stub,
 }
 
 /*
- * Emit an OOL path for a possibly double LHS, and possibly int32 or number RHS.
+ * Emit an OOL path for a possibly double LHS, and possibly int32_t or number RHS.
  */
 void
 mjit::Compiler::emitLeftDoublePath(FrameEntry *lhs, FrameEntry *rhs, FrameState::BinaryAlloc &regs,
@@ -1449,10 +1449,10 @@ mjit::Compiler::jsop_relational_double(JSOp op, BoolStub stub, jsbytecode *targe
         stubcc.rejoin(Changes(0));
 
         /*
-         * NB: jumpAndTrace emits to the OOL path, so make sure not to use it
+         * NB: jumpAndRun emits to the OOL path, so make sure not to use it
          * in the middle of an in-progress slow path.
          */
-        if (!jumpAndTrace(j, target, &sj))
+        if (!jumpAndRun(j, target, &sj))
             return false;
     } else {
         stubcc.leave();
@@ -1518,7 +1518,7 @@ mjit::Compiler::jsop_relational_int(JSOp op, jsbytecode *target, JSOp fused)
         Jump sj = stubcc.masm.branchTest32(GetStubCompareCondition(fused),
                                            Registers::ReturnReg, Registers::ReturnReg);
 
-        return jumpAndTrace(fast, target, &sj);
+        return jumpAndRun(fast, target, &sj);
     } else {
         RegisterID result = frame.allocReg();
         RegisterID lreg = frame.tempRegForData(lhs);
@@ -1565,7 +1565,7 @@ mjit::Compiler::jsop_relational_full(JSOp op, BoolStub stub, jsbytecode *target,
 
     /* Integer path - figure out the immutable side. */
     JSOp cmpOp = op;
-    int32 value = 0;
+    int32_t value = 0;
     RegisterID cmpReg;
     MaybeRegisterID reg;
     if (regs.lhsData.isSet()) {
@@ -1656,7 +1656,6 @@ mjit::Compiler::jsop_relational_full(JSOp op, BoolStub stub, jsbytecode *target,
         Jump j2 = stubcc.masm.jump();
         stubcc.crossJump(j2, masm.label());
 
-        /* :TODO: make double path invoke tracer. */
         if (hasDoublePath) {
             j.linkTo(stubcc.masm.label(), &stubcc.masm);
             doubleTest.get().linkTo(stubcc.masm.label(), &stubcc.masm);
@@ -1664,10 +1663,10 @@ mjit::Compiler::jsop_relational_full(JSOp op, BoolStub stub, jsbytecode *target,
         }
 
         /*
-         * NB: jumpAndTrace emits to the OOL path, so make sure not to use it
+         * NB: jumpAndRun emits to the OOL path, so make sure not to use it
          * in the middle of an in-progress slow path.
          */
-        if (!jumpAndTrace(fast, target, &j))
+        if (!jumpAndRun(fast, target, &j))
             return false;
 
         /* Rejoin from the double path. */

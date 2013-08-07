@@ -44,9 +44,6 @@
 #include "nsNetUtil.h"
 #include "nsILocalFile.h"
 #include "nsIDirectoryService.h"
-#include "nsIWindowWatcher.h"
-#include "nsIPrompt.h"
-#include "nsProxiedService.h"
 #include "nsThreadUtils.h"
 
 #include "nsNSSComponent.h"
@@ -91,7 +88,7 @@ nsPKCS12Blob::nsPKCS12Blob():mCertArray(0),
                              mTmpFilePath(nsnull),
                              mDigest(nsnull),
                              mDigestIterator(nsnull),
-                             mTokenSet(PR_FALSE)
+                             mTokenSet(false)
 {
   mUIContext = new PipUIContext();
 }
@@ -123,7 +120,7 @@ nsPKCS12Blob::SetToken(nsIPK11Token *token)
      PK11_FreeSlot(slot);
    }
  }
- mTokenSet = PR_TRUE;
+ mTokenSet = true;
  return rv;
 }
 
@@ -153,7 +150,7 @@ nsPKCS12Blob::ImportFromFile(nsILocalFile *file)
   }
 
   // init slot
-  rv = mToken->Login(PR_TRUE);
+  rv = mToken->Login(true);
   if (NS_FAILED(rv)) return rv;
   
   RetryReason wantRetry;
@@ -272,7 +269,7 @@ finish:
   // finish the decoder
   if (dcx)
     SEC_PKCS12DecoderFinish(dcx);
-  SECITEM_ZfreeItem(&unicodePw, PR_FALSE);
+  SECITEM_ZfreeItem(&unicodePw, false);
   return NS_OK;
 }
 
@@ -316,21 +313,21 @@ nsPKCS12Blob::LoadCerts(const PRUnichar **certNames, int numCerts)
 }
 #endif
 
-static PRBool
+static bool
 isExtractable(SECKEYPrivateKey *privKey)
 {
   SECItem value;
-  PRBool  isExtractable = PR_FALSE;
+  bool    isExtractable = false;
   SECStatus rv;
 
   rv=PK11_ReadRawAttribute(PK11_TypePrivKey, privKey, CKA_EXTRACTABLE, &value);
   if (rv != SECSuccess) {
-    return PR_FALSE;
+    return false;
   }
   if ((value.len == 1) && (value.data != NULL)) {
     isExtractable = !!(*(CK_BBOOL*)value.data);
   }
-  SECITEM_FreeItem(&value, PR_FALSE);
+  SECITEM_FreeItem(&value, false);
   return isExtractable;
 }
   
@@ -360,10 +357,10 @@ nsPKCS12Blob::ExportToFile(nsILocalFile *file,
   NS_ASSERTION(mToken, "Need to set the token before exporting");
   // init slot
 
-  PRBool InformedUserNoSmartcardBackup = PR_FALSE;
+  bool InformedUserNoSmartcardBackup = false;
   int numCertsExported = 0;
 
-  rv = mToken->Login(PR_TRUE);
+  rv = mToken->Login(true);
   if (NS_FAILED(rv)) goto finish;
   // get file password (unicode)
   unicodePw.data = NULL;
@@ -415,13 +412,13 @@ nsPKCS12Blob::ExportToFile(nsILocalFile *file,
                                                       nssCert, this);
 
       if (privKey) {
-        PRBool privKeyIsExtractable = isExtractable(privKey);
+        bool privKeyIsExtractable = isExtractable(privKey);
 
         SECKEY_DestroyPrivateKey(privKey);
 
         if (!privKeyIsExtractable) {
           if (!InformedUserNoSmartcardBackup) {
-            InformedUserNoSmartcardBackup = PR_TRUE;
+            InformedUserNoSmartcardBackup = true;
             handleError(PIP_PKCS12_NOSMARTCARD_EXPORT);
           }
           continue;
@@ -446,7 +443,7 @@ nsPKCS12Blob::ExportToFile(nsILocalFile *file,
     // add the cert and key to the blob
     srv = SEC_PKCS12AddCertAndKey(ecx, certSafe, NULL, nssCert,
                                   CERT_GetDefaultCertDB(), // XXX
-                                  keySafe, NULL, PR_TRUE, &unicodePw,
+                                  keySafe, NULL, true, &unicodePw,
                       SEC_OID_PKCS12_V2_PBE_WITH_SHA1_AND_3KEY_TRIPLE_DES_CBC);
     if (srv) goto finish;
     // cert was dup'ed, so release it
@@ -461,7 +458,7 @@ nsPKCS12Blob::ExportToFile(nsILocalFile *file,
   // Use the nsCOMPtr var localFileRef so that
   // the reference to the nsILocalFile we create gets released as soon as
   // we're out of scope, ie when this function exits.
-  if (filePath.RFind(".p12", PR_TRUE, -1, 4) < 0) {
+  if (filePath.RFind(".p12", true, -1, 4) < 0) {
     // We're going to add the .p12 extension to the file name just like
     // Communicator used to.  We create a new nsILocalFile and initialize
     // it with the new patch.
@@ -488,7 +485,7 @@ finish:
     PR_Close(this->mTmpFile);
     this->mTmpFile = NULL;
   }
-  SECITEM_ZfreeItem(&unicodePw, PR_FALSE);
+  SECITEM_ZfreeItem(&unicodePw, false);
   return rv;
 }
 
@@ -534,7 +531,7 @@ nsPKCS12Blob::newPKCS12FilePassword(SECItem *unicodePw)
                        NS_GET_IID(nsICertificateDialogs),
                        NS_CERTIFICATEDIALOGS_CONTRACTID);
   if (NS_FAILED(rv)) return rv;
-  PRBool pressedOK;
+  bool pressedOK;
   {
     nsPSMUITracker tracker;
     if (tracker.isUIForbidden()) {
@@ -563,7 +560,7 @@ nsPKCS12Blob::getPKCS12FilePassword(SECItem *unicodePw)
                        NS_GET_IID(nsICertificateDialogs),
                        NS_CERTIFICATEDIALOGS_CONTRACTID);
   if (NS_FAILED(rv)) return rv;
-  PRBool pressedOK;
+  bool pressedOK;
   {
     nsPSMUITracker tracker;
     if (tracker.isUIForbidden()) {
@@ -597,7 +594,7 @@ nsPKCS12Blob::inputToDecoder(SEC_PKCS12DecoderContext *dcx, nsILocalFile *file)
     return rv;
   }
 
-  while (PR_TRUE) {
+  while (true) {
     rv = fileStream->Read(buf, PIP_PKCS12_BUFFER_SIZE, &amount);
     if (NS_FAILED(rv)) {
       return rv;
@@ -747,7 +744,7 @@ SECItem * PR_CALLBACK
 nsPKCS12Blob::nickname_collision(SECItem *oldNick, PRBool *cancel, void *wincx)
 {
   nsNSSShutDownPreventionLock locker;
-  *cancel = PR_FALSE;
+  *cancel = false;
   nsresult rv;
   nsCOMPtr<nsINSSComponent> nssComponent(do_GetService(kNSSComponentCID, &rv));
   if (NS_FAILED(rv)) return nsnull;
@@ -827,68 +824,31 @@ pip_ucs2_ascii_conversion_fn(PRBool toUnicode,
   // do a no-op, since I've already got unicode.  Hah!
   *outBufLen = inBufLen;
   memcpy(outBuf, inBuf, inBufLen);
-  return PR_TRUE;
+  return true;
 }
 
 void
 nsPKCS12Blob::handleError(int myerr)
 {
-  nsPSMUITracker tracker;
-  if (tracker.isUIForbidden()) {
+  if (!NS_IsMainThread()) {
+    NS_ERROR("nsPKCS12Blob::handleError called off the mai nthread.");
     return;
   }
 
-  nsresult rv;
   int prerr = PORT_GetError();
   PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("PKCS12: NSS/NSPR error(%d)", prerr));
   PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("PKCS12: I called(%d)", myerr));
-  nsCOMPtr<nsINSSComponent> nssComponent(do_GetService(kNSSComponentCID, &rv));
-  if (NS_FAILED(rv)) return;
-  nsCOMPtr<nsIPrompt> errPrompt;
-  nsCOMPtr<nsIWindowWatcher> wwatch(do_GetService(NS_WINDOWWATCHER_CONTRACTID));
-  if (wwatch) {
-    wwatch->GetNewPrompter(0, getter_AddRefs(errPrompt));
-    if (errPrompt) {
-      nsCOMPtr<nsIPrompt> proxyPrompt;
-      NS_GetProxyForObject(NS_PROXY_TO_MAIN_THREAD,
-                           NS_GET_IID(nsIPrompt), errPrompt,
-                           NS_PROXY_SYNC, getter_AddRefs(proxyPrompt));
-      if (!proxyPrompt) return;
-    } else {
-      return;
-    }
-  } else {
-    return;
-  }
-  nsAutoString errorMsg;
+
+  const char * msgID = nsnull;
+
   switch (myerr) {
-  case PIP_PKCS12_RESTORE_OK:
-    rv = nssComponent->GetPIPNSSBundleString("SuccessfulP12Restore", errorMsg);
-    if (NS_FAILED(rv)) return;
-    errPrompt->Alert(nsnull, errorMsg.get());
-    return;
-  case PIP_PKCS12_BACKUP_OK:
-    rv = nssComponent->GetPIPNSSBundleString("SuccessfulP12Backup", errorMsg);
-    if (NS_FAILED(rv)) return;
-    errPrompt->Alert(nsnull, errorMsg.get());
-    return;
+  case PIP_PKCS12_RESTORE_OK:       msgID = "SuccessfulP12Restore"; break;
+  case PIP_PKCS12_BACKUP_OK:        msgID = "SuccessfulP12Backup";  break;
   case PIP_PKCS12_USER_CANCELED:
     return;  /* Just ignore it for now */
-  case PIP_PKCS12_NOSMARTCARD_EXPORT:
-    rv = nssComponent->GetPIPNSSBundleString("PKCS12InfoNoSmartcardBackup", errorMsg);
-    if (NS_FAILED(rv)) return;
-    errPrompt->Alert(nsnull, errorMsg.get());
-    return;
-  case PIP_PKCS12_RESTORE_FAILED:
-    rv = nssComponent->GetPIPNSSBundleString("PKCS12UnknownErrRestore", errorMsg);
-    if (NS_FAILED(rv)) return;
-    errPrompt->Alert(nsnull, errorMsg.get());
-    return;
-  case PIP_PKCS12_BACKUP_FAILED:
-    rv = nssComponent->GetPIPNSSBundleString("PKCS12UnknownErrBackup", errorMsg);
-    if (NS_FAILED(rv)) return;
-    errPrompt->Alert(nsnull, errorMsg.get());
-    return;
+  case PIP_PKCS12_NOSMARTCARD_EXPORT: msgID = "PKCS12InfoNoSmartcardBackup"; break;
+  case PIP_PKCS12_RESTORE_FAILED:   msgID = "PKCS12UnknownErrRestore"; break;
+  case PIP_PKCS12_BACKUP_FAILED:    msgID = "PKCS12UnknownErrBackup"; break;
   case PIP_PKCS12_NSS_ERROR:
     switch (prerr) {
     // The following errors have the potential to be "handled", by asking
@@ -904,40 +864,29 @@ nsPKCS12Blob::handleError(int myerr)
       //     but the PKCS12 lib never throws this error
       //     but then again, how would it?  anyway, convey the info below
     case SEC_ERROR_PKCS12_PRIVACY_PASSWORD_INCORRECT:
-      rv = nssComponent->GetPIPNSSBundleString("PKCS12PasswordInvalid", errorMsg);
-      if (NS_FAILED(rv)) return;
-      errPrompt->Alert(nsnull, errorMsg.get());
-    break;
-#endif
-    case SEC_ERROR_BAD_PASSWORD:
-      rv = nssComponent->GetPIPNSSBundleString("PK11BadPassword", errorMsg);
-      if (NS_FAILED(rv)) return;
-      errPrompt->Alert(nsnull, errorMsg.get());
+      msgID = "PKCS12PasswordInvalid";
       break;
+#endif
+
+    case SEC_ERROR_BAD_PASSWORD: msgID = "PK11BadPassword"; break;
+
     case SEC_ERROR_BAD_DER:
     case SEC_ERROR_PKCS12_CORRUPT_PFX_STRUCTURE:
     case SEC_ERROR_PKCS12_INVALID_MAC:
-      rv = nssComponent->GetPIPNSSBundleString("PKCS12DecodeErr", errorMsg);
-      if (NS_FAILED(rv)) return;
-      errPrompt->Alert(nsnull, errorMsg.get());
+      msgID = "PKCS12DecodeErr";
       break;
-    case SEC_ERROR_PKCS12_DUPLICATE_DATA:
-      rv = nssComponent->GetPIPNSSBundleString("PKCS12DupData", errorMsg);
-      if (NS_FAILED(rv)) return;
-      errPrompt->Alert(nsnull, errorMsg.get());
-      break;
-    default:
-      rv = nssComponent->GetPIPNSSBundleString("PKCS12UnknownErr", errorMsg);
-      if (NS_FAILED(rv)) return;
-      errPrompt->Alert(nsnull, errorMsg.get());
+
+    case SEC_ERROR_PKCS12_DUPLICATE_DATA: msgID = "PKCS12DupData"; break;
     }
     break;
-  case 0: 
-  default:
-    rv = nssComponent->GetPIPNSSBundleString("PKCS12UnknownErr", errorMsg);
-    if (NS_FAILED(rv)) return;
-    errPrompt->Alert(nsnull, errorMsg.get());
-    break;
   }
+
+  if (!msgID)
+    msgID = "PKCS12UnknownErr";
+
+  nsresult rv;
+  nsCOMPtr<nsINSSComponent> nssComponent = do_GetService(kNSSComponentCID, &rv);
+  if (NS_SUCCEEDED(rv))
+    (void) nssComponent->ShowAlertFromStringBundle(msgID);
 }
 

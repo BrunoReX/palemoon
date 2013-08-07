@@ -99,7 +99,7 @@ txStylesheet::init()
 
     nt.forget();
 
-    mCharactersTemplate = new txValueOf(nodeExpr, PR_FALSE);
+    mCharactersTemplate = new txValueOf(nodeExpr, false);
     NS_ENSURE_TRUE(mCharactersTemplate, NS_ERROR_OUT_OF_MEMORY);
 
     mCharactersTemplate->mNext = new txReturn();
@@ -265,25 +265,25 @@ txStylesheet::getKeyMap()
     return mKeys;
 }
 
-PRBool
+bool
 txStylesheet::isStripSpaceAllowed(const txXPathNode& aNode, txIMatchContext* aContext)
 {
     PRInt32 frameCount = mStripSpaceTests.Length();
     if (frameCount == 0) {
-        return PR_FALSE;
+        return false;
     }
 
     txXPathTreeWalker walker(aNode);
 
     if (txXPathNodeUtils::isText(walker.getCurrentPosition()) &&
         (!txXPathNodeUtils::isWhitespace(aNode) || !walker.moveToParent())) {
-        return PR_FALSE;
+        return false;
     }
 
     const txXPathNode& node = walker.getCurrentPosition();
 
     if (!txXPathNodeUtils::isElement(node)) {
-        return PR_FALSE;
+        return false;
     }
 
     // check Whitespace stipping handling list against given Node
@@ -295,7 +295,7 @@ txStylesheet::isStripSpaceAllowed(const txXPathNode& aNode, txIMatchContext* aCo
         }
     }
 
-    return PR_FALSE;
+    return false;
 }
 
 nsresult
@@ -442,9 +442,9 @@ txStylesheet::addTemplate(txTemplateItem* aTemplate,
     PRUint32 unionPos = 1; // only used when unionPattern is set
     while (simple) {
         double priority = aTemplate->mPrio;
-        if (Double::isNaN(priority)) {
+        if (txDouble::isNaN(priority)) {
             priority = simple->getDefaultPriority();
-            NS_ASSERTION(!Double::isNaN(priority),
+            NS_ASSERTION(!txDouble::isNaN(priority),
                          "simple pattern without default priority");
         }
 
@@ -636,7 +636,7 @@ txStylesheet::ImportFrame::~ImportFrame()
 
 txStylesheet::GlobalVariable::GlobalVariable(nsAutoPtr<Expr> aExpr,
                                              nsAutoPtr<txInstruction> aFirstInstruction,
-                                             PRBool aIsParam)
+                                             bool aIsParam)
     : mExpr(aExpr), mFirstInstruction(aFirstInstruction), mIsParam(aIsParam)
 {
 }

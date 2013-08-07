@@ -90,8 +90,9 @@ private:
   PRUint32                 mID;
   PRInt32                  mScrollPositionX;
   PRInt32                  mScrollPositionY;
+  nsISHEntry*              mParent;
   nsCOMArray<nsISHEntry>   mChildren;
-  PRPackedBool             mURIWasModified;
+  bool                     mURIWasModified;
   nsCOMPtr<nsIStructuredCloneContainer> mStateData;
 };
 

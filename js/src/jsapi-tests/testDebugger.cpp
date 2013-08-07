@@ -123,8 +123,8 @@ ThrowHook(JSContext *cx, JSScript *, jsbytecode *, jsval *rval, void *closure)
 
 BEGIN_TEST(testDebugger_throwHook)
 {
-    uint32 newopts = JS_GetOptions(cx) | JSOPTION_METHODJIT | JSOPTION_METHODJIT_ALWAYS;
-    uint32 oldopts = JS_SetOptions(cx, newopts);
+    uint32_t newopts = JS_GetOptions(cx) | JSOPTION_METHODJIT | JSOPTION_METHODJIT_ALWAYS;
+    uint32_t oldopts = JS_SetOptions(cx, newopts);
 
     JSDebugHooks hooks = { 0 };
     hooks.throwHook = ThrowHook;
@@ -259,9 +259,8 @@ BEGIN_TEST(testDebugger_singleStepThrow)
         CHECK(JS_SetDebugModeForCompartment(cx, cx->compartment, true));
         CHECK(JS_SetInterrupt(rt, onStep, NULL));
 
-        uint32 opts = JS_GetOptions(cx);
+        uint32_t opts = JS_GetOptions(cx);
         opts |= JSOPTION_METHODJIT | JSOPTION_METHODJIT_ALWAYS;
-        opts &= ~JSOPTION_JIT;
         JS_SetOptions(cx, opts);
 
         CHECK(JS_DefineFunction(cx, global, "setStepMode", setStepMode, 0, 0));
@@ -292,3 +291,32 @@ BEGIN_TEST(testDebugger_singleStepThrow)
         return JSTRAP_CONTINUE;
     }
 END_TEST(testDebugger_singleStepThrow)
+
+BEGIN_TEST(testDebugger_emptyObjectPropertyIterator)
+{
+    JSObject *obj = JS_NewObject(cx, NULL, NULL, NULL);
+    JSScopeProperty *prop = NULL;
+    CHECK(!JS_PropertyIterator(obj, &prop));
+    CHECK(!prop);
+
+    return true;
+}
+END_TEST(testDebugger_emptyObjectPropertyIterator)
+
+BEGIN_TEST(testDebugger_nonEmptyObjectPropertyIterator)
+{
+    jsval v;
+    EVAL("({a: 15})", &v);
+    JSObject *obj = JSVAL_TO_OBJECT(v);
+    JSScopeProperty *prop = NULL;
+    CHECK(JS_PropertyIterator(obj, &prop));
+    JSPropertyDesc desc;
+    CHECK(JS_GetPropertyDesc(cx, obj, prop, &desc));
+    CHECK_EQUAL(JSVAL_IS_INT(desc.value), true);
+    CHECK_EQUAL(JSVAL_TO_INT(desc.value), 15);
+    CHECK(!JS_PropertyIterator(obj, &prop));
+    CHECK(!prop);
+
+    return true;
+}
+END_TEST(testDebugger_nonEmptyObjectPropertyIterator)

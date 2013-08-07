@@ -39,8 +39,8 @@
 
 nsSMILInterval::nsSMILInterval()
 :
-  mBeginFixed(PR_FALSE),
-  mEndFixed(PR_FALSE)
+  mBeginFixed(false),
+  mEndFixed(false)
 {
 }
 
@@ -48,8 +48,8 @@ nsSMILInterval::nsSMILInterval(const nsSMILInterval& aOther)
 :
   mBegin(aOther.mBegin),
   mEnd(aOther.mEnd),
-  mBeginFixed(PR_FALSE),
-  mEndFixed(PR_FALSE)
+  mBeginFixed(false),
+  mEndFixed(false)
 {
   NS_ABORT_IF_FALSE(aOther.mDependentTimes.IsEmpty(),
       "Attempting to copy-construct an interval with dependent times, "
@@ -71,7 +71,7 @@ nsSMILInterval::~nsSMILInterval()
 }
 
 void
-nsSMILInterval::Unlink(PRBool aFiltered)
+nsSMILInterval::Unlink(bool aFiltered)
 {
   for (PRInt32 i = mDependentTimes.Length() - 1; i >= 0; --i) {
     if (aFiltered) {
@@ -142,7 +142,7 @@ nsSMILInterval::FixBegin()
   NS_ABORT_IF_FALSE(mBegin && mEnd,
       "Fixing begin point on un-initialized interval");
   NS_ABORT_IF_FALSE(!mBeginFixed, "Duplicate calls to FixBegin()");
-  mBeginFixed = PR_TRUE;
+  mBeginFixed = true;
   mBegin->AddRefFixedEndpoint();
 }
 
@@ -154,7 +154,7 @@ nsSMILInterval::FixEnd()
   NS_ABORT_IF_FALSE(mBeginFixed,
       "Fixing the end of an interval without a fixed begin");
   NS_ABORT_IF_FALSE(!mEndFixed, "Duplicate calls to FixEnd()");
-  mEndFixed = PR_TRUE;
+  mEndFixed = true;
   mEnd->AddRefFixedEndpoint();
 }
 
@@ -172,7 +172,7 @@ void
 nsSMILInterval::RemoveDependentTime(const nsSMILInstanceTime& aTime)
 {
 #ifdef DEBUG
-  PRBool found =
+  bool found =
 #endif
     mDependentTimes.RemoveElementSorted(&aTime);
   NS_ABORT_IF_FALSE(found, "Couldn't find instance time to delete.");
@@ -184,14 +184,14 @@ nsSMILInterval::GetDependentTimes(InstanceTimeList& aTimes)
   aTimes = mDependentTimes;
 }
 
-PRBool
+bool
 nsSMILInterval::IsDependencyChainLink() const
 {
   if (!mBegin || !mEnd)
-    return PR_FALSE; // Not yet initialised so it can't be part of a chain
+    return false; // Not yet initialised so it can't be part of a chain
 
   if (mDependentTimes.IsEmpty())
-    return PR_FALSE; // No dependents, chain end
+    return false; // No dependents, chain end
 
   // So we have dependents, but we're still only a link in the chain (as opposed
   // to the end of the chain) if one of our endpoints is dependent on an

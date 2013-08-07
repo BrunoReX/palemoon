@@ -103,7 +103,6 @@ public:
     void DrawRect(const nsRect& aRect);
     void DrawRect(nscoord aX, nscoord aY, nscoord aWidth, nscoord aHeight);
     void DrawEllipse(nscoord aX, nscoord aY, nscoord aWidth, nscoord aHeight);
-    void DrawEllipse(const nsRect& aRect);
 
     void FillRect(const nsRect& aRect);
     void FillRect(nscoord aX, nscoord aY, nscoord aWidth, nscoord aHeight);
@@ -113,14 +112,13 @@ public:
     void FillEllipse(nscoord aX, nscoord aY, nscoord aWidth, nscoord aHeight);
 
     void InvertRect(const nsRect& aRect);
-    void InvertRect(nscoord aX, nscoord aY, nscoord aWidth, nscoord aHeight);
 
     // Text
 
     void SetFont(nsFontMetrics *aFontMetrics);
     nsFontMetrics *FontMetrics() { return mFontMetrics; } // may be null
 
-    void SetTextRunRTL(PRBool aIsRTL);
+    void SetTextRunRTL(bool aIsRTL);
 
     nscoord GetWidth(char aC);
     nscoord GetWidth(PRUnichar aC);

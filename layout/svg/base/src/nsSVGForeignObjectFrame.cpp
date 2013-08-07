@@ -67,7 +67,7 @@ NS_IMPL_FRAMEARENA_HELPERS(nsSVGForeignObjectFrame)
 
 nsSVGForeignObjectFrame::nsSVGForeignObjectFrame(nsStyleContext* aContext)
   : nsSVGForeignObjectFrameBase(aContext),
-    mInReflow(PR_FALSE)
+    mInReflow(false)
 {
   AddStateBits(NS_FRAME_REFLOW_ROOT | NS_FRAME_MAY_BE_TRANSFORMED);
 }
@@ -123,6 +123,8 @@ nsSVGForeignObjectFrame::AttributeChanged(PRInt32  aNameSpaceID,
       RequestReflow(nsIPresShell::eStyleChange);
     } else if (aAttribute == nsGkAtoms::x ||
                aAttribute == nsGkAtoms::y ||
+               aAttribute == nsGkAtoms::viewBox ||
+               aAttribute == nsGkAtoms::preserveAspectRatio ||
                aAttribute == nsGkAtoms::transform) {
       // make sure our cached transform matrix gets (lazily) updated
       mCanvasTM = nsnull;
@@ -370,7 +372,7 @@ nsSVGForeignObjectFrame::InitialUpdate()
 void
 nsSVGForeignObjectFrame::NotifySVGChanged(PRUint32 aFlags)
 {
-  PRBool reflow = PR_FALSE;
+  bool reflow = false;
 
   if (aFlags & TRANSFORM_CHANGED) {
     // In an ideal world we would reflow when our CTM changes. This is because
@@ -386,13 +388,19 @@ nsSVGForeignObjectFrame::NotifySVGChanged(PRUint32 aFlags)
     }
 
   } else if (aFlags & COORD_CONTEXT_CHANGED) {
-    // Our coordinate context's width/height has changed. If we have a
-    // percentage width/height our dimensions will change so we must reflow.
     nsSVGForeignObjectElement *fO =
       static_cast<nsSVGForeignObjectElement*>(mContent);
+    // Coordinate context changes affect mCanvasTM if we have a
+    // percentage 'x' or 'y'
+    if (fO->mLengthAttributes[nsSVGForeignObjectElement::X].IsPercentage() ||
+        fO->mLengthAttributes[nsSVGForeignObjectElement::Y].IsPercentage()) {
+      mCanvasTM = nsnull;
+    }
+    // Our coordinate context's width/height has changed. If we have a
+    // percentage width/height our dimensions will change so we must reflow.
     if (fO->mLengthAttributes[nsSVGForeignObjectElement::WIDTH].IsPercentage() ||
         fO->mLengthAttributes[nsSVGForeignObjectElement::HEIGHT].IsPercentage()) {
-      reflow = PR_TRUE;
+      reflow = true;
     }
   }
 
@@ -431,11 +439,9 @@ nsSVGForeignObjectFrame::NotifyRedrawUnsuspended()
 }
 
 gfxRect
-nsSVGForeignObjectFrame::GetBBoxContribution(const gfxMatrix &aToBBoxUserspace)
+nsSVGForeignObjectFrame::GetBBoxContribution(const gfxMatrix &aToBBoxUserspace,
+                                             PRUint32 aFlags)
 {
-  NS_ASSERTION(!(GetStateBits() & NS_STATE_SVG_NONDISPLAY_CHILD),
-               "Should not be calling this on a non-display child");
-
   nsSVGForeignObjectElement *content =
     static_cast<nsSVGForeignObjectElement*>(mContent);
 
@@ -582,7 +588,7 @@ nsSVGForeignObjectFrame::DoReflow()
   nsSize size(nsPresContext::CSSPixelsToAppUnits(width),
               nsPresContext::CSSPixelsToAppUnits(height));
 
-  mInReflow = PR_TRUE;
+  mInReflow = true;
 
   nsHTMLReflowState reflowState(presContext, kid,
                                 renderingContext,
@@ -607,7 +613,7 @@ nsSVGForeignObjectFrame::DoReflow()
   FinishReflowChild(kid, presContext, &reflowState, desiredSize, 0, 0,
                     NS_FRAME_NO_MOVE_FRAME);
   
-  mInReflow = PR_FALSE;
+  mInReflow = false;
   FlushDirtyRegion(0);
 }
 

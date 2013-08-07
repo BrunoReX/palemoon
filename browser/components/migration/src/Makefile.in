@@ -44,7 +44,6 @@ include $(DEPTH)/config/autoconf.mk
 MODULE		= migration
 LIBRARY_NAME	= migration_s
 FORCE_STATIC_LIB = 1
-FORCE_USE_PIC = 1
 ifndef MOZ_MEMORY
 USE_STATIC_LIBS = 1
 endif
@@ -53,10 +52,6 @@ endif
 CPPSRCS  = nsProfileMigrator.cpp \
            nsBrowserProfileMigratorUtils.cpp \
            $(NULL)
-
-ifneq ($(OS_ARCH),OS2)
-CPPSRCS += nsOperaProfileMigrator.cpp
-endif
 
 ifeq ($(OS_ARCH)_$(GNU_CXX),WINNT_)
 CPPSRCS += nsIEProfileMigrator.cpp \
@@ -67,6 +62,14 @@ ifeq (cocoa,$(MOZ_WIDGET_TOOLKIT))
 CPPSRCS += nsSafariProfileMigrator.cpp \
            $(NULL)
 endif            
+
+EXTRA_PP_COMPONENTS = \
+  ChromeProfileMigrator.js \
+  $(NULL)
+
+EXTRA_COMPONENTS = \
+	BrowserProfileMigrators.manifest \
+	$(NULL)
 
 include $(topsrcdir)/config/rules.mk
 

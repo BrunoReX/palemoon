@@ -18,6 +18,9 @@
 == 9458-zorder-4.html 9458-zorder-ref-inline-block.html
 == 9458-zorder-5.html 9458-zorder-ref-inline-block.html
 == 10036-1.html 10036-1-ref.html
+skip-if(!cocoaWidget) HTTP(..) == 10209-1.html 10209-ref.html # Bug 667079
+HTTP(..) == 10209-2.html 10209-ref.html
+asserts(4) skip-if(!cocoaWidget) HTTP(..) == 10209-3.html 10209-3-ref.html # Assertions: bug 666606, skip because of bug 667079
 == 18217-basic-1.html 18217-basic-1-ref.html
 == 18217-basic-2a.html 18217-basic-2-ref.html
 == 18217-basic-2b.html 18217-basic-2-ref.html
@@ -298,7 +301,7 @@ fails-if(Android) != 192767-17.xul 192767-37.xul
 == 283686-3.html about:blank
 == 289384-1.xhtml 289384-ref.xhtml
 fails-if(Android) random-if(d2d) HTTP == 289480.html#top 289480-ref.html # basically-verbatim acid2 test, HTTP for a 404 page -- bug 578114 for the d2d failures
-asserts(1) == 290129-1.html 290129-1-ref.html # bug 315549/460637
+== 290129-1.html 290129-1-ref.html
 == 291078-1.html 291078-1-ref.html
 == 291078-2.html 291078-2-ref.html
 == 291262-1.html 291262-1-ref.html
@@ -680,11 +683,13 @@ fails-if(Android) != 376532-3.html 376532-3-ref.html
 == 379316-1.html 379316-1-ref.html
 fails-if(Android) random-if(cocoaWidget) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == 379316-2.html 379316-2-ref.html # bug 379786
 == 379328-1.html 379328-1-ref.html
-== 379349-1a.xhtml 379349-1-ref.xhtml
-== 379349-1b.xhtml 379349-1-ref.xhtml
-== 379349-1c.xhtml 379349-1-ref.xhtml
-== 379349-2a.xhtml 379349-2-ref.xhtml
-== 379349-2b.xhtml 379349-2-ref.xhtml
+# The next set of reftests all fail until bug 724978 has been fixed, and the
+# overflow container ability of nsColumnSetFrame is restored.
+fails == 379349-1a.xhtml 379349-1-ref.xhtml
+fails == 379349-1b.xhtml 379349-1-ref.xhtml
+fails == 379349-1c.xhtml 379349-1-ref.xhtml
+fails == 379349-2a.xhtml 379349-2-ref.xhtml
+fails == 379349-2b.xhtml 379349-2-ref.xhtml
 == 379349-3a.xhtml 379349-3-ref.xhtml
 == 379349-3b.xhtml 379349-3-ref.xhtml
 == 379361-1.html 379361-1-ref.html
@@ -1230,6 +1235,7 @@ fails-if(cocoaWidget) == 456147.xul 456147-ref.html # bug 458047
 == 466395-2.html 466395-2-ref.html
 == 467084-1.html 467084-1-ref.html
 == 467084-2.html 467084-2-ref.html
+== 467444-1.html 467444-1-ref.html
 == 467460-1.html 467460-1-ref.html
 == 468546-1.xhtml 468546-1-ref.xhtml
 == 468473-1.xul 468473-1-ref.xul
@@ -1437,7 +1443,7 @@ random-if(d2d) == 523468-1.html 523468-1-ref.html
 == 528038-1d.html 528038-1-ref.html
 == 528038-1e.html 528038-1-ref.html
 == 528038-1f.html 528038-1-ref.html
-asserts(5) == 528038-2.html 528038-2-ref.html # bug 512749
+== 528038-2.html 528038-2-ref.html
 == 528096-1.html 528096-1-ref.html
 == 530686-1.html 530686-1-ref.html
 == 531098-1.html 531098-1-ref.html
@@ -1447,7 +1453,7 @@ asserts(5) == 528038-2.html 528038-2-ref.html # bug 512749
 == 534804-1.html 534804-1-ref.html
 == 534808-1.html 534808-1-ref.html
 == 534808-2.html 534808-2-ref.html
-== 534919-1.html 534919-1-ref.html
+fails-if(/Mac\x20OS\x20X\x2010\.7/.test(http.oscpu)) == 534919-1.html 534919-1-ref.html # Bug 705044
 random == 536061.html 536061-ref.html # fixedpoint division in blur code makes this fail
 == 537507-1.xul 537507-1-ref.xul
 == 537507-2.html 537507-2-ref.html
@@ -1523,6 +1529,7 @@ fails-if(Android) == 560455-1.xul 560455-1-ref.xul
 == 563584-10a.html 563584-10-ref.html
 == 563584-10b.html 563584-10-ref.html
 == 563584-11.html 563584-11-ref.html
+== 564002-1.html 564002-1-ref.html
 == 564054-1.html 564054-1-ref.html
 fails-if(Android) random-if(layersGPUAccelerated) == 564991-1.html 564991-1-ref.html
 == 565819-1.html 565819-ref.html
@@ -1595,6 +1602,9 @@ fails-if(!haveTestPlugin) == 599476.html 599476-ref.html
 == 604737.html 604737-ref.html
 == 605138-1.html 605138-1-ref.html
 == 605157-1.xhtml 605157-1-ref.xhtml
+== 608756-1a.html 608756-1-ref.html
+== 608756-1b.html 608756-1-ref.html
+== 608756-2.html 608756-2-ref.html
 == 609272-1.html 609272-1-ref.html
 == 608636-1.html 608636-1-ref.html
 needs-focus == 613433-1.html 613433-1-ref.html
@@ -1635,14 +1645,14 @@ fails-if(Android) == 635302-1.html 635302-1-ref.html
 fails-if(http.platform=="X11"&&!layersGPUAccelerated) == 635373-3.html 635373-3-ref.html
 HTTP(..) == 635639-1.html 635639-1-ref.html
 HTTP(..) == 635639-2.html 635639-2-ref.html
-== 637597-1.html 637597-1-ref.html
+random == 637597-1.html 637597-1-ref.html # bug 637597 was never really fixed!
 == 637852-1.html 637852-1-ref.html
 == 637852-2.html 637852-2-ref.html
 == 637852-3.html 637852-3-ref.html
 == 641770-1.html 641770-1-ref.html
 == 641856-1.html 641856-1-ref.html
 == 645491-1.html 645491-1-ref.html
-== 652301-1a.html 652301-1-ref.html
+needs-focus == 652301-1a.html 652301-1-ref.html
 == 652301-1b.html 652301-1-ref.html
 == 645768-1.html 645768-1-ref.html
 fails-if(layersGPUAccelerated&&cocoaWidget) == 650228-1.html 650228-1-ref.html # Quartz alpha blending doesn't match GL alpha blending
@@ -1652,6 +1662,7 @@ fails-if(layersGPUAccelerated&&cocoaWidget) == 654950-1.html 654950-1-ref.html #
 == 652775-1.html 652775-1-ref.html
 == 655549-1.html 655549-1-ref.html
 == 655836-1.html 655836-1-ref.html
+!= 656875.html about:blank
 == 658952.html 658952-ref.html
 == 664127-1.xul 664127-1-ref.xul
 == 660682-1.html 660682-1-ref.html
@@ -1661,3 +1672,12 @@ fails-if(layersGPUAccelerated&&cocoaWidget) == 654950-1.html 654950-1-ref.html #
 == 670442-1.html 670442-1-ref.html
 == 670467-1.html 670467-1-ref.html
 == 670467-2.html 670467-2-ref.html
+!= 691087-1.html 691087-1-ref.html
+== 691571-1.html 691571-1-ref.html
+== 696307-1.html 696307-1-ref.html
+== 696739-1.html 696739-1-ref.html
+needs-focus == 703186-1.html 703186-1-ref.html
+needs-focus == 703186-2.html 703186-2-ref.html
+needs-focus != 703186-1.html 703186-2.html
+== 711359-1.html 711359-1-ref.html
+== 712849-1.html 712849-1-ref.html

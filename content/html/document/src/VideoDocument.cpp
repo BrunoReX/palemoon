@@ -55,8 +55,9 @@ public:
                                      nsILoadGroup*       aLoadGroup,
                                      nsISupports*        aContainer,
                                      nsIStreamListener** aDocListener,
-                                     PRBool              aReset = PR_TRUE,
+                                     bool                aReset = true,
                                      nsIContentSink*     aSink = nsnull);
+  virtual void SetScriptGlobalObject(nsIScriptGlobalObject* aScriptGlobalObject);
 
 protected:
 
@@ -75,7 +76,7 @@ VideoDocument::StartDocumentLoad(const char*         aCommand,
                                  nsILoadGroup*       aLoadGroup,
                                  nsISupports*        aContainer,
                                  nsIStreamListener** aDocListener,
-                                 PRBool              aReset,
+                                 bool                aReset,
                                  nsIContentSink*     aSink)
 {
   nsresult rv =
@@ -84,8 +85,6 @@ VideoDocument::StartDocumentLoad(const char*         aCommand,
   NS_ENSURE_SUCCESS(rv, rv);
 
   mStreamListener = new MediaDocumentStreamListener(this);
-  if (!mStreamListener)
-    return NS_ERROR_OUT_OF_MEMORY;
 
   // Create synthetic document
   rv = CreateSyntheticVideoDocument(aChannel,
@@ -94,6 +93,18 @@ VideoDocument::StartDocumentLoad(const char*         aCommand,
 
   NS_ADDREF(*aDocListener = mStreamListener);
   return rv;
+}
+
+void
+VideoDocument::SetScriptGlobalObject(nsIScriptGlobalObject* aScriptGlobalObject)
+{
+  // Set the script global object on the superclass before doing
+  // anything that might require it....
+  MediaDocument::SetScriptGlobalObject(aScriptGlobalObject);
+
+  if (aScriptGlobalObject && !nsContentUtils::IsChildOfSameType(this)) {
+    LinkStylesheet(NS_LITERAL_STRING("resource://gre/res/TopLevelVideoDocument.css"));
+  }
 }
 
 nsresult
@@ -122,8 +133,8 @@ VideoDocument::CreateSyntheticVideoDocument(nsIChannel* aChannel,
                                                             NOT_FROM_PARSER));
   if (!element)
     return NS_ERROR_OUT_OF_MEMORY;
-  element->SetAutoplay(PR_TRUE);
-  element->SetControls(PR_TRUE);
+  element->SetAutoplay(true);
+  element->SetControls(true);
   element->LoadWithChannel(aChannel, aListener);
   UpdateTitle(aChannel);
 
@@ -132,29 +143,10 @@ VideoDocument::CreateSyntheticVideoDocument(nsIChannel* aChannel,
     // not have margins
     element->SetAttr(kNameSpaceID_None, nsGkAtoms::style,
         NS_LITERAL_STRING("position:absolute; top:0; left:0; width:100%; height:100%"),
-        PR_TRUE);
-  } else {
-    Element* head = GetHeadElement();
-    if (!head) {
-      NS_WARNING("no head on video document!");
-      return NS_ERROR_FAILURE;
-    }
-
-    nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::style, nsnull,
-                                             kNameSpaceID_XHTML,
-                                             nsIDOMNode::ELEMENT_NODE);
-    NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
-    nsRefPtr<nsGenericHTMLElement> styleContent = NS_NewHTMLStyleElement(nodeInfo.forget());
-    NS_ENSURE_TRUE(styleContent, NS_ERROR_OUT_OF_MEMORY);
-
-    styleContent->SetTextContent(
-      NS_LITERAL_STRING("body { background: url(chrome://global/skin/icons/tabprompts-bgtexture.png) #333; height: 100%; width: 100%; margin: 0; padding: 0; } ") +
-      NS_LITERAL_STRING("video { position: absolute; top: 0; right: 0; bottom: 0; left: 0; margin: auto; box-shadow: 0 0 15px #000; } ") +
-      NS_LITERAL_STRING("video:focus { outline-width: 0; } "));
-    head->AppendChildTo(styleContent, PR_FALSE);
+        true);
   }
 
-  return body->AppendChildTo(element, PR_FALSE);
+  return body->AppendChildTo(element, false);
 }
 
 void
@@ -175,9 +167,6 @@ nsresult
 NS_NewVideoDocument(nsIDocument** aResult)
 {
   mozilla::dom::VideoDocument* doc = new mozilla::dom::VideoDocument();
-  if (!doc) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
 
   NS_ADDREF(doc);
   nsresult rv = doc->Init();

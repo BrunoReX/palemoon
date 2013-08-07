@@ -50,6 +50,14 @@
 #include "nsDOMString.h"
 #include "jspubtd.h"
 #include "nsDOMMemoryReporter.h"
+#include "nsIVariant.h"
+
+// Including 'windows.h' will #define GetClassInfo to something else.
+#ifdef XP_WIN
+#ifdef GetClassInfo
+#undef GetClassInfo
+#endif
+#endif
 
 class nsIContent;
 class nsIDocument;
@@ -69,7 +77,6 @@ class nsChildContentList;
 class nsNodeWeakReference;
 class nsNodeSupportsWeakRefTearoff;
 class nsIEditor;
-class nsIVariant;
 class nsIDOMUserDataHandler;
 class nsAttrAndChildArray;
 class nsXPCClassInfo;
@@ -241,7 +248,7 @@ public:
    * Returns true if any unexpected mutations have occurred. You can pass in
    * an 8-bit ignore count to ignore a number of expected mutations.
    */
-  PRBool Mutated(PRUint8 aIgnoreCount)
+  bool Mutated(PRUint8 aIgnoreCount)
   {
     return sMutationCount < static_cast<PRUint32>(eMaxMutations - aIgnoreCount);
   }
@@ -277,14 +284,12 @@ private:
 // 0 is global.
 #define DOM_USER_DATA         1
 #define DOM_USER_DATA_HANDLER 2
-#ifdef MOZ_SMIL
 #define SMIL_MAPPED_ATTR_ANIMVAL 3
-#endif // MOZ_SMIL
 
 // IID for the nsINode interface
 #define NS_INODE_IID \
-{ 0xb59269fe, 0x7f60, 0x4672, \
-  { 0x8e, 0x56, 0x01, 0x84, 0xb2, 0x58, 0x14, 0xb0 } }
+{ 0xd026d280, 0x5b25, 0x41c0, \
+  { 0x92, 0xcf, 0x6, 0xf6, 0xf, 0xb, 0x9a, 0xfe } }
 
 /**
  * An internal interface that abstracts some DOMNode-related parts that both
@@ -339,17 +344,15 @@ public:
     eCOMMENT             = 1 << 5,
     /** form control elements */
     eHTML_FORM_CONTROL   = 1 << 6,
-    /** svg elements */
-    eSVG                 = 1 << 7,
     /** document fragments */
-    eDOCUMENT_FRAGMENT   = 1 << 8,
+    eDOCUMENT_FRAGMENT   = 1 << 7,
     /** data nodes (comments, PIs, text). Nodes of this type always
      returns a non-null value for nsIContent::GetText() */
-    eDATA_NODE           = 1 << 19,
+    eDATA_NODE           = 1 << 8,
     /** nsHTMLMediaElement */
-    eMEDIA               = 1 << 10,
+    eMEDIA               = 1 << 9,
     /** animation elements */
-    eANIMATION           = 1 << 11
+    eANIMATION           = 1 << 10
   };
 
   /**
@@ -360,7 +363,7 @@ public:
    * @param aFlags what types you want to test for (see above)
    * @return whether the content matches ALL flags passed in
    */
-  virtual PRBool IsNodeOfType(PRUint32 aFlags) const = 0;
+  virtual bool IsNodeOfType(PRUint32 aFlags) const = 0;
 
   /**
    * Return whether the node is an Element node
@@ -415,7 +418,7 @@ public:
    * nsIDocument GetOwnerDocument returns the document itself.  For nsIContent
    * implementations the two are the same.
    */
-  nsIDocument *GetOwnerDoc() const
+  nsIDocument *OwnerDoc() const
   {
     return mNodeInfo->GetDocument();
   }
@@ -438,7 +441,7 @@ public:
    */
   nsIDocument *GetCurrentDoc() const
   {
-    return IsInDoc() ? GetOwnerDoc() : nsnull;
+    return IsInDoc() ? OwnerDoc() : nsnull;
   }
 
   /**
@@ -461,12 +464,12 @@ public:
   nsINode*
   InsertBefore(nsINode *aNewChild, nsINode *aRefChild, nsresult *aReturn)
   {
-    return ReplaceOrInsertBefore(PR_FALSE, aNewChild, aRefChild, aReturn);
+    return ReplaceOrInsertBefore(false, aNewChild, aRefChild, aReturn);
   }
   nsINode*
   ReplaceChild(nsINode *aNewChild, nsINode *aOldChild, nsresult *aReturn)
   {
-    return ReplaceOrInsertBefore(PR_TRUE, aNewChild, aOldChild, aReturn);
+    return ReplaceOrInsertBefore(true, aNewChild, aOldChild, aReturn);
   }
   nsINode*
   AppendChild(nsINode *aNewChild, nsresult *aReturn)
@@ -496,7 +499,7 @@ public:
    * @throws NS_ERROR_OUT_OF_MEMORY in some cases (from BindToTree).
    */
   virtual nsresult InsertChildAt(nsIContent* aKid, PRUint32 aIndex,
-                                 PRBool aNotify) = 0;
+                                 bool aNotify) = 0;
 
   /**
    * Append a content node to the end of the child list.  This method handles
@@ -516,7 +519,7 @@ public:
    *
    * @throws NS_ERROR_OUT_OF_MEMORY in some cases (from BindToTree).
    */
-  nsresult AppendChildTo(nsIContent* aKid, PRBool aNotify)
+  nsresult AppendChildTo(nsIContent* aKid, bool aNotify)
   {
     return InsertChildAt(aKid, GetChildCount(), aNotify);
   }
@@ -534,7 +537,7 @@ public:
    * Note: If there is no child at aIndex, this method will simply do nothing.
    */
   virtual nsresult RemoveChildAt(PRUint32 aIndex, 
-                                 PRBool aNotify) = 0;
+                                 bool aNotify) = 0;
 
   /**
    * Get a property associated with this node.
@@ -578,8 +581,8 @@ public:
    * @param aValue         new value of property.
    * @param aDtor          destructor function to be used when this property
    *                       is destroyed.
-   * @param aTransfer      if PR_TRUE the property will not be deleted when the
-   *                       ownerDocument of the node changes, if PR_FALSE it
+   * @param aTransfer      if true the property will not be deleted when the
+   *                       ownerDocument of the node changes, if false it
    *                       will be deleted.
    *
    * @return NS_PROPTABLE_PROP_OVERWRITTEN (success value) if the property
@@ -589,7 +592,7 @@ public:
   nsresult SetProperty(nsIAtom *aPropertyName,
                        void *aValue,
                        NSPropertyDtorFunc aDtor = nsnull,
-                       PRBool aTransfer = PR_FALSE)
+                       bool aTransfer = false)
   {
     return SetProperty(0, aPropertyName, aValue, aDtor, aTransfer);
   }
@@ -604,8 +607,8 @@ public:
    * @param aValue          new value of property.
    * @param aDtor           destructor function to be used when this property
    *                        is destroyed.
-   * @param aTransfer       if PR_TRUE the property will not be deleted when the
-   *                        ownerDocument of the node changes, if PR_FALSE it
+   * @param aTransfer       if true the property will not be deleted when the
+   *                        ownerDocument of the node changes, if false it
    *                        will be deleted.
    * @param aOldValue [out] previous value of property.
    *
@@ -617,7 +620,7 @@ public:
                                nsIAtom *aPropertyName,
                                void *aValue,
                                NSPropertyDtorFunc aDtor = nsnull,
-                               PRBool aTransfer = PR_FALSE,
+                               bool aTransfer = false,
                                void **aOldValue = nsnull);
 
   /**
@@ -677,7 +680,7 @@ public:
                               nsIAtom *aPropertyName,
                               nsresult *aStatus = nsnull);
   
-  PRBool HasProperties() const
+  bool HasProperties() const
   {
     return HasFlag(NODE_HAS_PROPERTIES);
   }
@@ -723,6 +726,7 @@ public:
    */
   NS_DECL_NSIDOMEVENTTARGET
   using nsIDOMEventTarget::AddEventListener;
+  using nsIDOMEventTarget::AddSystemEventListener;
 
   /**
    * Adds a mutation observer to be notified when this node, or any of its
@@ -782,14 +786,14 @@ public:
   /**
    * Checks if a node has the same ownerDocument as this one. Note that this
    * actually compares nodeinfo managers because nodes always have one, even
-   * when they don't have an ownerDocument. If this function returns PR_TRUE
+   * when they don't have an ownerDocument. If this function returns true
    * it doesn't mean that the nodes actually have an ownerDocument.
    *
    * @param aOther Other node to check
    * @return Whether the owner documents of this node and of aOther are the
    *         same.
    */
-  PRBool HasSameOwnerDoc(nsINode *aOther)
+  bool HasSameOwnerDoc(nsINode *aOther)
   {
     // We compare nodeinfo managers because nodes always have one, even when
     // they don't have an ownerDocument.
@@ -844,7 +848,7 @@ public:
   }
 #endif
 
-  PRBool HasFlag(PtrBits aFlag) const
+  bool HasFlag(PtrBits aFlag) const
   {
     return !!(GetFlags() & aFlag);
   }
@@ -877,7 +881,7 @@ public:
     mFlags &= ~aFlagsToUnset;
   }
 
-  void SetEditableFlag(PRBool aEditable)
+  void SetEditableFlag(bool aEditable)
   {
     if (aEditable) {
       SetFlags(NODE_IS_EDITABLE);
@@ -887,7 +891,7 @@ public:
     }
   }
 
-  PRBool IsEditable() const
+  bool IsEditable() const
   {
 #ifdef _IMPL_NS_LAYOUT
     return IsEditableInternal();
@@ -897,19 +901,31 @@ public:
   }
 
   /**
-   * Returns PR_TRUE if |this| or any of its ancestors is native anonymous.
+   * Returns true if |this| or any of its ancestors is native anonymous.
    */
-  PRBool IsInNativeAnonymousSubtree() const
+  bool IsInNativeAnonymousSubtree() const
   {
 #ifdef DEBUG
     if (HasFlag(NODE_IS_IN_ANONYMOUS_SUBTREE)) {
-      return PR_TRUE;
+      return true;
     }
     CheckNotNativeAnonymous();
-    return PR_FALSE;
+    return false;
 #else
     return HasFlag(NODE_IS_IN_ANONYMOUS_SUBTREE);
 #endif
+  }
+
+  /**
+   * Returns true if |this| node is the common ancestor of the start/end
+   * nodes of a Range in a Selection or a descendant of such a common ancestor.
+   * This node is definitely not selected when |false| is returned, but it may
+   * or may not be selected when |true| is returned.
+   */
+  bool IsSelectionDescendant() const
+  {
+    return IsDescendantOfCommonAncestorForRangeInSelection() ||
+           IsCommonAncestorForRangeInSelection();
   }
 
   /**
@@ -1051,11 +1067,8 @@ public:
   nsresult CompareDocumentPosition(nsIDOMNode* aOther,
                                    PRUint16* aReturn);
 
-  nsresult IsSameNode(nsIDOMNode* aOther,
-                      PRBool* aReturn);
-
   nsresult LookupPrefix(const nsAString& aNamespaceURI, nsAString& aPrefix);
-  nsresult IsDefaultNamespace(const nsAString& aNamespaceURI, PRBool* aResult)
+  nsresult IsDefaultNamespace(const nsAString& aNamespaceURI, bool* aResult)
   {
     nsAutoString defaultNamespace;
     LookupNamespaceURI(EmptyString(), defaultNamespace);
@@ -1065,8 +1078,8 @@ public:
   nsresult LookupNamespaceURI(const nsAString& aNamespacePrefix,
                               nsAString& aNamespaceURI);
 
-  nsresult IsEqualNode(nsIDOMNode* aOther, PRBool* aReturn);
-  PRBool IsEqualTo(nsINode* aOther);
+  nsresult IsEqualNode(nsIDOMNode* aOther, bool* aReturn);
+  bool IsEqualTo(nsINode* aOther);
 
   nsIContent* GetNextSibling() const { return mNextSibling; }
   nsIContent* GetPreviousSibling() const { return mPreviousSibling; }
@@ -1080,7 +1093,7 @@ public:
    */
   nsIContent* GetNextNode(const nsINode* aRoot = nsnull) const
   {
-    return GetNextNodeImpl(aRoot, PR_FALSE);
+    return GetNextNodeImpl(aRoot, false);
   }
 
   /**
@@ -1092,7 +1105,7 @@ public:
    */
   nsIContent* GetNextNonChildNode(const nsINode* aRoot = nsnull) const
   {
-    return GetNextNodeImpl(aRoot, PR_TRUE);
+    return GetNextNodeImpl(aRoot, true);
   }
 
   /**
@@ -1100,13 +1113,13 @@ public:
    * document fragment and aOther is a descendant in the same
    * anonymous tree.
    */
-  PRBool Contains(const nsINode* aOther) const;
-  nsresult Contains(nsIDOMNode* aOther, PRBool* aReturn);
+  bool Contains(const nsINode* aOther) const;
+  nsresult Contains(nsIDOMNode* aOther, bool* aReturn);
 
 private:
 
   nsIContent* GetNextNodeImpl(const nsINode* aRoot,
-                              const PRBool aSkipChildren) const
+                              const bool aSkipChildren) const
   {
     // Can't use nsContentUtils::ContentIsDescendantOf here, since we
     // can't include it here.
@@ -1200,6 +1213,11 @@ private:
     ElementHasName,
     // Set if the element might have a contenteditable attribute set.
     ElementMayHaveContentEditableAttr,
+    // Set if the node is the common ancestor of the start/end nodes of a Range
+    // that is in a Selection.
+    NodeIsCommonAncestorForRangeInSelection,
+    // Set if the node is a descendant of a node with the above bit set.
+    NodeIsDescendantOfCommonAncestorForRangeInSelection,
     // Guard value
     BooleanFlagCount
   };
@@ -1234,6 +1252,18 @@ public:
   bool HasName() const { return GetBoolFlag(ElementHasName); }
   bool MayHaveContentEditableAttr() const
     { return GetBoolFlag(ElementMayHaveContentEditableAttr); }
+  bool IsCommonAncestorForRangeInSelection() const
+    { return GetBoolFlag(NodeIsCommonAncestorForRangeInSelection); }
+  void SetCommonAncestorForRangeInSelection()
+    { SetBoolFlag(NodeIsCommonAncestorForRangeInSelection); }
+  void ClearCommonAncestorForRangeInSelection()
+    { ClearBoolFlag(NodeIsCommonAncestorForRangeInSelection); }
+  bool IsDescendantOfCommonAncestorForRangeInSelection() const
+    { return GetBoolFlag(NodeIsDescendantOfCommonAncestorForRangeInSelection); }
+  void SetDescendantOfCommonAncestorForRangeInSelection()
+    { SetBoolFlag(NodeIsDescendantOfCommonAncestorForRangeInSelection); }
+  void ClearDescendantOfCommonAncestorForRangeInSelection()
+    { ClearBoolFlag(NodeIsDescendantOfCommonAncestorForRangeInSelection); }
 
 protected:
   void SetParentIsContent(bool aValue) { SetBoolFlag(ParentIsContent, aValue); }
@@ -1257,7 +1287,7 @@ protected:
   // Override this function to create a custom slots class.
   virtual nsINode::nsSlots* CreateSlots();
 
-  PRBool HasSlots() const
+  bool HasSlots() const
   {
     return mSlots != nsnull;
   }
@@ -1280,8 +1310,8 @@ protected:
     return HasSlots() ? &GetExistingSlots()->mMutationObservers : nsnull;
   }
 
-  PRBool IsEditableInternal() const;
-  virtual PRBool IsEditableExternal() const
+  bool IsEditableInternal() const;
+  virtual bool IsEditableExternal() const
   {
     return IsEditableInternal();
   }
@@ -1301,9 +1331,9 @@ protected:
   nsresult GetNextSibling(nsIDOMNode** aNextSibling);
   nsresult GetOwnerDocument(nsIDOMDocument** aOwnerDocument);
 
-  nsresult ReplaceOrInsertBefore(PRBool aReplace, nsIDOMNode *aNewChild,
+  nsresult ReplaceOrInsertBefore(bool aReplace, nsIDOMNode *aNewChild,
                                  nsIDOMNode *aRefChild, nsIDOMNode **aReturn);
-  nsINode* ReplaceOrInsertBefore(PRBool aReplace, nsINode *aNewChild,
+  nsINode* ReplaceOrInsertBefore(bool aReplace, nsINode *aNewChild,
                                  nsINode *aRefChild, nsresult *aReturn)
   {
     *aReturn = ReplaceOrInsertBefore(aReplace, aNewChild, aRefChild);
@@ -1313,7 +1343,7 @@ protected:
 
     return aReplace ? aRefChild : aNewChild;
   }
-  virtual nsresult ReplaceOrInsertBefore(PRBool aReplace, nsINode* aNewChild,
+  virtual nsresult ReplaceOrInsertBefore(bool aReplace, nsINode* aNewChild,
                                          nsINode* aRefChild);
   nsresult RemoveChild(nsIDOMNode* aOldChild, nsIDOMNode** aReturn);
 
@@ -1336,7 +1366,7 @@ protected:
    * @param aChildArray The child array to work with.
    * @param aMutationEvent whether to fire a mutation event for this removal.
    */
-  nsresult doRemoveChildAt(PRUint32 aIndex, PRBool aNotify, nsIContent* aKid,
+  nsresult doRemoveChildAt(PRUint32 aIndex, bool aNotify, nsIContent* aKid,
                            nsAttrAndChildArray& aChildArray);
 
   /**
@@ -1350,8 +1380,9 @@ protected:
    * @param aChildArray The child array to work with
    */
   nsresult doInsertChildAt(nsIContent* aKid, PRUint32 aIndex,
-                           PRBool aNotify, nsAttrAndChildArray& aChildArray);
+                           bool aNotify, nsAttrAndChildArray& aChildArray);
 
+public:
   /* Event stuff that documents and elements share.  This needs to be
      NS_IMETHOD because some subclasses implement DOM methods with
      this exact name and signature and then the calling convention
@@ -1370,6 +1401,7 @@ protected:
 #undef TOUCH_EVENT
 #undef EVENT  
 
+protected:
   static void Trace(nsINode *tmp, TraceCallback cb, void *closure);
   static bool Traverse(nsINode *tmp, nsCycleCollectionTraversalCallback &cb);
   static void Unlink(nsINode *tmp);

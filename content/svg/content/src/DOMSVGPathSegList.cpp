@@ -68,7 +68,7 @@ NS_INTERFACE_MAP_END
 /* static */ already_AddRefed<DOMSVGPathSegList>
 DOMSVGPathSegList::GetDOMWrapper(void *aList,
                                  nsSVGElement *aElement,
-                                 PRBool aIsAnimValList)
+                                 bool aIsAnimValList)
 {
   DOMSVGPathSegList *wrapper =
     sSVGPathSegListTearoffTable.GetTearoff(aList);
@@ -99,11 +99,9 @@ DOMSVGPathSegList::~DOMSVGPathSegList()
 nsIDOMSVGPathSeg*
 DOMSVGPathSegList::GetItemWithoutAddRef(PRUint32 aIndex)
 {
-#ifdef MOZ_SMIL
   if (IsAnimValList()) {
     Element()->FlushAnimations();
   }
-#endif
   if (aIndex < Length()) {
     EnsureItemAt(aIndex);
     return ItemAt(aIndex);
@@ -229,21 +227,21 @@ DOMSVGPathSegList::InternalListWillChangeTo(const SVGPathData& aNewValue)
   NS_ABORT_IF_FALSE(index == length, "Serious counting error");
 }
 
-PRBool
+bool
 DOMSVGPathSegList::AttrIsAnimating() const
 {
-  return const_cast<DOMSVGPathSegList*>(this)->InternalAList().IsAnimating();
+  return InternalAList().IsAnimating();
 }
 
 SVGPathData&
-DOMSVGPathSegList::InternalList()
+DOMSVGPathSegList::InternalList() const
 {
   SVGAnimatedPathSegList *alist = mElement->GetAnimPathSegList();
   return mIsAnimValList && alist->IsAnimating() ? *alist->mAnimVal : alist->mBaseVal;
 }
 
 SVGAnimatedPathSegList&
-DOMSVGPathSegList::InternalAList()
+DOMSVGPathSegList::InternalAList() const
 {
   NS_ABORT_IF_FALSE(mElement->GetAnimPathSegList(), "Internal error");
   return *mElement->GetAnimPathSegList();
@@ -255,11 +253,9 @@ DOMSVGPathSegList::InternalAList()
 NS_IMETHODIMP
 DOMSVGPathSegList::GetNumberOfItems(PRUint32 *aNumberOfItems)
 {
-#ifdef MOZ_SMIL
   if (IsAnimValList()) {
     Element()->FlushAnimations();
   }
-#endif
   *aNumberOfItems = Length();
   return NS_OK;
 }
@@ -288,12 +284,10 @@ DOMSVGPathSegList::Clear()
     }
 
     InternalList().Clear();
-    Element()->DidChangePathSegList(PR_TRUE);
-#ifdef MOZ_SMIL
+    Element()->DidChangePathSegList(true);
     if (AttrIsAnimating()) {
       Element()->AnimationNeedsResample();
     }
-#endif
   }
   return NS_OK;
 }
@@ -392,12 +386,10 @@ DOMSVGPathSegList::InsertItemBefore(nsIDOMSVGPathSeg *aNewItem,
 
   UpdateListIndicesFromIndex(aIndex + 1, argCount + 1);
 
-  Element()->DidChangePathSegList(PR_TRUE);
-#ifdef MOZ_SMIL
+  Element()->DidChangePathSegList(true);
   if (AttrIsAnimating()) {
     Element()->AnimationNeedsResample();
   }
-#endif
   *_retval = domItem.forget().get();
   return NS_OK;
 }
@@ -439,7 +431,7 @@ DOMSVGPathSegList::ReplaceItem(nsIDOMSVGPathSeg *aNewItem,
   float segAsRaw[1 + NS_SVG_PATH_SEG_MAX_ARGS];
   domItem->ToSVGPathSegEncodedData(segAsRaw);
 
-  PRBool ok = !!InternalList().mData.ReplaceElementsAt(
+  bool ok = !!InternalList().mData.ReplaceElementsAt(
                   internalIndex, 1 + oldArgCount,
                   segAsRaw, 1 + newArgCount);
   if (!ok) {
@@ -458,12 +450,10 @@ DOMSVGPathSegList::ReplaceItem(nsIDOMSVGPathSeg *aNewItem,
     }
   }
 
-  Element()->DidChangePathSegList(PR_TRUE);
-#ifdef MOZ_SMIL
+  Element()->DidChangePathSegList(true);
   if (AttrIsAnimating()) {
     Element()->AnimationNeedsResample();
   }
-#endif
   NS_ADDREF(*_retval = domItem.get());
   return NS_OK;
 }
@@ -502,12 +492,10 @@ DOMSVGPathSegList::RemoveItem(PRUint32 aIndex,
 
   UpdateListIndicesFromIndex(aIndex, -(argCount + 1));
 
-  Element()->DidChangePathSegList(PR_TRUE);
-#ifdef MOZ_SMIL
+  Element()->DidChangePathSegList(true);
   if (AttrIsAnimating()) {
     Element()->AnimationNeedsResample();
   }
-#endif
   return NS_OK;
 }
 

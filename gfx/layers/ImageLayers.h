@@ -40,12 +40,14 @@
 
 #include "Layers.h"
 
+#include "nsISupportsImpl.h"
 #include "gfxPattern.h"
 #include "nsThreadUtils.h"
-#include "nsCoreAnimationSupport.h"
 #include "mozilla/ReentrantMonitor.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/mozalloc.h"
+
+class nsIOSurface;
 
 namespace mozilla {
 namespace layers {
@@ -73,7 +75,7 @@ enum StereoMode {
  * sampled. For example, cairo images should be sampled in EXTEND_PAD mode.
  */
 class THEBES_API Image {
-  THEBES_INLINE_DECL_THREADSAFE_REFCOUNTING(Image)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(Image)
 
 public:
   virtual ~Image() {}
@@ -131,13 +133,13 @@ protected:
  * video playback without involving the main thread, for example.
  */
 class THEBES_API ImageContainer {
-  THEBES_INLINE_DECL_THREADSAFE_REFCOUNTING(ImageContainer)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ImageContainer)
 
 public:
   ImageContainer() :
     mReentrantMonitor("ImageContainer.mReentrantMonitor"),
     mPaintCount(0),
-    mPreviousImagePainted(PR_FALSE)
+    mPreviousImagePainted(false)
   {}
 
   virtual ~ImageContainer() {}
@@ -167,7 +169,7 @@ public:
    * Ask any PlanarYCbCr images created by this container to delay
    * YUV -> RGB conversion until draw time. See PlanarYCbCrImage::SetDelayedConversion.
    */
-  virtual void SetDelayedConversion(PRBool aDelayed) {}
+  virtual void SetDelayedConversion(bool aDelayed) {}
 
   /**
    * Get the current Image.
@@ -221,7 +223,7 @@ public:
    * either of the same type as the container's current layer manager,
    * or null.  TRUE is returned on success. Main thread only.
    */
-  virtual PRBool SetLayerManager(LayerManager *aManager) = 0;
+  virtual bool SetLayerManager(LayerManager *aManager) = 0;
 
   /**
    * Sets a size that the image is expected to be rendered at.
@@ -277,7 +279,7 @@ public:
       // still must count it as painted, but can't set mPaintTime, since we're
       // no longer the current image.
       mPaintCount++;
-      mPreviousImagePainted = PR_TRUE;
+      mPreviousImagePainted = true;
     }
   }
 
@@ -293,7 +295,7 @@ protected:
     mManager(aManager),
     mReentrantMonitor("ImageContainer.mReentrantMonitor"),
     mPaintCount(0),
-    mPreviousImagePainted(PR_FALSE)
+    mPreviousImagePainted(false)
   {}
 
   // Performs necessary housekeeping to ensure the painted frame statistics
@@ -315,7 +317,7 @@ protected:
   TimeStamp mPaintTime;
 
   // Denotes whether the previous image was painted.
-  PRPackedBool mPreviousImagePainted;
+  bool mPreviousImagePainted;
 };
 
 /**
@@ -433,7 +435,7 @@ public:
    * the original data available through GetData. This is optional,
    * and not all PlanarYCbCrImages will support it.
    */
-  virtual void SetDelayedConversion(PRBool aDelayed) { }
+  virtual void SetDelayedConversion(bool aDelayed) { }
 
   /**
    * Grab the original YUV data. This is optional.

@@ -91,7 +91,7 @@ public:
                                  InfallibleTArray<nsString>* aJSONRetVal);
     virtual bool RecvAsyncMessage(const nsString& aMessage,
                                   const nsString& aJSON);
-    virtual bool RecvNotifyIMEFocus(const PRBool& aFocus,
+    virtual bool RecvNotifyIMEFocus(const bool& aFocus,
                                     nsIMEUpdatePreference* aPreference,
                                     PRUint32* aSeqno);
     virtual bool RecvNotifyIMETextChange(const PRUint32& aStart,
@@ -101,12 +101,16 @@ public:
                                         const PRUint32& aAnchor,
                                         const PRUint32& aFocus);
     virtual bool RecvNotifyIMETextHint(const nsString& aText);
-    virtual bool RecvEndIMEComposition(const PRBool& aCancel,
+    virtual bool RecvEndIMEComposition(const bool& aCancel,
                                        nsString* aComposition);
-    virtual bool RecvGetIMEEnabled(PRUint32* aValue);
-    virtual bool RecvSetInputMode(const PRUint32& aValue, const nsString& aType, const nsString& aAction, const PRUint32& aReason);
-    virtual bool RecvGetIMEOpenState(PRBool* aValue);
-    virtual bool RecvSetIMEOpenState(const PRBool& aValue);
+    virtual bool RecvGetInputContext(PRInt32* aIMEEnabled,
+                                     PRInt32* aIMEOpen);
+    virtual bool RecvSetInputContext(const PRInt32& aIMEEnabled,
+                                     const PRInt32& aIMEOpen,
+                                     const nsString& aType,
+                                     const nsString& aActionHint,
+                                     const PRInt32& aCause,
+                                     const PRInt32& aFocusChange);
     virtual bool RecvSetCursor(const PRUint32& aValue);
     virtual bool RecvSetBackgroundColor(const nscolor& aValue);
     virtual bool RecvGetDPI(float* aValue);
@@ -131,12 +135,19 @@ public:
     void UpdateDimensions(const nsRect& rect, const nsIntSize& size);
     void Activate();
     void Deactivate();
+
+    /**
+     * Is this object active?  That is, was Activate() called more recently than
+     * Deactivate()?
+     */
+    bool Active();
+
     void SendMouseEvent(const nsAString& aType, float aX, float aY,
                         PRInt32 aButton, PRInt32 aClickCount,
-                        PRInt32 aModifiers, PRBool aIgnoreRootScrollFrame);
+                        PRInt32 aModifiers, bool aIgnoreRootScrollFrame);
     void SendKeyEvent(const nsAString& aType, PRInt32 aKeyCode,
                       PRInt32 aCharCode, PRInt32 aModifiers,
-                      PRBool aPreventDefault);
+                      bool aPreventDefault);
     bool SendRealMouseEvent(nsMouseEvent& event);
     bool SendMouseScrollEvent(nsMouseScrollEvent& event);
     bool SendRealKeyEvent(nsKeyEvent& event);
@@ -173,7 +184,7 @@ public:
     bool SendSelectionEvent(nsSelectionEvent& event);
 protected:
     bool ReceiveMessage(const nsString& aMessage,
-                        PRBool aSync,
+                        bool aSync,
                         const nsString& aJSON,
                         InfallibleTArray<nsString>* aJSONRetVal = nsnull);
 
@@ -199,8 +210,8 @@ protected:
     };
     InfallibleTArray<DelayedDialogData*> mDelayedDialogs;
 
-    PRBool ShouldDelayDialogs();
-    PRBool AllowContentIME();
+    bool ShouldDelayDialogs();
+    bool AllowContentIME();
 
     NS_OVERRIDE
     virtual PRenderFrameParent* AllocPRenderFrame();
@@ -212,8 +223,8 @@ protected:
     nsString mIMECacheText;
     PRUint32 mIMESelectionAnchor;
     PRUint32 mIMESelectionFocus;
-    PRPackedBool mIMEComposing;
-    PRPackedBool mIMECompositionEnding;
+    bool mIMEComposing;
+    bool mIMECompositionEnding;
     // Buffer to store composition text during ResetInputState
     // Compositions in almost all cases are small enough for nsAutoString
     nsAutoString mIMECompositionText;
@@ -221,6 +232,7 @@ protected:
     PRUint32 mIMESeqno;
 
     float mDPI;
+    bool mActive;
 
 private:
     already_AddRefed<nsFrameLoader> GetFrameLoader() const;

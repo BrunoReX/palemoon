@@ -156,7 +156,7 @@ public:
     xptiWorkingSet();
     ~xptiWorkingSet();
     
-    PRBool IsValid() const;
+    bool IsValid() const;
 
     void InvalidateInterfaceInfos();
     void ClearHashTables();
@@ -170,9 +170,9 @@ public:
     PRUint32 GetDirectoryCount();
     nsresult GetCloneOfDirectoryAt(PRUint32 i, nsILocalFile** dir);
     nsresult GetDirectoryAt(PRUint32 i, nsILocalFile** dir);
-    PRBool   FindDirectory(nsILocalFile* dir, PRUint32* index);
-    PRBool   FindDirectoryOfFile(nsILocalFile* file, PRUint32* index);
-    PRBool   DirectoryAtMatchesPersistentDescriptor(PRUint32 i, const char* desc);
+    bool     FindDirectory(nsILocalFile* dir, PRUint32* index);
+    bool     FindDirectoryOfFile(nsILocalFile* file, PRUint32* index);
+    bool     DirectoryAtMatchesPersistentDescriptor(PRUint32 i, const char* desc);
 
 private:
     PRUint32        mFileCount;
@@ -216,14 +216,14 @@ public:
     void SetState(PRUint8 state) 
         {mData &= ~GetStateMask(); mData |= state;}                                   
 
-    void SetFlagBit(PRUint8 flag, PRBool on) 
+    void SetFlagBit(PRUint8 flag, bool on) 
         {if(on)
             mData |= ~GetStateMask() & flag;
          else
             mData &= GetStateMask() | ~flag;}
 
-    PRBool GetFlagBit(PRUint8 flag) const 
-        {return (mData & flag) ? PR_TRUE : PR_FALSE;}
+    bool GetFlagBit(PRUint8 flag) const 
+        {return (mData & flag) ? true : false;}
 
 private:
     PRUint8 mData;    
@@ -254,26 +254,26 @@ public:
 
     PRUint8 GetResolveState() const {return mFlags.GetState();}
     
-    PRBool IsFullyResolved() const 
+    bool IsFullyResolved() const 
         {return GetResolveState() == (PRUint8) FULLY_RESOLVED;}
 
-    void   SetScriptableFlag(PRBool on)
+    void   SetScriptableFlag(bool on)
                 {mFlags.SetFlagBit(PRUint8(SCRIPTABLE),on);}
-    PRBool GetScriptableFlag() const
+    bool GetScriptableFlag() const
                 {return mFlags.GetFlagBit(PRUint8(SCRIPTABLE));}
-    void   SetBuiltinClassFlag(PRBool on)
+    void   SetBuiltinClassFlag(bool on)
                 {mFlags.SetFlagBit(PRUint8(BUILTINCLASS),on);}
-    PRBool GetBuiltinClassFlag() const
+    bool GetBuiltinClassFlag() const
                 {return mFlags.GetFlagBit(PRUint8(BUILTINCLASS));}
 
     const nsID* GetTheIID()  const {return &mIID;}
     const char* GetTheName() const {return mName;}
 
-    PRBool EnsureResolved()
-        {return IsFullyResolved() ? PR_TRUE : Resolve();}
+    bool EnsureResolved()
+        {return IsFullyResolved() ? true : Resolve();}
 
     nsresult GetInterfaceInfo(xptiInterfaceInfo** info);
-    PRBool   InterfaceInfoEquals(const xptiInterfaceInfo* info) const 
+    bool     InterfaceInfoEquals(const xptiInterfaceInfo* info) const 
         {return info == mInfo;}
     
     void     LockedInvalidateInterfaceInfo();
@@ -291,8 +291,8 @@ public:
 
     nsresult GetName(char * *aName);
     nsresult GetIID(nsIID * *aIID);
-    nsresult IsScriptable(PRBool *_retval);
-    nsresult IsBuiltinClass(PRBool *_retval) {
+    nsresult IsScriptable(bool *_retval);
+    nsresult IsBuiltinClass(bool *_retval) {
         *_retval = GetBuiltinClassFlag();
         return NS_OK;
     }
@@ -307,13 +307,12 @@ public:
     nsresult GetIIDForParam(PRUint16 methodIndex, const nsXPTParamInfo * param, nsIID * *_retval);
     nsresult GetTypeForParam(PRUint16 methodIndex, const nsXPTParamInfo * param, PRUint16 dimension, nsXPTType *_retval);
     nsresult GetSizeIsArgNumberForParam(PRUint16 methodIndex, const nsXPTParamInfo * param, PRUint16 dimension, PRUint8 *_retval);
-    nsresult GetLengthIsArgNumberForParam(PRUint16 methodIndex, const nsXPTParamInfo * param, PRUint16 dimension, PRUint8 *_retval);
     nsresult GetInterfaceIsArgNumberForParam(PRUint16 methodIndex, const nsXPTParamInfo * param, PRUint8 *_retval);
-    nsresult IsIID(const nsIID * IID, PRBool *_retval);
+    nsresult IsIID(const nsIID * IID, bool *_retval);
     nsresult GetNameShared(const char **name);
     nsresult GetIIDShared(const nsIID * *iid);
-    nsresult IsFunction(PRBool *_retval);
-    nsresult HasAncestor(const nsIID * iid, PRBool *_retval);
+    nsresult IsFunction(bool *_retval);
+    nsresult HasAncestor(const nsIID * iid, bool *_retval);
     nsresult GetIIDForParamNoAlloc(PRUint16 methodIndex, const nsXPTParamInfo * param, nsIID *iid);
 
 private:
@@ -327,15 +326,15 @@ private:
     void SetResolvedState(int state) 
         {mFlags.SetState(PRUint8(state));}
 
-    PRBool Resolve();
+    bool Resolve();
 
     // We only call these "*Locked" variants after locking. This is done to 
     // allow reentrace as files are loaded and various interfaces resolved 
     // without having to worry about the locked state.
 
-    PRBool EnsureResolvedLocked()
-        {return IsFullyResolved() ? PR_TRUE : ResolveLocked();}
-    PRBool ResolveLocked();
+    bool EnsureResolvedLocked()
+        {return IsFullyResolved() ? true : ResolveLocked();}
+    bool ResolveLocked();
 
     // private helpers
 
@@ -370,8 +369,8 @@ public:
     // Use delegation to implement (most!) of nsIInterfaceInfo.
     NS_IMETHOD GetName(char * *aName) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->GetName(aName); }
     NS_IMETHOD GetInterfaceIID(nsIID * *aIID) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->GetIID(aIID); }
-    NS_IMETHOD IsScriptable(PRBool *_retval) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->IsScriptable(_retval); }
-    NS_IMETHOD IsBuiltinClass(PRBool *_retval) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->IsBuiltinClass(_retval); }
+    NS_IMETHOD IsScriptable(bool *_retval) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->IsScriptable(_retval); }
+    NS_IMETHOD IsBuiltinClass(bool *_retval) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->IsBuiltinClass(_retval); }
     // Except this one.
     NS_IMETHOD GetParent(nsIInterfaceInfo * *aParent) 
     {
@@ -389,13 +388,12 @@ public:
     NS_IMETHOD GetIIDForParam(PRUint16 methodIndex, const nsXPTParamInfo * param, nsIID * *_retval) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->GetIIDForParam(methodIndex, param, _retval); }
     NS_IMETHOD GetTypeForParam(PRUint16 methodIndex, const nsXPTParamInfo * param, PRUint16 dimension, nsXPTType *_retval) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->GetTypeForParam(methodIndex, param, dimension, _retval); }
     NS_IMETHOD GetSizeIsArgNumberForParam(PRUint16 methodIndex, const nsXPTParamInfo * param, PRUint16 dimension, PRUint8 *_retval) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->GetSizeIsArgNumberForParam(methodIndex, param, dimension, _retval); }
-    NS_IMETHOD GetLengthIsArgNumberForParam(PRUint16 methodIndex, const nsXPTParamInfo * param, PRUint16 dimension, PRUint8 *_retval) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->GetLengthIsArgNumberForParam(methodIndex, param, dimension, _retval); }
     NS_IMETHOD GetInterfaceIsArgNumberForParam(PRUint16 methodIndex, const nsXPTParamInfo * param, PRUint8 *_retval) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->GetInterfaceIsArgNumberForParam(methodIndex, param, _retval); }
-    NS_IMETHOD IsIID(const nsIID * IID, PRBool *_retval) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->IsIID(IID, _retval); }
+    NS_IMETHOD IsIID(const nsIID * IID, bool *_retval) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->IsIID(IID, _retval); }
     NS_IMETHOD GetNameShared(const char **name) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->GetNameShared(name); }
     NS_IMETHOD GetIIDShared(const nsIID * *iid) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->GetIIDShared(iid); }
-    NS_IMETHOD IsFunction(PRBool *_retval) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->IsFunction(_retval); }
-    NS_IMETHOD HasAncestor(const nsIID * iid, PRBool *_retval) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->HasAncestor(iid, _retval); }
+    NS_IMETHOD IsFunction(bool *_retval) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->IsFunction(_retval); }
+    NS_IMETHOD HasAncestor(const nsIID * iid, bool *_retval) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->HasAncestor(iid, _retval); }
     NS_IMETHOD GetIIDForParamNoAlloc(PRUint16 methodIndex, const nsXPTParamInfo * param, nsIID *iid) { return !mEntry ? NS_ERROR_UNEXPECTED : mEntry->GetIIDForParamNoAlloc(methodIndex, param, iid); }
 
 public:
@@ -409,18 +407,18 @@ private:
     ~xptiInterfaceInfo();
 
     // Note that mParent might still end up as nsnull if we don't have one.
-    PRBool EnsureParent()
+    bool EnsureParent()
     {
         NS_ASSERTION(mEntry && mEntry->IsFullyResolved(), "bad EnsureParent call");
         return mParent || !mEntry->Parent() || BuildParent();
     }
     
-    PRBool EnsureResolved()
+    bool EnsureResolved()
     {
         return mEntry && mEntry->EnsureResolved();
     }
 
-    PRBool BuildParent();
+    bool BuildParent();
 
     xptiInterfaceInfo();  // not implemented
 
@@ -446,8 +444,7 @@ public:
     static xptiInterfaceInfoManager* GetSingleton();
     static void FreeInterfaceInfoManager();
 
-    void RegisterFile(nsILocalFile* aFile);
-    void RegisterInputStream(nsIInputStream* aStream);
+    void RegisterBuffer(char *buf, PRUint32 length);
 
     xptiWorkingSet*  GetWorkingSet() {return &mWorkingSet;}
 
@@ -465,9 +462,6 @@ private:
 
     void RegisterXPTHeader(XPTHeader* aHeader);
                           
-    XPTHeader* ReadXPTFile(nsILocalFile* aFile);
-    XPTHeader* ReadXPTFileFromInputStream(nsIInputStream *stream);
-
     // idx is the index of this interface in the XPTHeader
     void VerifyAndAddEntryIfNew(XPTInterfaceDirectoryEntry* iface,
                                 PRUint16 idx,

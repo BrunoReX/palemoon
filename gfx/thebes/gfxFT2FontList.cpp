@@ -39,6 +39,8 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/Util.h"
+
 #if defined(MOZ_WIDGET_GTK2)
 #include "gfxPlatformGtk.h"
 #define gfxToolkitPlatform gfxPlatformGtk
@@ -90,6 +92,8 @@
 #include <windows.h>
 #endif
 
+using namespace mozilla;
+
 #ifdef PR_LOGGING
 static PRLogModuleInfo *gFontInfoLog = PR_NewLogModule("fontInfoLog");
 #endif /* PR_LOGGING */
@@ -131,7 +135,7 @@ FT2FontEntry::CreateScaledFont(const gfxFontStyle *aStyle)
     cairo_matrix_init_identity(&identityMatrix);
 
     // synthetic oblique by skewing via the font matrix
-    PRBool needsOblique = !IsItalic() &&
+    bool needsOblique = !IsItalic() &&
             (aStyle->style & (FONT_STYLE_ITALIC | FONT_STYLE_OBLIQUE));
 
     if (needsOblique) {
@@ -179,7 +183,7 @@ FT2FontEntry::~FT2FontEntry()
 }
 
 gfxFont*
-FT2FontEntry::CreateFontInstance(const gfxFontStyle *aFontStyle, PRBool aNeedsBold)
+FT2FontEntry::CreateFontInstance(const gfxFontStyle *aFontStyle, bool aNeedsBold)
 {
     cairo_scaled_font_t *scaledFont = CreateScaledFont(aFontStyle);
     gfxFont *font = new gfxFT2Font(scaledFont, this, aFontStyle, aNeedsBold);
@@ -346,14 +350,14 @@ FT2FontEntry::ReadCMAP()
     }
 
     // attempt this once, if errors occur leave a blank cmap
-    mCmapInitialized = PR_TRUE;
+    mCmapInitialized = true;
 
     AutoFallibleTArray<PRUint8,16384> buffer;
     nsresult rv = GetFontTable(TTAG_cmap, buffer);
     
     if (NS_SUCCEEDED(rv)) {
-        PRPackedBool unicodeFont;
-        PRPackedBool symbolFont;
+        bool unicodeFont;
+        bool symbolFont;
         rv = gfxFontUtils::ReadCMAP(buffer.Elements(), buffer.Length(),
                                     mCharacterMap, mUVSOffset,
                                     unicodeFont, symbolFont);
@@ -425,7 +429,7 @@ FT2FontFamily::AddFacesToFontList(InfallibleTArray<FontListEntry>* aFontList)
 class FontNameCache {
 public:
     FontNameCache()
-        : mWriteNeeded(PR_FALSE)
+        : mWriteNeeded(false)
     {
         mOps = (PLDHashTableOps) {
             PL_DHashAllocTable,
@@ -511,7 +515,7 @@ public:
                 mapEntry->mFaces.Assign(faceList);
                 // entries from the startupcache are marked "non-existing"
                 // until we have confirmed that the file still exists
-                mapEntry->mFileExists = PR_FALSE;
+                mapEntry->mFileExists = false;
             }
 
             beginning = end + 1;
@@ -542,7 +546,7 @@ public:
             // this entry does correspond to an existing file
             // (although it might not be up-to-date, in which case
             // it will get overwritten via CacheFileInfo)
-            entry->mFileExists = PR_TRUE;
+            entry->mFileExists = true;
         }
     }
 
@@ -561,15 +565,15 @@ public:
             entry->mTimestamp = aTimestamp;
             entry->mFilesize = aFilesize;
             entry->mFaces.Assign(aFaceList);
-            entry->mFileExists = PR_TRUE;
+            entry->mFileExists = true;
         }
-        mWriteNeeded = PR_TRUE;
+        mWriteNeeded = true;
     }
 
 private:
     mozilla::scache::StartupCache* mCache;
     PLDHashTable mMap;
-    PRBool mWriteNeeded;
+    bool mWriteNeeded;
 
     PLDHashTableOps mOps;
 
@@ -601,7 +605,7 @@ private:
         PRUint32  mTimestamp;
         PRUint32  mFilesize;
         nsCString mFaces;
-        PRBool    mFileExists;
+        bool      mFileExists;
     } FNCMapEntry;
 
     static PLDHashNumber StringHash(PLDHashTable *table, const void *key)
@@ -609,7 +613,7 @@ private:
         return HashString(reinterpret_cast<const char*>(key));
     }
 
-    static PRBool HashMatchEntry(PLDHashTable *table,
+    static bool HashMatchEntry(PLDHashTable *table,
                                  const PLDHashEntryHdr *aHdr, const void *key)
     {
         const FNCMapEntry* entry =
@@ -645,7 +649,7 @@ gfxFT2FontList::gfxFT2FontList()
 
 void
 gfxFT2FontList::AppendFacesFromCachedFaceList(nsCString& aFileName,
-                                              PRBool aStdFile,
+                                              bool aStdFile,
                                               nsCString& aFaceList)
 {
     const char *beginning = aFaceList.get();
@@ -669,7 +673,7 @@ gfxFT2FontList::AppendFacesFromCachedFaceList(nsCString& aFileName,
         if (!(end = strchr(beginning, ','))) {
             break;
         }
-        PRBool italic = (*beginning != '0');
+        bool italic = (*beginning != '0');
         beginning = end + 1;
         if (!(end = strchr(beginning, ','))) {
             break;
@@ -710,7 +714,7 @@ AppendToFaceList(nsCString& aFaceList,
 
 void
 gfxFT2FontList::AppendFacesFromFontFile(nsCString& aFileName,
-                                        PRBool aStdFile,
+                                        bool aStdFile,
                                         FontNameCache *aCache)
 {
     nsCString faceList;
@@ -762,7 +766,7 @@ gfxFT2FontList::AppendFacesFromFontFile(nsCString& aFileName,
                 fe->mStandardFace = aStdFile;
                 family->AddFontEntry(fe);
                 if (family->IsBadUnderlineFamily()) {
-                    fe->mIsBadUnderlineFont = PR_TRUE;
+                    fe->mIsBadUnderlineFont = true;
                 }
                 AppendToFaceList(faceList, name, fe);
 #ifdef PR_LOGGING
@@ -793,9 +797,9 @@ FinalizeFamilyMemberList(nsStringHashKey::KeyType aKey,
                          void* aUserArg)
 {
     gfxFontFamily *family = aFamily.get();
-    PRBool sortFaces = (aUserArg != nsnull);
+    bool sortFaces = (aUserArg != nsnull);
 
-    family->SetHasStyles(PR_TRUE);
+    family->SetHasStyles(true);
 
     if (sortFaces) {
         family->SortAvailableFonts();
@@ -839,7 +843,7 @@ gfxFT2FontList::FindFonts()
                                              FindExSearchNameMatch,
                                              NULL,
                                              0);
-            PRBool moreFiles = handle != INVALID_HANDLE_VALUE;
+            bool moreFiles = handle != INVALID_HANDLE_VALUE;
             while (moreFiles) {
                 nsAutoString filePath(path);
                 filePath.AppendLiteral("\\");
@@ -866,7 +870,7 @@ gfxFT2FontList::FindFonts()
         InfallibleTArray<FontListEntry> fonts;
         mozilla::dom::ContentChild::GetSingleton()->SendReadFontList(&fonts);
         for (PRUint32 i = 0, n = fonts.Length(); i < n; ++i) {
-            AppendFaceFromFontListEntry(fonts[i], PR_FALSE);
+            AppendFaceFromFontListEntry(fonts[i], false);
         }
         // Passing null for userdata tells Finalize that it does not need
         // to sort faces (because they were already sorted by chrome,
@@ -928,7 +932,7 @@ gfxFT2FontList::FindFonts()
         {
             bool isStdFont = false;
             for (unsigned int i = 0;
-                 i < NS_ARRAY_LENGTH(sStandardFonts) && !isStdFont; i++)
+                 i < ArrayLength(sStandardFonts) && !isStdFont; i++)
             {
                 isStdFont = strcmp(sStandardFonts[i], ent->d_name) == 0;
             }
@@ -955,7 +959,7 @@ gfxFT2FontList::FindFonts()
 
 void
 gfxFT2FontList::AppendFaceFromFontListEntry(const FontListEntry& aFLE,
-                                            PRBool aStdFile)
+                                            bool aStdFile)
 {
     FT2FontEntry* fe = FT2FontEntry::CreateFontEntry(aFLE);
     if (fe) {
@@ -971,7 +975,7 @@ gfxFT2FontList::AppendFaceFromFontListEntry(const FontListEntry& aFLE,
         }
         family->AddFontEntry(fe);
         if (family->IsBadUnderlineFamily()) {
-            fe->mIsBadUnderlineFont = PR_TRUE;
+            fe->mIsBadUnderlineFont = true;
         }
     }
 }
@@ -1059,7 +1063,7 @@ gfxFT2FontList::LookupLocalFont(const gfxProxyFontEntry *aProxyEntry,
 }
 
 gfxFontEntry*
-gfxFT2FontList::GetDefaultFont(const gfxFontStyle* aStyle, PRBool& aNeedsBold)
+gfxFT2FontList::GetDefaultFont(const gfxFontStyle* aStyle, bool& aNeedsBold)
 {
 #ifdef XP_WIN
     HGDIOBJ hGDI = ::GetStockObject(SYSTEM_FONT);

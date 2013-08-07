@@ -38,7 +38,7 @@
 
 #include "nsIDOMDocument.idl"
 
-[scriptable, uuid(daf4bd9f-5624-4a1e-becd-a57e51d2ab0b)]
+[scriptable, uuid(b53a4bab-0065-468b-810a-4c4659a04f00)]
 interface nsIDOMXMLDocument : nsIDOMDocument
 {
   // DOM Level 3 Load & Save, DocumentLS

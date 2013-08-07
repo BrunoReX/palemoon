@@ -57,10 +57,10 @@
 #ifdef MOZ_ENABLE_DBUS
 #include "nsDBusHandlerApp.h"
 #endif 
-#if defined(ANDROID) || defined(MOZ_ENABLE_MEEGOTOUCHSHARE)
+#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_ENABLE_MEEGOTOUCHSHARE)
 #include "nsExternalSharingAppService.h"
 #endif
-#if defined(ANDROID)
+#if defined(MOZ_WIDGET_ANDROID)
 #include "nsExternalURLHandlerService.h"
 #endif
 
@@ -73,7 +73,7 @@
 // download history
 #include "nsDownloadHistory.h"
 
-static PRBool gInitialized = PR_FALSE;
+static bool gInitialized = false;
 
 // The one time initialization for this module
 static nsresult
@@ -83,7 +83,7 @@ Initialize()
   if (gInitialized) {
     return NS_OK;
   }
-  gInitialized = PR_TRUE;
+  gInitialized = true;
 
   nsresult rv = nsSHistory::Startup();
   NS_ENSURE_SUCCESS(rv, rv);
@@ -97,7 +97,7 @@ Shutdown()
 {
   nsSHistory::Shutdown();
   nsSHEntryShared::Shutdown();
-  gInitialized = PR_FALSE;
+  gInitialized = false;
 }
 
 // docshell
@@ -118,10 +118,10 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(PlatformLocalHandlerApp_t)
 #ifdef MOZ_ENABLE_DBUS
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsDBusHandlerApp)
 #endif 
-#if defined(ANDROID) || defined(MOZ_ENABLE_MEEGOTOUCHSHARE)
+#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_ENABLE_MEEGOTOUCHSHARE)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsExternalSharingAppService)
 #endif
-#if defined(ANDROID)
+#if defined(MOZ_WIDGET_ANDROID)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsExternalURLHandlerService)
 #endif
 
@@ -148,10 +148,10 @@ NS_DEFINE_NAMED_CID(NS_LOCALHANDLERAPP_CID);
 #ifdef MOZ_ENABLE_DBUS
 NS_DEFINE_NAMED_CID(NS_DBUSHANDLERAPP_CID);
 #endif
-#if defined(ANDROID) || defined(MOZ_ENABLE_MEEGOTOUCHSHARE)
+#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_ENABLE_MEEGOTOUCHSHARE)
 NS_DEFINE_NAMED_CID(NS_EXTERNALSHARINGAPPSERVICE_CID);
 #endif
-#if defined(ANDROID)
+#if defined(MOZ_WIDGET_ANDROID)
 NS_DEFINE_NAMED_CID(NS_EXTERNALURLHANDLERSERVICE_CID);
 #endif
 NS_DEFINE_NAMED_CID(NS_SHENTRY_CID);
@@ -178,10 +178,10 @@ const mozilla::Module::CIDEntry kDocShellCIDs[] = {
 #ifdef MOZ_ENABLE_DBUS
   { &kNS_DBUSHANDLERAPP_CID, false, NULL, nsDBusHandlerAppConstructor },
 #endif
-#if defined(ANDROID) || defined(MOZ_ENABLE_MEEGOTOUCHSHARE)
+#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_ENABLE_MEEGOTOUCHSHARE)
   { &kNS_EXTERNALSHARINGAPPSERVICE_CID, false, NULL, nsExternalSharingAppServiceConstructor },
 #endif
-#if defined(ANDROID)
+#if defined(MOZ_WIDGET_ANDROID)
   { &kNS_EXTERNALURLHANDLERSERVICE_CID, false, NULL, nsExternalURLHandlerServiceConstructor },
 #endif
   { &kNS_SHENTRY_CID, false, NULL, nsSHEntryConstructor },
@@ -227,10 +227,10 @@ const mozilla::Module::ContractIDEntry kDocShellContracts[] = {
 #ifdef MOZ_ENABLE_DBUS
   { NS_DBUSHANDLERAPP_CONTRACTID, &kNS_DBUSHANDLERAPP_CID },
 #endif
-#if defined(ANDROID) || defined(MOZ_ENABLE_MEEGOTOUCHSHARE)
+#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_ENABLE_MEEGOTOUCHSHARE)
   { NS_EXTERNALSHARINGAPPSERVICE_CONTRACTID, &kNS_EXTERNALSHARINGAPPSERVICE_CID },
 #endif
-#if defined(ANDROID)
+#if defined(MOZ_WIDGET_ANDROID)
   { NS_EXTERNALURLHANDLERSERVICE_CONTRACTID, &kNS_EXTERNALURLHANDLERSERVICE_CID },
 #endif
   { NS_SHENTRY_CONTRACTID, &kNS_SHENTRY_CID },

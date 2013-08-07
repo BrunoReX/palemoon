@@ -41,10 +41,9 @@
 #define jsjaeger_poly_ic_h__
 
 #include "jscntxt.h"
-#include "jstl.h"
-#include "jsvector.h"
 #include "assembler/assembler/MacroAssembler.h"
 #include "assembler/assembler/CodeLocation.h"
+#include "js/Vector.h"
 #include "methodjit/MethodJIT.h"
 #include "methodjit/ICRepatcher.h"
 #include "BaseAssembler.h"
@@ -58,10 +57,8 @@ namespace mjit {
 namespace ic {
 
 /* Maximum number of stubs for a given callsite. */
-static const uint32 MAX_PIC_STUBS = 16;
-static const uint32 MAX_GETELEM_IC_STUBS = 17;
-
-void PurgePICs(JSContext *cx);
+static const uint32_t MAX_PIC_STUBS = 16;
+static const uint32_t MAX_GETELEM_IC_STUBS = 17;
 
 enum LookupStatus {
     Lookup_Error = 0,
@@ -87,7 +84,7 @@ struct BaseIC : public MacroAssemblerTypedefs {
     // Offset from start of stub to jump target of second shape guard as Nitro
     // asm data location. This is 0 if there is only one shape guard in the
     // last stub.
-    int32 secondShapeGuard;
+    int32_t secondShapeGuard;
 
     // Whether or not the callsite has been hit at least once.
     bool hit : 1;
@@ -100,7 +97,7 @@ struct BaseIC : public MacroAssemblerTypedefs {
     bool forcedTypeBarrier : 1;
 
     // Number of stubs generated.
-    uint32 stubsGenerated : 5;
+    uint32_t stubsGenerated : 5;
 
     // Opcode this was compiled for.
     JSOp op : 9;
@@ -236,22 +233,22 @@ struct GetElementIC : public BasePolyIC {
     // This is only set if hasInlineTypeCheck() is true.
     unsigned inlineTypeGuard  : 8;
 
-    // Offset from the fast path to the inline clasp guard. This is always
+    // Offset from the fast path to the inline shape guard. This is always
     // set; if |id| is known to not be int32, then it's an unconditional
     // jump to the slow path.
-    unsigned inlineClaspGuard : 8;
+    unsigned inlineShapeGuard : 8;
 
     // This is usable if hasInlineTypeGuard() returns true, which implies
     // that a dense array fast path exists. The inline type guard serves as
     // the head of the chain of all string-based element stubs.
     bool inlineTypeGuardPatched : 1;
 
-    // This is always usable, and specifies whether the inline clasp guard
+    // This is always usable, and specifies whether the inline shape guard
     // has been patched. If hasInlineTypeGuard() is true, it guards against
     // a dense array, and guarantees the inline type guard has passed.
-    // Otherwise, there is no inline type guard, and the clasp guard is just
+    // Otherwise, there is no inline type guard, and the shape guard is just
     // an unconditional jump.
-    bool inlineClaspGuardPatched : 1;
+    bool inlineShapeGuardPatched : 1;
 
     ////////////////////////////////////////////
     // State for string-based property stubs. //
@@ -263,9 +260,9 @@ struct GetElementIC : public BasePolyIC {
     // These offsets are used for string-key dependent stubs, such as named
     // property accesses. They are separated from the int-key dependent stubs,
     // in order to guarantee that the id type needs only one guard per type.
-    int32 atomGuard : 8;          // optional, non-zero if present
-    int32 firstShapeGuard : 11;    // always set
-    int32 secondShapeGuard : 11;   // optional, non-zero if present
+    int32_t atomGuard : 8;          // optional, non-zero if present
+    int32_t firstShapeGuard : 11;    // always set
+    int32_t secondShapeGuard : 11;   // optional, non-zero if present
 
     bool hasLastStringStub : 1;
     JITCode lastStringStub;
@@ -285,29 +282,26 @@ struct GetElementIC : public BasePolyIC {
     bool shouldPatchInlineTypeGuard() {
         return hasInlineTypeGuard() && !inlineTypeGuardPatched;
     }
-    bool shouldPatchUnconditionalClaspGuard() {
-        // The clasp guard is only unconditional if the type is known to not
+    bool shouldPatchUnconditionalShapeGuard() {
+        // The shape guard is only unconditional if the type is known to not
         // be an int32.
         if (idRemat.isTypeKnown() && idRemat.knownType() != JSVAL_TYPE_INT32)
-            return !inlineClaspGuardPatched;
+            return !inlineShapeGuardPatched;
         return false;
     }
 
     void reset() {
         BasePolyIC::reset();
         inlineTypeGuardPatched = false;
-        inlineClaspGuardPatched = false;
+        inlineShapeGuardPatched = false;
         typeRegHasBaseShape = false;
         hasLastStringStub = false;
     }
     void purge(Repatcher &repatcher);
-    LookupStatus update(VMFrame &f, JSContext *cx, JSObject *obj, const Value &v, jsid id, Value *vp);
-    LookupStatus attachGetProp(VMFrame &f, JSContext *cx, JSObject *obj, const Value &v, jsid id,
-                               Value *vp);
-    LookupStatus attachArguments(JSContext *cx, JSObject *obj, const Value &v, jsid id,
-                               Value *vp);
-    LookupStatus attachTypedArray(JSContext *cx, JSObject *obj, const Value &v, jsid id,
-                                  Value *vp);
+    LookupStatus update(VMFrame &f, JSObject *obj, const Value &v, jsid id, Value *vp);
+    LookupStatus attachGetProp(VMFrame &f, JSObject *obj, const Value &v, jsid id, Value *vp);
+    LookupStatus attachArguments(VMFrame &f, JSObject *obj, const Value &v, jsid id, Value *vp);
+    LookupStatus attachTypedArray(VMFrame &f, JSObject *obj, const Value &v, jsid id, Value *vp);
     LookupStatus disable(JSContext *cx, const char *reason);
     LookupStatus error(JSContext *cx);
     bool shouldUpdate(JSContext *cx);
@@ -327,13 +321,13 @@ struct SetElementIC : public BaseIC {
     RegisterID objReg    : 5;
 
     // Information on how to rematerialize |objReg|.
-    int32 objRemat       : MIN_STATE_REMAT_BITS;
+    int32_t objRemat       : MIN_STATE_REMAT_BITS;
 
-    // Offset from the start of the fast path to the inline clasp guard.
-    unsigned inlineClaspGuard : 6;
+    // Offset from the start of the fast path to the inline shape guard.
+    unsigned inlineShapeGuard : 6;
 
-    // True if the clasp guard has been patched; false otherwise.
-    bool inlineClaspGuardPatched : 1;
+    // True if the shape guard has been patched; false otherwise.
+    bool inlineShapeGuardPatched : 1;
 
     // Offset from the start of the fast path to the inline hole guard.
     unsigned inlineHoleGuard : 8;
@@ -346,14 +340,14 @@ struct SetElementIC : public BaseIC {
 
     // A bitmask of registers that are volatile and must be preserved across
     // stub calls inside the IC.
-    uint32 volatileMask;
+    uint32_t volatileMask;
 
     // If true, then keyValue contains a constant index value >= 0. Otherwise,
     // keyReg contains a dynamic integer index in any range.
     bool hasConstantKey : 1;
     union {
         RegisterID keyReg;
-        int32      keyValue;
+        int32_t    keyValue;
     };
 
     // Rematerialize information about the value being stored.
@@ -367,15 +361,16 @@ struct SetElementIC : public BaseIC {
         if (execPool != NULL)
             execPool->release();
         execPool = NULL;
-        inlineClaspGuardPatched = false;
+        inlineShapeGuardPatched = false;
         inlineHoleGuardPatched = false;
     }
     void purge(Repatcher &repatcher);
-    LookupStatus attachTypedArray(JSContext *cx, JSObject *obj, int32 key);
-    LookupStatus attachHoleStub(JSContext *cx, JSObject *obj, int32 key);
-    LookupStatus update(JSContext *cx, const Value &objval, const Value &idval);
+    LookupStatus attachTypedArray(VMFrame &f, JSObject *obj, int32_t key);
+    LookupStatus attachHoleStub(VMFrame &f, JSObject *obj, int32_t key);
+    LookupStatus update(VMFrame &f, const Value &objval, const Value &idval);
     LookupStatus disable(JSContext *cx, const char *reason);
     LookupStatus error(JSContext *cx);
+    bool shouldUpdate(JSContext *cx);
 };
 
 struct PICInfo : public BasePolyIC {
@@ -403,7 +398,7 @@ struct PICInfo : public BasePolyIC {
             bool hasTypeCheck   : 1;  // type check and reg are present
 
             // Reverse offset from slowPathStart to the type check slow path.
-            int32 typeCheckOffset;
+            int32_t typeCheckOffset;
         } get;
         ValueRemat vr;
     } u;
@@ -462,7 +457,7 @@ struct PICInfo : public BasePolyIC {
     bool typeMonitored : 1;
 
     // Offset from start of fast path to initial shape guard.
-    uint32 shapeGuard;
+    uint32_t shapeGuard;
 
     // Possible types of the RHS, for monitored SETPROP PICs.
     types::TypeSet *rhsTypes;
@@ -495,12 +490,6 @@ struct PICInfo : public BasePolyIC {
         return !hasTypeCheck();
     }
 
-#if !defined JS_HAS_IC_LABELS
-    static GetPropLabels getPropLabels_;
-    static SetPropLabels setPropLabels_;
-    static BindNameLabels bindNameLabels_;
-    static ScopeNameLabels scopeNameLabels_;
-#else
     union {
         GetPropLabels getPropLabels_;
         SetPropLabels setPropLabels_;
@@ -523,7 +512,6 @@ struct PICInfo : public BasePolyIC {
         JS_ASSERT(kind == NAME || kind == CALLNAME || kind == XNAME);
         scopeNameLabels_ = labels;
     }
-#endif
 
     GetPropLabels &getPropLabels() {
         JS_ASSERT(isGet());
@@ -558,7 +546,6 @@ struct PICInfo : public BasePolyIC {
 };
 
 #ifdef JS_POLYIC
-void PurgePICs(JSContext *cx, JSScript *script);
 void JS_FASTCALL GetProp(VMFrame &f, ic::PICInfo *);
 void JS_FASTCALL GetPropNoCache(VMFrame &f, ic::PICInfo *);
 void JS_FASTCALL SetProp(VMFrame &f, ic::PICInfo *);

@@ -43,6 +43,8 @@
 #ifndef nsTextFragment_h___
 #define nsTextFragment_h___
 
+#include "mozilla/Attributes.h"
+
 #include "nsString.h"
 #include "nsReadableUtils.h"
 #include "nsTraceRefcnt.h"
@@ -80,7 +82,7 @@ class nsCString;
  * This class does not have a virtual destructor therefore it is not
  * meant to be subclassed.
  */
-class NS_FINAL_CLASS nsTextFragment {
+class nsTextFragment MOZ_FINAL {
 public:
   static nsresult Init();
   static void Shutdown();
@@ -104,19 +106,19 @@ public:
   nsTextFragment& operator=(const nsTextFragment& aOther);
 
   /**
-   * Return PR_TRUE if this fragment is represented by PRUnichar data
+   * Return true if this fragment is represented by PRUnichar data
    */
-  PRBool Is2b() const
+  bool Is2b() const
   {
     return mState.mIs2b;
   }
 
   /**
-   * Return PR_TRUE if this fragment contains Bidi text
+   * Return true if this fragment contains Bidi text
    * For performance reasons this flag is only set if explicitely requested (by
    * setting the aUpdateBidi argument on SetTo or Append to true).
    */
-  PRBool IsBidi() const
+  bool IsBidi() const
   {
     return mState.mIsBidi;
   }
@@ -148,7 +150,7 @@ public:
     return mState.mLength;
   }
 
-  PRBool CanGrowBy(size_t n) const
+  bool CanGrowBy(size_t n) const
   {
     return n < (1 << 29) && mState.mLength + n < (1 << 29);
   }
@@ -158,14 +160,14 @@ public:
    * buffer. If aUpdateBidi is true, contents of the fragment will be scanned,
    * and mState.mIsBidi will be turned on if it includes any Bidi characters.
    */
-  void SetTo(const PRUnichar* aBuffer, PRInt32 aLength, PRBool aUpdateBidi);
+  void SetTo(const PRUnichar* aBuffer, PRInt32 aLength, bool aUpdateBidi);
 
   /**
    * Append aData to the end of this fragment. If aUpdateBidi is true, contents
    * of the fragment will be scanned, and mState.mIsBidi will be turned on if
    * it includes any Bidi characters.
    */
-  void Append(const PRUnichar* aBuffer, PRUint32 aLength, PRBool aUpdateBidi);
+  void Append(const PRUnichar* aBuffer, PRUint32 aLength, bool aUpdateBidi);
 
   /**
    * Append the contents of this string fragment to aString
@@ -174,8 +176,7 @@ public:
     if (mState.mIs2b) {
       aString.Append(m2b, mState.mLength);
     } else {
-      AppendASCIItoUTF16(Substring(m1b, m1b + mState.mLength),
-                         aString);
+      AppendASCIItoUTF16(Substring(m1b, mState.mLength), aString);
     }
   }
 
@@ -188,7 +189,7 @@ public:
     if (mState.mIs2b) {
       aString.Append(m2b + aOffset, aLength);
     } else {
-      AppendASCIItoUTF16(Substring(m1b + aOffset, m1b + aOffset + aLength), aString);
+      AppendASCIItoUTF16(Substring(m1b + aOffset, aLength), aString);
     }
   }
 
@@ -213,7 +214,7 @@ public:
   struct FragmentBits {
     // PRUint32 to ensure that the values are unsigned, because we
     // want 0/1, not 0/-1!
-    // Making these PRPackedBool causes Windows to not actually pack them,
+    // Making these bool causes Windows to not actually pack them,
     // which causes crashes because we assume this structure is no more than
     // 32 bits!
     PRUint32 mInHeap : 1;
@@ -229,7 +230,7 @@ public:
   PRInt64 SizeOf() const
   {
     PRInt64 size = sizeof(*this);
-    size += GetLength() * Is2b() ? sizeof(*m2b) : sizeof(*m1b);
+    size += GetLength() * (Is2b() ? sizeof(*m2b) : sizeof(*m1b));
     return size;
   }
 

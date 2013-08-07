@@ -35,6 +35,8 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/Util.h"
+
 #include "nsGenericHTMLElement.h"
 #include "nsIDOMHTMLHRElement.h"
 
@@ -45,6 +47,8 @@
 #include "nsMappedAttributes.h"
 #include "nsRuleData.h"
 #include "nsCSSProps.h"
+
+using namespace mozilla;
 
 class nsHTMLHRElement : public nsGenericHTMLElement,
                         public nsIDOMHTMLHRElement
@@ -68,11 +72,11 @@ public:
   // nsIDOMHTMLHRElement
   NS_DECL_NSIDOMHTMLHRELEMENT
 
-  virtual PRBool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(PRInt32 aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);
-  NS_IMETHOD_(PRBool) IsAttributeMapped(const nsIAtom* aAttribute) const;
+  NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const;
   virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const;
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
   virtual nsXPCClassInfo* GetClassInfo();
@@ -123,7 +127,7 @@ static const nsAttrValue::EnumTable kAlignTable[] = {
   { 0 }
 };
 
-PRBool
+bool
 nsHTMLHRElement::ParseAttribute(PRInt32 aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
@@ -137,7 +141,7 @@ nsHTMLHRElement::ParseAttribute(PRInt32 aNamespaceID,
       return aResult.ParseIntWithBounds(aValue, 1, 1000);
     }
     if (aAttribute == nsGkAtoms::align) {
-      return aResult.ParseEnumValue(aValue, kAlignTable, PR_FALSE);
+      return aResult.ParseEnumValue(aValue, kAlignTable, false);
     }
     if (aAttribute == nsGkAtoms::color) {
       return aResult.ParseColor(aValue);
@@ -152,16 +156,16 @@ static void
 MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
                       nsRuleData* aData)
 {
-  PRBool noshade = PR_FALSE;
+  bool noshade = false;
 
   const nsAttrValue* colorValue = aAttributes->GetAttr(nsGkAtoms::color);
   nscolor color;
-  PRBool colorIsSet = colorValue && colorValue->GetColorValue(color);
+  bool colorIsSet = colorValue && colorValue->GetColorValue(color);
 
   if (aData->mSIDs & (NS_STYLE_INHERIT_BIT(Position) |
                       NS_STYLE_INHERIT_BIT(Border))) {
     if (colorIsSet) {
-      noshade = PR_TRUE;
+      noshade = true;
     } else {
       noshade = !!aAttributes->GetAttr(nsGkAtoms::noshade);
     }
@@ -230,7 +234,7 @@ MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
     // size: integer
     // if a size is set, use half of it per side, otherwise, use 1px per side
     float sizePerSide;
-    PRBool allSides = PR_TRUE;
+    bool allSides = true;
     const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::size);
     if (value && value->Type() == nsAttrValue::eInteger) {
       sizePerSide = (float)value->GetIntegerValue() / 2.0f;
@@ -239,7 +243,7 @@ MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
         // subpixel borders should be removed.
         // In the meantime, this makes http://www.microsoft.com/ look right.
         sizePerSide = 1.0f;
-        allSides = PR_FALSE;
+        allSides = false;
       }
     } else {
       sizePerSide = 1.0f; // default to a 2px high line
@@ -313,7 +317,7 @@ MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
   nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aData);
 }
 
-NS_IMETHODIMP_(PRBool)
+NS_IMETHODIMP_(bool)
 nsHTMLHRElement::IsAttributeMapped(const nsIAtom* aAttribute) const
 {
   static const MappedAttributeEntry attributes[] = {
@@ -330,7 +334,7 @@ nsHTMLHRElement::IsAttributeMapped(const nsIAtom* aAttribute) const
     sCommonAttributeMap,
   };
 
-  return FindAttributeDependence(aAttribute, map, NS_ARRAY_LENGTH(map));
+  return FindAttributeDependence(aAttribute, map);
 }
 
 

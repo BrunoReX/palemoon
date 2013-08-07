@@ -91,17 +91,17 @@ struct JSObject; // until we finally remove GetGlobalJSObject...
 // A helper function for nsIScriptGlobalObject implementations to use
 // when handling a script error.  Generally called by the global when a context
 // notifies it of an error via nsIScriptGlobalObject::HandleScriptError.
-// Returns PR_TRUE if HandleDOMEvent was actually called, in which case
+// Returns true if HandleDOMEvent was actually called, in which case
 // aStatus will be filled in with the status.
-PRBool
+bool
 NS_HandleScriptError(nsIScriptGlobalObject *aScriptGlobal,
                      nsScriptErrorEvent *aErrorEvent,
                      nsEventStatus *aStatus);
 
 
 #define NS_ISCRIPTGLOBALOBJECT_IID \
-{ 0x4eb16819, 0x4e81, 0x406e, \
-  { 0x93, 0x05, 0x6f, 0x30, 0xfc, 0xd2, 0x62, 0x4a } }
+{ 0x08f73284, 0x26e3, 0x4fa6, \
+  { 0xbf, 0x89, 0x83, 0x26, 0xf9, 0x2a, 0x94, 0xb3 } }
 
 /**
  * The global object which keeps a script context for each supported script
@@ -128,15 +128,7 @@ public:
    */
   virtual nsIScriptContext *GetScriptContext(PRUint32 lang) = 0;
   
-  /**
-   * Get the opaque "global" object for the specified lang.
-   */
-  virtual void *GetScriptGlobal(PRUint32 lang) = 0;
-
-  // Set/GetContext deprecated methods - use GetScriptContext/Global
-  virtual JSObject *GetGlobalJSObject() {
-        return (JSObject *)GetScriptGlobal(nsIProgrammingLanguage::JAVASCRIPT);
-  }
+  virtual JSObject* GetGlobalJSObject() = 0;
 
   virtual nsIScriptContext *GetContext() {
         return GetScriptContext(nsIProgrammingLanguage::JAVASCRIPT);
@@ -161,7 +153,7 @@ public:
   /**
    * Called to enable/disable scripts.
    */
-  virtual void SetScriptsEnabled(PRBool aEnabled, PRBool aFireTimeouts) = 0;
+  virtual void SetScriptsEnabled(bool aEnabled, bool aFireTimeouts) = 0;
 
   /**
    * Handle a script error.  Generally called by a script context.

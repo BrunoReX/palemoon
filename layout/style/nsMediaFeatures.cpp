@@ -37,6 +37,8 @@
 
 /* the features that media queries can test */
 
+#include "mozilla/Util.h"
+
 #include "nsMediaFeatures.h"
 #include "nsGkAtoms.h"
 #include "nsCSSKeywords.h"
@@ -321,7 +323,7 @@ GetSystemMetric(nsPresContext* aPresContext, const nsMediaFeature* aFeature,
     NS_ABORT_IF_FALSE(aFeature->mValueType == nsMediaFeature::eBoolInteger,
                       "unexpected type");
     nsIAtom *metricAtom = *aFeature->mData.mMetric;
-    PRBool hasMetric = nsCSSRuleProcessor::HasSystemMetric(metricAtom);
+    bool hasMetric = nsCSSRuleProcessor::HasSystemMetric(metricAtom);
     aResult.SetIntValue(hasMetric ? 1 : 0, eCSSUnit_Integer);
     return NS_OK;
 }
@@ -340,7 +342,7 @@ GetWindowsTheme(nsPresContext* aPresContext, const nsMediaFeature* aFeature,
         return NS_OK;
 
     // Look up the appropriate theme string
-    for (size_t i = 0; i < NS_ARRAY_LENGTH(themeStrings); ++i) {
+    for (size_t i = 0; i < ArrayLength(themeStrings); ++i) {
         if (windowsThemeId == themeStrings[i].id) {
             aResult.SetStringValue(nsDependentString(themeStrings[i].name),
                                    eCSSUnit_Ident);
