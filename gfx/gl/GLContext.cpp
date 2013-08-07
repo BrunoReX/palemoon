@@ -491,8 +491,37 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
         mViewportStack.AppendElement(nsIntRect(v[0], v[1], v[2], v[3]));
 
         fGetIntegerv(LOCAL_GL_MAX_TEXTURE_SIZE, &mMaxTextureSize);
+        fGetIntegerv(LOCAL_GL_MAX_CUBE_MAP_TEXTURE_SIZE, &mMaxCubeMapTextureSize);
         fGetIntegerv(LOCAL_GL_MAX_RENDERBUFFER_SIZE, &mMaxRenderbufferSize);
+
+#ifdef XP_MACOSX
+        if (mVendor == VendorIntel) {
+            // see bug 737182 for 2D textures, bug 684822 for cube map textures.
+            mMaxTextureSize        = NS_MIN(mMaxTextureSize,        4096);
+            mMaxCubeMapTextureSize = NS_MIN(mMaxCubeMapTextureSize, 512);
+            // for good measure, we align renderbuffers on what we do for 2D textures
+            mMaxRenderbufferSize   = NS_MIN(mMaxRenderbufferSize,   4096);
+        }
+#endif
+
         mMaxTextureImageSize = mMaxTextureSize;
+
+        mSupport_ES_ReadPixels_BGRA_UByte = false;
+        if (mIsGLES2) {
+            if (IsExtensionSupported(gl::GLContext::EXT_bgra)) {
+                mSupport_ES_ReadPixels_BGRA_UByte = true;
+            } else if (IsExtensionSupported(gl::GLContext::EXT_read_format_bgra) ||
+                       IsExtensionSupported(gl::GLContext::IMG_read_format)) {
+                GLint auxFormat = 0;
+                GLint auxType = 0;
+
+                fGetIntegerv(LOCAL_GL_IMPLEMENTATION_COLOR_READ_FORMAT, &auxFormat);
+                fGetIntegerv(LOCAL_GL_IMPLEMENTATION_COLOR_READ_TYPE, &auxType);
+
+                if (auxFormat == LOCAL_GL_BGRA && auxType == LOCAL_GL_UNSIGNED_BYTE)
+                    mSupport_ES_ReadPixels_BGRA_UByte = true;
+            }
+        }
 
         UpdateActualFormat();
     }
@@ -1721,10 +1750,7 @@ GLContext::ReadPixelsIntoImageSurface(GLint aX, GLint aY,
     if (IsGLES2()) {
         datatype = LOCAL_GL_UNSIGNED_BYTE;
 
-        if (IsExtensionSupported(gl::GLContext::EXT_read_format_bgra) ||
-            IsExtensionSupported(gl::GLContext::IMG_read_format) ||
-            IsExtensionSupported(gl::GLContext::EXT_bgra))
-        {
+        if (mSupport_ES_ReadPixels_BGRA_UByte) {
             format = LOCAL_GL_BGRA;
         } else {
             format = LOCAL_GL_RGBA;

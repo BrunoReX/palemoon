@@ -820,6 +820,10 @@ function loadManifestFromRDF(aUri, aStream) {
 
   addon.applyBackgroundUpdates = AddonManager.AUTOUPDATE_DEFAULT;
 
+  // Load the storage service before NSS (nsIRandomGenerator),
+  // to avoid a SQLite initialization error (bug 717904).
+  let storage = Services.storage;
+
   // Generate random GUID used for Sync.
   // This was lifted from util.js:makeGUID() from services-sync.
   let rng = Cc["@mozilla.org/security/random-generator;1"].
@@ -828,8 +832,8 @@ function loadManifestFromRDF(aUri, aStream) {
   let byte_string = [String.fromCharCode(byte) for each (byte in bytes)]
                     .join("");
   // Base64 encode
-  addon.syncGUID = btoa(byte_string).replace('+', '-', 'g')
-                                    .replace('/', '_', 'g');
+  addon.syncGUID = btoa(byte_string).replace(/\+/g, '-')
+                                    .replace(/\//g, '_');
 
   return addon;
 }

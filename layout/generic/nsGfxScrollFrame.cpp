@@ -46,7 +46,7 @@
 #include "nsIView.h"
 #include "nsIScrollable.h"
 #include "nsIViewManager.h"
-#include "nsHTMLContainerFrame.h"
+#include "nsContainerFrame.h"
 #include "nsGfxScrollFrame.h"
 #include "nsGkAtoms.h"
 #include "nsINameSpaceManager.h"
@@ -100,7 +100,7 @@ NS_NewHTMLScrollFrame(nsIPresShell* aPresShell, nsStyleContext* aContext, bool a
 NS_IMPL_FRAMEARENA_HELPERS(nsHTMLScrollFrame)
 
 nsHTMLScrollFrame::nsHTMLScrollFrame(nsIPresShell* aShell, nsStyleContext* aContext, bool aIsRoot)
-  : nsHTMLContainerFrame(aContext),
+  : nsContainerFrame(aContext),
     mInner(this, aIsRoot)
 {
 }
@@ -123,14 +123,14 @@ nsHTMLScrollFrame::DestroyFrom(nsIFrame* aDestructRoot)
 {
   mInner.Destroy();
   DestroyAbsoluteFrames(aDestructRoot);
-  nsHTMLContainerFrame::DestroyFrom(aDestructRoot);
+  nsContainerFrame::DestroyFrom(aDestructRoot);
 }
 
 NS_IMETHODIMP
 nsHTMLScrollFrame::SetInitialChildList(ChildListID  aListID,
                                        nsFrameList& aChildList)
 {
-  nsresult rv = nsHTMLContainerFrame::SetInitialChildList(aListID, aChildList);
+  nsresult rv = nsContainerFrame::SetInitialChildList(aListID, aChildList);
   mInner.ReloadChildFrames();
   return rv;
 }
@@ -226,21 +226,21 @@ nsHTMLScrollFrame::InvalidateInternal(const nsRect& aDamageRect,
         nsRect thebesLayerDamage = damage + GetScrollPosition() - mInner.mScrollPosAtLastPaint;
         if (parentDamage.IsEqualInterior(thebesLayerDamage)) {
           // This single call will take care of both rects
-          nsHTMLContainerFrame::InvalidateInternal(parentDamage, 0, 0, aForChild, aFlags);
+          nsContainerFrame::InvalidateInternal(parentDamage, 0, 0, aForChild, aFlags);
         } else {
           // Invalidate rects separately
           if (!(aFlags & INVALIDATE_NO_THEBES_LAYERS)) {
-            nsHTMLContainerFrame::InvalidateInternal(thebesLayerDamage, 0, 0, aForChild,
-                                                     aFlags | INVALIDATE_ONLY_THEBES_LAYERS);
+            nsContainerFrame::InvalidateInternal(thebesLayerDamage, 0, 0, aForChild,
+                                                 aFlags | INVALIDATE_ONLY_THEBES_LAYERS);
           }
           if (!(aFlags & INVALIDATE_ONLY_THEBES_LAYERS) && !parentDamage.IsEmpty()) {
-            nsHTMLContainerFrame::InvalidateInternal(parentDamage, 0, 0, aForChild,
-                                                     aFlags | INVALIDATE_NO_THEBES_LAYERS);
+            nsContainerFrame::InvalidateInternal(parentDamage, 0, 0, aForChild,
+                                                 aFlags | INVALIDATE_NO_THEBES_LAYERS);
           }
         }
       } else {
         if (!parentDamage.IsEmpty()) {
-          nsHTMLContainerFrame::InvalidateInternal(parentDamage, 0, 0, aForChild, aFlags);
+          nsContainerFrame::InvalidateInternal(parentDamage, 0, 0, aForChild, aFlags);
         }
       }
 
@@ -272,7 +272,7 @@ nsHTMLScrollFrame::InvalidateInternal(const nsRect& aDamageRect,
     }
   }
  
-  nsHTMLContainerFrame::InvalidateInternal(aDamageRect, aX, aY, aForChild, aFlags);
+  nsContainerFrame::InvalidateInternal(aDamageRect, aX, aY, aForChild, aFlags);
 }
 
 /**
@@ -799,7 +799,7 @@ nsHTMLScrollFrame::GetPadding(nsMargin& aMargin)
 }
 
 bool
-nsHTMLScrollFrame::IsCollapsed(nsBoxLayoutState& aBoxLayoutState)
+nsHTMLScrollFrame::IsCollapsed()
 {
   // We're never collapsed in the box sense.
   return false;
@@ -844,7 +844,6 @@ nsHTMLScrollFrame::Reflow(nsPresContext*           aPresContext,
     state.mStyles.mHorizontal = NS_STYLE_OVERFLOW_HIDDEN;
 
   //------------ Handle Incremental Reflow -----------------
-  bool reflowContents = true; // XXX Ignored
   bool reflowHScrollbar = true;
   bool reflowVScrollbar = true;
   bool reflowScrollCorner = true;
@@ -852,7 +851,6 @@ nsHTMLScrollFrame::Reflow(nsPresContext*           aPresContext,
     #define NEEDS_REFLOW(frame_) \
       ((frame_) && NS_SUBTREE_DIRTY(frame_))
 
-    reflowContents = NEEDS_REFLOW(mInner.mScrolledFrame);
     reflowHScrollbar = NEEDS_REFLOW(mInner.mHScrollbarBox);
     reflowVScrollbar = NEEDS_REFLOW(mInner.mVScrollbarBox);
     reflowScrollCorner = NEEDS_REFLOW(mInner.mScrollCornerBox) ||
@@ -971,10 +969,14 @@ nsHTMLScrollFrame::GetFrameName(nsAString& aResult) const
 already_AddRefed<nsAccessible>
 nsHTMLScrollFrame::CreateAccessible()
 {
-  if (!IsFocusable()) {
+  // Create an accessible regardless focusable state because the state can be
+  // changed during frame life cycle without any notifications to accessibility.
+  if (mContent->IsRootOfNativeAnonymousSubtree() ||
+      GetScrollbarStyles() == nsIScrollableFrame::
+        ScrollbarStyles(NS_STYLE_OVERFLOW_HIDDEN, NS_STYLE_OVERFLOW_HIDDEN) ) {
     return nsnull;
   }
-  // Focusable via CSS, so needs to be in accessibility hierarchy
+
   nsAccessibilityService* accService = nsIPresShell::AccService();
   if (accService) {
     return accService->CreateHyperTextAccessible(mContent,
@@ -989,7 +991,7 @@ NS_QUERYFRAME_HEAD(nsHTMLScrollFrame)
   NS_QUERYFRAME_ENTRY(nsIAnonymousContentCreator)
   NS_QUERYFRAME_ENTRY(nsIScrollableFrame)
   NS_QUERYFRAME_ENTRY(nsIStatefulFrame)
-NS_QUERYFRAME_TAIL_INHERITING(nsHTMLContainerFrame)
+NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
 //----------nsXULScrollFrame-------------------------------------------
 
@@ -1488,6 +1490,11 @@ nsGfxScrollFrameInner::~nsGfxScrollFrameInner()
     gScrollFrameActivityTracker = nsnull;
   }
   delete mAsyncScroll;
+
+  if (mScrollActivityTimer) {
+    mScrollActivityTimer->Cancel();
+    mScrollActivityTimer = nsnull;
+  }
 }
 
 static nscoord
@@ -1820,6 +1827,31 @@ nsGfxScrollFrameInner::ClampAndRestrictToDevPixels(const nsPoint& aPt,
                  NSIntPixelsToAppUnits(aPtDevPx->y, appUnitsPerDevPixel));
 }
 
+/* static */ void
+nsGfxScrollFrameInner::ScrollActivityCallback(nsITimer *aTimer, void* anInstance)
+{
+  nsGfxScrollFrameInner* self = static_cast<nsGfxScrollFrameInner*>(anInstance);
+
+  // Fire the synth mouse move.
+  self->mScrollActivityTimer->Cancel();
+  self->mScrollActivityTimer = nsnull;
+  self->mOuter->PresContext()->PresShell()->SynthesizeMouseMove(true);
+}
+
+
+void
+nsGfxScrollFrameInner::ScheduleSyntheticMouseMove()
+{
+  if (!mScrollActivityTimer) {
+    mScrollActivityTimer = do_CreateInstance("@mozilla.org/timer;1");
+    if (!mScrollActivityTimer)
+      return;
+  }
+
+  mScrollActivityTimer->InitWithFuncCallback(
+        ScrollActivityCallback, this, 100, nsITimer::TYPE_ONE_SHOT);
+}
+
 void
 nsGfxScrollFrameInner::ScrollToImpl(nsPoint aPt)
 {
@@ -1853,7 +1885,7 @@ nsGfxScrollFrameInner::ScrollToImpl(nsPoint aPt)
   // We pass in the amount to move visually
   ScrollVisual(oldScrollFramePos);
 
-  presContext->PresShell()->SynthesizeMouseMove(true);
+  ScheduleSyntheticMouseMove();
   UpdateScrollbarPosition();
   PostScrollEvent();
 
@@ -2213,7 +2245,7 @@ nsGfxScrollFrameInner::GetLineScrollAmount() const
 {
   nsRefPtr<nsFontMetrics> fm;
   nsLayoutUtils::GetFontMetricsForFrame(mOuter, getter_AddRefs(fm),
-    nsLayoutUtils::FontSizeInflationFor(mOuter));
+    nsLayoutUtils::FontSizeInflationFor(mOuter, nsLayoutUtils::eNotInReflow));
   NS_ASSERTION(fm, "FontMetrics is null, assuming fontHeight == 1 appunit");
   nscoord fontHeight = 1;
   if (fm) {
@@ -3119,6 +3151,20 @@ nsXULScrollFrame::Layout(nsBoxLayoutState& aState)
     mInner.mHadNonInitialReflow = true;
   }
 
+  // Set up overflow areas for block frames for the benefit of
+  // text-overflow.
+  nsIFrame* f = mInner.mScrolledFrame->GetContentInsertionFrame();
+  if (nsLayoutUtils::GetAsBlock(f)) {
+    nsRect origRect = f->GetRect();
+    nsRect clippedRect = origRect;
+    clippedRect.MoveBy(mInner.mScrollPort.TopLeft());
+    clippedRect.IntersectRect(clippedRect, mInner.mScrollPort);
+    nsOverflowAreas overflow = f->GetOverflowAreas();
+    f->FinishAndStoreOverflow(overflow, clippedRect.Size());
+    clippedRect.MoveTo(origRect.TopLeft());
+    f->SetRect(clippedRect);
+  }
+
   mInner.PostOverflowEvent();
   return NS_OK;
 }
@@ -3191,7 +3237,8 @@ nsGfxScrollFrameInner::ReflowFinished()
     nsPoint scrollPos = GetScrollPosition();
     // XXX shouldn't we use GetPageScrollAmount/GetLineScrollAmount here?
     if (vScroll) {
-      nscoord fontHeight = GetLineScrollAmount().height;
+      const double kScrollMultiplier = 3;
+      nscoord fontHeight = GetLineScrollAmount().height * kScrollMultiplier;
       // We normally use (scrollArea.height - fontHeight) for height
       // of page scrolling.  However, it is too small when
       // fontHeight is very large. (If fontHeight is larger than
@@ -3201,7 +3248,7 @@ nsGfxScrollFrameInner::ReflowFinished()
       nscoord pageincrement = nscoord(mScrollPort.height - fontHeight);
       nscoord pageincrementMin = nscoord(float(mScrollPort.height) * 0.8);
       FinishReflowForScrollbar(vScroll, minY, maxY, scrollPos.y,
-                               NS_MAX(pageincrement,pageincrementMin),
+                               NS_MAX(pageincrement, pageincrementMin),
                                fontHeight);
     }
     if (hScroll) {
@@ -3269,6 +3316,27 @@ static void LayoutAndInvalidate(nsBoxLayoutState& aState,
       aBox->InvalidateFrameSubtree();
     }
   }
+}
+
+bool
+nsGfxScrollFrameInner::UpdateOverflow()
+{
+  nsIScrollableFrame* sf = do_QueryFrame(mOuter);
+  ScrollbarStyles ss = sf->GetScrollbarStyles();
+
+  if (ss.mVertical != NS_STYLE_OVERFLOW_HIDDEN ||
+      ss.mHorizontal != NS_STYLE_OVERFLOW_HIDDEN ||
+      GetScrollPosition() != nsPoint()) {
+    // If there are scrollbars, or we're not at the beginning of the pane,
+    // the scroll position may change. In this case, mark the frame as
+    // needing reflow.
+    mOuter->PresContext()->PresShell()->FrameNeedsReflow(
+      mOuter, nsIPresShell::eResize, NS_FRAME_IS_DIRTY);
+  }
+
+  // Scroll frames never have overflow area because they always clip their
+  // children, so return false.
+  return false;
 }
 
 void

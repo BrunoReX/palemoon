@@ -87,7 +87,6 @@ FENNEC_JAVA_FILES = \
   GeckoEventListener.java \
   GeckoInputConnection.java \
   GeckoPreferences.java \
-  GeckoSmsManager.java \
   GeckoStateListDrawable.java \
   GeckoThread.java \
   GlobalHistory.java \
@@ -136,7 +135,12 @@ FENNEC_JAVA_FILES = \
   ui/PanZoomController.java \
   ui/SimpleScaleGestureDetector.java \
   ui/SubdocumentScrollHelper.java \
+  GeckoNetworkManager.java \
   $(NULL)
+
+ifdef MOZ_WEBSMS_BACKEND
+FENNEC_JAVA_FILES += GeckoSmsManager.java
+endif
 
 FENNEC_PP_JAVA_FILES = \
   App.java \
@@ -145,6 +149,7 @@ FENNEC_PP_JAVA_FILES = \
   Restarter.java \
   db/BrowserContract.java \
   db/BrowserProvider.java \
+  SmsManager.java \
   $(NULL)
 
 
@@ -264,9 +269,9 @@ RES_VALUES_V11 = \
   $(NULL)
 
 RES_XML = \
-  res/xml/preferences.xml \
-  $(SYNC_RES_XML) \
-  $(NULL)
+	res/xml/preferences.xml \
+	$(SYNC_RES_XML) \
+	$(NULL)
 
 RES_ANIM = \
   res/anim/grow_fade_in.xml \
@@ -629,6 +634,7 @@ $(RES_DIRS):
 $(RESOURCES): $(RES_DIRS) $(subst res/,$(srcdir)/resources/,$(RESOURCES))
 	@echo "creating $@"
 	$(NSINSTALL) $(subst res/,$(srcdir)/resources/,$@) $(dir $@)
+
 
 R.java: $(MOZ_APP_ICON) $(RESOURCES) $(RES_DRAWABLE) $(RES_DRAWABLE_LDPI) $(RES_DRAWABLE_MDPI) $(RES_DRAWABLE_HDPI) $(PP_RES_XML) res/values/defaults.xml res/drawable/sync_ic_launcher.png res/drawable/icon.png res/drawable-hdpi/icon.png res/values/strings.xml AndroidManifest.xml FORCE
 	$(AAPT) package -f -M AndroidManifest.xml -I $(ANDROID_SDK)/android.jar -S res -J . --custom-package org.mozilla.gecko

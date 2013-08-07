@@ -61,6 +61,7 @@ SyncChannel::SyncChannel(SyncListener* aListener)
   , mPendingReply(0)
   , mProcessingSyncMessage(false)
   , mNextSeqno(0)
+  , mInTimeoutSecondHalf(false)
   , mTimeoutMs(kNoTimeout)
 #ifdef OS_WIN
   , mTopFrame(NULL)
@@ -283,6 +284,23 @@ SyncChannel::ShouldContinueFromTimeout()
     return cont;
 }
 
+bool
+SyncChannel::WaitResponse(bool aWaitTimedOut)
+{
+  if (aWaitTimedOut) {
+    if (mInTimeoutSecondHalf) {
+      // We've really timed out this time
+      return false;
+    }
+    // Try a second time
+    mInTimeoutSecondHalf = true;
+  } else {
+    mInTimeoutSecondHalf = false;
+  }
+  return true;
+}
+
+
 // Windows versions of the following two functions live in
 // WindowsMessageLoop.cpp.
 
@@ -301,7 +319,7 @@ SyncChannel::WaitForNotify()
 
     // if the timeout didn't expire, we know we received an event.
     // The converse is not true.
-    return !IsTimeoutExpired(waitStart, timeout);
+    return WaitResponse(IsTimeoutExpired(waitStart, timeout));
 }
 
 void

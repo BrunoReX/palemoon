@@ -42,8 +42,10 @@
 EXPORTS_NAMESPACES += mozilla
 
 EXPORTS_mozilla += \
+  Assertions.h \
   Attributes.h \
   GuardObjects.h \
+  LinkedList.h \
   MSStdInt.h \
   RangedPtr.h \
   RefPtr.h \

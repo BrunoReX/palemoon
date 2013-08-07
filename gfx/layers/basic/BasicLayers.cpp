@@ -610,6 +610,11 @@ IntersectWithClip(const nsIntRegion& aRegion, gfxContext* aContext)
 static void
 SetAntialiasingFlags(Layer* aLayer, gfxContext* aTarget)
 {
+  if (!aTarget->IsCairo()) {
+    // Azure targets don't contain antialiasing flags at this point.
+    return;
+  }
+
   nsRefPtr<gfxASurface> surface = aTarget->CurrentSurface();
   if (surface->GetContentType() != gfxASurface::CONTENT_COLOR_ALPHA) {
     // Destination doesn't have alpha channel; no need to set any special flags
@@ -754,6 +759,9 @@ BasicThebesLayer::PaintThebes(gfxContext* aContext,
                    "If we need to draw, we should have a context");
     }
   }
+
+  if (BasicManager()->IsTransactionIncomplete())
+    return;
 
   if (!IsHidden()) {
     AutoSetOperator setOperator(aContext, GetOperator());
@@ -931,14 +939,16 @@ BasicImageLayer::PaintContext(gfxPattern* aPattern,
   // outside the bounds of the video image.
   gfxPattern::GraphicsExtend extend = gfxPattern::EXTEND_PAD;
 
-  // PAD is slow with X11 and Quartz surfaces, so prefer speed over correctness
-  // and use NONE.
-  nsRefPtr<gfxASurface> target = aContext->CurrentSurface();
-  gfxASurface::gfxSurfaceType type = target->GetType();
-  if (type == gfxASurface::SurfaceTypeXlib ||
-      type == gfxASurface::SurfaceTypeXcb ||
-      type == gfxASurface::SurfaceTypeQuartz) {
-    extend = gfxPattern::EXTEND_NONE;
+  if (aContext->IsCairo()) {
+    // PAD is slow with X11 and Quartz surfaces, so prefer speed over correctness
+    // and use NONE.
+    nsRefPtr<gfxASurface> target = aContext->CurrentSurface();
+    gfxASurface::gfxSurfaceType type = target->GetType();
+    if (type == gfxASurface::SurfaceTypeXlib ||
+        type == gfxASurface::SurfaceTypeXcb ||
+        type == gfxASurface::SurfaceTypeQuartz) {
+      extend = gfxPattern::EXTEND_NONE;
+    }
   }
 
   if (!aTileSourceRect) {
@@ -1190,11 +1200,6 @@ BasicCanvasLayer::PaintWithOpacity(gfxContext* aContext,
   NS_ASSERTION(BasicManager()->InDrawing(),
                "Can only draw in drawing phase");
 
-  if (!mSurface) {
-    NS_WARNING("No valid surface to draw!");
-    return;
-  }
-
   nsRefPtr<gfxPattern> pat = new gfxPattern(mSurface);
 
   pat->SetFilter(mFilter);
@@ -1304,6 +1309,8 @@ BasicLayerManager::BasicLayerManager() :
 #endif
   mWidget(nsnull)
   , mDoubleBuffering(BUFFER_NONE), mUsingDefaultTarget(false)
+  , mCachedSurfaceInUse(false)
+  , mTransactionIncomplete(false)
 {
   MOZ_COUNT_CTOR(BasicLayerManager);
 }
@@ -1340,7 +1347,8 @@ already_AddRefed<gfxContext>
 BasicLayerManager::PushGroupWithCachedSurface(gfxContext *aTarget,
                                               gfxASurface::gfxContentType aContent)
 {
-  if (mCachedSurfaceInUse) {
+  if (mCachedSurfaceInUse || !aTarget->IsCairo()) {
+    // We can't cache Azure DrawTargets at this point.
     aTarget->PushGroup(aContent);
     nsRefPtr<gfxContext> result = aTarget;
     return result.forget();
@@ -1366,7 +1374,7 @@ BasicLayerManager::PopGroupToSourceWithCachedSurface(gfxContext *aTarget, gfxCon
   if (!aTarget)
     return;
   nsRefPtr<gfxASurface> current = aPushed->CurrentSurface();
-  if (mCachedSurface.IsSurface(current)) {
+  if (aTarget->IsCairo() && mCachedSurface.IsSurface(current)) {
     gfxContextMatrixAutoSaveRestore saveMatrix(aTarget);
     aTarget->IdentityMatrix();
     aTarget->SetSource(current);
@@ -1855,17 +1863,20 @@ BasicLayerManager::PaintLayer(gfxContext* aTarget,
 
   bool pushedTargetOpaqueRect = false;
   nsRefPtr<gfxASurface> currentSurface = aTarget->CurrentSurface();
-  const gfxRect& targetOpaqueRect = currentSurface->GetOpaqueRect();
-
-  // Try to annotate currentSurface with a region of pixels that have been
-  // (or will be) painted opaque, if no such region is currently set.
   const nsIntRect& bounds = visibleRegion.GetBounds();
-  if (targetOpaqueRect.IsEmpty() && visibleRegion.GetNumRects() == 1 &&
-      (aLayer->GetContentFlags() & Layer::CONTENT_OPAQUE) &&
-      !transform.HasNonAxisAlignedTransform()) {
-    currentSurface->SetOpaqueRect(
-        aTarget->UserToDevice(gfxRect(bounds.x, bounds.y, bounds.width, bounds.height)));
-    pushedTargetOpaqueRect = true;
+  
+  if (aTarget->IsCairo()) {
+    const gfxRect& targetOpaqueRect = currentSurface->GetOpaqueRect();
+
+    // Try to annotate currentSurface with a region of pixels that have been
+    // (or will be) painted opaque, if no such region is currently set.
+    if (targetOpaqueRect.IsEmpty() && visibleRegion.GetNumRects() == 1 &&
+        (aLayer->GetContentFlags() & Layer::CONTENT_OPAQUE) &&
+        !transform.HasNonAxisAlignedTransform()) {
+      currentSurface->SetOpaqueRect(
+          aTarget->UserToDevice(gfxRect(bounds.x, bounds.y, bounds.width, bounds.height)));
+      pushedTargetOpaqueRect = true;
+    }
   }
 
   nsRefPtr<gfxContext> groupTarget;
@@ -2256,10 +2267,13 @@ BasicShadowableThebesLayer::SetBackBufferAndAttrs(const OptionalThebesBuffer& aB
 {
   if (OptionalThebesBuffer::Tnull_t == aBuffer.type()) {
     mBackBuffer = SurfaceDescriptor();
-  } else {
+  } else if (!IsSurfaceDescriptorValid(mBackBuffer)) {
     mBackBuffer = aBuffer.get_ThebesBuffer().buffer();
     mBackBufferRect = aBuffer.get_ThebesBuffer().rect();
     mBackBufferRectRotation = aBuffer.get_ThebesBuffer().rotation();
+  } else {
+    SurfaceDescriptor obsoleteBuffer = aBuffer.get_ThebesBuffer().buffer();
+    BasicManager()->ShadowLayerForwarder::DestroySharedSurface(&obsoleteBuffer);
   }
   mFrontAndBackBufferDiffer = true;
   mROFrontBuffer = aReadOnlyFrontBuffer;
@@ -2362,6 +2376,8 @@ BasicShadowableThebesLayer::PaintBuffer(gfxContext* aContext,
                                       mBuffer.BufferRect(),
                                       mBuffer.BufferRotation(),
                                       mBackBuffer);
+  mROFrontBuffer = ThebesBuffer(mBackBuffer, mBuffer.BufferRect(), mBuffer.BufferRotation());
+  mBackBuffer = SurfaceDescriptor();
 }
 
 already_AddRefed<gfxASurface>
@@ -2977,14 +2993,14 @@ BasicShadowImageLayer::Swap(const SharedImage& aNewFront,
 {
   nsRefPtr<gfxASurface> surface =
     BasicManager()->OpenDescriptor(aNewFront);
-  // Destroy mFrontBuffer if size different
-  bool needDrop = false;
+  // Destroy mFrontBuffer if size different or image type is different
+  bool surfaceConfigChanged = surface->GetSize() != mSize;
   if (IsSurfaceDescriptorValid(mFrontBuffer)) {
     nsRefPtr<gfxASurface> front = BasicManager()->OpenDescriptor(mFrontBuffer);
-    needDrop = surface->GetSize() != mSize ||
-               surface->GetContentType() != front->GetContentType();
+    surfaceConfigChanged = surfaceConfigChanged ||
+                           surface->GetContentType() != front->GetContentType();
   }
-  if (needDrop) {
+  if (surfaceConfigChanged) {
     DestroyFrontBuffer();
     mSize = surface->GetSize();
   }
@@ -3099,13 +3115,13 @@ BasicShadowCanvasLayer::Swap(const CanvasSurface& aNewFront, bool needYFlip,
     BasicManager()->OpenDescriptor(aNewFront);
   // Destroy mFrontBuffer if size different
   gfxIntSize sz = surface->GetSize();
-  bool needDrop = false;
+  bool surfaceConfigChanged = sz != gfxIntSize(mBounds.width, mBounds.height);
   if (IsSurfaceDescriptorValid(mFrontSurface)) {
     nsRefPtr<gfxASurface> front = BasicManager()->OpenDescriptor(mFrontSurface);
-    needDrop = sz != gfxIntSize(mBounds.width, mBounds.height) ||
-               surface->GetContentType() != front->GetContentType();
+    surfaceConfigChanged = surfaceConfigChanged ||
+                           surface->GetContentType() != front->GetContentType();
   }
-  if (needDrop) {
+  if (surfaceConfigChanged) {
     DestroyFrontBuffer();
     mBounds.SetRect(0, 0, sz.width, sz.height);
   }

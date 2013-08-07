@@ -55,6 +55,9 @@ browser.jar:
   skin/classic/browser/feeds/videoFeedIcon16.png            (feeds/feedIcon16.png)
   skin/classic/browser/feeds/audioFeedIcon.png              (feeds/feedIcon.png)
   skin/classic/browser/feeds/audioFeedIcon16.png            (feeds/feedIcon16.png)
+  skin/classic/browser/newtab/newTab.css                    (newtab/newTab.css)
+  skin/classic/browser/newtab/strip.png                     (newtab/strip.png)
+  skin/classic/browser/newtab/toolbar.png                   (newtab/toolbar.png)
   skin/classic/browser/setDesktopBackground.css
   skin/classic/browser/inspector.css
   skin/classic/browser/monitor.png
@@ -160,6 +163,7 @@ browser.jar:
   skin/classic/browser/devtools/itemToggle.png		    (devtools/itemToggle.png)
   skin/classic/browser/devtools/itemArrow-rtl.png	    (devtools/itemArrow-rtl.png)
   skin/classic/browser/devtools/itemArrow-ltr.png	    (devtools/itemArrow-ltr.png)
+  skin/classic/browser/devtools/background-noise-toolbar.png (devtools/background-noise-toolbar.png)
 #ifdef MOZ_SERVICES_SYNC
   skin/classic/browser/sync-throbber.png
   skin/classic/browser/sync-16.png

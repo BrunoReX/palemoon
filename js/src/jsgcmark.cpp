@@ -163,20 +163,6 @@ MarkString(JSTracer *trc, const MarkablePtr<JSString> &str, const char *name)
 }
 
 void
-MarkAtom(JSTracer *trc, JSAtom *atom)
-{
-    JS_ASSERT(trc);
-    JS_ASSERT(atom);
-    Mark(trc, atom);
-}
-
-void
-MarkAtom(JSTracer *trc, JSAtom *atom, const char *name)
-{
-    MarkStringUnbarriered(trc, atom, name);
-}
-
-void
 MarkObjectUnbarriered(JSTracer *trc, JSObject *obj, const char *name)
 {
     JS_ASSERT(trc);
@@ -243,19 +229,6 @@ MarkTypeObjectUnbarriered(JSTracer *trc, types::TypeObject *type, const char *na
     JS_ASSERT(type);
     JS_SET_TRACING_NAME(trc, name);
     Mark(trc, type);
-
-    /*
-     * Mark parts of a type object skipped by ScanTypeObject. ScanTypeObject is
-     * only used for marking tracers; for tracers with a callback, if we
-     * reenter through JS_TraceChildren then MarkChildren will *not* skip these
-     * members, and we don't need to handle them here.
-     */
-    if (IS_GC_MARKING_TRACER(trc)) {
-        if (type->singleton && !type->lazy())
-            MarkObject(trc, type->singleton, "type_singleton");
-        if (type->interpretedFunction)
-            MarkObject(trc, type->interpretedFunction, "type_function");
-    }
 }
 
 void
@@ -688,29 +661,26 @@ ScanShape(GCMarker *gcmarker, const Shape *shape)
 static inline void
 ScanBaseShape(GCMarker *gcmarker, BaseShape *base)
 {
-    for (;;) {
-        if (base->hasGetterObject())
-            PushMarkStack(gcmarker, base->getterObject());
+    base->assertConsistency();
 
-        if (base->hasSetterObject())
-            PushMarkStack(gcmarker, base->setterObject());
+    if (base->hasGetterObject())
+        PushMarkStack(gcmarker, base->getterObject());
 
-        if (JSObject *parent = base->getObjectParent())
-            PushMarkStack(gcmarker, parent);
+    if (base->hasSetterObject())
+        PushMarkStack(gcmarker, base->setterObject());
 
-        if (base->isOwned()) {
-            /*
-             * Make sure that ScanBaseShape is not recursive so its inlining
-             * is possible.
-             */
-            UnownedBaseShape *unowned = base->baseUnowned();
-            JS_SAME_COMPARTMENT_ASSERT(base, unowned);
-            if (unowned->markIfUnmarked(gcmarker->getMarkColor())) {
-                base = unowned;
-                continue;
-            }
-        }
-        break;
+    if (JSObject *parent = base->getObjectParent())
+        PushMarkStack(gcmarker, parent);
+
+    /*
+     * All children of the owned base shape are consistent with its
+     * unowned one, thus we do not need to trace through children of the
+     * unowned base shape.
+     */
+    if (base->isOwned()) {
+        UnownedBaseShape *unowned = base->baseUnowned();
+        JS_SAME_COMPARTMENT_ASSERT(base, unowned);
+        unowned->markIfUnmarked(gcmarker->getMarkColor());
     }
 }
 
@@ -952,6 +922,13 @@ MarkCycleCollectorChildren(JSTracer *trc, BaseShape *base, JSObject **prevParent
 {
     JS_ASSERT(base);
 
+    /*
+     * The cycle collector does not need to trace unowned base shapes,
+     * as they have the same getter, setter and parent as the original
+     * base shape.
+     */
+    base->assertConsistency();
+
     MarkBaseShapeGetterSetter(trc, base);
 
     JSObject *parent = base->getObjectParent();
@@ -959,17 +936,6 @@ MarkCycleCollectorChildren(JSTracer *trc, BaseShape *base, JSObject **prevParent
         MarkObjectUnbarriered(trc, parent, "parent");
         *prevParent = parent;
     }
-
-    // An owned base shape has the same parent, getter and setter as
-    // its baseUnowned().
-#ifdef DEBUG
-    if (base->isOwned()) {
-        UnownedBaseShape *unowned = base->baseUnowned();
-        JS_ASSERT_IF(base->hasGetterObject(), base->getterObject() == unowned->getterObject());
-        JS_ASSERT_IF(base->hasSetterObject(), base->setterObject() == unowned->setterObject());
-        JS_ASSERT(base->getObjectParent() == unowned->getObjectParent());
-    }
-#endif
 }
 
 /*
@@ -1014,13 +980,11 @@ ScanTypeObject(GCMarker *gcmarker, types::TypeObject *type)
     if (type->interpretedFunction)
         PushMarkStack(gcmarker, type->interpretedFunction);
 
-    /*
-     * Don't need to trace singleton, an object with this type must have
-     * already been traced and it will also hold a reference on the script
-     * (singleton and functionScript types cannot be the newType of another
-     * object). Attempts to mark type objects directly must use MarkTypeObject,
-     * which will itself mark these extra bits.
-     */
+    if (type->singleton && !type->lazy())
+        PushMarkStack(gcmarker, type->singleton);
+
+    if (type->interpretedFunction)
+        PushMarkStack(gcmarker, type->interpretedFunction);
 }
 
 void

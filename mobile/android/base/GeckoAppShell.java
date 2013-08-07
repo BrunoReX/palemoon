@@ -154,6 +154,19 @@ public class GeckoAppShell
     public static native void notifyBatteryChange(double aLevel, boolean aCharging, double aRemainingTime);
 
     public static native void notifySmsReceived(String aSender, String aBody, long aTimestamp);
+    public static native int  saveMessageInSentbox(String aReceiver, String aBody, long aTimestamp);
+    public static native void notifySmsSent(int aId, String aReceiver, String aBody, long aTimestamp, int aRequestId, long aProcessId);
+    public static native void notifySmsDelivered(int aId, String aReceiver, String aBody, long aTimestamp);
+    public static native void notifySmsSendFailed(int aError, int aRequestId, long aProcessId);
+    public static native void notifyGetSms(int aId, String aReceiver, String aSender, String aBody, long aTimestamp, int aRequestId, long aProcessId);
+    public static native void notifyGetSmsFailed(int aError, int aRequestId, long aProcessId);
+    public static native void notifySmsDeleted(boolean aDeleted, int aRequestId, long aProcessId);
+    public static native void notifySmsDeleteFailed(int aError, int aRequestId, long aProcessId);
+    public static native void notifyNoMessageInList(int aRequestId, long aProcessId);
+    public static native void notifyListCreated(int aListId, int aMessageId, String aReceiver, String aSender, String aBody, long aTimestamp, int aRequestId, long aProcessId);
+    public static native void notifyGotNextMessage(int aMessageId, String aReceiver, String aSender, String aBody, long aTimestamp, int aRequestId, long aProcessId);
+    public static native void notifyReadingMessageListFailed(int aError, int aRequestId, long aProcessId);
+
     public static native ByteBuffer allocateDirectBuffer(long size);
     public static native void freeDirectBuffer(ByteBuffer buf);
     public static native void bindWidgetTexture();
@@ -1705,11 +1718,67 @@ public class GeckoAppShell
      * WebSMS related methods.
      */
     public static int getNumberOfMessagesForText(String aText) {
-        return GeckoSmsManager.getNumberOfMessagesForText(aText);
+        if (SmsManager.getInstance() == null) {
+            return 0;
+        }
+
+        return SmsManager.getInstance().getNumberOfMessagesForText(aText);
     }
 
-    public static void sendMessage(String aNumber, String aMessage) {
-        GeckoSmsManager.send(aNumber, aMessage);
+    public static void sendMessage(String aNumber, String aMessage, int aRequestId, long aProcessId) {
+        if (SmsManager.getInstance() == null) {
+            return;
+        }
+
+        SmsManager.getInstance().send(aNumber, aMessage, aRequestId, aProcessId);
+    }
+
+    public static int saveSentMessage(String aRecipient, String aBody, long aDate) {
+        if (SmsManager.getInstance() == null) {
+            return -1;
+        }
+
+        return SmsManager.getInstance().saveSentMessage(aRecipient, aBody, aDate);
+    }
+
+    public static void getMessage(int aMessageId, int aRequestId, long aProcessId) {
+        if (SmsManager.getInstance() == null) {
+            return;
+        }
+
+        SmsManager.getInstance().getMessage(aMessageId, aRequestId, aProcessId);
+    }
+
+    public static void deleteMessage(int aMessageId, int aRequestId, long aProcessId) {
+        if (SmsManager.getInstance() == null) {
+            return;
+        }
+
+        SmsManager.getInstance().deleteMessage(aMessageId, aRequestId, aProcessId);
+    }
+
+    public static void createMessageList(long aStartDate, long aEndDate, String[] aNumbers, int aNumbersCount, int aDeliveryState, boolean aReverse, int aRequestId, long aProcessId) {
+        if (SmsManager.getInstance() == null) {
+            return;
+        }
+
+        SmsManager.getInstance().createMessageList(aStartDate, aEndDate, aNumbers, aNumbersCount, aDeliveryState, aReverse, aRequestId, aProcessId);
+    }
+
+    public static void getNextMessageInList(int aListId, int aRequestId, long aProcessId) {
+        if (SmsManager.getInstance() == null) {
+            return;
+        }
+
+        SmsManager.getInstance().getNextMessageInList(aListId, aRequestId, aProcessId);
+    }
+
+    public static void clearMessageList(int aListId) {
+        if (SmsManager.getInstance() == null) {
+            return;
+        }
+
+        SmsManager.getInstance().clearMessageList(aListId);
     }
 
     public static boolean isTablet() {
@@ -1753,19 +1822,36 @@ public class GeckoAppShell
         }
     }
 
-    private static final int GUID_ENCODE_FLAGS = Base64.URL_SAFE | Base64.NO_WRAP;
+    public static double[] getCurrentNetworkInformation() {
+        return GeckoNetworkManager.getInstance().getCurrentInformation();
+    }
+
+    public static void enableNetworkNotifications() {
+        GeckoNetworkManager.getInstance().enableNotifications();
+    }
+
+    public static void disableNetworkNotifications() {
+        GeckoNetworkManager.getInstance().disableNotifications();
+    }
+
+    // values taken from android's Base64
+    public static final int BASE64_DEFAULT = 0;
+    public static final int BASE64_URL_SAFE = 8;
 
     /**
      * taken from http://www.source-code.biz/base64coder/java/Base64Coder.java.txt and modified (MIT License)
      */
     // Mapping table from 6-bit nibbles to Base64 characters.
     private static final byte[] map1 = new byte[64];
+    private static final byte[] map1_urlsafe;
     static {
       int i=0;
       for (byte c='A'; c<='Z'; c++) map1[i++] = c;
       for (byte c='a'; c<='z'; c++) map1[i++] = c;
       for (byte c='0'; c<='9'; c++) map1[i++] = c;
-      map1[i++] = '-'; map1[i++] = '_'; 
+      map1[i++] = '+'; map1[i++] = '/';
+      map1_urlsafe = map1.clone();
+      map1_urlsafe[62] = '-'; map1_urlsafe[63] = '_'; 
     }
 
     // Mapping table from Base64 characters to 6-bit nibbles.
@@ -1773,6 +1859,7 @@ public class GeckoAppShell
     static {
         for (int i=0; i<map2.length; i++) map2[i] = -1;
         for (int i=0; i<64; i++) map2[map1[i]] = (byte)i;
+        map2['-'] = (byte)62; map2['_'] = (byte)63;
     }
 
     final static byte EQUALS_ASCII = (byte) '=';
@@ -1783,15 +1870,16 @@ public class GeckoAppShell
      * @param in    An array containing the data bytes to be encoded.
      * @return      A character array containing the Base64 encoded data.
      */
-    public static byte[] encodeBase64(byte[] in) {
+    public static byte[] encodeBase64(byte[] in, int flags) {
         if (Build.VERSION.SDK_INT >=Build.VERSION_CODES.FROYO)
-            return Base64.encode(in, GUID_ENCODE_FLAGS);
+            return Base64.encode(in, flags | Base64.NO_WRAP);
         int oDataLen = (in.length*4+2)/3;       // output length without padding
         int oLen = ((in.length+2)/3)*4;         // output length including padding
         byte[] out = new byte[oLen];
         int ip = 0;
         int iEnd = in.length;
         int op = 0;
+        byte[] toMap = ((flags & BASE64_URL_SAFE) == 0 ? map1 : map1_urlsafe);
         while (ip < iEnd) {
             int i0 = in[ip++] & 0xff;
             int i1 = ip < iEnd ? in[ip++] & 0xff : 0;
@@ -1800,10 +1888,10 @@ public class GeckoAppShell
             int o1 = ((i0 &   3) << 4) | (i1 >>> 4);
             int o2 = ((i1 & 0xf) << 2) | (i2 >>> 6);
             int o3 = i2 & 0x3F;
-            out[op++] = map1[o0];
-            out[op++] = map1[o1];
-            out[op] = op < oDataLen ? map1[o2] : EQUALS_ASCII; op++;
-            out[op] = op < oDataLen ? map1[o3] : EQUALS_ASCII; op++;
+            out[op++] = toMap[o0];
+            out[op++] = toMap[o1];
+            out[op] = op < oDataLen ? toMap[o2] : EQUALS_ASCII; op++;
+            out[op] = op < oDataLen ? toMap[o3] : EQUALS_ASCII; op++;
         }
         return out; 
     }
@@ -1817,9 +1905,9 @@ public class GeckoAppShell
      * @return      An array containing the decoded data bytes.
      * @throws      IllegalArgumentException If the input is not valid Base64 encoded data.
      */
-    public static byte[] decodeBase64(byte[] in) {
+    public static byte[] decodeBase64(byte[] in, int flags) {
         if (Build.VERSION.SDK_INT >=Build.VERSION_CODES.FROYO)
-            return Base64.decode(in, Base64.DEFAULT);
+            return Base64.decode(in, flags);
         int iOff = 0;
         int iLen = in.length;
         if (iLen%4 != 0) throw new IllegalArgumentException ("Length of Base64 encoded input string is not a multiple of 4.");
@@ -1851,7 +1939,7 @@ public class GeckoAppShell
         return out; 
     }
 
-    public static byte[] decodeBase64(String s) {
-        return decodeBase64(s.getBytes());
+    public static byte[] decodeBase64(String s, int flags) {
+        return decodeBase64(s.getBytes(), flags);
     }
 }

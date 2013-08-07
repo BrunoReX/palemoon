@@ -135,6 +135,19 @@ nsSVGForeignObjectFrame::AttributeChanged(PRInt32  aNameSpaceID,
   return NS_OK;
 }
 
+/* virtual */ void
+nsSVGForeignObjectFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
+{
+  nsSVGForeignObjectFrameBase::DidSetStyleContext(aOldStyleContext);
+
+  // No need to invalidate before first reflow - that will happen elsewhere.
+  // Moreover we haven't been initialised properly yet so we may not have the
+  // right state bits.
+  if (!(GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
+    UpdateGraphic();
+  }
+}
+
 NS_IMETHODIMP
 nsSVGForeignObjectFrame::Reflow(nsPresContext*           aPresContext,
                                 nsHTMLReflowMetrics&     aDesiredSize,
@@ -198,8 +211,6 @@ NS_IMETHODIMP
 nsSVGForeignObjectFrame::PaintSVG(nsSVGRenderState *aContext,
                                   const nsIntRect *aDirtyRect)
 {
-  NS_ABORT_IF_FALSE(aDirtyRect, "We expect aDirtyRect to be non-null");
-
   if (IsDisabled())
     return NS_OK;
 
@@ -218,9 +229,11 @@ nsSVGForeignObjectFrame::PaintSVG(nsSVGRenderState *aContext,
   }
 
   /* Check if we need to draw anything. */
-  PRInt32 appUnitsPerDevPx = PresContext()->AppUnitsPerDevPixel();
-  if (!mRect.ToOutsidePixels(appUnitsPerDevPx).Intersects(*aDirtyRect))
-    return NS_OK;
+  if (aDirtyRect) {
+    PRInt32 appUnitsPerDevPx = PresContext()->AppUnitsPerDevPixel();
+    if (!mRect.ToOutsidePixels(appUnitsPerDevPx).Intersects(*aDirtyRect))
+      return NS_OK;
+  }
 
   gfxContext *gfx = aContext->GetGfxContext();
 
@@ -244,18 +257,20 @@ nsSVGForeignObjectFrame::PaintSVG(nsSVGRenderState *aContext,
   NS_ASSERTION(!invmatrix.IsSingular(),
                "inverse of non-singular matrix should be non-singular");
 
-  gfxRect transDirtyRect = gfxRect(aDirtyRect->x, aDirtyRect->y,
-                                   aDirtyRect->width, aDirtyRect->height);
-  transDirtyRect = invmatrix.TransformBounds(transDirtyRect);
+  nsRect kidDirtyRect = kid->GetVisualOverflowRect();
+  if (aDirtyRect) {
+    gfxRect transDirtyRect = gfxRect(aDirtyRect->x, aDirtyRect->y,
+                                     aDirtyRect->width, aDirtyRect->height);
+    transDirtyRect = invmatrix.TransformBounds(transDirtyRect);
 
-  transDirtyRect.Scale(nsPresContext::AppUnitsPerCSSPixel());
-  nsPoint tl(NSToCoordFloor(transDirtyRect.X()),
-             NSToCoordFloor(transDirtyRect.Y()));
-  nsPoint br(NSToCoordCeil(transDirtyRect.XMost()),
-             NSToCoordCeil(transDirtyRect.YMost()));
-  nsRect kidDirtyRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
-
-  kidDirtyRect.IntersectRect(kidDirtyRect, kid->GetRect());
+    transDirtyRect.Scale(nsPresContext::AppUnitsPerCSSPixel());
+    nsPoint tl(NSToCoordFloor(transDirtyRect.X()),
+               NSToCoordFloor(transDirtyRect.Y()));
+    nsPoint br(NSToCoordCeil(transDirtyRect.XMost()),
+               NSToCoordCeil(transDirtyRect.YMost()));
+    kidDirtyRect.IntersectRect(kidDirtyRect,
+                               nsRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y));
+  }
 
   PRUint32 flags = nsLayoutUtils::PAINT_IN_TRANSFORM;
   if (aContext->IsPaintingToWindow()) {
@@ -270,13 +285,18 @@ nsSVGForeignObjectFrame::PaintSVG(nsSVGRenderState *aContext,
 }
 
 gfx3DMatrix
-nsSVGForeignObjectFrame::GetTransformMatrix(nsIFrame **aOutAncestor)
+nsSVGForeignObjectFrame::GetTransformMatrix(nsIFrame* aAncestor,
+                                            nsIFrame **aOutAncestor)
 {
   NS_PRECONDITION(aOutAncestor, "We need an ancestor to write to!");
 
   /* Set the ancestor to be the outer frame. */
   *aOutAncestor = nsSVGUtils::GetOuterSVGFrame(this);
   NS_ASSERTION(*aOutAncestor, "How did we end up without an outer frame?");
+
+  if (GetStateBits() & NS_STATE_SVG_NONDISPLAY_CHILD) {
+    return gfx3DMatrix::From2D(gfxMatrix(0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
+  }
 
   /* Return the matrix back to the root, factoring in the x and y offsets. */
   return gfx3DMatrix::From2D(GetCanvasTMForChildren());

@@ -99,6 +99,8 @@
 #include "nsIWindowsRegKey.h"
 #include "nsISupportsPrimitives.h"
 
+#define kNotFound -1
+
 #define TRIDENTPROFILE_BUNDLE       "chrome://browser/locale/migration/migration.properties"
 
 #define REGISTRY_IE_MAIN_KEY \
@@ -602,9 +604,13 @@ nsIEProfileMigrator::TestForIE7()
 
   iePath = destination; 
 
+  // Check if the path is enclosed in quotation marks.
   if (StringBeginsWith(iePath, NS_LITERAL_STRING("\""))) {
     iePath.Cut(0,1);
-    PRUint32 index = iePath.FindChar('\"', 0);
+    PRInt32 index = iePath.FindChar('\"', 0);
+
+    // After removing the opening quoation mark,
+    // remove the closing one and everything after it.
     if (index > 0)
       iePath.Cut(index,iePath.Length());
   }
@@ -621,8 +627,8 @@ nsIEProfileMigrator::TestForIE7()
    return false;
 
   if (ieVersion.Length() > 2) {
-    PRUint32 index = ieVersion.FindChar('.', 0);
-    if (index < 0)
+    PRInt32 index = ieVersion.FindChar('.', 0);
+    if (index == kNotFound)
       return false;
     ieVersion.Cut(index, ieVersion.Length());
     PRInt32 ver = wcstol(ieVersion.get(), nsnull, 0);
@@ -1398,14 +1404,16 @@ nsIEProfileMigrator::CopyFavoritesBatched(bool aReplace)
     NS_ENSURE_SUCCESS(rv, rv);
   }
   else {
-    // Initialize the default bookmarks
-    nsCOMPtr<nsIFile> profile;
-    GetProfilePath(nsnull, profile);
-    rv = InitializeBookmarks(profile);
-    NS_ENSURE_SUCCESS(rv, rv);
+    // If importing defaults fails for whatever reason, let the import process
+    // continue.
+    DebugOnly<nsresult> rv = ImportDefaultBookmarks();
+    NS_ABORT_IF_FALSE(NS_SUCCEEDED(rv), "Should be able to import default bookmarks");
 
     // Locate the Links toolbar folder, we want to replace the Personal Toolbar
     // content with Favorites in this folder.
+    // On versions minor or equal to IE6 the folder name is stored in the
+    // LinksFolderName registry key, but in newer versions it may be just a
+    // Links subfolder inside the default Favorites folder.
     nsCOMPtr<nsIWindowsRegKey> regKey =
       do_CreateInstance("@mozilla.org/windows-registry-key;1");
     if (regKey &&
@@ -1415,9 +1423,14 @@ nsIEProfileMigrator::CopyFavoritesBatched(bool aReplace)
       nsAutoString linksFolderName;
       if (NS_SUCCEEDED(regKey->ReadStringValue(
                          NS_LITERAL_STRING("LinksFolderName"),
-                         linksFolderName)))
+                         linksFolderName))) {
         personalToolbarFolderName = linksFolderName;
+      }
+      else {
+        personalToolbarFolderName.AssignLiteral("Links");
+      }
     }
+
     folder = bookmarksMenuFolderId;
   }
 

@@ -39,6 +39,9 @@
 #ifndef nsTArray_h__
 #define nsTArray_h__
 
+#include "mozilla/Assertions.h"
+#include "mozilla/Util.h"
+
 #include <string.h>
 
 #include "prtypes.h"
@@ -47,7 +50,6 @@
 #include "nsQuickSort.h"
 #include "nsDebug.h"
 #include "nsTraceRefcnt.h"
-#include "mozilla/Util.h"
 #include NEW_H
 
 //
@@ -112,6 +114,7 @@ struct nsTArrayFallibleAllocator
     free(ptr);
   }
 };
+
 #endif
 
 #if defined(MOZALLOC_HAVE_XMALLOC)
@@ -538,16 +541,13 @@ public:
   size_t SizeOfExcludingThis(nsMallocSizeOfFun mallocSizeOf) const {
     if (this->UsesAutoArrayBuffer() || Hdr() == EmptyHdr())
       return 0;
-    return mallocSizeOf(this->Hdr(), 
-                        sizeof(nsTArrayHeader) +
-                        this->Capacity() * sizeof(elem_type));
+    return mallocSizeOf(this->Hdr());
   }
 
   // @return The amount of memory used by this nsTArray, including
   // sizeof(*this).
   size_t SizeOfIncludingThis(nsMallocSizeOfFun mallocSizeOf) const {
-    return mallocSizeOf(this, sizeof(nsTArray)) +
-           SizeOfExcludingThis(mallocSizeOf);
+    return mallocSizeOf(this) + SizeOfExcludingThis(mallocSizeOf);
   }
 
   //
@@ -1334,9 +1334,9 @@ private:
   friend class nsTArray_base;
 
   void Init() {
-    // We can't handle alignments greater than 8; see
-    // nsTArray_base::UsesAutoArrayBuffer().
-    PR_STATIC_ASSERT(MOZ_ALIGNOF(elem_type) <= 8);
+    MOZ_STATIC_ASSERT(MOZ_ALIGNOF(elem_type) <= 8,
+                      "can't handle alignments greater than 8, "
+                      "see nsTArray_base::UsesAutoArrayBuffer()");
 
     *base_type::PtrToHdr() = reinterpret_cast<Header*>(&mAutoBuf);
     base_type::Hdr()->mLength = 0;
@@ -1385,8 +1385,10 @@ public:
 // 64-bit system, where the compiler inserts 4 bytes of padding at the end of
 // the auto array to make its size a multiple of alignof(void*) == 8 bytes.
 
-PR_STATIC_ASSERT(sizeof(nsAutoTArray<PRUint32, 2>) ==
-                 sizeof(void*) + sizeof(nsTArrayHeader) + sizeof(PRUint32) * 2);
+MOZ_STATIC_ASSERT(sizeof(nsAutoTArray<PRUint32, 2>) ==
+                  sizeof(void*) + sizeof(nsTArrayHeader) + sizeof(PRUint32) * 2,
+                  "nsAutoTArray shouldn't contain any extra padding, "
+                  "see the comment");
 
 template<class E, PRUint32 N>
 class AutoFallibleTArray : public nsAutoArrayBase<FallibleTArray<E>, N>

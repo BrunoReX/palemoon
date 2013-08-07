@@ -327,6 +327,8 @@ public:
   virtual void OnFinalize(JSObject* aObject);
   virtual void SetScriptsEnabled(bool aEnabled, bool aFireTimeouts);
 
+  virtual bool IsBlackForCC();
+
   // nsIScriptObjectPrincipal
   virtual nsIPrincipal* GetPrincipal();
 
@@ -509,8 +511,8 @@ public:
 
   friend class WindowStateHolder;
 
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(nsGlobalWindow,
-                                                         nsIScriptGlobalObject)
+  NS_DECL_CYCLE_COLLECTION_SKIPPABLE_SCRIPT_HOLDER_CLASS_AMBIGUOUS(nsGlobalWindow,
+                                                                   nsIScriptGlobalObject)
 
   void InitJavaProperties();
 
@@ -576,6 +578,7 @@ public:
 
   PRInt64 SizeOf() const;
 
+  void UnmarkGrayTimers();
 private:
   // Enable updates for the accelerometer.
   void EnableDeviceMotionUpdates();

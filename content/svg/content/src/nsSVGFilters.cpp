@@ -144,12 +144,12 @@ nsSVGFE::SetupScalingFilter(nsSVGFilterInstance *aInstance,
     return result;
   }
 
-  float kernelX = aInstance->GetPrimitiveNumber(nsSVGUtils::X,
-                                                aKernelUnitLength,
-                                                nsSVGNumberPair::eFirst);
-  float kernelY = aInstance->GetPrimitiveNumber(nsSVGUtils::Y,
-                                                aKernelUnitLength,
-                                                nsSVGNumberPair::eSecond);
+  gfxFloat kernelX = aInstance->GetPrimitiveNumber(nsSVGUtils::X,
+                                                   aKernelUnitLength,
+                                                   nsSVGNumberPair::eFirst);
+  gfxFloat kernelY = aInstance->GetPrimitiveNumber(nsSVGUtils::Y,
+                                                   aKernelUnitLength,
+                                                   nsSVGNumberPair::eSecond);
   if (kernelX <= 0 || kernelY <= 0)
     return result;
 
@@ -5751,11 +5751,12 @@ nsSVGFEImageElement::OnStopDecode(imgIRequest *aRequest,
 }
 
 NS_IMETHODIMP
-nsSVGFEImageElement::FrameChanged(imgIContainer *aContainer,
+nsSVGFEImageElement::FrameChanged(imgIRequest* aRequest,
+                                  imgIContainer *aContainer,
                                   const nsIntRect *aDirtyRect)
 {
   nsresult rv =
-    nsImageLoadingContent::FrameChanged(aContainer, aDirtyRect);
+    nsImageLoadingContent::FrameChanged(aRequest, aContainer, aDirtyRect);
   Invalidate();
   return rv;
 }

@@ -50,22 +50,23 @@ FORCE_STATIC_LIB = 1
 
 include $(topsrcdir)/dom/dom-config.mk
 
+CPPSRCS = \
+  Telephony.cpp \
+  TelephonyCall.cpp \
+  CallEvent.cpp \
+  $(NULL)
+
 XPIDLSRCS = \
-  mozIDOMTelephony.idl \
-  nsITelephone.idl \
+  nsIDOMNavigatorTelephony.idl \
+  nsIDOMTelephony.idl \
+  nsIDOMTelephonyCall.idl \
+  nsIDOMCallEvent.idl \
   $(NULL)
 
-EXTRA_COMPONENTS = \
-  Telephony.manifest \
-  Telephony.js \
-  nsTelephonyWorker.manifest \
-  nsTelephonyWorker.js \
-  $(NULL)
-
-EXTRA_JS_MODULES = \
-  ril_consts.js \
-  ril_worker.js \
-  $(NULL)
+#LOCAL_INCLUDES = \
+#  -I$(topsrcdir)/dom/base \
+#  -I$(topsrcdir)/dom/system/b2g \
+#  -I$(topsrcdir)/content/events/src \
+#  $(NULL)
 
 include $(topsrcdir)/config/rules.mk
-

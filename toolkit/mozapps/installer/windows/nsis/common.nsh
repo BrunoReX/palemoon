@@ -21,6 +21,7 @@
 #  Robert Strong <robert.bugzilla@gmail.com>
 #  Ehsan Akhgari <ehsan.akhgari@gmail.com>
 #  Amir Szekely <kichik@gmail.com>
+#  Brian R. Bondy <netzen@gmail.com>
 #
 # Alternatively, the contents of this file may be used under the terms of
 # either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -4614,7 +4615,7 @@
 
       !ifdef HAVE_64BIT_OS
         ${Unless} ${RunningX64}
-        ${OrUnless} ${AtLeastWinVista}
+        ${OrUnless} ${AtLeastWinXP}
           MessageBox MB_OK|MB_ICONSTOP "$R9" IDOK
           ; Nothing initialized so no need to call OnEndCommon
           Quit
@@ -4622,23 +4623,10 @@
 
         SetRegView 64
       !else
-        ${Unless} ${AtLeastWin2000}
-          ; XXX-rstrong - some systems fail the AtLeastWin2000 test for an
-          ; unknown reason. To work around this also check if the Windows NT
-          ; registry Key exists and if it does if the first char in
-          ; CurrentVersion is equal to 3 (Windows NT 3.5 and 3.5.1) or 4
-          ; (Windows NT 4).
-          StrCpy $R8 ""
-          ClearErrors
-          ReadRegStr $R8 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion" "CurrentVersion"
-          StrCpy $R8 "$R8" 1
-          ${If} ${Errors}
-          ${OrIf} "$R8" == "3"
-          ${OrIf} "$R8" == "4"
-            MessageBox MB_OK|MB_ICONSTOP "$R9" IDOK
-            ; Nothing initialized so no need to call OnEndCommon
-            Quit
-          ${EndIf}
+        ${Unless} ${AtLeastWinXP}
+          MessageBox MB_OK|MB_ICONSTOP "$R9" IDOK
+          ; Nothing initialized so no need to call OnEndCommon
+          Quit
         ${EndUnless}
       !endif
 
@@ -6678,6 +6666,40 @@
   Call UpdateShortcutAppModelIDs
   Pop ${_RESULT}
   !verbose pop
+!macroend
+
+!macro IsUserAdmin
+  ; Copied from: http://nsis.sourceforge.net/IsUserAdmin
+  Function IsUserAdmin
+    Push $R0
+    Push $R1
+    Push $R2
+ 
+    ClearErrors
+    UserInfo::GetName
+    IfErrors Win9x
+    Pop $R1
+    UserInfo::GetAccountType
+    Pop $R2
+ 
+    StrCmp $R2 "Admin" 0 Continue
+    StrCpy $R0 "true"
+    Goto Done
+ 
+    Continue:
+
+    StrCmp $R2 "" Win9x
+    StrCpy $R0 "false"
+    Goto Done
+ 
+    Win9x:
+    StrCpy $R0 "true"
+ 
+    Done:
+    Pop $R2
+    Pop $R1
+    Exch $R0
+  FunctionEnd
 !macroend
 
 /**

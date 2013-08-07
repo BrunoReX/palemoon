@@ -13,11 +13,20 @@ tabbrowser {
   -moz-binding: url("chrome://browser/content/tabbrowser.xml#tabbrowser-tabs");
 }
 
+#tabbrowser-tabs:not([overflow="true"]) ~ #alltabs-button,
 #tabbrowser-tabs:not([overflow="true"]) + #new-tab-button,
 #tabbrowser-tabs[overflow="true"] > .tabbrowser-arrowscrollbox > .tabs-newtab-button,
 #TabsToolbar[currentset]:not([currentset*="tabbrowser-tabs,new-tab-button"]) > #tabbrowser-tabs > .tabbrowser-arrowscrollbox > .tabs-newtab-button,
 #TabsToolbar[customizing="true"] > #tabbrowser-tabs > .tabbrowser-arrowscrollbox > .tabs-newtab-button {
   visibility: collapse;
+}
+
+#alltabs-button {
+  visibility: visible !important;
+}
+
+#tabbrowser-tabs:not([overflow="true"])[using-closing-tabs-spacer] ~ #alltabs-button {
+  visibility: hidden; /* temporary space to keep a tab's close button under the cursor */
 }
 
 .tabbrowser-tab {
@@ -40,7 +49,7 @@ tabbrowser {
   opacity: 0 !important;
   -moz-transition: min-width 100ms ease-out,
                    max-width 150ms ease-out,
-                   opacity 30ms ease-out 50ms /* hide the tab for the last 100ms of the max-width transition */;
+                   opacity 30ms ease-out 50ms /* hide the tab for the last 20ms of the max-width transition */;
 }
 
 .tab-throbber:not([fadein]):not([pinned]),
@@ -55,7 +64,7 @@ tabbrowser {
 .tab-icon-image,
 .tab-close-button {
   -moz-transition: opacity 100ms;
-}
+} 
 
 .tabbrowser-tabs[positionpinnedtabs] > .tabbrowser-tab[pinned] {
   position: fixed !important;
@@ -107,8 +116,13 @@ toolbar[printpreview="true"] {
 }
 %endif
 
-toolbarpaletteitem[place="palette"] > toolbaritem > hbox[type="places"] {
+.bookmarks-toolbar-customize,
+#wrapper-personal-bookmarks > #personal-bookmarks > #PlacesToolbar > hbox > #PlacesToolbarItems {
   display: none;
+}
+
+#wrapper-personal-bookmarks[place="toolbar"] > #personal-bookmarks > #PlacesToolbar > .bookmarks-toolbar-customize {
+  display: -moz-box;
 }
 
 #main-window[disablechrome] #navigator-toolbox[tabsontop="true"] > toolbar:not(#toolbar-menubar):not(#TabsToolbar) {
@@ -476,6 +490,7 @@ statuspanel {
   margin-top: -3em;
   left: 0;
   max-width: 50%;
+  pointer-events: none;
 }
 
 statuspanel:-moz-locale-dir(ltr)[mirror],
@@ -495,14 +510,13 @@ statuspanel[type=status] {
 }
 
 statuspanel[type=overLink] {
-  -moz-transition: opacity 0ms ease-out;
+  -moz-transition: opacity 120ms ease-out;
   direction: ltr;
 }
 
 statuspanel[inactive] {
   -moz-transition: none;
   opacity: 0;
-  pointer-events: none;
 }
 
 statuspanel[inactive][previoustype=overLink] {

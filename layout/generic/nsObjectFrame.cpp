@@ -111,6 +111,7 @@
 #include "nsIObserverService.h"
 #include "nsIScrollableFrame.h"
 #include "mozilla/Preferences.h"
+#include "sampler.h"
 
 // headers for plugin scriptability
 #include "nsIScriptGlobalObject.h"
@@ -698,6 +699,7 @@ nsObjectFrame::InstantiatePlugin(nsPluginHost* aPluginHost,
                                  const char* aMimeType,
                                  nsIURI* aURI)
 {
+  SAMPLE_LABEL("nsObjectFrame", "InstantiatePlugin");
   NS_ASSERTION(mPreventInstantiation,
                "Instantiation should be prevented here!");
 
@@ -1420,6 +1422,8 @@ nsObjectFrame::PrintPlugin(nsRenderingContext& aRenderingContext,
   /* XXX this just flat-out doesn't work in a thebes world --
    * RenderEPS is a no-op.  So don't bother to do any work here.
    */
+  (void)window;
+  (void)npprint;
 
 #elif defined(XP_OS2)
   void *hps = GetPSFromRC(aRenderingContext);
@@ -1716,11 +1720,7 @@ nsObjectFrame::PaintPlugin(nsDisplayListBuilder* aBuilder,
       PresContext()->AppUnitsToGfxUnits(aDirtyRect);
     gfxContext* ctx = aRenderingContext.ThebesContext();
 
-    nsIFrame* parent = NULL;
-    gfx3DMatrix matrix3d = GetTransformMatrix(&parent);
-    while (parent) {
-      matrix3d = matrix3d * parent->GetTransformMatrix(&parent);
-    }
+    gfx3DMatrix matrix3d = nsLayoutUtils::GetTransformToAncestor(this, nsnull);
 
     gfxMatrix matrix2d;
     if (!matrix3d.Is2D(&matrix2d))
@@ -2162,6 +2162,7 @@ nsObjectFrame::PrepareInstanceOwner()
 nsresult
 nsObjectFrame::Instantiate(nsIChannel* aChannel, nsIStreamListener** aStreamListener)
 {
+  SAMPLE_LABEL("plugin", "nsObjectFrame::Instantiate");
   if (mPreventInstantiation) {
     return NS_OK;
   }
@@ -2212,6 +2213,7 @@ nsObjectFrame::Instantiate(nsIChannel* aChannel, nsIStreamListener** aStreamList
 nsresult
 nsObjectFrame::Instantiate(const char* aMimeType, nsIURI* aURI)
 {
+  SAMPLE_LABEL("plugin", "nsObjectFrame::Instantiate");
   PR_LOG(nsObjectFrameLM, PR_LOG_DEBUG,
          ("nsObjectFrame::Instantiate(%s) called on frame %p\n", aMimeType,
           this));
@@ -2360,6 +2362,7 @@ DoDelayedStop(nsPluginInstanceOwner *aInstanceOwner, bool aDelayedStop)
 static void
 DoStopPlugin(nsPluginInstanceOwner *aInstanceOwner, bool aDelayedStop)
 {
+  SAMPLE_LABEL("plugin", "DoStopPlugin");
   nsRefPtr<nsNPAPIPluginInstance> inst;
   aInstanceOwner->GetInstance(getter_AddRefs(inst));
   if (inst) {
@@ -2402,6 +2405,7 @@ nsStopPluginRunnable::Notify(nsITimer *aTimer)
 NS_IMETHODIMP
 nsStopPluginRunnable::Run()
 {
+  SAMPLE_LABEL("plugin", "nsStopPluginRunnable::Run");
   // InitWithCallback calls Release before AddRef so we need to hold a
   // strong ref on 'this' since we fall through to this scope if it fails.
   nsCOMPtr<nsITimerCallback> kungFuDeathGrip = this;
@@ -2668,6 +2672,16 @@ nsIFrame*
 NS_NewObjectFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
 {
   return new (aPresShell) nsObjectFrame(aContext);
+}
+
+bool
+nsObjectFrame::PaintedByGecko()
+{
+#ifdef XP_MACOSX
+  return true;
+#else
+  return !mWidget;
+#endif
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsObjectFrame)

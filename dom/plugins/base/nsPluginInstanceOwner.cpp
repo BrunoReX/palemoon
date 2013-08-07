@@ -96,8 +96,6 @@ using mozilla::DefaultXDisplay;
 #include "nsIScrollableFrame.h"
 
 #include "nsContentCID.h"
-static NS_DEFINE_CID(kRangeCID, NS_RANGE_CID);
-
 #include "nsWidgetsCID.h"
 static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
 
@@ -842,10 +840,7 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetTagText(const char* *result)
     if (NS_FAILED(rv))
       return rv;
 
-    nsCOMPtr<nsIDOMRange> range(do_CreateInstance(kRangeCID,&rv));
-    if (NS_FAILED(rv))
-      return rv;
-
+    nsRefPtr<nsRange> range = new nsRange();
     rv = range->SelectNode(node);
     if (NS_FAILED(rv))
       return rv;
@@ -1726,8 +1721,6 @@ void nsPluginInstanceOwner::SendOnScreenEvent(bool onScreen)
 
 bool nsPluginInstanceOwner::AddPluginView(const gfxRect& aRect)
 {
-  AndroidBridge::AutoLocalJNIFrame frame(1);
-
   void* javaSurface = mInstance->GetJavaSurface();
   if (!javaSurface) {
     mInstance->RequestJavaSurface();
@@ -1735,6 +1728,11 @@ bool nsPluginInstanceOwner::AddPluginView(const gfxRect& aRect)
   }
 
   JNIEnv* env = GetJNIForThread();
+  if (!env)
+    return false;
+
+  AndroidBridge::AutoLocalJNIFrame frame(env, 1);
+
   jclass cls = env->FindClass("org/mozilla/gecko/GeckoAppShell");
 
 #ifdef MOZ_JAVA_COMPOSITOR
@@ -2322,7 +2320,7 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(const nsGUIEvent& anEvent)
     if (pPluginEvent) {
       // Make event coordinates relative to our enclosing widget,
       // not the widget they were received on.
-      // See use of NPEvent in widget/src/windows/nsWindow.cpp
+      // See use of NPEvent in widget/windows/nsWindow.cpp
       // for why this assert should be safe
       NS_ASSERTION(anEvent.message == NS_MOUSE_BUTTON_DOWN ||
                    anEvent.message == NS_MOUSE_BUTTON_UP ||

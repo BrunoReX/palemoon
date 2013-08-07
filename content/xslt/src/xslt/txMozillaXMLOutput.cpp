@@ -338,9 +338,13 @@ txMozillaXMLOutput::endElement()
         } else if (ns == kNameSpaceID_XHTML &&
                    (localName == nsGkAtoms::input ||
                     localName == nsGkAtoms::button ||
-                    localName == nsGkAtoms::menuitem ||
+                    localName == nsGkAtoms::menuitem
+#ifdef MOZ_MEDIA
+                     ||
                     localName == nsGkAtoms::audio ||
-                    localName == nsGkAtoms::video )) {
+                    localName == nsGkAtoms::video
+#endif
+                  )) {
           element->DoneCreatingElement();
         }   
     }
@@ -936,14 +940,12 @@ txMozillaXMLOutput::createResultDocument(const nsSubstring& aName, PRInt32 aNsID
             }
 
             // Indicate that there is no internal subset (not just an empty one)
-            nsAutoString voidString;
-            voidString.SetIsVoid(true);
             rv = NS_NewDOMDocumentType(getter_AddRefs(documentType),
                                        mNodeInfoManager,
                                        doctypeName,
                                        mOutputFormat.mPublicId,
                                        mOutputFormat.mSystemId,
-                                       voidString);
+                                       NullString());
             NS_ENSURE_SUCCESS(rv, rv);
 
             nsCOMPtr<nsIContent> docType = do_QueryInterface(documentType);

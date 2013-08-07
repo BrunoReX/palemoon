@@ -77,12 +77,33 @@ gcli.addCommand({
 gcli.addCommand({
   name: "console clear",
   description: gcli.lookup("consoleclearDesc"),
-  exec: function(args, context) {
+  exec: function Command_consoleClear(args, context) {
+    let window = context.environment.chromeDocument.defaultView;
     let hud = HUDService.getHudReferenceById(context.environment.hudId);
-    hud.gcliterm.clearOutput();
+
+    // Use a timeout so we also clear the reporting of the clear command
+    let threadManager = Components.classes["@mozilla.org/thread-manager;1"]
+        .getService(Components.interfaces.nsIThreadManager);
+    threadManager.mainThread.dispatch({
+      run: function() {
+        hud.gcliterm.clearOutput();
+      }
+    }, Components.interfaces.nsIThread.DISPATCH_NORMAL);
   }
 });
 
+
+/**
+ * 'console close' command
+ */
+gcli.addCommand({
+  name: "console close",
+  description: gcli.lookup("consolecloseDesc"),
+  exec: function Command_consoleClose(args, context) {
+    let tab = HUDService.getHudReferenceById(context.environment.hudId).tab;
+    HUDService.deactivateHUDForContext(tab);
+  }
+});
 
 /**
  * 'inspect' command
@@ -100,8 +121,7 @@ gcli.addCommand({
     }
   ],
   exec: function Command_inspect(args, context) {
-    let hud = HUDService.getHudReferenceById(context.environment.hudId);
-    let InspectorUI = hud.gcliterm.document.defaultView.InspectorUI;
-    InspectorUI.openInspectorUI(args.node);
+    let document = context.environment.chromeDocument;
+    document.defaultView.InspectorUI.openInspectorUI(args.node);
   }
 });

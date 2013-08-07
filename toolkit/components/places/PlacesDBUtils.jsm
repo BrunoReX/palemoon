@@ -78,6 +78,11 @@ let PlacesDBUtils = {
    */
   _executeTasks: function PDBU__executeTasks(aTasks)
   {
+    if (PlacesDBUtils._isShuttingDown) {
+      tasks.log("- We are shutting down. Will not schedule the tasks.");
+      aTasks.clear();
+    }
+
     let task = aTasks.pop();
     if (task) {
       task.call(PlacesDBUtils, aTasks);
@@ -100,6 +105,11 @@ let PlacesDBUtils = {
       Services.prefs.setIntPref("places.database.lastMaintenance", parseInt(Date.now() / 1000));
       Services.obs.notifyObservers(null, FINISHED_MAINTENANCE_TOPIC, null);
     }
+  },
+
+  _isShuttingDown : false,
+  shutdown: function PDBU_shutdown() {
+    PlacesDBUtils._isShuttingDown = true;
   },
 
   /**
@@ -908,11 +918,11 @@ let PlacesDBUtils = {
         }
       },
 
-      PLACES_DATABASE_PAGESIZE_B: "PRAGMA page_size",
+      PLACES_DATABASE_PAGESIZE_B: "PRAGMA page_size /* PlacesDBUtils.jsm PAGESIZE_B */",
 
       PLACES_DATABASE_SIZE_PER_PAGE_B: function() {
         // Cannot use the filesize here, due to chunked growth.
-        let stmt = DBConn.createStatement("PRAGMA page_size");
+        let stmt = DBConn.createStatement("PRAGMA page_size /* PlacesDBUtils.jsm SIZE_PER_PAGE_B */");
         stmt.executeStep();
         let pageSize = stmt.row.page_size;
         stmt.finalize();

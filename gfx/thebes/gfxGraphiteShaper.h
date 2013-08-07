@@ -43,21 +43,18 @@
 #include "nsDataHashtable.h"
 #include "nsHashKeys.h"
 
-class gr_face;
-class gr_font;
-class gr_segment;
+struct gr_face;
+struct gr_font;
+struct gr_segment;
 
 class gfxGraphiteShaper : public gfxFontShaper {
 public:
     gfxGraphiteShaper(gfxFont *aFont);
     virtual ~gfxGraphiteShaper();
 
-    virtual bool InitTextRun(gfxContext *aContext,
-                               gfxTextRun *aTextRun,
-                               const PRUnichar *aString,
-                               PRUint32 aRunStart,
-                               PRUint32 aRunLength,
-                               PRInt32 aRunScript);
+    virtual bool ShapeWord(gfxContext *aContext,
+                           gfxShapedWord *aShapedWord,
+                           const PRUnichar *aText);
 
     const void* GetTable(PRUint32 aTag, size_t *aLength);
 
@@ -76,9 +73,7 @@ public:
     };
 
 protected:
-    nsresult SetGlyphsFromSegment(gfxTextRun *aTextRun,
-                                  PRUint32 aRunStart,
-                                  PRUint32 aRunLength,
+    nsresult SetGlyphsFromSegment(gfxShapedWord *aShapedWord,
                                   gr_segment *aSegment);
 
     gr_face *mGrFace;

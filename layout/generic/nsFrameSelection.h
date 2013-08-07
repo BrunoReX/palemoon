@@ -38,6 +38,8 @@
 #ifndef nsFrameSelection_h___
 #define nsFrameSelection_h___
 
+#include "mozilla/Attributes.h"
+
 #include "nsIFrame.h"
 #include "nsIContent.h"
 #include "nsISelectionController.h"
@@ -45,7 +47,7 @@
 #include "nsITableCellLayout.h"
 #include "nsIDOMElement.h"
 #include "nsGUIEvent.h"
-#include "nsIRange.h"
+#include "nsRange.h"
 
 // IID for the nsFrameSelection interface
 // 3c6ae2d0-4cf1-44a1-9e9d-2411867f19c6
@@ -210,7 +212,7 @@ class nsIScrollableFrame;
  * or they may cause other objects to be deleted.
  */
 
-class nsFrameSelection : public nsISupports {
+class nsFrameSelection MOZ_FINAL : public nsISupports {
 public:
   enum HINT { HINTLEFT = 0, HINTRIGHT = 1};  //end of this line or beginning of next
   /*interfaces for addref and release and queryinterface*/
@@ -682,12 +684,12 @@ private:
   // Get our first range, if its first selected node is a cell.  If this does
   // not return null, then the first node in the returned range is a cell
   // (according to GetFirstCellNodeInRange).
-  nsIRange* GetFirstCellRange();
+  nsRange* GetFirstCellRange();
   // Get our next range, if its first selected node is a cell.  If this does
   // not return null, then the first node in the returned range is a cell
   // (according to GetFirstCellNodeInRange).
-  nsIRange* GetNextCellRange();
-  nsIContent* GetFirstCellNodeInRange(nsIRange *aRange) const;
+  nsRange* GetNextCellRange();
+  nsIContent* GetFirstCellNodeInRange(nsRange *aRange) const;
   // Returns non-null table if in same table, null otherwise
   nsIContent* IsInSameTable(nsIContent *aContent1, nsIContent *aContent2) const;
   // Might return null
@@ -704,7 +706,7 @@ private:
   PRInt32  mSelectedCellIndex;
 
   // maintain selection
-  nsCOMPtr<nsIRange> mMaintainRange;
+  nsRefPtr<nsRange> mMaintainRange;
   nsSelectionAmount mMaintainedAmount;
 
   //batching

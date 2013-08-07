@@ -595,8 +595,7 @@ let Content = {
       }
 
       case "Browser:SetCharset": {
-        let docCharset = docShell.QueryInterface(Ci.nsIDocCharset);
-        docCharset.charset = json.charset;
+        docShell.charset = json.charset;
 
         let webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
         webNav.reload(Ci.nsIWebNavigation.LOAD_FLAGS_CHARSET_CHANGE);
@@ -1454,7 +1453,7 @@ var SelectionHandler = {
         if (selection.rangeCount == 0)
           return;
 
-        let range = selection.getRangeAt(0).QueryInterface(Ci.nsIDOMNSRange);
+        let range = selection.getRangeAt(0);
         if (!range)
           return;
 
@@ -1534,7 +1533,7 @@ var SelectionHandler = {
         this.selectedText = selection.toString().trim();
 
         // Update the rect we use to test when finishing the clipboard operation
-        let range = selection.getRangeAt(0).QueryInterface(Ci.nsIDOMNSRange);
+        let range = selection.getRangeAt(0)
         this.cache.rect = this._extractFromRange(range, this.cache.offset).rect;
         break;
       }

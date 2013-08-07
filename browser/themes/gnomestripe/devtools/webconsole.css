@@ -67,6 +67,7 @@
   color: GrayText;
   margin-top: 0;
   margin-bottom: 0;
+  font: 12px "DejaVu Sans Mono", monospace;
 }
 
 .hud-msg-node {
@@ -91,6 +92,7 @@
   -moz-margin-start: 3px;
   -moz-margin-end: 6px;
   white-space: pre-wrap;
+  font: 12px "DejaVu Sans Mono", monospace;
 }
 
 .webconsole-msg-body-piece {
@@ -133,7 +135,6 @@
   color: inherit;
 }
 
-.hud-output-node,
 .jsterm-input-node,
 .jsterm-complete-node {
   font: 12px "DejaVu Sans Mono", monospace;

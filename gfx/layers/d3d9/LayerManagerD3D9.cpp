@@ -70,9 +70,9 @@ LayerManagerD3D9::~LayerManagerD3D9()
 }
 
 bool
-LayerManagerD3D9::Initialize()
+LayerManagerD3D9::Initialize(bool force)
 {
-  ScopedGfxFeatureReporter reporter("D3D9 Layers");
+  ScopedGfxFeatureReporter reporter("D3D9 Layers", force);
 
   /* XXX: this preference and blacklist code should move out of the layer manager */
   bool forceAccelerate =
@@ -354,6 +354,7 @@ LayerManagerD3D9::Render()
          (r = iter.Next()) != nsnull;) {
       mSwapChain->Present(*r);
     }
+    LayerManager::PostPresent();
   } else {
     PaintToTarget();
   }

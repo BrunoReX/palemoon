@@ -424,10 +424,10 @@ ForceFrame::enter()
     JS_ASSERT(context->compartment == target->compartment());
     JSCompartment *destination = context->compartment;
 
-    JSObject *scopeChain = target->getGlobal();
-    JS_ASSERT(scopeChain->isNative());
+    JSObject &scopeChain = target->global();
+    JS_ASSERT(scopeChain.isNative());
 
-    return context->stack.pushDummyFrame(context, destination, *scopeChain, frame);
+    return context->stack.pushDummyFrame(context, destination, scopeChain, frame);
 }
 
 AutoCompartment::AutoCompartment(JSContext *cx, JSObject *target)
@@ -450,11 +450,11 @@ AutoCompartment::enter()
 {
     JS_ASSERT(!entered);
     if (origin != destination) {
-        JSObject *scopeChain = target->getGlobal();
-        JS_ASSERT(scopeChain->isNative());
+        JSObject &scopeChain = target->global();
+        JS_ASSERT(scopeChain.isNative());
 
         frame.construct();
-        if (!context->stack.pushDummyFrame(context, destination, *scopeChain, &frame.ref()))
+        if (!context->stack.pushDummyFrame(context, destination, scopeChain, &frame.ref()))
             return false;
 
         if (context->isExceptionPending())
@@ -670,10 +670,14 @@ Reify(JSContext *cx, JSCompartment *origin, Value *vp)
     bool isKeyIter = ni->isKeyIter();
     AutoIdVector keys(cx);
     if (length > 0) {
-        if (!keys.resize(length))
+        if (!keys.reserve(length))
             return false;
         for (size_t i = 0; i < length; ++i) {
-            keys[i] = ni->begin()[i];
+            jsid id;
+            if (!ValueToId(cx, StringValue(ni->begin()[i]), &id))
+                return false;
+            id = js_CheckForStringIndex(id);
+            keys.infallibleAppend(id);
             if (!origin->wrapId(cx, &keys[i]))
                 return false;
         }
@@ -860,7 +864,7 @@ SecurityWrapper<Base>::nativeCall(JSContext *cx, JSObject *wrapper, Class *clasp
                                   CallArgs args)
 {
     /*
-     * Let this through until compartment-per-global let's us have stronger
+     * Let this through until compartment-per-global lets us have stronger
      * invariants wrt document.domain (bug 714547).
      */
     return Base::nativeCall(cx, wrapper, clasp, native, args);
@@ -871,7 +875,7 @@ bool
 SecurityWrapper<Base>::objectClassIs(JSObject *obj, ESClassValue classValue, JSContext *cx)
 {
     /*
-     * Let this through until compartment-per-global let's us have stronger
+     * Let this through until compartment-per-global lets us have stronger
      * invariants wrt document.domain (bug 714547).
      */
     return Base::objectClassIs(obj, classValue, cx);

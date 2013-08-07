@@ -132,7 +132,6 @@ abstract public class GeckoApp
     private IntentFilter mConnectivityFilter;
 
     private BroadcastReceiver mConnectivityReceiver;
-    private BroadcastReceiver mSmsReceiver;
     private BroadcastReceiver mBatteryReceiver;
 
     public static BrowserToolbar mBrowserToolbar;
@@ -203,22 +202,6 @@ abstract public class GeckoApp
             sLaunchState = setState;
             return true;
         }
-    }
-
-    void showErrorDialog(String message)
-    {
-        new AlertDialog.Builder(this)
-            .setMessage(message)
-            .setCancelable(false)
-            .setPositiveButton(R.string.exit_label,
-                               new DialogInterface.OnClickListener() {
-                                   public void onClick(DialogInterface dialog,
-                                                       int id)
-                                   {
-                                       GeckoApp.this.finish();
-                                       System.exit(0);
-                                   }
-                               }).show();
     }
 
     public static final String PLUGIN_ACTION = "android.webkit.PLUGIN";
@@ -416,7 +399,7 @@ abstract public class GeckoApp
                 final MenuItem mi = aMenu.add(Menu.NONE, item.id, Menu.NONE, item.label);
                 if (item.icon != null) {
                     if (item.icon.startsWith("data")) {
-                        byte[] raw = GeckoAppShell.decodeBase64(item.icon.substring(22));
+                        byte[] raw = GeckoAppShell.decodeBase64(item.icon.substring(22), GeckoAppShell.BASE64_DEFAULT);
                         Bitmap bitmap = BitmapFactory.decodeByteArray(raw, 0, raw.length);
                         BitmapDrawable drawable = new BitmapDrawable(bitmap);
                         mi.setIcon(drawable);
@@ -1839,13 +1822,14 @@ abstract public class GeckoApp
         mBatteryReceiver = new GeckoBatteryManager();
         registerReceiver(mBatteryReceiver, batteryFilter);
 
-        IntentFilter smsFilter = new IntentFilter();
-        smsFilter.addAction("android.provider.Telephony.SMS_RECEIVED");
-        mSmsReceiver = new GeckoSmsManager();
-        registerReceiver(mSmsReceiver, smsFilter);
+        if (SmsManager.getInstance() != null) {
+          SmsManager.getInstance().start();
+        }
+
+        GeckoNetworkManager.getInstance().init();
 
         final GeckoApp self = this;
- 
+
         GeckoAppShell.getHandler().postDelayed(new Runnable() {
             public void run() {
                 Log.w(LOGTAG, "zerdatime " + SystemClock.uptimeMillis() + " - pre checkLaunchState");
@@ -2075,6 +2059,7 @@ abstract public class GeckoApp
         super.onPause();
 
         unregisterReceiver(mConnectivityReceiver);
+        GeckoNetworkManager.getInstance().stop();
     }
 
     @Override
@@ -2099,6 +2084,8 @@ abstract public class GeckoApp
             onNewIntent(getIntent());
 
         registerReceiver(mConnectivityReceiver, mConnectivityFilter);
+        GeckoNetworkManager.getInstance().start();
+
         if (mOwnActivityDepth > 0)
             mOwnActivityDepth--;
     }
@@ -2175,9 +2162,16 @@ abstract public class GeckoApp
 
         mFavicons.close();
 
+        if (SmsManager.getInstance() != null) {
+            SmsManager.getInstance().stop();
+            if (isFinishing())
+                SmsManager.getInstance().shutdown();
+        }
+
+        GeckoNetworkManager.getInstance().stop();
+
         super.onDestroy();
 
-        unregisterReceiver(mSmsReceiver);
         unregisterReceiver(mBatteryReceiver);
     }
 

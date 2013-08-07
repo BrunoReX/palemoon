@@ -59,7 +59,7 @@ namespace mozilla {
 
 using namespace dom;
 
-namespace imagelib {
+namespace image {
 
 // Helper-class: SVGRootRenderingObserver
 class SVGRootRenderingObserver : public nsSVGRenderingObserver {
@@ -699,7 +699,7 @@ VectorImage::OnStopRequest(nsIRequest* aRequest, nsISupports* aCtxt,
     // NOTE: This signals that width/height are available.
     observer->OnStartContainer(nsnull, this);
 
-    observer->FrameChanged(this, &nsIntRect::GetMaxSizedIntRect());
+    observer->FrameChanged(nsnull, this, &nsIntRect::GetMaxSizedIntRect());
     observer->OnStopFrame(nsnull, 0);
     observer->OnStopDecode(nsnull, NS_OK, nsnull);
   }
@@ -738,7 +738,7 @@ VectorImage::InvalidateObserver()
 
   nsCOMPtr<imgIContainerObserver> containerObs(do_QueryReferent(mObserver));
   if (containerObs) {
-    containerObs->FrameChanged(this, &nsIntRect::GetMaxSizedIntRect());
+    containerObs->FrameChanged(nsnull, this, &nsIntRect::GetMaxSizedIntRect());
   }
 
   nsCOMPtr<imgIDecoderObserver> decoderObs(do_QueryReferent(mObserver));
@@ -747,5 +747,5 @@ VectorImage::InvalidateObserver()
   }
 }
 
-} // namespace imagelib
+} // namespace image
 } // namespace mozilla

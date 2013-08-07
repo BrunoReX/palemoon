@@ -880,8 +880,8 @@ public:
     MaybeRescheduleAnimationFrameNotifications();
   }
 
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(nsDocument,
-                                                         nsIDocument)
+  NS_DECL_CYCLE_COLLECTION_SKIPPABLE_SCRIPT_HOLDER_CLASS_AMBIGUOUS(nsDocument,
+                                                                   nsIDocument)
 
   void DoNotifyPossibleTitleChange();
 
@@ -1190,6 +1190,10 @@ protected:
   // Whether we're currently under a FlushPendingNotifications call to
   // our presshell.  This is used to handle flush reentry correctly.
   bool mInFlush:1;
+
+  // Parser aborted. True if the parser of this document was forcibly
+  // terminated instead of letting it finish at its own pace.
+  bool mParserAborted:1;
 
   PRUint8 mXMLDeclarationBits;
 

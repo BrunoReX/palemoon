@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  *
  * ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
@@ -39,6 +39,8 @@
 
 #ifndef jscompartment_h___
 #define jscompartment_h___
+
+#include "mozilla/Attributes.h"
 
 #include "jsclist.h"
 #include "jscntxt.h"
@@ -162,7 +164,12 @@ typedef HashSet<ScriptFilenameEntry *,
 
 } /* namespace js */
 
-struct JS_FRIEND_API(JSCompartment) {
+namespace JS {
+struct TypeInferenceSizes;
+}
+
+struct JSCompartment
+{
     JSRuntime                    *rt;
     JSPrincipals                 *principals;
 
@@ -182,9 +189,10 @@ struct JS_FRIEND_API(JSCompartment) {
         return createBarrierTracer();
     }
 
-    uint32_t                     gcBytes;
-    uint32_t                     gcTriggerBytes;
+    size_t                       gcBytes;
+    size_t                       gcTriggerBytes;
     size_t                       gcLastBytes;
+    size_t                       gcMaxMallocBytes;
 
     bool                         hold;
     bool                         isSystemCompartment;
@@ -233,8 +241,12 @@ struct JS_FRIEND_API(JSCompartment) {
 
     bool ensureJaegerCompartmentExists(JSContext *cx);
 
-    void sizeOfCode(size_t *method, size_t *regexp, size_t *unused) const;
+    size_t sizeOfMjitCode() const;
 #endif
+
+    size_t sizeOfShapeTable(JSMallocSizeOfFun mallocSizeOf);
+    void sizeOfTypeInferenceData(JSContext *cx, JS::TypeInferenceSizes *stats,
+                                 JSMallocSizeOfFun mallocSizeOf);
 
     /*
      * Shared scope property tree, and arena-pool for allocating its nodes.
@@ -276,6 +288,12 @@ struct JS_FRIEND_API(JSCompartment) {
     enum { DebugFromC = 1, DebugFromJS = 2 };
 
     uintN                        debugModeBits;  // see debugMode() below
+    
+    /*
+     * Malloc counter to measure memory pressure for GC scheduling. It runs
+     * from gcMaxMallocBytes down to zero.
+     */
+    volatile ptrdiff_t           gcMallocBytes;
 
   public:
     js::NativeIterCache          nativeIterCache;
@@ -308,7 +326,19 @@ struct JS_FRIEND_API(JSCompartment) {
     void purge(JSContext *cx);
 
     void setGCLastBytes(size_t lastBytes, JSGCInvocationKind gckind);
-    void reduceGCTriggerBytes(uint32_t amount);
+    void reduceGCTriggerBytes(size_t amount);
+    
+    void resetGCMallocBytes();
+    void setGCMaxMallocBytes(size_t value);
+    void updateMallocCounter(size_t nbytes) {
+        ptrdiff_t oldCount = gcMallocBytes;
+        ptrdiff_t newCount = oldCount - ptrdiff_t(nbytes);
+        gcMallocBytes = newCount;
+        if (JS_UNLIKELY(newCount <= 0 && oldCount > 0))
+            onTooMuchMalloc();
+    }
+    
+    void onTooMuchMalloc();
 
     js::DtoaCache dtoaCache;
 
@@ -469,9 +499,8 @@ class AutoCompartment
     void leave();
 
   private:
-    // Prohibit copying.
-    AutoCompartment(const AutoCompartment &);
-    AutoCompartment & operator=(const AutoCompartment &);
+    AutoCompartment(const AutoCompartment &) MOZ_DELETE;
+    AutoCompartment & operator=(const AutoCompartment &) MOZ_DELETE;
 };
 
 /*

@@ -297,8 +297,7 @@ nsHttpTransaction::Init(PRUint8 caps,
                      getter_AddRefs(mPipeOut),
                      true, true,
                      nsIOService::gDefaultSegmentSize,
-                     nsIOService::gDefaultSegmentCount,
-                     nsIOService::gBufferCache);
+                     nsIOService::gDefaultSegmentCount);
     if (NS_FAILED(rv)) return rv;
 
     NS_ADDREF(*responseBody = mPipeIn);
@@ -1299,7 +1298,8 @@ NS_IMETHODIMP
 nsHttpTransaction::OnInputStreamReady(nsIAsyncInputStream *out)
 {
     if (mConnection) {
-        nsresult rv = mConnection->ResumeSend(this);
+        mConnection->TransactionHasDataToWrite(this);
+        nsresult rv = mConnection->ResumeSend();
         if (NS_FAILED(rv))
             NS_ERROR("ResumeSend failed");
     }
@@ -1315,7 +1315,7 @@ NS_IMETHODIMP
 nsHttpTransaction::OnOutputStreamReady(nsIAsyncOutputStream *out)
 {
     if (mConnection) {
-        nsresult rv = mConnection->ResumeRecv(this);
+        nsresult rv = mConnection->ResumeRecv();
         if (NS_FAILED(rv))
             NS_ERROR("ResumeRecv failed");
     }

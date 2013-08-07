@@ -29,12 +29,16 @@ pref("browser.search.param.yahoo-fr", "moz35");
 pref("browser.search.param.yahoo-fr-cjkt", "moz35"); // now unused
 pref("browser.search.param.yahoo-fr-ja", "mozff");
 
-//Palemoon tweaks
+//Palemoon networking tweaks
 pref("network.prefetch-next", false); //prefetching engine off by default!
 pref("network.http.pipelining"      , true); //pipelining on by default, haven't seen any issues
 pref("network.http.pipelining.ssl"  , true); 
 pref("network.http.proxy.pipelining", false); // pipeline proxy requests - breaks some proxies! (406)
 pref("network.http.pipelining.maxrequests", 12);  // Max number of requests in the pipeline
+pref("network.http.max-connections",48); // Don't saturate the network layer and go easy on poor residential routers&wireless! (FF=256)
+pref("network.http.max-connections-per-server",6); // With pipelining, this should be low (FF=15)
+pref("network.http.max-persistent-connections-per-proxy", 8);
+pref("network.http.max-persistent-connections-per-server", 6);
 
 pref("browser.tabs.insertRelatedAfterCurrent", false); //use old method of tabbed browsing instead of "Chrome" style
 pref("general.warnOnAboutConfig", false); //about:config warning. annoying. I don't give warranty.
@@ -66,13 +70,13 @@ pref("network.dnsCacheExpiration", 3600); //TTL 1 hour
 pref("nglayout.initialpaint.delay", 150);
 
 //webGL
-//v11: re-enabled for native OpenGL webgl. OpenGL layers are broken.
-pref("webgl.prefer-native-gl", true); 
+//v11.1: flipped back off - still implementation errors.
+pref("webgl.prefer-native-gl", false); 
 //enable it even if ANGLE isn't built. Will disable anyway if no GL driver present.
 pref("webgl.force-enabled", true); 
 
 //D2D/DirectWrite
-pref("gfx.font_rendering.directwrite.enabled", true); //v11: flipped back on
+pref("gfx.font_rendering.directwrite.enabled", false); //Too many issues with this!
 //D2D force may cause issues for poor drivers, so off by default.
 pref("gfx.direct2d.force-enabled", false);
 
@@ -108,17 +112,10 @@ pref("browser.dictionaries.download.url", "https://addons.mozilla.org/%LOCALE%/f
 //Geolocation info URL (3613)
 pref("browser.geolocation.warning.infoURL", "http://www.mozilla.com/%LOCALE%/firefox/geolocation/");
 
-//Pale Moon 5 specific
-
-//Pale Moon 6 specific
-
 //give people a choice for add-on updates.
 pref("extensions.update.autoUpdateDefault", false);
 
-//Pale Moon 7 specific
 pref("browser.urlbar.trimURLs", false); //stop being a derp, Mozilla!
-
-//Pale Moon 8/9/11 specific
 
 //cache handling 1GB -> 200MB by default, disable automatic
 //max element size 5MB -> 4MB/1MB, caching anything larger is not recommended
@@ -130,12 +127,6 @@ pref("browser.cache.memory.max_entry_size",1024);
 
 //image RAM cache size for *decoded* images; 256MB should be enough here;
 pref("image.cache.size",256000);
-
-//Barring a better control mechanism for now, accept all add-ons in $instdir\Pale Moon\extensions
-// no longer needed in v11: integrated status bar functionality bypasses extension manager
-//pref("extensions.autoDisableScopes", 11);
-
-//Pale Moon 9 specific
 
 //Improve memory handling for js
 pref("javascript.options.mem.gc_per_compartment", false);
@@ -160,8 +151,6 @@ pref("image.mem.max_ms_before_yield", 500);
 //add-on/plugin blocklist -> Palemoon.org
 pref("extensions.blocklist.url","http://blocklist.palemoon.org/%VERSION%/blocklist.xml");
 
-//Pale Moon 11 specific
-
 //store sessions less frequently to prevent redundant mem usage by storing too much
 pref("browser.sessionstore.interval",60000); //every minute instead of every 10 seconds
 pref("browser.sessionstore.privacy_level",1); //don't store session data (forms, etc) for secure sites
@@ -173,3 +162,6 @@ pref("devtools.inspector.enabled",false);
 pref("devtools.styleeditor.enabled",false); //NIIB
 pref("devtools.styleinspector.enabled",false); //NIIB
 pref("devtools.tilt.enabled",false); //Tilt? WHY? NIIB
+
+//Set Tabs NOT on top.
+pref("browser.tabs.onTop",false);

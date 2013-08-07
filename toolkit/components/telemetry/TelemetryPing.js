@@ -18,6 +18,7 @@
  *
  * Contributor(s):
  *   Taras Glek <tglek@mozilla.com>
+ *   Vladan Djeric <vdjeric@mozilla.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -56,8 +57,9 @@ const MEM_HISTOGRAMS = {
   "js-gc-heap": "MEMORY_JS_GC_HEAP",
   "js-compartments-system": "MEMORY_JS_COMPARTMENTS_SYSTEM",
   "js-compartments-user": "MEMORY_JS_COMPARTMENTS_USER",
+  "explicit": "MEMORY_EXPLICIT",
   "resident": "MEMORY_RESIDENT",
-  "explicit/storage/sqlite": "MEMORY_STORAGE_SQLITE",
+  "storage-sqlite": "MEMORY_STORAGE_SQLITE",
   "explicit/images/content/used/uncompressed":
     "MEMORY_IMAGES_CONTENT_USED_UNCOMPRESSED",
   "heap-allocated": "MEMORY_HEAP_ALLOCATED",
@@ -105,13 +107,27 @@ function getSimpleMeasurements() {
     uptime: Math.round((new Date() - si.process) / 60000)
   }
 
+  // Look for app-specific timestamps
+  var appTimestamps = {};
+  try {
+    let o = {};
+    Cu.import("resource:///modules/TelemetryTimestamps.jsm", o);
+    appTimestamps = o.TelemetryTimestamps.get();
+  } catch (ex) {}
+
   if (si.process) {
     for each (let field in ["main", "firstPaint", "sessionRestored"]) {
       if (!(field in si))
         continue;
       ret[field] = si[field] - si.process
     }
+
+    for (let p in appTimestamps) {
+      if (!(p in ret) && appTimestamps[p])
+        ret[p] = appTimestamps[p] - si.process;
+    }
   }
+
   ret.startupInterrupted = new Number(Services.startup.interrupted);
 
   ret.js = Cc["@mozilla.org/js/xpc/XPConnect;1"]
@@ -163,7 +179,9 @@ TelemetryPing.prototype = {
   _histograms: {},
   _initialized: false,
   _prevValues: {},
-  _sqliteOverhead: {},
+  // Generate a unique id once per session so the server can cope with
+  // duplicate submissions.
+  _uuid: generateUUID(),
 
   /**
    * Returns a set of histograms that can be converted into JSON
@@ -174,19 +192,11 @@ TelemetryPing.prototype = {
    */
   getHistograms: function getHistograms() {
     let hls = Telemetry.histogramSnapshots;
+    let info = Telemetry.registeredHistograms;
     let ret = {};
 
-    // bug 701583: report sqlite overhead on startup
-    for (let key in this._sqliteOverhead) {
-      hls[key] = this._sqliteOverhead[key];
-    }
-
-    for (let key in hls) {
-      let hgram = hls[key];
-      if (!hgram.static)
-        continue;
-
-      let r = hgram.ranges;
+    function processHistogram(name, hgram) {
+      let r = hgram.ranges;;
       let c = hgram.counts;
       let retgram = {
         range: [r[1], r[r.length - 1]],
@@ -216,8 +226,18 @@ TelemetryPing.prototype = {
       // add an upper bound
       if (last && last < c.length)
         retgram.values[r[last]] = 0;
-      ret[key] = retgram;
+      ret[name] = retgram;
+    };
+
+    for (let name in hls) {
+      if (info[name]) {
+        processHistogram(name, hls[name]);
+        let startup_name = "STARTUP_" + name;
+        if (hls[startup_name])
+          processHistogram(startup_name, hls[startup_name]);
+      }
     }
+
     return ret;
   },
 
@@ -272,6 +292,30 @@ TelemetryPing.prototype = {
       ret[field] = value
     }
 
+    // gfxInfo fields are not always available, get what we can.
+    let gfxInfo = Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfo);
+    let gfxfields = ["adapterDescription", "adapterVendorID", "adapterDeviceID",
+                     "adapterRAM", "adapterDriver", "adapterDriverVersion",
+                     "adapterDriverDate", "adapterDescription2",
+                     "adapterVendorID2", "adapterDeviceID2", "adapterRAM2",
+                     "adapterDriver2", "adapterDriverVersion2",
+                     "adapterDriverDate2", "isGPU2Active", "D2DEnabled;",
+                     "DWriteEnabled", "DWriteVersion"
+                    ];
+
+    if (gfxInfo) {
+      for each (let field in gfxfields) {
+        try {
+          let value = "";
+          value = gfxInfo[field];
+          if (value != "")
+            ret[field] = value;
+        } catch (e) {
+          continue
+        }
+      }
+    }
+
     let theme = LightweightThemeManager.currentTheme;
     if (theme)
       ret.persona = theme.id;
@@ -299,33 +343,36 @@ TelemetryPing.prototype = {
     while (e.hasMoreElements()) {
       let mr = e.getNext().QueryInterface(Ci.nsIMemoryReporter);
       let id = MEM_HISTOGRAMS[mr.path];
-      if (!id || mr.amount == -1) {
+      if (!id) {
+        continue;
+      }
+      // mr.amount is expensive to read in some cases, so get it only once.
+      let amount = mr.amount;
+      if (amount == -1) {
         continue;
       }
 
       let val;
       if (mr.units == Ci.nsIMemoryReporter.UNITS_BYTES) {
-        val = Math.floor(mr.amount / 1024);
+        val = Math.floor(amount / 1024);
       }
       else if (mr.units == Ci.nsIMemoryReporter.UNITS_COUNT) {
-        val = mr.amount;
+        val = amount;
       }
       else if (mr.units == Ci.nsIMemoryReporter.UNITS_COUNT_CUMULATIVE) {
         // If the reporter gives us a cumulative count, we'll report the
         // difference in its value between now and our previous ping.
 
-        // Read mr.amount just once so our arithmetic is consistent.
-        let curVal = mr.amount;
         if (!(mr.path in this._prevValues)) {
           // If this is the first time we're reading this reporter, store its
           // current value but don't report it in the telemetry ping, so we
           // ignore the effect startup had on the reporter.
-          this._prevValues[mr.path] = curVal;
+          this._prevValues[mr.path] = amount;
           continue;
         }
 
-        val = curVal - this._prevValues[mr.path];
-        this._prevValues[mr.path] = curVal;
+        val = amount - this._prevValues[mr.path];
+        this._prevValues[mr.path] = amount;
       }
       else {
         NS_ASSERT(false, "Can't handle memory reporter with units " + mr.units);
@@ -333,23 +380,32 @@ TelemetryPing.prototype = {
       }
       this.addValue(mr.path, id, val);
     }
-    // "explicit" is found differently.
-    let explicit = mgr.explicit;    // Get it only once, it's reasonably expensive
-    if (explicit != -1) {
-      this.addValue("explicit", "MEMORY_EXPLICIT", Math.floor(explicit / 1024));
-    }
   },
   
   /** 
    * Make a copy of sqlite histograms on startup
    */
   gatherStartupSqlite: function gatherStartupSqlite() {
-    let hls = Telemetry.histogramSnapshots;
+    let info = Telemetry.registeredHistograms;
     let sqlite_re = /SQLITE/;
-    for (let key in hls) {
-      if (sqlite_re.test(key))
-        this._sqliteOverhead["STARTUP_" + key] = hls[key];
+    for (let name in info) {
+      if (sqlite_re.test(name))
+        Telemetry.histogramFrom("STARTUP_" + name, name);
     }
+  },
+
+  getSessionPayloadAndSlug: function getSessionPayloadAndSlug(reason) {
+    let isTestPing = (reason == "test-ping");
+    let slug = (isTestPing ? reason : this._uuid);
+    let payloadObj = {
+      ver: PAYLOAD_VERSION,
+      info: this.getMetadata(reason),
+      simpleMeasurements: getSimpleMeasurements(),
+      histograms: this.getHistograms(),
+      slowSQL: Telemetry.slowSQL
+    };
+
+    return { slug: slug, payload: JSON.stringify(payloadObj) };
   },
 
   /**
@@ -358,23 +414,15 @@ TelemetryPing.prototype = {
   send: function send(reason, server) {
     // populate histograms one last time
     this.gatherMemory();
-    let payload = {
-      ver: PAYLOAD_VERSION,
-      info: this.getMetadata(reason),
-      simpleMeasurements: getSimpleMeasurements(),
-      histograms: this.getHistograms()
-    };
 
+    let data = this.getSessionPayloadAndSlug(reason);
     let isTestPing = (reason == "test-ping");
-    // Generate a unique id once per session so the server can cope with duplicate submissions.
-    // Use a deterministic url for testing.
-    if (!this._path)
-      this._path = "/submit/telemetry/" + (isTestPing ? reason : generateUUID());
+    let submitPath = "/submit/telemetry/" + data.slug;
     
     let hping = Telemetry.getHistogramById("TELEMETRY_PING");
     let hsuccess = Telemetry.getHistogramById("TELEMETRY_SUCCESS");
 
-    let url = server + this._path;
+    let url = server + submitPath;
     let request = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
                   .createInstance(Ci.nsIXMLHttpRequest);
     request.mozBackgroundRequest = true;
@@ -398,7 +446,7 @@ TelemetryPing.prototype = {
     request.addEventListener("error", function(aEvent) finishRequest(request.channel), false);
     request.addEventListener("load", function(aEvent) finishRequest(request.channel), false);
 
-    request.send(JSON.stringify(payload));
+    request.send(data.payload);
   },
   
   attachObservers: function attachObservers() {
@@ -510,6 +558,12 @@ TelemetryPing.prototype = {
         idleService.addIdleObserver(this, IDLE_TIMEOUT_SECONDS);
         this._isIdleObserver = true;
       }).bind(this), Ci.nsIThread.DISPATCH_NORMAL);
+      break;
+    case "get-payload":
+      this.gatherMemory();
+      let data = this.getSessionPayloadAndSlug("gather-payload");
+
+      aSubject.QueryInterface(Ci.nsISupportsString).data = data.payload;
       break;
     case "test-ping":
       server = aData;

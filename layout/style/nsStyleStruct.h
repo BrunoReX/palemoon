@@ -48,6 +48,8 @@
 #ifndef nsStyleStruct_h___
 #define nsStyleStruct_h___
 
+#include "mozilla/Attributes.h"
+
 #include "nsColor.h"
 #include "nsCoord.h"
 #include "nsMargin.h"
@@ -111,6 +113,9 @@ struct nsStyleFont {
   nsStyleFont(const nsFont& aFont, nsPresContext *aPresContext);
   nsStyleFont(const nsStyleFont& aStyleFont);
   nsStyleFont(nsPresContext *aPresContext);
+private:
+  void Init(nsPresContext *aPresContext);
+public:
   ~nsStyleFont(void) {
     MOZ_COUNT_DTOR(nsStyleFont);
   }
@@ -144,6 +149,7 @@ struct nsStyleFont {
   nscoord mScriptUnconstrainedSize;
   nscoord mScriptMinSize;        // [inherited] length
   float   mScriptSizeMultiplier; // [inherited]
+  nsCOMPtr<nsIAtom> mLanguage;   // [inherited]
 };
 
 struct nsStyleGradientStop {
@@ -179,9 +185,8 @@ public:
 private:
   ~nsStyleGradient() {}
 
-  // Not to be implemented
-  nsStyleGradient(const nsStyleGradient& aOther);
-  nsStyleGradient& operator=(const nsStyleGradient& aOther);
+  nsStyleGradient(const nsStyleGradient& aOther) MOZ_DELETE;
+  nsStyleGradient& operator=(const nsStyleGradient& aOther) MOZ_DELETE;
 };
 
 enum nsStyleImageType {
@@ -938,7 +943,7 @@ private:
 
   nscoord       mTwipsPerPixel;
 
-  nsStyleBorder& operator=(const nsStyleBorder& aOther); // Not to be implemented
+  nsStyleBorder& operator=(const nsStyleBorder& aOther) MOZ_DELETE;
 };
 
 
@@ -1064,7 +1069,7 @@ struct nsStyleList {
   PRUint8   mListStylePosition;         // [inherited]
 private:
   nsCOMPtr<imgIRequest> mListStyleImage; // [inherited]
-  nsStyleList& operator=(const nsStyleList& aOther); // Not to be implemented
+  nsStyleList& operator=(const nsStyleList& aOther) MOZ_DELETE;
 public:
   nsRect        mImageRegion;           // [inherited] the rect to use within an image
 };
@@ -1276,6 +1281,7 @@ struct nsStyleText {
   static bool ForceCompare() { return false; }
 
   PRUint8 mTextAlign;                   // [inherited] see nsStyleConsts.h
+  PRUint8 mTextAlignLast;               // [inherited] see nsStyleConsts.h
   PRUint8 mTextTransform;               // [inherited] see nsStyleConsts.h
   PRUint8 mWhiteSpace;                  // [inherited] see nsStyleConsts.h
   PRUint8 mWordWrap;                    // [inherited] see nsStyleConsts.h
@@ -1335,7 +1341,6 @@ struct nsStyleVisibility {
 
   PRUint8 mDirection;                  // [inherited] see nsStyleConsts.h NS_STYLE_DIRECTION_*
   PRUint8   mVisible;                  // [inherited]
-  nsCOMPtr<nsIAtom> mLanguage;         // [inherited]
   PRUint8 mPointerEvents;              // [inherited] see nsStyleConsts.h
 
   bool IsVisible() const {
@@ -1639,17 +1644,11 @@ struct nsStyleDisplay {
            mOverflowX != NS_STYLE_OVERFLOW_CLIP;
   }
 
-  // For table elements that don't support scroll frame creation, we
-  // support 'overflow: hidden' to mean 'overflow: -moz-hidden-unscrollable'.
-  bool IsTableClip() const {
-    return mOverflowX == NS_STYLE_OVERFLOW_CLIP ||
-           (mOverflowX == NS_STYLE_OVERFLOW_HIDDEN &&
-            mOverflowY == NS_STYLE_OVERFLOW_HIDDEN);
-  }
-
   /* Returns whether the element has the -moz-transform property. */
   bool HasTransform() const {
-    return mSpecifiedTransform != nsnull || mTransformStyle == NS_STYLE_TRANSFORM_STYLE_PRESERVE_3D;
+    return mSpecifiedTransform != nsnull || 
+           mTransformStyle == NS_STYLE_TRANSFORM_STYLE_PRESERVE_3D ||
+           mBackfaceVisibility == NS_STYLE_BACKFACE_VISIBILITY_HIDDEN;
   }
 };
 

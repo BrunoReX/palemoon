@@ -356,7 +356,8 @@ nsIView* nsIViewManager::GetDisplayRootFor(nsIView* aView)
    rendering.
 */
 void nsViewManager::Refresh(nsView *aView, nsIWidget *aWidget,
-                            const nsIntRegion& aRegion)
+                            const nsIntRegion& aRegion,
+                            bool aWillSendDidPaint)
 {
   NS_ASSERTION(aView == nsView::GetViewFor(aWidget), "view widget mismatch");
   NS_ASSERTION(aView->GetViewManager() == this, "wrong view manager");
@@ -390,7 +391,14 @@ void nsViewManager::Refresh(nsView *aView, nsIWidget *aWidget,
     nsAutoScriptBlocker scriptBlocker;
     SetPainting(true);
 
-    RenderViews(aView, aWidget, damageRegion, aRegion, false, false);
+    NS_ASSERTION(GetDisplayRootFor(aView) == aView,
+                 "Widgets that we paint must all be display roots");
+
+    if (mPresShell) {
+      mPresShell->Paint(aView, aWidget, damageRegion, aRegion,
+                        aWillSendDidPaint);
+      mozilla::StartupTimeline::RecordOnce(mozilla::StartupTimeline::FIRST_PAINT);
+    }
 
     SetPainting(false);
   }
@@ -400,23 +408,6 @@ void nsViewManager::Refresh(nsView *aView, nsIWidget *aWidget,
     // we'll reenter this code from the UpdateAllViews call.
     RootViewManager()->mRecursiveRefreshPending = false;
     UpdateAllViews(0);
-  }
-}
-
-// aRC and aRegion are in view coordinates
-void nsViewManager::RenderViews(nsView *aView, nsIWidget *aWidget,
-                                const nsRegion& aRegion,
-                                const nsIntRegion& aIntRegion,
-                                bool aPaintDefaultBackground,
-                                bool aWillSendDidPaint)
-{
-  NS_ASSERTION(GetDisplayRootFor(aView) == aView,
-               "Widgets that we paint must all be display roots");
-
-  if (mPresShell) {
-    mPresShell->Paint(aView, aWidget, aRegion, aIntRegion,
-                      aPaintDefaultBackground, aWillSendDidPaint);
-    mozilla::StartupTimeline::RecordOnce(mozilla::StartupTimeline::FIRST_PAINT);
   }
 }
 
@@ -711,7 +702,7 @@ NS_IMETHODIMP nsViewManager::DispatchEvent(nsGUIEvent *aEvent,
   NS_ASSERTION(!aView || static_cast<nsView*>(aView)->GetViewManager() == this,
                "wrong view manager");
 
-  SAMPLE_LABEL("event", "DispatchEvent");
+  SAMPLE_LABEL("event", "nsViewManager::DispatchEvent");
 
   *aStatus = nsEventStatus_eIgnore;
 
@@ -888,7 +879,7 @@ NS_IMETHODIMP nsViewManager::DispatchEvent(nsGUIEvent *aEvent,
             }
             
             if (view && aEvent->message == NS_PAINT) {
-              Refresh(view, event->widget, event->region);
+              Refresh(view, event->widget, event->region, event->willSendDidPaint);
             }
           }
         } else if (aEvent->message == NS_PAINT) {
@@ -897,8 +888,12 @@ NS_IMETHODIMP nsViewManager::DispatchEvent(nsGUIEvent *aEvent,
           // unless there's no widget or it's transparent.
           nsRegion rgn = event->region.ToAppUnits(AppUnitsPerDevPixel());
           rgn.MoveBy(-aView->ViewToWidgetOffset());
-          RenderViews(static_cast<nsView*>(aView), event->widget, rgn,
-                      event->region, true, event->willSendDidPaint);
+          if (mPresShell) {
+            mPresShell->Paint(static_cast<nsView*>(aView), event->widget, rgn,
+                              event->region, event->willSendDidPaint);
+            mozilla::StartupTimeline::RecordOnce(mozilla::StartupTimeline::FIRST_PAINT);
+          }
+
           // Clients like the editor can trigger multiple
           // reflows during what the user perceives as a single
           // edit operation, so it disables view manager
@@ -931,7 +926,7 @@ NS_IMETHODIMP nsViewManager::DispatchEvent(nsGUIEvent *aEvent,
 
     case NS_DID_PAINT: {
       nsRefPtr<nsViewManager> rootVM = RootViewManager();
-      rootVM->CallDidPaintOnObservers();
+      rootVM->CallDidPaintOnObserver();
       break;
     }
 
@@ -1585,21 +1580,14 @@ nsViewManager::CallWillPaintOnObservers(bool aWillSendDidPaint)
 }
 
 void
-nsViewManager::CallDidPaintOnObservers()
+nsViewManager::CallDidPaintOnObserver()
 {
   NS_PRECONDITION(IsRootVM(), "Must be root VM for this to be called!");
 
-  PRInt32 index;
-  for (index = 0; index < mVMCount; index++) {
-    nsViewManager* vm = (nsViewManager*)gViewManagers->ElementAt(index);
-    if (vm->RootViewManager() == this) {
-      // One of our kids.
-      if (vm->mRootView && vm->mRootView->IsEffectivelyVisible()) {
-        nsCOMPtr<nsIPresShell> shell = vm->GetPresShell();
-        if (shell) {
-          shell->DidPaint();
-        }
-      }
+  if (mRootView && mRootView->IsEffectivelyVisible()) {
+    nsCOMPtr<nsIPresShell> shell = GetPresShell();
+    if (shell) {
+      shell->DidPaint();
     }
   }
 }

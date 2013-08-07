@@ -92,19 +92,17 @@ function runSelectionTests()
     InspectorUI.INSPECTOR_NOTIFICATIONS.OPENED, false);
 
   executeSoon(function() {
-    Services.obs.addObserver(performTestComparisons,
-      InspectorUI.INSPECTOR_NOTIFICATIONS.HIGHLIGHTING, false);
+    InspectorUI.highlighter.addListener("nodeselected", performTestComparisons);
     EventUtils.synthesizeMouse(h1, 2, 2, {type: "mousemove"}, content);
   });
 }
 
 function performTestComparisons(evt)
 {
-  Services.obs.removeObserver(performTestComparisons,
-    InspectorUI.INSPECTOR_NOTIFICATIONS.HIGHLIGHTING, false);
+  InspectorUI.highlighter.removeListener("nodeselected", performTestComparisons);
 
   InspectorUI.stopInspecting();
-  ok(InspectorUI.highlighter.isHighlighting, "highlighter is highlighting");
+  is(InspectorUI.highlighter.node, h1, "node selected");
   is(InspectorUI.selection, h1, "selection matches node");
 
   HUDService.activateHUDForContext(gBrowser.selectedTab);
@@ -133,8 +131,13 @@ function finishUp() {
   finish();
 }
 
+registerCleanupFunction(function() {
+  Services.prefs.clearUserPref("devtools.gcli.enable");
+});
+
 function test()
 {
+  Services.prefs.setBoolPref("devtools.gcli.enable", false);
   waitForExplicitFinish();
   gBrowser.selectedTab = gBrowser.addTab();
   gBrowser.selectedBrowser.addEventListener("load", function() {

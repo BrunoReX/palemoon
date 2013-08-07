@@ -98,8 +98,7 @@ nsContentEventHandler::InitCommon()
   // This shell doesn't support selection.
   if (NS_FAILED(rv))
     return NS_ERROR_NOT_AVAILABLE;
-  mFirstSelectedRange = do_QueryInterface(firstRange);
-  NS_ENSURE_TRUE(mFirstSelectedRange, NS_ERROR_FAILURE);
+  mFirstSelectedRange = static_cast<nsRange*>(firstRange.get());
 
   nsINode* startNode = mFirstSelectedRange->GetStartParent();
   NS_ENSURE_TRUE(startNode, NS_ERROR_FAILURE);
@@ -208,21 +207,43 @@ static void AppendSubString(nsAString& aString, nsIContent* aContent,
 }
 
 #if defined(XP_WIN)
-static PRUint32 CountNewlinesIn(nsIContent* aContent, PRUint32 aMaxOffset)
+static PRUint32 CountNewlinesInXPLength(nsIContent* aContent,
+                                        PRUint32 aXPLength)
 {
   NS_ASSERTION(aContent->IsNodeOfType(nsINode::eTEXT),
                "aContent is not a text node!");
   const nsTextFragment* text = aContent->GetText();
   if (!text)
     return 0;
-  if (aMaxOffset == PR_UINT32_MAX) {
-    // search the entire string
-    aMaxOffset = text->GetLength();
-  }
+  NS_ASSERTION(aXPLength == PR_UINT32_MAX || aXPLength <= text->GetLength(),
+               "text offset is out-of-bounds");
+  const PRUint32 length = NS_MIN(aXPLength, text->GetLength());
   PRUint32 newlines = 0;
-  for (PRUint32 i = 0; i < aMaxOffset; ++i) {
+  for (PRUint32 i = 0; i < length; ++i) {
     if (text->CharAt(i) == '\n') {
       ++newlines;
+    }
+  }
+  return newlines;
+}
+
+static PRUint32 CountNewlinesInNativeLength(nsIContent* aContent,
+                                            PRUint32 aNativeLength)
+{
+  NS_ASSERTION(aContent->IsNodeOfType(nsINode::eTEXT),
+               "aContent is not a text node!");
+  const nsTextFragment* text = aContent->GetText();
+  if (!text) {
+    return 0;
+  }
+  const PRUint32 xpLength = text->GetLength();
+  PRUint32 newlines = 0;
+  for (PRUint32 i = 0, nativeOffset = 0;
+       i < xpLength && nativeOffset < aNativeLength;
+       ++i, ++nativeOffset) {
+    if (text->CharAt(i) == '\n') {
+      ++newlines;
+      ++nativeOffset;
     }
   }
   return newlines;
@@ -241,7 +262,7 @@ static PRUint32 GetNativeTextLength(nsIContent* aContent, PRUint32 aMaxLength = 
       // On Windows, the length of a native newline ("\r\n") is twice the length of
       // the XP newline ("\n"), so XP length is equal to the length of the native
       // offset plus the number of newlines encountered in the string.
-      CountNewlinesIn(aContent, aMaxLength);
+      CountNewlinesInXPLength(aContent, aMaxLength);
 #else
       // On other platforms, the native and XP newlines are the same.
       0;
@@ -273,23 +294,21 @@ static PRUint32 ConvertToXPOffset(nsIContent* aContent, PRUint32 aNativeOffset)
   // On Windows, the length of a native newline ("\r\n") is twice the length of
   // the XP newline ("\n"), so XP offset is equal to the length of the native
   // offset minus the number of newlines encountered in the string.
-  return aNativeOffset - CountNewlinesIn(aContent, aNativeOffset);
+  return aNativeOffset - CountNewlinesInNativeLength(aContent, aNativeOffset);
 #else
   // On other platforms, the native and XP newlines are the same.
   return aNativeOffset;
 #endif
 }
 
-static nsresult GenerateFlatTextContent(nsIRange* aRange,
+static nsresult GenerateFlatTextContent(nsRange* aRange,
                                         nsAFlatString& aString)
 {
   nsCOMPtr<nsIContentIterator> iter;
   nsresult rv = NS_NewContentIterator(getter_AddRefs(iter));
   NS_ENSURE_SUCCESS(rv, rv);
   NS_ASSERTION(iter, "NS_NewContentIterator succeeded, but the result is null");
-  nsCOMPtr<nsIDOMRange> domRange(do_QueryInterface(aRange));
-  NS_ASSERTION(domRange, "aRange doesn't have nsIDOMRange!");
-  iter->Init(domRange);
+  iter->Init(aRange);
 
   NS_ASSERTION(aString.IsEmpty(), "aString must be empty string");
 
@@ -374,7 +393,7 @@ nsContentEventHandler::ExpandToClusterBoundary(nsIContent* aContent,
 
 nsresult
 nsContentEventHandler::SetRangeFromFlatTextOffset(
-                              nsIRange* aRange,
+                              nsRange* aRange,
                               PRUint32 aNativeOffset,
                               PRUint32 aNativeLength,
                               bool aExpandToClusterBoundaries)
@@ -385,8 +404,6 @@ nsContentEventHandler::SetRangeFromFlatTextOffset(
   NS_ASSERTION(iter, "NS_NewContentIterator succeeded, but the result is null");
   rv = iter->Init(mRootContent);
   NS_ENSURE_SUCCESS(rv, rv);
-  nsCOMPtr<nsIDOMRange> domRange(do_QueryInterface(aRange));
-  NS_ASSERTION(domRange, "aRange doesn't have nsIDOMRange!");
 
   PRUint32 nativeOffset = 0;
   PRUint32 nativeEndOffset = aNativeOffset + aNativeLength;
@@ -416,11 +433,11 @@ nsContentEventHandler::SetRangeFromFlatTextOffset(
         NS_ENSURE_SUCCESS(rv, rv);
       }
 
-      rv = domRange->SetStart(domNode, PRInt32(xpOffset));
+      rv = aRange->SetStart(domNode, PRInt32(xpOffset));
       NS_ENSURE_SUCCESS(rv, rv);
       if (aNativeLength == 0) {
         // Ensure that the end offset and the start offset are same.
-        rv = domRange->SetEnd(domNode, PRInt32(xpOffset));
+        rv = aRange->SetEnd(domNode, PRInt32(xpOffset));
         NS_ENSURE_SUCCESS(rv, rv);
         return NS_OK;
       }
@@ -446,7 +463,7 @@ nsContentEventHandler::SetRangeFromFlatTextOffset(
         domNode = do_QueryInterface(iter->GetCurrentNode());
       }
 
-      rv = domRange->SetEnd(domNode, PRInt32(xpOffset));
+      rv = aRange->SetEnd(domNode, PRInt32(xpOffset));
       NS_ENSURE_SUCCESS(rv, rv);
       return NS_OK;
     }
@@ -460,10 +477,10 @@ nsContentEventHandler::SetRangeFromFlatTextOffset(
   nsCOMPtr<nsIDOMNode> domNode(do_QueryInterface(mRootContent));
   NS_ASSERTION(domNode, "lastContent doesn't have nsIDOMNode!");
   if (!content) {
-    rv = domRange->SetStart(domNode, 0);
+    rv = aRange->SetStart(domNode, 0);
     NS_ENSURE_SUCCESS(rv, rv);
   }
-  rv = domRange->SetEnd(domNode, PRInt32(mRootContent->GetChildCount()));
+  rv = aRange->SetEnd(domNode, PRInt32(mRootContent->GetChildCount()));
   NS_ASSERTION(NS_SUCCEEDED(rv), "nsIDOMRange::SetEnd failed");
   return rv;
 }
@@ -503,8 +520,7 @@ nsContentEventHandler::OnQuerySelectedText(nsQueryContentEvent* aEvent)
   aEvent->mReply.mReversed = compare > 0;
 
   if (compare) {
-    nsCOMPtr<nsIRange> range = mFirstSelectedRange;
-    rv = GenerateFlatTextContent(range, aEvent->mReply.mString);
+    rv = GenerateFlatTextContent(mFirstSelectedRange, aEvent->mReply.mString);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -522,8 +538,7 @@ nsContentEventHandler::OnQueryTextContent(nsQueryContentEvent* aEvent)
   NS_ASSERTION(aEvent->mReply.mString.IsEmpty(),
                "The reply string must be empty");
 
-  nsCOMPtr<nsIRange> range = new nsRange();
-  NS_ENSURE_TRUE(range, NS_ERROR_OUT_OF_MEMORY);
+  nsRefPtr<nsRange> range = new nsRange();
   rv = SetRangeFromFlatTextOffset(range, aEvent->mInput.mOffset,
                                   aEvent->mInput.mLength, false);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -580,10 +595,7 @@ nsContentEventHandler::OnQueryTextRect(nsQueryContentEvent* aEvent)
   if (NS_FAILED(rv))
     return rv;
 
-  nsCOMPtr<nsIRange> range = new nsRange();
-  if (!range) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  nsRefPtr<nsRange> range = new nsRange();
   rv = SetRangeFromFlatTextOffset(range, aEvent->mInput.mOffset,
                                   aEvent->mInput.mLength, true);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -728,8 +740,7 @@ nsContentEventHandler::OnQueryCaretRect(nsQueryContentEvent* aEvent)
   }
 
   // Otherwise, we should set the guessed caret rect.
-  nsCOMPtr<nsIRange> range = new nsRange();
-  NS_ENSURE_TRUE(range, NS_ERROR_OUT_OF_MEMORY);
+  nsRefPtr<nsRange> range = new nsRange();
   rv = SetRangeFromFlatTextOffset(range, aEvent->mInput.mOffset, 0, true);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -810,7 +821,7 @@ nsContentEventHandler::OnQueryCharacterAtPoint(nsQueryContentEvent* aEvent)
     NS_PRECONDITION(aEvent->widget, "The event must have the widget");
     nsIView* view = nsIView::GetViewFor(aEvent->widget);
     NS_ENSURE_TRUE(view, NS_ERROR_FAILURE);
-    rootFrame = nsLayoutUtils::GetFrameFor(view);
+    rootFrame = view->GetFrame();
     NS_ENSURE_TRUE(rootFrame, NS_ERROR_FAILURE);
     rootWidget = rootFrame->GetNearestWidget();
     NS_ENSURE_TRUE(rootWidget, NS_ERROR_FAILURE);
@@ -916,22 +927,19 @@ nsContentEventHandler::GetFlatTextOffsetOfRange(nsIContent* aRootContent,
 {
   NS_ASSERTION(aNativeOffset, "param is invalid");
 
-  nsCOMPtr<nsIRange> prev = new nsRange();
-  NS_ENSURE_TRUE(prev, NS_ERROR_OUT_OF_MEMORY);
-  nsCOMPtr<nsIDOMRange> domPrev(do_QueryInterface(prev));
-  NS_ASSERTION(domPrev, "nsRange doesn't have nsIDOMRange??");
+  nsRefPtr<nsRange> prev = new nsRange();
   nsCOMPtr<nsIDOMNode> rootDOMNode(do_QueryInterface(aRootContent));
-  domPrev->SetStart(rootDOMNode, 0);
+  prev->SetStart(rootDOMNode, 0);
 
   nsCOMPtr<nsIDOMNode> startDOMNode(do_QueryInterface(aNode));
   NS_ASSERTION(startDOMNode, "startNode doesn't have nsIDOMNode");
-  domPrev->SetEnd(startDOMNode, aNodeOffset);
+  prev->SetEnd(startDOMNode, aNodeOffset);
 
   nsCOMPtr<nsIContentIterator> iter;
   nsresult rv = NS_NewContentIterator(getter_AddRefs(iter));
   NS_ENSURE_SUCCESS(rv, rv);
   NS_ASSERTION(iter, "NS_NewContentIterator succeeded, but the result is null");
-  iter->Init(domPrev);
+  iter->Init(prev);
 
   nsCOMPtr<nsINode> startNode = do_QueryInterface(startDOMNode);
   nsINode* endNode = aNode;
@@ -964,7 +972,7 @@ nsContentEventHandler::GetFlatTextOffsetOfRange(nsIContent* aRootContent,
 
 nsresult
 nsContentEventHandler::GetFlatTextOffsetOfRange(nsIContent* aRootContent,
-                                                nsIRange* aRange,
+                                                nsRange* aRange,
                                                 PRUint32* aNativeOffset)
 {
   nsINode* startNode = aRange->GetStartParent();
@@ -975,7 +983,7 @@ nsContentEventHandler::GetFlatTextOffsetOfRange(nsIContent* aRootContent,
 }
 
 nsresult
-nsContentEventHandler::GetStartFrameAndOffset(nsIRange* aRange,
+nsContentEventHandler::GetStartFrameAndOffset(nsRange* aRange,
                                               nsIFrame** aFrame,
                                               PRInt32* aOffsetInFrame)
 {

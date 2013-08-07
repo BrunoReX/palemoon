@@ -50,7 +50,6 @@
 #include "mozilla/Util.h"
 
 #include "jsapi.h"
-#include "jscntxt.h"
 #include "jsdbgapi.h"
 #include "jsfriendapi.h"
 #include "jsprf.h"
@@ -554,7 +553,7 @@ GC(JSContext *cx, uintN argc, jsval *vp)
 {
     JS_GC(cx);
 #ifdef JS_GCMETER
-    js_DumpGCStats(cx->runtime, stdout);
+    js_DumpGCStats(JS_GetRuntime(cx), stdout);
 #endif
     JS_SET_RVAL(cx, vp, JSVAL_VOID);
     return true;
@@ -723,7 +722,7 @@ GetChildGlobalObject(JSContext* cx,
  */
 static const struct JSOption {
     const char  *name;
-    uint32      flag;
+    uint32_t    flag;
 } js_options[] = {
     {"atline",          JSOPTION_ATLINE},
     {"relimit",         JSOPTION_RELIMIT},
@@ -732,7 +731,7 @@ static const struct JSOption {
     {"xml",             JSOPTION_XML},
 };
 
-static uint32
+static uint32_t
 MapContextOptionNameToFlag(JSContext* cx, const char* name)
 {
     for (size_t i = 0; i < ArrayLength(js_options); ++i) {
@@ -994,10 +993,9 @@ typedef enum JSShellErrNum {
 #include "jsshell.msg"
 #undef MSG_DEF
     JSShellErr_Limit
-#undef MSGDEF
 } JSShellErrNum;
 
-JSErrorFormatString jsShell_ErrorFormatString[JSErr_Limit] = {
+JSErrorFormatString jsShell_ErrorFormatString[JSShellErr_Limit] = {
 #define MSG_DEF(name, number, count, exception, format) \
     { format, count } ,
 #include "jsshell.msg"
@@ -1007,10 +1005,10 @@ JSErrorFormatString jsShell_ErrorFormatString[JSErr_Limit] = {
 static const JSErrorFormatString *
 my_GetErrorMessage(void *userRef, const char *locale, const uintN errorNumber)
 {
-    if ((errorNumber > 0) && (errorNumber < JSShellErr_Limit))
-            return &jsShell_ErrorFormatString[errorNumber];
-        else
-            return NULL;
+    if (errorNumber == 0 || errorNumber >= JSShellErr_Limit)
+        return NULL;
+
+    return &jsShell_ErrorFormatString[errorNumber];
 }
 
 static void
@@ -2014,6 +2012,7 @@ main(int argc, char **argv, char **envp)
             cxstack = nsnull;
             JS_GC(cx);
         } //this scopes the JSAutoCrossCompartmentCall
+        JS_EndRequest(cx);
         JS_DestroyContext(cx);
     } // this scopes the nsCOMPtrs
 

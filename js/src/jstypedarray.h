@@ -60,12 +60,18 @@ namespace js {
 struct JS_FRIEND_API(ArrayBuffer) {
     static Class slowClass;
     static JSPropertySpec jsprops[];
+    static JSFunctionSpec jsfuncs[];
 
     static JSBool prop_getByteLength(JSContext *cx, JSObject *obj, jsid id, Value *vp);
 
+    static JSBool fun_slice(JSContext *cx, uintN argc, Value *vp);
+
     static JSBool class_constructor(JSContext *cx, uintN argc, Value *vp);
 
-    static JSObject *create(JSContext *cx, int32_t nbytes);
+    static JSObject *create(JSContext *cx, int32_t nbytes, uint8_t *contents = NULL);
+
+    static JSObject *createSlice(JSContext *cx, JSObject *arrayBuffer,
+                                 uint32_t begin, uint32_t end);
 
     ArrayBuffer()
     {
@@ -145,8 +151,6 @@ struct JS_FRIEND_API(ArrayBuffer) {
     static JSBool
     obj_setSpecialAttributes(JSContext *cx, JSObject *obj, SpecialId sid, uintN *attrsp);
 
-    static JSBool
-    obj_deleteGeneric(JSContext *cx, JSObject *obj, jsid id, Value *rval, JSBool strict);
     static JSBool
     obj_deleteProperty(JSContext *cx, JSObject *obj, PropertyName *name, Value *rval, JSBool strict);
     static JSBool
@@ -326,6 +330,12 @@ js_CreateTypedArrayWithBuffer(JSContext *cx, jsint atype, JSObject *bufArg,
 
 extern int32_t JS_FASTCALL
 js_TypedArray_uint8_clamp_double(const double x);
+
+JS_FRIEND_API(JSBool)
+JS_IsArrayBufferObject(JSObject *obj);
+
+JS_FRIEND_API(JSObject *)
+JS_NewArrayBuffer(JSContext *cx, jsuint nbytes);
 
 JS_FRIEND_API(uint32_t)
 JS_GetArrayBufferByteLength(JSObject *obj);

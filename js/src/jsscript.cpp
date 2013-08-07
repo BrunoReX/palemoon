@@ -42,9 +42,9 @@
 /*
  * JS script operations.
  */
+
 #include <string.h>
 #include "jstypes.h"
-#include "jsstdint.h"
 #include "jsutil.h"
 #include "jscrashreport.h"
 #include "jsprf.h"
@@ -68,6 +68,7 @@
 
 #include "frontend/BytecodeEmitter.h"
 #include "frontend/Parser.h"
+#include "js/MemoryMetrics.h"
 #include "methodjit/MethodJIT.h"
 #include "methodjit/Retcon.h"
 #include "vm/Debugger.h"
@@ -89,9 +90,8 @@ Bindings::lookup(JSContext *cx, JSAtom *name, uintN *indexp) const
     if (!lastBinding)
         return NONE;
 
-    Shape *shape =
-        SHAPE_FETCH(Shape::search(cx, const_cast<HeapPtrShape *>(&lastBinding),
-                                  ATOM_TO_JSID(name)));
+    Shape **spp;
+    Shape *shape = Shape::search(cx, lastBinding, ATOM_TO_JSID(name), &spp);
     if (!shape)
         return NONE;
 
@@ -165,21 +165,64 @@ Bindings::add(JSContext *cx, JSAtom *name, BindingKind kind)
         id = ATOM_TO_JSID(name);
     }
 
-    BaseShape base(&CallClass, NULL, BaseShape::VAROBJ, attrs, getter, setter);
+    StackBaseShape base(&CallClass, NULL, BaseShape::VAROBJ);
+    base.updateGetterSetter(attrs, getter, setter);
+
     UnownedBaseShape *nbase = BaseShape::getUnowned(cx, base);
     if (!nbase)
         return NULL;
 
-    Shape child(nbase, id, slot, 0, attrs, Shape::HAS_SHORTID, *indexp);
+    StackShape child(nbase, id, slot, 0, attrs, Shape::HAS_SHORTID, *indexp);
 
     /* Shapes in bindings cannot be dictionaries. */
-    Shape *shape = lastBinding->getChildBinding(cx, child, &lastBinding);
+    Shape *shape = lastBinding->getChildBinding(cx, child);
     if (!shape)
         return false;
 
-    JS_ASSERT(lastBinding == shape);
+    lastBinding = shape;
     ++*indexp;
     return true;
+}
+
+Shape *
+Bindings::callObjectShape(JSContext *cx) const
+{
+    if (!hasDup())
+        return lastShape();
+
+    /*
+     * Build a vector of non-duplicate properties in order from last added
+     * to first (i.e., the order we normally have iterate over Shapes). Choose
+     * the last added property in each set of dups.
+     */
+    Vector<const Shape *> shapes(cx);
+    HashSet<jsid> seen(cx);
+    if (!seen.init())
+        return false;
+
+    for (Shape::Range r = lastShape()->all(); !r.empty(); r.popFront()) {
+        const Shape &s = r.front();
+        HashSet<jsid>::AddPtr p = seen.lookupForAdd(s.propid());
+        if (!p) {
+            if (!seen.add(p, s.propid()))
+                return NULL;
+            if (!shapes.append(&s))
+                return NULL;
+        }
+    }
+
+    /*
+     * Now build the Shape without duplicate properties.
+     */
+    RootedVarShape shape(cx);
+    shape = initialShape(cx);
+    for (int i = shapes.length() - 1; i >= 0; --i) {
+        shape = shape->getChildBinding(cx, shapes[i]);
+        if (!shape)
+            return NULL;
+    }
+
+    return shape;
 }
 
 bool
@@ -265,21 +308,6 @@ Bindings::lastUpvar() const
     return lastBinding;
 }
 
-int
-Bindings::sharpSlotBase(JSContext *cx)
-{
-    JS_ASSERT(lastBinding);
-#if JS_HAS_SHARP_VARS
-    if (JSAtom *name = js_Atomize(cx, "#array", 6)) {
-        uintN index = uintN(-1);
-        DebugOnly<BindingKind> kind = lookup(cx, name, &index);
-        JS_ASSERT(kind == VARIABLE);
-        return int(index);
-    }
-#endif
-    return -1;
-}
-
 void
 Bindings::makeImmutable()
 {
@@ -315,7 +343,6 @@ CheckScript(JSScript *script, JSScript *prev)
 enum ScriptBits {
     NoScriptRval,
     SavedCallerFun,
-    HasSharps,
     StrictModeCode,
     UsesEval,
     UsesArguments
@@ -487,8 +514,6 @@ js_XDRScript(JSXDRState *xdr, JSScript **scriptp)
             scriptBits |= (1 << NoScriptRval);
         if (script->savedCallerFun)
             scriptBits |= (1 << SavedCallerFun);
-        if (script->hasSharps)
-            scriptBits |= (1 << HasSharps);
         if (script->strictModeCode)
             scriptBits |= (1 << StrictModeCode);
         if (script->usesEval)
@@ -553,8 +578,6 @@ js_XDRScript(JSXDRState *xdr, JSScript **scriptp)
             script->noScriptRval = true;
         if (scriptBits & (1 << SavedCallerFun))
             script->savedCallerFun = true;
-        if (scriptBits & (1 << HasSharps))
-            script->hasSharps = true;
         if (scriptBits & (1 << StrictModeCode))
             script->strictModeCode = true;
         if (scriptBits & (1 << UsesEval))
@@ -651,23 +674,24 @@ js_XDRScript(JSXDRState *xdr, JSScript **scriptp)
         HeapPtr<JSObject> *objp = &script->objects()->vector[i];
         uint32_t isBlock;
         if (xdr->mode == JSXDR_ENCODE) {
-            Class *clasp = (*objp)->getClass();
-            JS_ASSERT(clasp == &FunctionClass ||
-                      clasp == &BlockClass);
-            isBlock = (clasp == &BlockClass) ? 1 : 0;
+            JSObject *obj = *objp;
+            JS_ASSERT(obj->isFunction() || obj->isStaticBlock());
+            isBlock = obj->isBlock() ? 1 : 0;
         }
         if (!JS_XDRUint32(xdr, &isBlock))
             goto error;
-        JSObject *tmp = *objp;
         if (isBlock == 0) {
+            JSObject *tmp = *objp;
             if (!js_XDRFunctionObject(xdr, &tmp))
                 goto error;
+            *objp = tmp;
         } else {
             JS_ASSERT(isBlock == 1);
-            if (!js_XDRBlockObject(xdr, &tmp))
+            StaticBlockObject *tmp = static_cast<StaticBlockObject *>(objp->get());
+            if (!js_XDRStaticBlockObject(xdr, &tmp))
                 goto error;
+            *objp = tmp;
         }
-        *objp = tmp;
     }
     for (i = 0; i != nupvars; ++i) {
         if (!JS_XDRUint32(xdr, reinterpret_cast<uint32_t *>(&script->upvars()->vector[i])))
@@ -778,7 +802,7 @@ JSScript::initCounts(JSContext *cx)
 
     /* Enable interrupts in any interpreter frames running on this script. */
     InterpreterFrames *frames;
-    for (frames = JS_THREAD_DATA(cx)->interpreterFrames; frames; frames = frames->older)
+    for (frames = cx->runtime->interpreterFrames; frames; frames = frames->older)
         frames->enableInterruptsIfRunning(this);
 
     return true;
@@ -1029,7 +1053,7 @@ JSScript::NewScript(JSContext *cx, uint32_t length, uint32_t nsrcnotes, uint32_t
 
 
     if (nconsts != 0) {
-        JS_ASSERT(reinterpret_cast<jsuword>(cursor) % sizeof(jsval) == 0);
+        JS_ASSERT(reinterpret_cast<uintptr_t>(cursor) % sizeof(jsval) == 0);
         script->consts()->length = nconsts;
         script->consts()->vector = (HeapValue *)cursor;
         cursor += nconsts * sizeof(script->consts()->vector[0]);
@@ -1138,11 +1162,9 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
 
     JS_ASSERT(script->mainOffset == 0);
     script->mainOffset = prologLength;
-    memcpy(script->code, bce->prologBase(), prologLength * sizeof(jsbytecode));
-    memcpy(script->main(), bce->base(), mainLength * sizeof(jsbytecode));
-    nfixed = bce->inFunction()
-             ? bce->bindings.countVars()
-             : bce->sharpSlots();
+    PodCopy<jsbytecode>(script->code, bce->prologBase(), prologLength);
+    PodCopy<jsbytecode>(script->main(), bce->base(), mainLength);
+    nfixed = bce->inFunction() ? bce->bindings.countVars() : 0;
     JS_ASSERT(nfixed < SLOTNO_LIMIT);
     script->nfixed = uint16_t(nfixed);
     js_InitAtomMap(cx, bce->atomIndices.getMap(), script->atoms);
@@ -1187,8 +1209,6 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
         bce->constList.finish(script->consts());
     if (bce->flags & TCF_NO_SCRIPT_RVAL)
         script->noScriptRval = true;
-    if (bce->hasSharps())
-        script->hasSharps = true;
     if (bce->flags & TCF_STRICT_MODE_CODE)
         script->strictModeCode = true;
     if (bce->flags & TCF_COMPILE_N_GO) {
@@ -1206,22 +1226,22 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
 
     if (bce->hasUpvarIndices()) {
         JS_ASSERT(bce->upvarIndices->count() <= bce->upvarMap.length());
-        memcpy(script->upvars()->vector, bce->upvarMap.begin(),
-               bce->upvarIndices->count() * sizeof(bce->upvarMap[0]));
+        PodCopy<UpvarCookie>(script->upvars()->vector, bce->upvarMap.begin(),
+                             bce->upvarIndices->count());
         bce->upvarIndices->clear();
         bce->upvarMap.clear();
     }
 
     if (bce->globalUses.length()) {
-        memcpy(script->globals()->vector, &bce->globalUses[0],
-               bce->globalUses.length() * sizeof(GlobalSlotArray::Entry));
+        PodCopy<GlobalSlotArray::Entry>(script->globals()->vector, &bce->globalUses[0],
+                                        bce->globalUses.length());
     }
 
     if (script->nClosedArgs)
-        memcpy(script->closedSlots, &bce->closedArgs[0], script->nClosedArgs * sizeof(uint32_t));
+        PodCopy<uint32_t>(script->closedSlots, &bce->closedArgs[0], script->nClosedArgs);
     if (script->nClosedVars) {
-        memcpy(&script->closedSlots[script->nClosedArgs], &bce->closedVars[0],
-               script->nClosedVars * sizeof(uint32_t));
+        PodCopy<uint32_t>(&script->closedSlots[script->nClosedArgs], &bce->closedVars[0],
+                          script->nClosedVars);
     }
 
     script->bindings.transfer(cx, &bce->bindings);
@@ -1259,7 +1279,7 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
             return NULL;
 
         fun->setScript(script);
-        script->globalObject = fun->getParent() ? fun->getParent()->getGlobal() : NULL;
+        script->globalObject = fun->getParent() ? &fun->getParent()->global() : NULL;
     } else {
         /*
          * Initialize script->object, if necessary, so that the debugger has a
@@ -1276,7 +1296,7 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
         if (script->compileAndGo) {
             compileAndGoGlobal = script->globalObject;
             if (!compileAndGoGlobal)
-                compileAndGoGlobal = bce->scopeChain()->getGlobal();
+                compileAndGoGlobal = &bce->scopeChain()->global();
         }
         Debugger::onNewScript(cx, script, compileAndGoGlobal);
     }
@@ -1288,7 +1308,7 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
 }
 
 size_t
-JSScript::dataSize()
+JSScript::computedSizeOfData()
 {
 #if JS_SCRIPT_INLINE_DATA_LIMIT
     if (data == inlineData)
@@ -1301,14 +1321,14 @@ JSScript::dataSize()
 }
 
 size_t
-JSScript::dataSize(JSMallocSizeOfFun mallocSizeOf)
+JSScript::sizeOfData(JSMallocSizeOfFun mallocSizeOf)
 {
 #if JS_SCRIPT_INLINE_DATA_LIMIT
     if (data == inlineData)
         return 0;
 #endif
 
-    return mallocSizeOf(data, dataSize());
+    return mallocSizeOf(data);
 }
 
 /*
@@ -1391,7 +1411,7 @@ JSScript::finalize(JSContext *cx, bool background)
     if (data != inlineData)
 #endif
     {
-        JS_POISON(data, 0xdb, dataSize());
+        JS_POISON(data, 0xdb, computedSizeOfData());
         cx->free_(data);
     }
 }
@@ -1712,7 +1732,7 @@ js_CloneScript(JSContext *cx, JSScript *script)
 void
 JSScript::copyClosedSlotsTo(JSScript *other)
 {
-    memcpy(other->closedSlots, closedSlots, nClosedArgs + nClosedVars);
+    js_memcpy(other->closedSlots, closedSlots, nClosedArgs + nClosedVars);
 }
 
 bool
@@ -1732,7 +1752,7 @@ JSScript::ensureHasDebug(JSContext *cx)
      * debug state is destroyed.
      */
     InterpreterFrames *frames;
-    for (frames = JS_THREAD_DATA(cx)->interpreterFrames; frames; frames = frames->older)
+    for (frames = cx->runtime->interpreterFrames; frames; frames = frames->older)
         frames->enableInterruptsIfRunning(this);
 
     return true;
@@ -1742,10 +1762,9 @@ bool
 JSScript::recompileForStepMode(JSContext *cx)
 {
 #ifdef JS_METHODJIT
-    js::mjit::JITScript *jit = jitNormal ? jitNormal : jitCtor;
-    if (jit && stepModeEnabled() != jit->singleStepMode) {
-        js::mjit::Recompiler recompiler(cx, this);
-        recompiler.recompile();
+    if (jitNormal || jitCtor) {
+        mjit::Recompiler::clearStackReferences(cx, this);
+        mjit::ReleaseScriptCode(cx, this);
     }
 #endif
     return true;

@@ -298,6 +298,11 @@ typedef PRUint64 nsFrameState;
 // This is only set during painting
 #define NS_FRAME_FORCE_DISPLAY_LIST_DESCEND_INTO    NS_FRAME_STATE_BIT(40)
 
+// Is this frame a container for font size inflation, i.e., is it a
+// frame whose width is used to determine the inflation factor for
+// everything whose nearest ancestor container for this frame?
+#define NS_FRAME_FONT_INFLATION_CONTAINER           NS_FRAME_STATE_BIT(41)
+
 // Box layout bits
 #define NS_STATE_IS_HORIZONTAL                      NS_FRAME_STATE_BIT(22)
 #define NS_STATE_IS_DIRECTION_NORMAL                NS_FRAME_STATE_BIT(31)
@@ -910,7 +915,8 @@ public:
 
   NS_DECLARE_FRAME_PROPERTY(OutlineInnerRectProperty, DestroyRect)
   NS_DECLARE_FRAME_PROPERTY(PreEffectsBBoxProperty, DestroyRect)
-  NS_DECLARE_FRAME_PROPERTY(PreTransformBBoxProperty, DestroyRect)
+  NS_DECLARE_FRAME_PROPERTY(PreTransformOverflowAreasProperty,
+                            DestroyOverflowAreas)
 
   // The initial overflow area passed to FinishAndStoreOverflow. This is only set
   // on frames that Preserve3D(), and when at least one of the overflow areas
@@ -1783,6 +1789,13 @@ public:
   // XXX Maybe these three should be a separate interface?
 
   /**
+   * Updates the overflow areas of the frame. This can be called if an
+   * overflow area of the frame's children has changed without reflowing.
+   * @return true if either of the overflow areas for this frame have changed.
+   */
+  virtual bool UpdateOverflow() = 0;
+
+  /**
    * Helper method used by block reflow to identify runs of text so
    * that proper word-breaking can be done.
    *
@@ -1932,17 +1945,20 @@ public:
   virtual nsIAtom* GetType() const = 0;
 
   /**
-   * Returns a transformation matrix that converts points in this frame's coordinate space
-   * to points in some ancestor frame's coordinate space.  The frame decides which ancestor
-   * it will use as a reference point.  If this frame has no ancestor, aOutAncestor will be
-   * set to null.
+   * Returns a transformation matrix that converts points in this frame's
+   * coordinate space to points in some ancestor frame's coordinate space.
+   * The frame decides which ancestor it will use as a reference point.
+   * If this frame has no ancestor, aOutAncestor will be set to null.
    *
-   * @param aOutAncestor [out] The ancestor frame the frame has chosen.  If this frame has no
-   *        ancestor, aOutAncestor will be nsnull.
-   * @return A gfxMatrix that converts points in this frame's coordinate space into
-   *         points in aOutAncestor's coordinate space.
+   * @param aStopAtAncestor don't look further than aStopAtAncestor. If null,
+   *   all ancestors (including across documents) will be traversed.
+   * @param aOutAncestor [out] The ancestor frame the frame has chosen.  If
+   *   this frame has no ancestor, *aOutAncestor will be set to null.
+   * @return A gfxMatrix that converts points in this frame's coordinate space
+   *   into points in aOutAncestor's coordinate space.
    */
-  virtual gfx3DMatrix GetTransformMatrix(nsIFrame **aOutAncestor);
+  virtual gfx3DMatrix GetTransformMatrix(nsIFrame* aStopAtAncestor,
+                                         nsIFrame **aOutAncestor);
 
   /**
    * Bit-flags to pass to IsFrameOfType()
@@ -2601,7 +2617,7 @@ NS_PTR_TO_INT32(frame->Properties().Get(nsIFrame::EmbeddingLevelProperty()))
 
   virtual nscoord GetFlex(nsBoxLayoutState& aBoxLayoutState) = 0;
   virtual nscoord GetBoxAscent(nsBoxLayoutState& aBoxLayoutState) = 0;
-  virtual bool IsCollapsed(nsBoxLayoutState& aBoxLayoutState) = 0;
+  virtual bool IsCollapsed() = 0;
   // This does not alter the overflow area. If the caller is changing
   // the box size, the caller is responsible for updating the overflow
   // area. It's enough to just call Layout or SyncLayout on the

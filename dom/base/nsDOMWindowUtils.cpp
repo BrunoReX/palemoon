@@ -806,7 +806,8 @@ nsDOMWindowUtils::Focus(nsIDOMElement* aElement)
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::GarbageCollect(nsICycleCollectorListener *aListener)
+nsDOMWindowUtils::GarbageCollect(nsICycleCollectorListener *aListener,
+                                 PRInt32 aExtraForgetSkippableCalls)
 {
   SAMPLE_LABEL("GC", "GarbageCollect");
   // Always permit this in debug builds.
@@ -816,14 +817,15 @@ nsDOMWindowUtils::GarbageCollect(nsICycleCollectorListener *aListener)
   }
 #endif
 
-  nsJSContext::GarbageCollectNow();
-  nsJSContext::CycleCollectNow(aListener);
+  nsJSContext::GarbageCollectNow(js::gcreason::DOM_UTILS);
+  nsJSContext::CycleCollectNow(aListener, aExtraForgetSkippableCalls);
 
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::CycleCollect(nsICycleCollectorListener *aListener)
+nsDOMWindowUtils::CycleCollect(nsICycleCollectorListener *aListener,
+                               PRInt32 aExtraForgetSkippableCalls)
 {
   // Always permit this in debug builds.
 #ifndef DEBUG
@@ -832,7 +834,7 @@ nsDOMWindowUtils::CycleCollect(nsICycleCollectorListener *aListener)
   }
 #endif
 
-  nsJSContext::CycleCollectNow(aListener);
+  nsJSContext::CycleCollectNow(aListener, aExtraForgetSkippableCalls);
   return NS_OK;
 }
 
@@ -941,6 +943,10 @@ nsDOMWindowUtils::NodesFromRect(float aX, float aY,
                                 bool aFlushLayout,
                                 nsIDOMNodeList** aReturn)
 {
+  if (!IsUniversalXPConnectCapable()) {
+    return NS_ERROR_DOM_SECURITY_ERR;
+  }
+
   nsCOMPtr<nsIDocument> doc(do_QueryInterface(mWindow->GetExtantDocument()));
   NS_ENSURE_STATE(doc);
 
@@ -1694,6 +1700,55 @@ nsDOMWindowUtils::GetLayerManagerType(nsAString& aType)
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsDOMWindowUtils::StartFrameTimeRecording()
+{
+  nsCOMPtr<nsIWidget> widget = GetWidget();
+  if (!widget)
+    return NS_ERROR_FAILURE;
+
+  LayerManager *mgr = widget->GetLayerManager();
+  if (!mgr)
+    return NS_ERROR_FAILURE;
+
+  mgr->StartFrameTimeRecording();
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::StopFrameTimeRecording(PRUint32 *frameCount NS_OUTPARAM, float **frames NS_OUTPARAM)
+{
+  NS_ENSURE_ARG_POINTER(frameCount);
+  NS_ENSURE_ARG_POINTER(frames);
+
+  nsCOMPtr<nsIWidget> widget = GetWidget();
+  if (!widget)
+    return NS_ERROR_FAILURE;
+
+  LayerManager *mgr = widget->GetLayerManager();
+  if (!mgr)
+    return NS_ERROR_FAILURE;
+
+  nsTArray<float> frameTimes = mgr->StopFrameTimeRecording();
+
+  *frames = nsnull;
+  *frameCount = frameTimes.Length();
+
+  if (*frameCount != 0) {
+    *frames = (float*)nsMemory::Alloc(*frameCount * sizeof(float*));
+    if (!*frames)
+      return NS_ERROR_OUT_OF_MEMORY;
+
+    /* copy over the frame times into the array we just allocated */
+    for (PRUint32 i = 0; i < *frameCount; i++) {
+      (*frames)[i] = frameTimes[i];
+    }
+  }
+
+  return NS_OK;
+}
+
 static bool
 ComputeAnimationValue(nsCSSProperty aProperty,
                       Element* aElement,
@@ -2057,77 +2112,37 @@ nsDOMWindowUtils::GetFileReferences(const nsAString& aDatabaseName,
   return NS_OK;
 }
 
-static inline JSContext *
-GetJSContext()
-{
-  nsCOMPtr<nsIXPConnect> xpc = nsContentUtils::XPConnect();
-
-  // get the xpconnect native call context
-  nsAXPCNativeCallContext *cc = nsnull;
-  xpc->GetCurrentNativeCallContext(&cc);
-  if(!cc)
-    return NULL;
-
-  // Get JSContext of current call
-  JSContext* cx;
-  nsresult rv = cc->GetJSContext(&cx);
-  if(NS_FAILED(rv) || !cx)
-    return NULL;
-
-  return cx;
-}
-
 NS_IMETHODIMP
-nsDOMWindowUtils::StartPCCountProfiling()
+nsDOMWindowUtils::StartPCCountProfiling(JSContext* cx)
 {
-  JSContext *cx = GetJSContext();
-  if (!cx)
-    return NS_ERROR_FAILURE;
-
   js::StartPCCountProfiling(cx);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::StopPCCountProfiling()
+nsDOMWindowUtils::StopPCCountProfiling(JSContext* cx)
 {
-  JSContext *cx = GetJSContext();
-  if (!cx)
-    return NS_ERROR_FAILURE;
-
   js::StopPCCountProfiling(cx);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::PurgePCCounts()
+nsDOMWindowUtils::PurgePCCounts(JSContext* cx)
 {
-  JSContext *cx = GetJSContext();
-  if (!cx)
-    return NS_ERROR_FAILURE;
-
   js::PurgePCCounts(cx);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::GetPCCountScriptCount(PRInt32 *result)
+nsDOMWindowUtils::GetPCCountScriptCount(JSContext* cx, PRInt32 *result)
 {
-  JSContext *cx = GetJSContext();
-  if (!cx)
-    return NS_ERROR_FAILURE;
-
   *result = js::GetPCCountScriptCount(cx);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::GetPCCountScriptSummary(PRInt32 script, nsAString& result)
+nsDOMWindowUtils::GetPCCountScriptSummary(PRInt32 script, JSContext* cx, nsAString& result)
 {
-  JSContext *cx = GetJSContext();
-  if (!cx)
-    return NS_ERROR_FAILURE;
-
   JSString *text = js::GetPCCountScriptSummary(cx, script);
   if (!text)
     return NS_ERROR_FAILURE;
@@ -2141,12 +2156,8 @@ nsDOMWindowUtils::GetPCCountScriptSummary(PRInt32 script, nsAString& result)
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::GetPCCountScriptContents(PRInt32 script, nsAString& result)
+nsDOMWindowUtils::GetPCCountScriptContents(PRInt32 script, JSContext* cx, nsAString& result)
 {
-  JSContext *cx = GetJSContext();
-  if (!cx)
-    return NS_ERROR_FAILURE;
-
   JSString *text = js::GetPCCountScriptContents(cx, script);
   if (!text)
     return NS_ERROR_FAILURE;

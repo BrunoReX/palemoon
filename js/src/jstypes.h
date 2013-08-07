@@ -54,6 +54,7 @@
 #ifndef jstypes_h___
 #define jstypes_h___
 
+#include "mozilla/Attributes.h"
 #include "mozilla/Util.h"
 
 #include "js-config.h"
@@ -116,37 +117,15 @@
 #endif
 
 #ifndef JS_INLINE
-# if defined __cplusplus
-#  define JS_INLINE          inline
-# elif defined _MSC_VER
-#  define JS_INLINE          __inline
-# elif defined __GNUC__
-#  define JS_INLINE          __inline__
-# else
-#  define JS_INLINE          inline
-# endif
+#define JS_INLINE MOZ_INLINE
 #endif
 
 #ifndef JS_ALWAYS_INLINE
-# if defined DEBUG
-#  define JS_ALWAYS_INLINE   JS_INLINE
-# elif defined _MSC_VER
-#  define JS_ALWAYS_INLINE   __forceinline
-# elif defined __GNUC__
-#  define JS_ALWAYS_INLINE   __attribute__((always_inline)) JS_INLINE
-# else
-#  define JS_ALWAYS_INLINE   JS_INLINE
-# endif
+#define JS_ALWAYS_INLINE MOZ_ALWAYS_INLINE
 #endif
 
 #ifndef JS_NEVER_INLINE
-# if defined _MSC_VER
-#  define JS_NEVER_INLINE __declspec(noinline)
-# elif defined __GNUC__
-#  define JS_NEVER_INLINE __attribute__((noinline))
-# else
-#  define JS_NEVER_INLINE
-# endif
+#define JS_NEVER_INLINE MOZ_NEVER_INLINE
 #endif
 
 #ifndef JS_WARN_UNUSED_RESULT
@@ -155,25 +134,6 @@
 # else
 #  define JS_WARN_UNUSED_RESULT
 # endif
-#endif
-
-#ifdef NS_STATIC_CHECKING
-/*
- * Attributes for static analysis. Functions declared with JS_REQUIRES_STACK
- * always have a valid cx->fp and can access it freely.  Other functions can
- * access cx->fp only after calling a function that "forces" the stack
- * (i.e. lazily instantiates it as needed).
- */
-# define JS_REQUIRES_STACK   __attribute__((user("JS_REQUIRES_STACK")))
-# define JS_FORCES_STACK     __attribute__((user("JS_FORCES_STACK")))
-/*
- * Skip the JS_REQUIRES_STACK analysis within functions with this annotation.
- */
-# define JS_IGNORE_STACK     __attribute__((user("JS_IGNORE_STACK")))
-#else
-# define JS_REQUIRES_STACK
-# define JS_FORCES_STACK
-# define JS_IGNORE_STACK
 #endif
 
 /***********************************************************************
@@ -273,29 +233,6 @@ typedef int JSIntn;
 typedef unsigned int JSUintn;
 
 /************************************************************************
-** TYPES:       JSSize
-** DESCRIPTION:
-**  A type for representing the size of objects.
-************************************************************************/
-typedef size_t JSSize;
-
-/************************************************************************
-** TYPES:       JSPtrDiff
-** DESCRIPTION:
-**  A type for pointer difference. Variables of this type are suitable
-**      for storing a pointer or pointer sutraction.
-************************************************************************/
-typedef ptrdiff_t JSPtrdiff;
-
-/************************************************************************
-** TYPES:       JSUptrdiff
-** DESCRIPTION:
-**  A type for pointer difference. Variables of this type are suitable
-**      for storing a pointer or pointer sutraction.
-************************************************************************/
-typedef uintptr_t JSUptrdiff;
-
-/************************************************************************
 ** TYPES:       JSBool
 ** DESCRIPTION:
 **  Use JSBool for variables and parameter types. Use JS_FALSE and JS_TRUE
@@ -306,11 +243,6 @@ typedef uintptr_t JSUptrdiff;
 typedef JSIntn JSBool;
 #define JS_TRUE (JSIntn)1
 #define JS_FALSE (JSIntn)0
-/*
-** Special: JS_NEITHER is used by the tracer to have tri-state booleans.
-** This should not be used in new code.
-*/
-#define JS_NEITHER (JSIntn)2
 
 /************************************************************************
 ** TYPES:       JSPackedBool
@@ -319,12 +251,6 @@ typedef JSIntn JSBool;
 **      but minimum and consistent overhead matters.
 ************************************************************************/
 typedef uint8_t JSPackedBool;
-
-/*
-** A JSWord is an integer that is the same size as a void*
-*/
-typedef intptr_t JSWord;
-typedef uintptr_t JSUword;
 
 /***********************************************************************
 ** MACROS:      JS_LIKELY

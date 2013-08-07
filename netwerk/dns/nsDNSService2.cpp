@@ -43,6 +43,7 @@
 #include "nsIPrefBranch.h"
 #include "nsIPrefBranch2.h"
 #include "nsIServiceManager.h"
+#include "nsProxyRelease.h"
 #include "nsReadableUtils.h"
 #include "nsString.h"
 #include "nsAutoPtr.h"
@@ -279,6 +280,10 @@ public:
     ~nsDNSAsyncRequest() {}
 
     void OnLookupComplete(nsHostResolver *, nsHostRecord *, nsresult);
+    // Returns TRUE if the DNS listener arg is the same as the member listener
+    // Used in Cancellations to remove DNS requests associated with a
+    // particular hostname and nsIDNSListener
+    bool EqualsAsyncListener(nsIDNSListener *aListener);
 
     nsRefPtr<nsHostResolver> mResolver;
     nsCString                mHost; // hostname we're resolving
@@ -311,6 +316,12 @@ nsDNSAsyncRequest::OnLookupComplete(nsHostResolver *resolver,
     NS_RELEASE_THIS();
 }
 
+bool
+nsDNSAsyncRequest::EqualsAsyncListener(nsIDNSListener *aListener)
+{
+    return (aListener == mListener);
+}
+
 NS_IMPL_THREADSAFE_ISUPPORTS1(nsDNSAsyncRequest, nsICancelable)
 
 NS_IMETHODIMP
@@ -333,6 +344,7 @@ public:
     virtual ~nsDNSSyncRequest() {}
 
     void OnLookupComplete(nsHostResolver *, nsHostRecord *, nsresult);
+    bool EqualsAsyncListener(nsIDNSListener *aListener);
 
     bool                   mDone;
     nsresult               mStatus;
@@ -354,6 +366,13 @@ nsDNSSyncRequest::OnLookupComplete(nsHostResolver *resolver,
     mHostRecord = hostRecord;
     PR_Notify(mMonitor);
     PR_ExitMonitor(mMonitor);
+}
+
+bool
+nsDNSSyncRequest::EqualsAsyncListener(nsIDNSListener *aListener)
+{
+    // Sync request: no listener to compare
+    return false;
 }
 
 //-----------------------------------------------------------------------------
@@ -485,6 +504,12 @@ public:
     , mTargetThread(aTargetThread)
   { }
 
+  ~DNSListenerProxy()
+  {
+    nsCOMPtr<nsIThread> mainThread(do_GetMainThread());
+    NS_ProxyRelease(mainThread, mListener);
+  }
+
   NS_DECL_ISUPPORTS
   NS_DECL_NSIDNSLISTENER
 
@@ -500,6 +525,12 @@ public:
       , mRecord(aRecord)
       , mStatus(aStatus)
     { }
+
+    ~OnLookupCompleteRunnable()
+    {
+      nsCOMPtr<nsIThread> mainThread(do_GetMainThread());
+      NS_ProxyRelease(mainThread, mListener);
+    }
 
     NS_DECL_NSIRUNNABLE
 
@@ -588,6 +619,42 @@ nsDNSService::AsyncResolve(const nsACString  &hostname,
         NS_RELEASE(*result);
     }
     return rv;
+}
+
+NS_IMETHODIMP
+nsDNSService::CancelAsyncResolve(const nsACString  &aHostname,
+                                 PRUint32           aFlags,
+                                 nsIDNSListener    *aListener,
+                                 nsresult           aReason)
+{
+    // grab reference to global host resolver and IDN service.  beware
+    // simultaneous shutdown!!
+    nsRefPtr<nsHostResolver> res;
+    nsCOMPtr<nsIIDNService> idn;
+    {
+        MutexAutoLock lock(mLock);
+
+        if (mDisablePrefetch && (aFlags & RESOLVE_SPECULATE))
+            return NS_ERROR_DNS_LOOKUP_QUEUE_FULL;
+
+        res = mResolver;
+        idn = mIDN;
+    }
+    if (!res)
+        return NS_ERROR_OFFLINE;
+
+    nsCString hostname(aHostname);
+
+    nsCAutoString hostACE;
+    if (idn && !IsASCII(aHostname)) {
+        if (NS_SUCCEEDED(idn->ConvertUTF8toACE(aHostname, hostACE)))
+            hostname = hostACE;
+    }
+
+    PRUint16 af = GetAFForLookup(hostname, aFlags);
+
+    res->CancelAsyncRequest(hostname.get(), aFlags, af, aListener, aReason);
+    return NS_OK;
 }
 
 NS_IMETHODIMP

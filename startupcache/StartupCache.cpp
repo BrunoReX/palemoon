@@ -367,7 +367,7 @@ StartupCache::HeapSizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf)
 {
     // This function could measure more members, but they haven't been found by
     // DMD to be significant.  They can be added later if necessary.
-    return aMallocSizeOf(this, sizeof(StartupCache)) +
+    return aMallocSizeOf(this) +
            mTable.SizeOfExcludingThis(SizeOfEntryExcludingThis, aMallocSizeOf);
 }
 
@@ -681,7 +681,7 @@ StartupCacheWrapper::GetBuffer(const char* id, char** outbuf, PRUint32* length)
 }
 
 nsresult
-StartupCacheWrapper::PutBuffer(const char* id, char* inbuf, PRUint32 length) 
+StartupCacheWrapper::PutBuffer(const char* id, const char* inbuf, PRUint32 length) 
 {
   StartupCache* sc = StartupCache::GetSingleton();
   if (!sc) {

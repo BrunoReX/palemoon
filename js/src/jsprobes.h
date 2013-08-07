@@ -48,11 +48,15 @@
 #include "jsscript.h"
 #include "jsobj.h"
 
+#ifdef JS_METHODJIT
+#include "methodjit/MethodJIT.h"
+#endif
+
 namespace js {
 
 namespace mjit {
 struct NativeAddressInfo;
-struct Compiler_ActiveFrame;
+struct JSActiveFrame;
 }
 
 namespace Probes {
@@ -186,21 +190,21 @@ bool releaseMemory(JSContext *cx, void *address, size_t nbytes);
  * Garbage collection probes
  *
  * GC timing is tricky and at the time of this writing is changing frequently.
- * GCStart(NULL)/GCEnd(NULL) are intended to bracket the entire garbage
- * collection (either global or single-compartment), but a separate thread may
- * continue doing work after GCEnd.
+ * GCStart/GCEnd are intended to bracket the entire garbage collection (either
+ * global or single-compartment), but a separate thread may continue doing work
+ * after GCEnd.
  *
  * Multiple compartments' GC will be interleaved during a global collection
  * (eg, compartment 1 starts, compartment 2 starts, compartment 1 ends, ...)
  */
-bool GCStart(JSCompartment *compartment);
-bool GCEnd(JSCompartment *compartment);
+bool GCStart();
+bool GCEnd();
 
-bool GCStartMarkPhase(JSCompartment *compartment);
-bool GCEndMarkPhase(JSCompartment *compartment);
+bool GCStartMarkPhase();
+bool GCEndMarkPhase();
 
-bool GCStartSweepPhase(JSCompartment *compartment);
-bool GCEndSweepPhase(JSCompartment *compartment);
+bool GCStartSweepPhase();
+bool GCEndSweepPhase();
 
 /*
  * Various APIs for inserting custom probe points. These might be used to mark
@@ -230,12 +234,31 @@ enum JITReportGranularity {
  */
 class JITWatcher {
 public:
+    struct NativeRegion {
+        mjit::JSActiveFrame *frame;
+        JSScript *script;
+        size_t inlinedOffset;
+        jsbytecode *pc;
+        jsbytecode *endpc;
+        uintptr_t mainOffset;
+        uintptr_t stubOffset;
+        bool enter;
+    };
+
+    typedef Vector<NativeRegion, 0, RuntimeAllocPolicy> RegionVector;
+
     virtual JITReportGranularity granularityRequested() = 0;
 
 #ifdef JS_METHODJIT
+    static bool CollectNativeRegions(RegionVector &regions,
+                                     JSRuntime *rt,
+                                     mjit::JITChunk *jit,
+                                     mjit::JSActiveFrame *outerFrame,
+                                     mjit::JSActiveFrame **inlineFrames);
+
     virtual void registerMJITCode(JSContext *cx, js::mjit::JITScript *jscr,
-                                  JSScript *script, JSFunction *fun,
-                                  mjit::Compiler_ActiveFrame** inlineFrames,
+                                  mjit::JSActiveFrame *outerFrame,
+                                  mjit::JSActiveFrame **inlineFrames,
                                   void *mainCodeAddress, size_t mainCodeSize,
                                   void *stubCodeAddress, size_t stubCodeSize) = 0;
 
@@ -282,8 +305,8 @@ JITGranularityRequested();
  */
 void
 registerMJITCode(JSContext *cx, js::mjit::JITScript *jscr,
-                 JSScript *script, JSFunction *fun,
-                 mjit::Compiler_ActiveFrame** inlineFrames,
+                 mjit::JSActiveFrame *outerFrame,
+                 mjit::JSActiveFrame **inlineFrames,
                  void *mainCodeAddress, size_t mainCodeSize,
                  void *stubCodeAddress, size_t stubCodeSize);
 
@@ -340,12 +363,12 @@ bool ETWCalloutBegin(JSContext *cx, JSFunction *fun);
 bool ETWCalloutEnd(JSContext *cx, JSFunction *fun);
 bool ETWAcquireMemory(JSContext *cx, void *address, size_t nbytes);
 bool ETWReleaseMemory(JSContext *cx, void *address, size_t nbytes);
-bool ETWGCStart(JSCompartment *compartment);
-bool ETWGCEnd(JSCompartment *compartment);
-bool ETWGCStartMarkPhase(JSCompartment *compartment);
-bool ETWGCEndMarkPhase(JSCompartment *compartment);
-bool ETWGCStartSweepPhase(JSCompartment *compartment);
-bool ETWGCEndSweepPhase(JSCompartment *compartment);
+bool ETWGCStart();
+bool ETWGCEnd();
+bool ETWGCStartMarkPhase();
+bool ETWGCEndMarkPhase();
+bool ETWGCStartSweepPhase();
+bool ETWGCEndSweepPhase();
 bool ETWCustomMark(JSString *string);
 bool ETWCustomMark(const char *string);
 bool ETWCustomMark(int marker);
@@ -621,12 +644,12 @@ Probes::releaseMemory(JSContext *cx, void *address, size_t nbytes)
 }
 
 inline bool
-Probes::GCStart(JSCompartment *compartment)
+Probes::GCStart()
 {
     bool ok = true;
 
 #ifdef MOZ_ETW
-    if (ProfilingActive && !ETWGCStart(compartment))
+    if (ProfilingActive && !ETWGCStart())
         ok = false;
 #endif
 
@@ -634,12 +657,12 @@ Probes::GCStart(JSCompartment *compartment)
 }
 
 inline bool
-Probes::GCEnd(JSCompartment *compartment)
+Probes::GCEnd()
 {
     bool ok = true;
 
 #ifdef MOZ_ETW
-    if (ProfilingActive && !ETWGCEnd(compartment))
+    if (ProfilingActive && !ETWGCEnd())
         ok = false;
 #endif
 
@@ -647,12 +670,12 @@ Probes::GCEnd(JSCompartment *compartment)
 }
 
 inline bool
-Probes::GCStartMarkPhase(JSCompartment *compartment)
+Probes::GCStartMarkPhase()
 {
     bool ok = true;
 
 #ifdef MOZ_ETW
-    if (ProfilingActive && !ETWGCStartMarkPhase(compartment))
+    if (ProfilingActive && !ETWGCStartMarkPhase())
         ok = false;
 #endif
 
@@ -660,12 +683,12 @@ Probes::GCStartMarkPhase(JSCompartment *compartment)
 }
 
 inline bool
-Probes::GCEndMarkPhase(JSCompartment *compartment)
+Probes::GCEndMarkPhase()
 {
     bool ok = true;
 
 #ifdef MOZ_ETW
-    if (ProfilingActive && !ETWGCEndMarkPhase(compartment))
+    if (ProfilingActive && !ETWGCEndMarkPhase())
         ok = false;
 #endif
 
@@ -673,12 +696,12 @@ Probes::GCEndMarkPhase(JSCompartment *compartment)
 }
 
 inline bool
-Probes::GCStartSweepPhase(JSCompartment *compartment)
+Probes::GCStartSweepPhase()
 {
     bool ok = true;
 
 #ifdef MOZ_ETW
-    if (ProfilingActive && !ETWGCStartSweepPhase(compartment))
+    if (ProfilingActive && !ETWGCStartSweepPhase())
         ok = false;
 #endif
 
@@ -686,12 +709,12 @@ Probes::GCStartSweepPhase(JSCompartment *compartment)
 }
 
 inline bool
-Probes::GCEndSweepPhase(JSCompartment *compartment)
+Probes::GCEndSweepPhase()
 {
     bool ok = true;
 
 #ifdef MOZ_ETW
-    if (ProfilingActive && !ETWGCEndSweepPhase(compartment))
+    if (ProfilingActive && !ETWGCEndSweepPhase())
         ok = false;
 #endif
 

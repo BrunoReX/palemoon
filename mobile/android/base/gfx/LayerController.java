@@ -379,6 +379,7 @@ public class LayerController {
     public boolean onTouchEvent(MotionEvent event) {
         int action = event.getAction();
         PointF point = new PointF(event.getX(), event.getY());
+
         if ((action & MotionEvent.ACTION_MASK) == MotionEvent.ACTION_DOWN) {
             mView.clearEventQueue();
             initialTouchLocation = point;

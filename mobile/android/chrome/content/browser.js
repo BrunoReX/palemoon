@@ -588,6 +588,14 @@ var BrowserApp = {
     let evt = document.createEvent("UIEvents");
     evt.initUIEvent("TabSelect", true, false, window, null);
     aTab.browser.dispatchEvent(evt);
+
+    let message = {
+      gecko: {
+        type: "Tab:Selected:Done",
+        tabID: aTab.id
+      }
+    };
+    sendMessageToJava(message);
   },
 
   quit: function quit() {
@@ -1231,7 +1239,7 @@ var NativeWindow = {
     },
 
     _show: function(aEvent) {
-      if (aEvent.getPreventDefault())
+      if (aEvent.defaultPrevented)
         return;
 
       let popupNode = aEvent.originalTarget;

@@ -318,7 +318,10 @@ nsDOMDataTransfer::GetData(const nsAString& aFormat, nsAString& aData)
     // for the URL type, parse out the first URI from the list. The URIs are
     // separated by newlines
     nsAutoString lowercaseFormat;
-    nsContentUtils::ASCIIToLower(aFormat, lowercaseFormat);
+    rv = nsContentUtils::ASCIIToLower(aFormat, lowercaseFormat);
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
     
     if (lowercaseFormat.EqualsLiteral("url")) {
       PRInt32 lastidx = 0, idx;
@@ -452,11 +455,11 @@ nsDOMDataTransfer::MozGetDataAt(const nsAString& aFormat,
   nsTArray<TransferItem>& item = mItems[aIndex];
 
   // allow access to any data in the drop and dragdrop events, or if the
-  // UniversalBrowserRead privilege is set, otherwise only allow access to
+  // UniversalXPConnect privilege is set, otherwise only allow access to
   // data from the same principal.
   nsIPrincipal* principal = nsnull;
   if (mEventType != NS_DRAGDROP_DROP && mEventType != NS_DRAGDROP_DRAGDROP &&
-      !nsContentUtils::IsCallerTrustedForCapability("UniversalBrowserRead")) {
+      !nsContentUtils::CallerHasUniversalXPConnect()) {
     nsresult rv = NS_OK;
     principal = GetCurrentPrincipal(&rv);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -525,7 +528,7 @@ nsDOMDataTransfer::MozSetDataAt(const nsAString& aFormat,
   // XXX perhaps this should also limit any non-string type as well
   if ((aFormat.EqualsLiteral("application/x-moz-file-promise") ||
        aFormat.EqualsLiteral("application/x-moz-file")) &&
-       !nsContentUtils::IsCallerTrustedForCapability("UniversalXPConnect")) {
+       !nsContentUtils::CallerHasUniversalXPConnect()) {
     return NS_ERROR_DOM_SECURITY_ERR;
   }
 

@@ -119,10 +119,27 @@ XPCOMUtils.defineLazyGetter(this, "AutocompletePopup", function () {
   return obj.AutocompletePopup;
 });
 
+XPCOMUtils.defineLazyGetter(this, "ScratchpadManager", function () {
+  var obj = {};
+  try {
+    Cu.import("resource:///modules/devtools/scratchpad-manager.jsm", obj);
+  }
+  catch (err) {
+    Cu.reportError(err);
+  }
+  return obj.ScratchpadManager;
+});
+
 XPCOMUtils.defineLazyGetter(this, "namesAndValuesOf", function () {
   var obj = {};
   Cu.import("resource:///modules/PropertyPanel.jsm", obj);
   return obj.namesAndValuesOf;
+});
+
+XPCOMUtils.defineLazyGetter(this, "gConsoleStorage", function () {
+  let obj = {};
+  Cu.import("resource://gre/modules/ConsoleAPIStorage.jsm", obj);
+  return obj.ConsoleAPIStorage;
 });
 
 function LogFactory(aMessagePrefix)
@@ -1362,6 +1379,11 @@ function HUD_SERVICE()
 HUD_SERVICE.prototype =
 {
   /**
+   * Last value entered
+   */
+  lastInputValue: "",
+
+  /**
    * L10N shortcut function
    *
    * @param string aName
@@ -1407,6 +1429,18 @@ HUD_SERVICE.prototype =
   getWindowId: function HS_getWindowId(aWindow)
   {
     return aWindow.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils).outerWindowID;
+  },
+
+  /**
+   * Gets the ID of the inner window of this DOM window
+   *
+   * @param nsIDOMWindow aWindow
+   * @returns integer
+   */
+  getInnerWindowId: function HS_getInnerWindowId(aWindow)
+  {
+    return aWindow.QueryInterface(Ci.nsIInterfaceRequestor).
+           getInterface(Ci.nsIDOMWindowUtils).currentInnerWindowID;
   },
 
   /**
@@ -1506,8 +1540,8 @@ HUD_SERVICE.prototype =
     this.wakeup();
 
     let window = aContext.linkedBrowser.contentWindow;
-    let nBox = aContext.ownerDocument.defaultView.
-      getNotificationBox(window);
+    let chromeDocument = aContext.ownerDocument;
+    let nBox = chromeDocument.defaultView.getNotificationBox(window);
     this.registerActiveContext(nBox.id);
     this.windowInitializer(window);
 
@@ -2033,7 +2067,16 @@ HUD_SERVICE.prototype =
     // Pipe the message to createMessageNode().
     let hud = HUDService.hudReferences[aHUDId];
     function formatResult(x) {
-      return (typeof(x) == "string") ? x : hud.jsterm.formatResult(x);
+      if (typeof(x) == "string") {
+        return x;
+      }
+      if (hud.gcliterm) {
+        return hud.gcliterm.formatResult(x);
+      }
+      if (hud.jsterm) {
+        return hud.jsterm.formatResult(x);
+      }
+      return x;
     }
 
     let body = null;
@@ -2136,7 +2179,8 @@ HUD_SERVICE.prototype =
                                               sourceURL,
                                               sourceLine,
                                               clipboardText,
-                                              level);
+                                              level,
+                                              aMessage.timeStamp);
 
     // Make the node bring up the property panel, to allow the user to inspect
     // the stack trace.
@@ -2203,18 +2247,38 @@ HUD_SERVICE.prototype =
   /**
    * Reports an error in the page source, either JavaScript or CSS.
    *
-   * @param number aCategory
-   *        The category of the message; either CATEGORY_CSS or CATEGORY_JS.
    * @param nsIScriptError aScriptError
    *        The error message to report.
    * @return void
    */
-  reportPageError: function HS_reportPageError(aCategory, aScriptError)
+  reportPageError: function HS_reportPageError(aScriptError)
   {
-    if (aCategory != CATEGORY_CSS && aCategory != CATEGORY_JS) {
-      throw Components.Exception("Unsupported category (must be one of CSS " +
-                                 "or JS)", Cr.NS_ERROR_INVALID_ARG,
-                                 Components.stack.caller);
+    if (!aScriptError.outerWindowID) {
+      return;
+    }
+
+    let category;
+
+    switch (aScriptError.category) {
+      // We ignore chrome-originating errors as we only care about content.
+      case "XPConnect JavaScript":
+      case "component javascript":
+      case "chrome javascript":
+      case "chrome registration":
+      case "XBL":
+      case "XBL Prototype Handler":
+      case "XBL Content Sink":
+      case "xbl javascript":
+        return;
+
+      case "CSS Parser":
+      case "CSS Loader":
+        category = CATEGORY_CSS;
+        break;
+
+      default:
+        category = CATEGORY_JS;
+        break;
     }
 
     // Warnings and legacy strict errors become warnings; other types become
@@ -2233,12 +2297,14 @@ HUD_SERVICE.prototype =
         let chromeDocument = outputNode.ownerDocument;
 
         let node = ConsoleUtils.createMessageNode(chromeDocument,
-                                                  aCategory,
+                                                  category,
                                                   severity,
                                                   aScriptError.errorMessage,
                                                   hudId,
                                                   aScriptError.sourceName,
-                                                  aScriptError.lineNumber);
+                                                  aScriptError.lineNumber,
+                                                  null, null,
+                                                  aScriptError.timeStamp);
 
         ConsoleUtils.outputMessageNode(node, hudId);
       }
@@ -2886,7 +2952,7 @@ HUD_SERVICE.prototype =
     if (!hudNode) {
       // get nBox object and call new HUD
       let config = { parentNode: nBox,
-                     contentWindow: aContentWindow
+                     contentWindow: aContentWindow.top
                    };
 
       hud = new HeadsUpDisplay(config);
@@ -2899,6 +2965,8 @@ HUD_SERVICE.prototype =
 
       _browser.webProgress.addProgressListener(hud.progressListener,
         Ci.nsIWebProgress.NOTIFY_STATE_ALL);
+
+      hud.displayCachedConsoleMessages();
     }
     else {
       hud = this.hudReferences[hudId];
@@ -3568,6 +3636,58 @@ HeadsUpDisplay.prototype = {
   },
 
   /**
+   * Display cached messages that may have been collected before the UI is
+   * displayed.
+   *
+   * @returns void
+   */
+  displayCachedConsoleMessages: function HUD_displayCachedConsoleMessages()
+  {
+    let innerWindowId = HUDService.getInnerWindowId(this.contentWindow);
+
+    let messages = gConsoleStorage.getEvents(innerWindowId);
+
+    let errors = {};
+    Services.console.getMessageArray(errors, {});
+
+    // Filter the errors to find only those we should display.
+    let filteredErrors = (errors.value || []).filter(function(aError) {
+      return aError instanceof Ci.nsIScriptError &&
+             aError.innerWindowID == innerWindowId;
+    }, this);
+
+    messages.push.apply(messages, filteredErrors);
+    messages.sort(function(a, b) { return a.timeStamp - b.timeStamp; });
+
+    // Turn off scrolling for the moment.
+    ConsoleUtils.scroll = false;
+    this.outputNode.hidden = true;
+
+    // Display all messages.
+    messages.forEach(function(aMessage) {
+      if (aMessage instanceof Ci.nsIScriptError) {
+        HUDService.reportPageError(aMessage);
+      }
+      else {
+        // In this case the cached message is a console message generated
+        // by the ConsoleAPI, not an nsIScriptError
+        HUDService.logConsoleAPIMessage(this.hudId, aMessage);
+      }
+    }, this);
+
+    this.outputNode.hidden = false;
+    ConsoleUtils.scroll = true;
+
+    // Scroll to bottom.
+    let numChildren = this.outputNode.childNodes.length;
+    if (numChildren && this.outputNode.clientHeight) {
+      // We also check the clientHeight to force a reflow, otherwise
+      // ensureIndexIsVisible() does not work after outputNode.hidden = false.
+      this.outputNode.ensureIndexIsVisible(numChildren - 1);
+    }
+  },
+
+  /**
    * Re-attaches a console when the contentWindow is recreated
    *
    * @param nsIDOMWindow aContentWindow
@@ -3656,7 +3776,7 @@ HeadsUpDisplay.prototype = {
     consoleFilterToolbar.setAttribute("id", "viewGroup");
     this.consoleFilterToolbar = consoleFilterToolbar;
 
-    this.hintNode = this.makeXULNode("div");
+    this.hintNode = this.makeXULNode("vbox");
     this.hintNode.setAttribute("class", "gcliterm-hint-node");
 
     let hintParentNode = this.makeXULNode("vbox");
@@ -3999,7 +4119,7 @@ HeadsUpDisplay.prototype = {
     function HUD_clearButton_onCommand() {
       let hud = HUDService.getHudReferenceById(hudId);
       if (hud.jsterm) {
-        hud.jsterm.clearOutput();
+        hud.jsterm.clearOutput(true);
       }
       if (hud.gcliterm) {
         hud.gcliterm.clearOutput();
@@ -4517,7 +4637,7 @@ function JSTermHelper(aJSTerm)
   aJSTerm.sandbox.clear = function JSTH_clear()
   {
     aJSTerm.helperEvaluated = true;
-    aJSTerm.clearOutput();
+    aJSTerm.clearOutput(true);
   };
 
   /**
@@ -4588,7 +4708,7 @@ function JSTermHelper(aJSTerm)
   aJSTerm.sandbox.inspectrules = function JSTH_inspectrules(aNode)
   {
     aJSTerm.helperEvaluated = true;
-    let doc = aJSTerm.parentNode.ownerDocument;
+    let doc = aJSTerm.inputNode.ownerDocument;
     let win = doc.defaultView;
     let panel = createElement(doc, "panel", {
       label: "CSS Rules",
@@ -4702,6 +4822,7 @@ function JSTerm(aContext, aParentNode, aMixin, aConsole)
   this.parentNode = aParentNode;
   this.mixins = aMixin;
   this.console = aConsole;
+  this.document = aParentNode.ownerDocument
 
   this.setTimeout = aParentNode.ownerDocument.defaultView.setTimeout;
 
@@ -4907,7 +5028,7 @@ JSTerm.prototype = {
       });
     }
 
-    let doc = self.parentNode.ownerDocument;
+    let doc = self.document;
     let parent = doc.getElementById("mainPopupSet");
     let title = (aEvalString
         ? HUDService.getFormatStr("jsPropertyInspectTitle", [aEvalString])
@@ -4936,7 +5057,7 @@ JSTerm.prototype = {
    */
   writeOutputJS: function JST_writeOutputJS(aEvalString, aOutputObject, aOutputString)
   {
-    let node = ConsoleUtils.createMessageNode(this.parentNode.ownerDocument,
+    let node = ConsoleUtils.createMessageNode(this.document,
                                               CATEGORY_OUTPUT,
                                               SEVERITY_LOG,
                                               aOutputString,
@@ -4985,7 +5106,7 @@ JSTerm.prototype = {
    */
   writeOutput: function JST_writeOutput(aOutputMessage, aCategory, aSeverity)
   {
-    let node = ConsoleUtils.createMessageNode(this.parentNode.ownerDocument,
+    let node = ConsoleUtils.createMessageNode(this.document,
                                               aCategory, aSeverity,
                                               aOutputMessage, this.hudId);
 
@@ -5109,7 +5230,14 @@ JSTerm.prototype = {
     return type.toLowerCase();
   },
 
-  clearOutput: function JST_clearOutput()
+  /**
+   * Clear the Web Console output.
+   *
+   * @param boolean aClearStorage
+   *        True if you want to clear the console messages storage associated to
+   *        this Web Console.
+   */
+  clearOutput: function JST_clearOutput(aClearStorage)
   {
     let hud = HUDService.getHudReferenceById(this.hudId);
     hud.cssNodes = {};
@@ -5127,6 +5255,11 @@ JSTerm.prototype = {
 
     hud.HUDBox.lastTimestamp = 0;
     hud.groupDepth = 0;
+
+    if (aClearStorage) {
+      let windowId = HUDService.getInnerWindowId(hud.contentWindow);
+      gConsoleStorage.clearEvents(windowId);
+    }
   },
 
   /**
@@ -5261,6 +5394,10 @@ JSTerm.prototype = {
         if (this.complete(this.COMPLETE_HINT_ONLY) &&
             this.lastCompletion &&
             this.acceptProposedCompletion()) {
+          aEvent.preventDefault();
+        }
+        else {
+          this.updateCompleteNode(HUDService.getStr("Autocomplete.blank"));
           aEvent.preventDefault();
         }
         break;
@@ -5653,6 +5790,11 @@ FirefoxApplicationHooks.prototype = {
  */
 
 ConsoleUtils = {
+  /**
+   * Flag to turn on and off scrolling.
+   */
+  scroll: true,
+
   supString: function ConsoleUtils_supString(aString)
   {
     let str = Cc["@mozilla.org/supports-string;1"].
@@ -5696,6 +5838,10 @@ ConsoleUtils = {
    * @returns void
    */
   scrollToVisible: function ConsoleUtils_scrollToVisible(aNode) {
+    if (!this.scroll) {
+      return;
+    }
+
     // Find the enclosing richlistbox node.
     let richListBoxNode = aNode.parentNode;
     while (richListBoxNode.tagName != "richlistbox") {
@@ -5733,6 +5879,9 @@ ConsoleUtils = {
    *        a string, then the clipboard text must be supplied.
    * @param number aLevel [optional]
    *        The level of the console API message.
+   * @param number aTimeStamp [optional]
+   *        The timestamp to use for this message node. If omitted, the current
+   *        date and time is used.
    * @return nsIDOMNode
    *         The message node: a XUL richlistitem ready to be inserted into
    *         the Web Console output node.
@@ -5740,7 +5889,8 @@ ConsoleUtils = {
   createMessageNode:
   function ConsoleUtils_createMessageNode(aDocument, aCategory, aSeverity,
                                           aBody, aHUDId, aSourceURL,
-                                          aSourceLine, aClipboardText, aLevel) {
+                                          aSourceLine, aClipboardText, aLevel,
+                                          aTimeStamp) {
     if (typeof aBody != "string" && aClipboardText == null && aBody.innerText) {
       aClipboardText = aBody.innerText;
     }
@@ -5800,7 +5950,7 @@ ConsoleUtils = {
     // Create the timestamp.
     let timestampNode = aDocument.createElementNS(XUL_NS, "label");
     timestampNode.classList.add("webconsole-timestamp");
-    let timestamp = ConsoleUtils.timestamp();
+    let timestamp = aTimeStamp || ConsoleUtils.timestamp();
     let timestampString = ConsoleUtils.timestampString(timestamp);
     timestampNode.setAttribute("value", timestampString);
 
@@ -6506,49 +6656,22 @@ HUDConsoleObserver = {
   init: function HCO_init()
   {
     Services.console.registerListener(this);
-    Services.obs.addObserver(this, "xpcom-shutdown", false);
+    Services.obs.addObserver(this, "quit-application-granted", false);
   },
 
   uninit: function HCO_uninit()
   {
     Services.console.unregisterListener(this);
-    Services.obs.removeObserver(this, "xpcom-shutdown");
+    Services.obs.removeObserver(this, "quit-application-granted");
   },
 
   observe: function HCO_observe(aSubject, aTopic, aData)
   {
-    if (aTopic == "xpcom-shutdown") {
+    if (aTopic == "quit-application-granted") {
       this.uninit();
-      return;
     }
-
-    if (!(aSubject instanceof Ci.nsIScriptError) ||
-        !(aSubject instanceof Ci.nsIScriptError2) ||
-        !aSubject.outerWindowID) {
-      return;
-    }
-
-    switch (aSubject.category) {
-      // We ignore chrome-originating errors as we only
-      // care about content.
-      case "XPConnect JavaScript":
-      case "component javascript":
-      case "chrome javascript":
-      case "chrome registration":
-      case "XBL":
-      case "XBL Prototype Handler":
-      case "XBL Content Sink":
-      case "xbl javascript":
-        return;
-
-      case "CSS Parser":
-      case "CSS Loader":
-        HUDService.reportPageError(CATEGORY_CSS, aSubject);
-        return;
-
-      default:
-        HUDService.reportPageError(CATEGORY_JS, aSubject);
-        return;
+    else if (aSubject instanceof Ci.nsIScriptError) {
+      HUDService.reportPageError(aSubject);
     }
   }
 };
@@ -6663,21 +6786,14 @@ function appName()
   throw new Error("appName: UNSUPPORTED APPLICATION UUID");
 }
 
-///////////////////////////////////////////////////////////////////////////
-// HUDService (exported symbol)
-///////////////////////////////////////////////////////////////////////////
-
-try {
-  // start the HUDService
-  // This is in a try block because we want to kill everything if
-  // *any* of this fails
-  var HUDService = new HUD_SERVICE();
-}
-catch (ex) {
-  Cu.reportError("HUDService failed initialization.\n" + ex);
-  // TODO: kill anything that may have started up
-  // see bug 568665
-}
+XPCOMUtils.defineLazyGetter(this, "HUDService", function () {
+  try {
+    return new HUD_SERVICE();
+  }
+  catch (ex) {
+    Cu.reportError(ex);
+  }
+});
 
 ///////////////////////////////////////////////////////////////////////////
 // GcliTerm
@@ -6713,6 +6829,7 @@ function GcliTerm(aContentWindow, aHudId, aDocument, aConsole, aHintNode, aConso
   this.document = aDocument;
   this.console = aConsole;
   this.hintNode = aHintNode;
+  this._window = this.context.get().QueryInterface(Ci.nsIDOMWindow);
 
   this.createUI();
   this.createSandbox();
@@ -6720,8 +6837,26 @@ function GcliTerm(aContentWindow, aHudId, aDocument, aConsole, aHintNode, aConso
   this.show = this.show.bind(this);
   this.hide = this.hide.bind(this);
 
+  // Allow GCLI:Inputter to decide how and when to open a scratchpad window
+  let scratchpad = {
+    shouldActivate: function Scratchpad_shouldActivate(aEvent) {
+      return aEvent.shiftKey &&
+          aEvent.keyCode === Ci.nsIDOMKeyEvent.DOM_VK_RETURN;
+    },
+    activate: function Scratchpad_activate(aValue) {
+      aValue = aValue.replace(/^\s*{\s*/, '');
+      ScratchpadManager.openScratchpad({ text: aValue });
+      return true;
+    },
+    linkText: stringBundle.GetStringFromName('scratchpad.linkText')
+  };
+
   this.opts = {
-    environment: { hudId: this.hudId },
+    environment: {
+      hudId: this.hudId,
+      chromeDocument: this.document,
+      contentDocument: aContentWindow.document
+    },
     chromeDocument: this.document,
     contentDocument: aContentWindow.document,
     jsEnvironment: {
@@ -6733,6 +6868,7 @@ function GcliTerm(aContentWindow, aHudId, aDocument, aConsole, aHintNode, aConso
     inputBackgroundElement: this.inputStack,
     hintElement: this.hintNode,
     consoleWrap: aConsoleWrap,
+    scratchpad: scratchpad,
     gcliTerm: this
   };
 
@@ -6790,6 +6926,7 @@ GcliTerm.prototype = {
     delete this.document;
     delete this.console;
     delete this.hintNode;
+    delete this._window;
 
     delete this.sandbox;
     delete this.element
@@ -6827,7 +6964,7 @@ GcliTerm.prototype = {
     this.inputStack.setAttribute("class", "gcliterm-stack-node");
     this.element.appendChild(this.inputStack);
 
-    this.completeNode = this.document.createElement("div");
+    this.completeNode = this.document.createElementNS(HTML_NS, "div");
     this.completeNode.setAttribute("class", "gcliterm-complete-node");
     this.completeNode.setAttribute("aria-live", "polite");
     this.inputStack.appendChild(this.completeNode);
@@ -6849,26 +6986,71 @@ GcliTerm.prototype = {
       return;
     }
 
-    this.writeOutput(aEvent.output.typed, { category: CATEGORY_INPUT });
+    this.writeOutput(aEvent.output.typed, CATEGORY_INPUT);
 
-    if (aEvent.output.output == null) {
+    // This is an experiment to see how much people yell when we stop reporting
+    // undefined replies.
+    if (aEvent.output.output === undefined) {
       return;
     }
 
     let output = aEvent.output.output;
-    if (aEvent.output.command.returnType == "html" && typeof output == "string") {
+    let declaredType = aEvent.output.command.returnType || "";
+
+    if (declaredType == "object") {
+      let actualType = typeof output;
+      if (output === null) {
+        output = "null";
+      }
+      else if (actualType == "string") {
+        output = "\"" + output + "\"";
+      }
+      else if (actualType == "object" || actualType == "function") {
+        let formatOpts = [ nameObject(output) ];
+        output = stringBundle.formatStringFromName('gcliterm.instanceLabel',
+                formatOpts, formatOpts.length);
+        let linkNode = this.document.createElementNS(HTML_NS, 'html:span');
+        linkNode.appendChild(this.document.createTextNode(output));
+        linkNode.classList.add("hud-clickable");
+        linkNode.setAttribute("aria-haspopup", "true");
+
+        // Make the object bring up the property panel.
+        linkNode.addEventListener("mousedown", function(aEv) {
+          this._startX = aEv.clientX;
+          this._startY = aEv.clientY;
+        }.bind(this), false);
+
+        linkNode.addEventListener("click", function(aEv) {
+          if (aEv.detail != 1 || aEv.button != 0 ||
+              (this._startX != aEv.clientX && this._startY != aEv.clientY)) {
+            return;
+          }
+
+          if (!this._panelOpen) {
+            let propPanel = this.openPropertyPanel(aEvent.output.typed, aEvent.output.output, this);
+            propPanel.panel.setAttribute("hudId", this.hudId);
+            this._panelOpen = true;
+          }
+        }.bind(this), false);
+
+        output = linkNode;
+      }
+      // else if (actualType == number/boolean/undefined) do nothing
+    }
+
+    if (declaredType == "html" && typeof output == "string") {
       output = this.document.createRange().createContextualFragment(
           '<div xmlns="' + HTML_NS + '" xmlns:xul="' + XUL_NS + '">' +
-          output + '</div>').firstChild;
+          output + '</div>');
     }
 
     // See https://github.com/mozilla/domtemplate/blob/master/README.md
     // for docs on the template() function
     let element = this.document.createRange().createContextualFragment(
-      '<richlistitem xmlns="' + XUL_NS + '" clipboardText="${clipboardText}"' +
-      '    timestamp="${timestamp}" id="${id}" class="hud-msg-node">' +
-      '  <label class="webconsole-timestamp" value="${timestampString}"/>' +
-      '  <vbox class="webconsole-msg-icon-container" style="${iconContainerStyle}">' +
+      '<richlistitem xmlns="' + XUL_NS + '" _clipboardText="${clipboardText}"' +
+      '    _timestamp="${timestamp}" _id="${id}" class="hud-msg-node">' +
+      '  <label class="webconsole-timestamp" _value="${timestampString}"/>' +
+      '  <vbox class="webconsole-msg-icon-container" _style="${iconContainerStyle}">' +
       '    <image class="webconsole-msg-icon"/>' +
       '    <spacer flex="1"/>' +
       '  </vbox>' +
@@ -6896,14 +7078,14 @@ GcliTerm.prototype = {
    */
   createSandbox: function Gcli_createSandbox()
   {
-    let win = this.context.get().QueryInterface(Ci.nsIDOMWindow);
-
     // create a JS Sandbox out of this.context
-    this.sandbox = new Cu.Sandbox(win, {
-      sandboxPrototype: win,
+    this.sandbox = new Cu.Sandbox(this._window, {
+      sandboxPrototype: this._window,
       wantXrays: false
     });
     this.sandbox.console = this.console;
+
+    JSTermHelper(this);
   },
 
   /**
@@ -6915,7 +7097,31 @@ GcliTerm.prototype = {
    */
   evalInSandbox: function Gcli_evalInSandbox(aString)
   {
-    return Cu.evalInSandbox(aString, this.sandbox, "1.8", "Web Console", 1);
+    let window = unwrap(this.sandbox.window);
+    let temp$ = null;
+    let temp$$ = null;
+
+    // We prefer to execute the page-provided implementations for the $() and
+    // $$() functions.
+    if (typeof window.$ == "function") {
+      temp$ = this.sandbox.$;
+      delete this.sandbox.$;
+    }
+    if (typeof window.$$ == "function") {
+      temp$$ = this.sandbox.$$;
+      delete this.sandbox.$$;
+    }
+
+    let result = Cu.evalInSandbox(aString, this.sandbox, "1.8", "Web Console", 1);
+
+    if (temp$) {
+      this.sandbox.$ = temp$;
+    }
+    if (temp$$) {
+      this.sandbox.$$ = temp$$;
+    }
+
+    return result;
   },
 
   /**
@@ -6929,14 +7135,14 @@ GcliTerm.prototype = {
    * @param number aSeverity
    *        One of the SEVERITY_ constants.
    */
-  writeOutput: function Gcli_writeOutput(aOutputMessage, aOptions)
+  writeOutput: function Gcli_writeOutput(aOutputMessage, aCategory, aSeverity, aOptions)
   {
     aOptions = aOptions || {};
 
     let node = ConsoleUtils.createMessageNode(
                     this.document,
-                    aOptions.category || CATEGORY_OUTPUT,
-                    aOptions.severity || SEVERITY_LOG,
+                    aCategory || CATEGORY_OUTPUT,
+                    aSeverity || SEVERITY_LOG,
                     aOutputMessage,
                     this.hudId,
                     aOptions.sourceUrl || undefined,
@@ -6947,5 +7153,21 @@ GcliTerm.prototype = {
   },
 
   clearOutput: JSTerm.prototype.clearOutput,
+  openPropertyPanel: JSTerm.prototype.openPropertyPanel,
+
+  formatResult: JSTerm.prototype.formatResult,
+  getResultType: JSTerm.prototype.getResultType,
+  formatString: JSTerm.prototype.formatString,
 };
 
+/**
+ * A fancy version of toString()
+ */
+function nameObject(aObj) {
+  if (aObj.constructor && aObj.constructor.name) {
+    return aObj.constructor.name;
+  }
+  // If that fails, use Objects toString which sometimes gives something
+  // better than 'Object', and at least defaults to Object if nothing better
+  return Object.prototype.toString.call(aObj).slice(8, -1);
+}

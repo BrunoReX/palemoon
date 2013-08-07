@@ -99,6 +99,7 @@ public final class RectUtils {
                          y + (rect.height() * scale));
     }
 
+    /** Returns the nearest integer rect of the given rect. */
     public static Rect round(RectF rect) {
         return new Rect(Math.round(rect.left), Math.round(rect.top),
                         Math.round(rect.right), Math.round(rect.bottom));

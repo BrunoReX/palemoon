@@ -43,6 +43,7 @@
 #include "nsISupports.h"
 #include "nsCOMPtr.h"
 #include "nsIProgrammingLanguage.h"
+#include "jsfriendapi.h"
 #include "jspubtd.h"
 
 class nsIScriptGlobalObject;
@@ -74,8 +75,8 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsIScriptContextPrincipal,
                               NS_ISCRIPTCONTEXTPRINCIPAL_IID)
 
 #define NS_ISCRIPTCONTEXT_IID \
-{ 0xb36103bd, 0x304e, 0x4ef2, \
-  { 0x81, 0x12, 0x83, 0x42, 0xe5, 0xbd, 0xf3, 0xd4 } }
+{ 0xf3840057, 0x4fe5, 0x4f92, \
+ { 0xa3, 0xb8, 0x27, 0xd7, 0x44, 0x6f, 0x72, 0x4d } }
 
 /* This MUST match JSVERSION_DEFAULT.  This version stuff if we don't
    know what language we have is a little silly... */
@@ -99,7 +100,9 @@ public:
    * @param aScript a string representing the script to be executed
    * @param aScopeObject a script object for the scope to execute in, or
    *                     nsnull to use a default scope
-   * @param aPrincipal the principal that produced the script
+   * @param aPrincipal the principal the script should be evaluated with
+   * @param aOriginPrincipal the principal the script originates from.  If null,
+   *                         aPrincipal is used.
    * @param aURL the URL or filename for error messages
    * @param aLineNo the starting line number of the script for error messages
    * @param aVersion the script language version to use when executing
@@ -115,6 +118,7 @@ public:
   virtual nsresult EvaluateString(const nsAString& aScript,
                                   JSObject* aScopeObject,
                                   nsIPrincipal *aPrincipal,
+                                  nsIPrincipal *aOriginPrincipal,
                                   const char *aURL,
                                   PRUint32 aLineNo,
                                   PRUint32 aVersion,
@@ -351,7 +355,7 @@ public:
    *
    * @return NS_OK if the method is successful
    */
-  virtual void GC() = 0;
+  virtual void GC(js::gcreason::Reason aReason) = 0;
 
   /**
    * Inform the context that a script was evaluated.

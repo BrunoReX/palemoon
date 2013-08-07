@@ -88,8 +88,12 @@ nsHttpHeaderArray::SetHeaderFromNet(nsHttpAtom header, const nsACString &value)
     index = LookupEntry(header, &entry);
 
     if (!entry) {
-        if (value.IsEmpty())
-            return NS_OK; // ignore empty headers
+        if (value.IsEmpty()) {
+            if (!TrackEmptyHeader(header)) {
+                LOG(("Ignoring Empty Header: %s\n", header.get()));
+                return NS_OK; // ignore empty headers by default
+            }
+        }
         entry = mHeaders.AppendElement(); //new nsEntry(header, value);
         if (!entry)
             return NS_ERROR_OUT_OF_MEMORY;
@@ -105,6 +109,8 @@ nsHttpHeaderArray::SetHeaderFromNet(nsHttpAtom header, const nsACString &value)
                 // reply may be corrupt/hacked (ex: CLRF injection attacks)
                 return NS_ERROR_CORRUPTED_CONTENT;
             } // else silently drop value: keep value from 1st header seen
+            LOG(("Header %s silently dropped as non mergeable header\n",
+                 header.get()));
         }
     }
 

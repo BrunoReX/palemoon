@@ -45,6 +45,7 @@
 #include "nsEventShell.h"
 #include "nsTextAccessible.h"
 #include "FocusManager.h"
+#include "Role.h"
 #include "TextUpdater.h"
 
 #include "mozilla/dom/Element.h"
@@ -116,8 +117,10 @@ NotificationController::Shutdown()
 
   // Shutdown handling child documents.
   PRInt32 childDocCount = mHangingChildDocuments.Length();
-  for (PRInt32 idx = childDocCount - 1; idx >= 0; idx--)
-    mHangingChildDocuments[idx]->Shutdown();
+  for (PRInt32 idx = childDocCount - 1; idx >= 0; idx--) {
+    if (!mHangingChildDocuments[idx]->IsDefunct())
+      mHangingChildDocuments[idx]->Shutdown();
+  }
 
   mHangingChildDocuments.Clear();
 
@@ -258,6 +261,8 @@ NotificationController::WillRefresh(mozilla::TimeStamp aTime)
   PRUint32 hangingDocCnt = mHangingChildDocuments.Length();
   for (PRUint32 idx = 0; idx < hangingDocCnt; idx++) {
     nsDocAccessible* childDoc = mHangingChildDocuments[idx];
+    if (childDoc->IsDefunct())
+      continue;
 
     nsIContent* ownerContent = mDocument->GetDocumentNode()->
       FindContentForSubDocument(childDoc->GetDocumentNode());
@@ -679,7 +684,7 @@ NotificationController::CreateTextChangeEventFor(AccMutationEvent* aEvent)
     return;
 
   // Don't fire event for the first html:br in an editor.
-  if (aEvent->mAccessible->Role() == nsIAccessibleRole::ROLE_WHITESPACE) {
+  if (aEvent->mAccessible->Role() == roles::WHITESPACE) {
     nsCOMPtr<nsIEditor> editor;
     textAccessible->GetAssociatedEditor(getter_AddRefs(editor));
     if (editor) {

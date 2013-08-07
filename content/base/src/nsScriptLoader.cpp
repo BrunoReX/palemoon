@@ -41,7 +41,8 @@
  * A class that handles loading and evaluation of <script> elements.
  */
 
-#include "jscntxt.h"
+#include "jsapi.h"
+#include "jsfriendapi.h"
 #include "nsScriptLoader.h"
 #include "nsParserUtils.h"
 #include "nsICharsetConverterManager.h"
@@ -120,7 +121,7 @@ public:
   nsString mScriptText;              // Holds script for loaded scripts
   PRUint32 mJSVersion;
   nsCOMPtr<nsIURI> mURI;
-  nsCOMPtr<nsIURI> mFinalURI;
+  nsCOMPtr<nsIPrincipal> mOriginPrincipal;
   PRInt32 mLineNo;
 };
 
@@ -498,7 +499,7 @@ nsScriptLoader::ProcessScriptElement(nsIScriptElement *aElement)
           // We re-use our knowledge of the implementation to reuse
           // JSVERSION_HAS_XML as a safe version flag.
           // If version has JSVERSION_UNKNOWN (-1), then this is still OK.
-          version |= js::VersionFlags::HAS_XML;
+          version = js::VersionSetXML(JSVersion(version), true);
       }
     }
   } else {
@@ -882,8 +883,6 @@ nsScriptLoader::EvaluateScript(nsScriptLoadRequest* aRequest,
     return NS_ERROR_FAILURE;
   }
 
-  nsIURI* uri = aRequest->mFinalURI ? aRequest->mFinalURI : aRequest->mURI;
-
   bool oldProcessingScriptTag = context->GetProcessingScriptTag();
   context->SetProcessingScriptTag(true);
 
@@ -891,14 +890,17 @@ nsScriptLoader::EvaluateScript(nsScriptLoadRequest* aRequest,
   nsCOMPtr<nsIScriptElement> oldCurrent = mCurrentScript;
   mCurrentScript = aRequest->mElement;
 
+  // It's very important to use aRequest->mURI, not the final URI of the channel
+  // aRequest ended up getting script data from, as the script filename.
   nsCAutoString url;
-  nsContentUtils::GetWrapperSafeScriptFilename(mDocument, uri, url);
+  nsContentUtils::GetWrapperSafeScriptFilename(mDocument, aRequest->mURI, url);
 
   bool isUndefined;
   rv = context->EvaluateString(aScript, globalObject->GetGlobalJSObject(),
-                          mDocument->NodePrincipal(), url.get(),
-                          aRequest->mLineNo, aRequest->mJSVersion, nsnull,
-                          &isUndefined);
+                               mDocument->NodePrincipal(),
+                               aRequest->mOriginPrincipal,
+                               url.get(), aRequest->mLineNo,
+                               aRequest->mJSVersion, nsnull, &isUndefined);
 
   // Put the old script back in case it wants to do anything else.
   mCurrentScript = oldCurrent;
@@ -940,8 +942,9 @@ nsScriptLoader::ProcessPendingRequests()
       !mParserBlockingRequest->mLoading &&
       ReadyToExecuteScripts()) {
     request.swap(mParserBlockingRequest);
-    // nsContentSink::ScriptAvailable unblocks the parser
+    UnblockParser(request);
     ProcessRequest(request);
+    ContinueParserAsync(request);
   }
 
   while (ReadyToExecuteScripts() && 
@@ -1167,8 +1170,9 @@ nsScriptLoader::OnStreamComplete(nsIStreamLoader* aLoader,
       FireScriptAvailable(rv, request);
     } else if (mParserBlockingRequest == request) {
       mParserBlockingRequest = nsnull;
-      // nsContentSink::ScriptAvailable unblocks the parser
+      UnblockParser(request);
       FireScriptAvailable(rv, request);
+      ContinueParserAsync(request);
     } else {
       mPreloads.RemoveElement(request, PreloadRequestComparator());
     }
@@ -1178,6 +1182,18 @@ nsScriptLoader::OnStreamComplete(nsIStreamLoader* aLoader,
   ProcessPendingRequests();
 
   return NS_OK;
+}
+
+void
+nsScriptLoader::UnblockParser(nsScriptLoadRequest* aParserBlockingRequest)
+{
+  aParserBlockingRequest->mElement->UnblockParser();
+}
+
+void
+nsScriptLoader::ContinueParserAsync(nsScriptLoadRequest* aParserBlockingRequest)
+{
+  aParserBlockingRequest->mElement->ContinueParserAsync();
 }
 
 nsresult
@@ -1213,7 +1229,10 @@ nsScriptLoader::PrepareLoadedRequest(nsScriptLoadRequest* aRequest,
   }
 
   nsCOMPtr<nsIChannel> channel = do_QueryInterface(req);
-  NS_GetFinalChannelURI(channel, getter_AddRefs(aRequest->mFinalURI));
+  rv = nsContentUtils::GetSecurityManager()->
+    GetChannelPrincipal(channel, getter_AddRefs(aRequest->mOriginPrincipal));
+  NS_ENSURE_SUCCESS(rv, rv);
+
   if (aStringLen) {
     // Check the charset attribute to determine script charset.
     nsAutoString hintCharset;

@@ -163,17 +163,13 @@ class NunboxAssembler : public JSC::MacroAssembler
     }
 
     void loadValueAsComponents(const Value &val, RegisterID type, RegisterID payload) {
-        jsval_layout jv;
-        jv.asBits = val.asRawBits();
-
+        jsval_layout jv = JSVAL_TO_IMPL(val);
         move(ImmTag(jv.s.tag), type);
         move(Imm32(jv.s.payload.u32), payload);
     }
 
     void loadValuePayload(const Value &val, RegisterID payload) {
-        jsval_layout jv;
-        jv.asBits = val.asRawBits();
-
+        jsval_layout jv = JSVAL_TO_IMPL(val);
         move(Imm32(jv.s.payload.u32), payload);
     }
 
@@ -211,6 +207,12 @@ class NunboxAssembler : public JSC::MacroAssembler
         JS_ASSERT(differenceBetween(start, load) == 0);
         (void) load;
         return start;
+#elif defined JS_CPU_MIPS
+        /*
+         * On MIPS there are LUI/ORI to patch.
+         */
+        load64WithPatch(address, treg, dreg, TAG_OFFSET, PAYLOAD_OFFSET);
+        return start;
 #endif
     }
 
@@ -236,6 +238,12 @@ class NunboxAssembler : public JSC::MacroAssembler
         return start;
 #elif defined JS_CPU_ARM || defined JS_CPU_SPARC
         return store64WithAddressOffsetPatch(treg, dreg, address);
+#elif defined JS_CPU_MIPS
+        /*
+         * On MIPS there are LUI/ORI to patch.
+         */
+        store64WithPatch(address, treg, dreg, TAG_OFFSET, PAYLOAD_OFFSET);
+        return start;
 #endif
     }
 
@@ -252,13 +260,18 @@ class NunboxAssembler : public JSC::MacroAssembler
         return start;
 #elif defined JS_CPU_ARM || defined JS_CPU_SPARC
         return store64WithAddressOffsetPatch(type, dreg, address);
+#elif defined JS_CPU_MIPS
+        /*
+         * On MIPS there are LUI/ORI to patch.
+         */
+        store64WithPatch(address, type, dreg, TAG_OFFSET, PAYLOAD_OFFSET);
+        return start;
 #endif
     }
 
     /* Overloaded for storing constant type and data. */
     DataLabel32 storeValueWithAddressOffsetPatch(const Value &v, Address address) {
-        jsval_layout jv;
-        jv.asBits = v.asRawBits();
+        jsval_layout jv = JSVAL_TO_IMPL(v);
         ImmTag type(jv.s.tag);
         Imm32 payload(jv.s.payload.u32);
         DataLabel32 start = dataLabel32();
@@ -272,6 +285,12 @@ class NunboxAssembler : public JSC::MacroAssembler
         return start;
 #elif defined JS_CPU_ARM || defined JS_CPU_SPARC
         return store64WithAddressOffsetPatch(type, payload, address);
+#elif defined JS_CPU_MIPS
+        /*
+         * On MIPS there are LUI/ORI to patch.
+         */
+        store64WithPatch(address, type, payload, TAG_OFFSET, PAYLOAD_OFFSET);
+        return start;
 #endif
     }
 
@@ -296,9 +315,7 @@ class NunboxAssembler : public JSC::MacroAssembler
      */
     template <typename T>
     Label storeValue(const Value &v, T address) {
-        jsval_layout jv;
-        jv.asBits = v.asRawBits();
-
+        jsval_layout jv = JSVAL_TO_IMPL(v);
         store32(ImmTag(jv.s.tag), tagOf(address));
         Label l = label();
         store32(Imm32(jv.s.payload.u32), payloadOf(address));
@@ -477,6 +494,12 @@ class NunboxAssembler : public JSC::MacroAssembler
 #elif defined JS_CPU_ARM
         // Yes, we are backwards from SPARC.
         fastStoreDouble(srcDest, dataReg, typeReg);
+#elif defined JS_CPU_MIPS
+#if defined(IS_LITTLE_ENDIAN)
+        fastStoreDouble(srcDest, dataReg, typeReg);
+#else
+        fastStoreDouble(srcDest, typeReg, dataReg);
+#endif
 #else
         JS_NOT_REACHED("implement this - push double, pop pop is easiest");
 #endif

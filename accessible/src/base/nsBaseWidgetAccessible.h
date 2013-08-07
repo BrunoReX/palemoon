@@ -108,6 +108,7 @@ public:
 protected:
   // nsAccessible
   virtual void BindToParent(nsAccessible* aParent, PRUint32 aIndexInParent);
+  virtual void UnbindFromParent();
 
   /**
    * Parent accessible that provides an action for this linkable accessible.
@@ -124,16 +125,16 @@ class nsEnumRoleAccessible : public nsAccessibleWrap
 {
 public:
   nsEnumRoleAccessible(nsIContent *aContent, nsIWeakReference *aShell,
-                       PRUint32 aRole);
+                       mozilla::a11y::role aRole);
   virtual ~nsEnumRoleAccessible() { }
 
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsAccessible
-  virtual PRUint32 NativeRole();
+  virtual mozilla::a11y::role NativeRole();
 
 protected:
-  PRUint32 mRole;
+  mozilla::a11y::role mRole;
 };
 
 #endif  

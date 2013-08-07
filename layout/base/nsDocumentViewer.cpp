@@ -198,6 +198,8 @@ static const char sPrintOptionsContractID[]         = "@mozilla.org/gfx/printset
 
 #include "mozilla/dom/Element.h"
 
+#include "jsfriendapi.h"
+
 using namespace mozilla;
 
 #ifdef NS_DEBUG
@@ -1287,7 +1289,7 @@ DocumentViewerImpl::PageHide(bool aIsUnload)
 
   if (aIsUnload) {
     // Poke the GC. The window might be collectable garbage now.
-    nsJSContext::PokeGC();
+    nsJSContext::PokeGC(js::gcreason::PAGE_HIDE);
 
     // if Destroy() was called during OnPageHide(), mDocument is nsnull.
     NS_ENSURE_STATE(mDocument);
@@ -3789,13 +3791,9 @@ DocumentViewerImpl::PrintPreviewNavigate(PRInt16 aType, PRInt32 aPageNum)
 
   // Now, locate the current page we are on and
   // and the page of the page number
-  nscoord gap = 0;
   nsIFrame* pageFrame = seqFrame->GetFirstPrincipalChild();
   while (pageFrame != nsnull) {
     nsRect pageRect = pageFrame->GetRect();
-    if (pageNum == 1) {
-      gap = pageRect.y;
-    }
     if (pageRect.Contains(pageRect.x, pt.y)) {
       currentPage = pageFrame;
     }

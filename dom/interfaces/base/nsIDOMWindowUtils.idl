@@ -70,7 +70,7 @@ interface nsIDOMFile;
 interface nsIFile;
 interface nsIDOMTouch;
 
-[scriptable, uuid(e01171b0-712a-47ce-8552-b7b2ef0a2507)]
+[scriptable, uuid(401b9315-c562-4066-a15c-7feb7ad5bb47)]
 interface nsIDOMWindowUtils : nsISupports {
 
   /**
@@ -403,8 +403,15 @@ interface nsIDOMWindowUtils : nsISupports {
    * @param aListener listener that receives information about the CC graph
    *                  (see @mozilla.org/cycle-collector-logger;1 for a logger
    *                   component)
+   * @param aExtraForgetSkippableCalls indicates how many times
+   *                                   nsCycleCollector_forgetSkippable will
+   *                                   be called before running cycle collection.
+   *                                   -1 prevents the default
+   *                                   nsCycleCollector_forgetSkippable call
+   *                                   which happens after garbage collection.
    */
-  void garbageCollect([optional] in nsICycleCollectorListener aListener);
+  void garbageCollect([optional] in nsICycleCollectorListener aListener,
+                      [optional] in long aExtraForgetSkippableCalls);
 
   /**
    * Force a cycle collection without garbage collection.
@@ -415,8 +422,15 @@ interface nsIDOMWindowUtils : nsISupports {
    * @param aListener listener that receives information about the CC graph
    *                  (see @mozilla.org/cycle-collector-logger;1 for a logger
    *                   component)
+   * @param aExtraForgetSkippableCalls indicates how many times
+   *                                   nsCycleCollector_forgetSkippable will
+   *                                   be called before running cycle collection.
+   *                                   -1 prevents the default
+   *                                   nsCycleCollector_forgetSkippable call
+   *                                   which happens after garbage collection.
    */
-  void cycleCollect([optional] in nsICycleCollectorListener aListener);
+  void cycleCollect([optional] in nsICycleCollectorListener aListener,
+                    [optional] in long aExtraForgetSkippableCalls);
 
   /**
    * Force processing of any queued paints
@@ -878,6 +892,9 @@ interface nsIDOMWindowUtils : nsISupports {
    */
   readonly attribute AString layerManagerType;
 
+  void startFrameTimeRecording();
+  void stopFrameTimeRecording([optional] out unsigned long frameCount,
+                              [retval, array, size_is(frameCount)] out float frameTime);
   /**
    * The DPI of the display
    */
@@ -985,28 +1002,33 @@ interface nsIDOMWindowUtils : nsISupports {
    * Begin opcode-level profiling of all JavaScript execution in the window's
    * runtime.
    */
+  [implicit_jscontext]
   void startPCCountProfiling();
 
   /**
    * Stop opcode-level profiling of JavaScript execution in the runtime, and
    * collect all counts for use by getPCCount methods.
    */
+  [implicit_jscontext]
   void stopPCCountProfiling();
 
   /**
    * Purge collected PC counters.
    */
+  [implicit_jscontext]
   void purgePCCounts();
 
   /**
    * Get the number of scripts with opcode-level profiling information.
    */
+  [implicit_jscontext]
   long getPCCountScriptCount();
 
   /**
    * Get a JSON string for a short summary of a script and the PC counts
    * accumulated for it.
    */
+  [implicit_jscontext]
   AString getPCCountScriptSummary(in long script);
 
   /**
@@ -1014,6 +1036,7 @@ interface nsIDOMWindowUtils : nsISupports {
    * including the decompilation of the script and placement of decompiled
    * operations within it, and PC counts for each operation.
    */
+  [implicit_jscontext]
   AString getPCCountScriptContents(in long script);
 
   /**

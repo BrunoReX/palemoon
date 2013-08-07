@@ -42,8 +42,7 @@
 #include "nsCOMPtr.h"
 #include "nsIAtom.h"
 #include "nsITextServicesFilter.h"
-#include "nsIDOMNSRange.h"
-#include "nsIRangeUtils.h"
+#include "nsRange.h"
 #include "nsCycleCollectionParticipant.h"
 
 /**
@@ -64,7 +63,6 @@ public:
   /* nsIContentIterator */
   virtual nsresult Init(nsINode* aRoot);
   virtual nsresult Init(nsIDOMRange* aRange);
-  virtual nsresult Init(nsIRange* aRange);
   virtual void First();
   virtual void Last();
   virtual void Next();
@@ -97,7 +95,7 @@ protected:
   nsCOMPtr<nsIAtom> mMapAtom;
 
   nsCOMPtr<nsITextServicesFilter> mFilter;
-  nsCOMPtr<nsIDOMNSRange>         mRange;
+  nsCOMPtr<nsIDOMRange>           mRange;
   bool                            mDidSkip;
   bool                            mIsOutOfRange;
   eDirectionType                  mDirection;

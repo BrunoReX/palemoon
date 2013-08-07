@@ -1420,7 +1420,11 @@ public:
    * If this document is a static clone, this returns the original
    * document.
    */
-  nsIDocument* GetOriginalDocument() { return mOriginalDocument; }
+  nsIDocument* GetOriginalDocument()
+  {
+    MOZ_ASSERT(!mOriginalDocument || !mOriginalDocument->GetOriginalDocument());
+    return mOriginalDocument;
+  }
 
   /**
    * Called by nsParser to preload images. Can be removed and code moved
@@ -1495,7 +1499,7 @@ public:
    * Register/Unregister a filedata uri as being "owned" by this document. 
    * I.e. that its lifetime is connected with this document. When the document
    * goes away it should "kill" the uri by calling
-   * nsFileDataProtocolHandler::RemoveFileDataEntry
+   * nsBlobProtocolHandler::RemoveFileDataEntry
    */
   virtual void RegisterFileDataUri(const nsACString& aUri) = 0;
   virtual void UnregisterFileDataUri(const nsACString& aUri) = 0;
@@ -1600,6 +1604,8 @@ public:
   void WarnOnceAbout(DeprecatedOperations aOperation);
 
   virtual void PostVisibilityUpdateEvent() = 0;
+  
+  bool IsSyntheticDocument() { return mIsSyntheticDocument; }
 
   void SetNeedLayoutFlush() {
     mNeedLayoutFlush = true;

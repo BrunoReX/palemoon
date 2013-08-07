@@ -46,19 +46,17 @@
 #include "nsStreamUtils.h"
 
 using namespace mozilla;
-using namespace mozilla::imagelib;
+using namespace mozilla::image;
 
 NS_IMPL_THREADSAFE_ISUPPORTS3(nsICOEncoder, imgIEncoder, nsIInputStream, nsIAsyncInputStream)
 
-nsICOEncoder::nsICOEncoder() : mFinished(false),
-                               mImageBufferStart(nsnull), 
+nsICOEncoder::nsICOEncoder() : mImageBufferStart(nsnull),
                                mImageBufferCurr(0),
                                mImageBufferSize(0), 
                                mImageBufferReadPoint(0), 
-                               mCallback(nsnull),
-                               mCallbackTarget(nsnull), 
-                               mNotifyThreshold(0),
-                               mUsePNG(true)
+                               mFinished(false),
+                               mUsePNG(true),
+                               mNotifyThreshold(0)
 {
 }
 

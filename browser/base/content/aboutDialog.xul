@@ -77,7 +77,7 @@
     <hbox id="clientBox">
       <vbox id="leftBox" flex="1"/>
       <vbox id="rightBox" flex="1">
-#expand <label id="version">Version __MOZ_APP_VERSION__</label>
+#expand <label id="version">Version: __MOZ_APP_VERSION__</label>
         <label id="distribution" class="text-blurb"/>
         <label id="distributionId" class="text-blurb"/>
 
@@ -141,8 +141,8 @@
           Special thanks to: Lee Brown, Jacob M. Ross, Phil Chan, Colin Moran, and all other supporters!
         </description>
         <description class="text-blurb">
-          If you wish to contribute, please consider becoming part of the Mozilla Firefox development team: <label class="text-link" href="http://www.mozilla.org/contribute/">&contribute.getInvolvedLink;</label>
-        </description> 
+          If you wish to contribute, please consider helping out by providing support to other users or becoming a beta tester on the <label class="text-link" href="http://forum.palemoon.org/">Pale Moon forum</label>
+        </description>  
         </vbox>
       </vbox>
     </hbox>
@@ -152,13 +152,7 @@
         <label class="text-link bottom-link" href="about:rights">&bottomLinks.rights;</label>
         <label class="text-link bottom-link" href="http://www.mozilla.com/legal/privacy/">&bottomLinks.privacy;</label>
       </hbox>
-      <description id="trademark">
-        <label class="trademark-label">&trademarkInfo.part1;</label>
-#ifdef MOZ_OFFICIAL_BRANDING
-        <!-- DO NOT REMOVE breaks updater button in PM -->
-        <label id="extra-trademark" class="trademark-label"></label>
-#endif
-      </description>
+      <description id="trademark">&trademarkInfo.part1;</description>
     </vbox>
   </vbox>
   

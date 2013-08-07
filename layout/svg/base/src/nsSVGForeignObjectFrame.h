@@ -44,6 +44,7 @@
 #include "nsSVGUtils.h"
 #include "nsRegion.h"
 #include "nsIPresShell.h"
+#include "mozilla/Attributes.h"
 
 class nsSVGOuterSVGFrame;
 
@@ -70,6 +71,8 @@ public:
                                nsIAtom*        aAttribute,
                                PRInt32         aModType);
 
+  virtual void DidSetStyleContext(nsStyleContext* aOldStyleContext) MOZ_OVERRIDE;
+
   virtual nsIFrame* GetContentInsertionFrame() {
     return GetFirstPrincipalChild()->GetContentInsertionFrame();
   }
@@ -90,7 +93,8 @@ public:
   /**
    * Foreign objects can return a transform matrix.
    */
-  virtual gfx3DMatrix GetTransformMatrix(nsIFrame **aOutAncestor);
+  virtual gfx3DMatrix GetTransformMatrix(nsIFrame* aAncestor,
+                                         nsIFrame **aOutAncestor);
 
   /**
    * Get the "type" of the frame

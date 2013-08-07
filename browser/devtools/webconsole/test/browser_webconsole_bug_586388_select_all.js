@@ -10,7 +10,12 @@
 
 const TEST_URI = "http://example.com/";
 
+registerCleanupFunction(function() {
+  Services.prefs.clearUserPref("devtools.gcli.enable");
+});
+
 function test() {
+  Services.prefs.setBoolPref("devtools.gcli.enable", false);
   addTab(TEST_URI);
   browser.addEventListener("DOMContentLoaded",
                            testSelectionWhenMovingBetweenBoxes, false);
@@ -66,8 +71,6 @@ function testSelectionWhenMovingBetweenBoxes() {
      "the context menu");
 
   outputNode.selectedIndex = -1;
-
-  commandEvent = contextMenu = groupNode = range = null;
 
   finishTest();
 }

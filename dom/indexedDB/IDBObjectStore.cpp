@@ -41,7 +41,7 @@
 
 #include "nsIJSContextStack.h"
 
-#include "jsclone.h"
+#include "jsfriendapi.h"
 #include "mozilla/dom/StructuredCloneTags.h"
 #include "mozilla/storage.h"
 #include "nsCharSeparatedTokenizer.h"
@@ -55,8 +55,7 @@
 #include "nsThreadUtils.h"
 #include "snappy/snappy.h"
 #include "test_quota.h"
-#include "xpcprivate.h"
-#include "XPCQuickStubs.h"
+#include "xpcpublic.h"
 
 #include "AsyncConnectionHelper.h"
 #include "IDBCursor.h"
@@ -65,6 +64,7 @@
 #include "IDBKeyRange.h"
 #include "IDBTransaction.h"
 #include "DatabaseInfo.h"
+#include "DictionaryHelpers.h"
 
 #define FILE_COPY_BUFFER_SIZE 32768
 
@@ -507,8 +507,8 @@ GenerateRequest(IDBObjectStore* aObjectStore)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
   IDBDatabase* database = aObjectStore->Transaction()->Database();
-  return IDBRequest::Create(aObjectStore, database->ScriptContext(),
-                            database->Owner(), aObjectStore->Transaction());
+  return IDBRequest::Create(aObjectStore, database,
+                            aObjectStore->Transaction());
 }
 
 JSClass gDummyPropClass = {
@@ -531,9 +531,6 @@ IDBObjectStore::Create(IDBTransaction* aTransaction,
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
   nsRefPtr<IDBObjectStore> objectStore = new IDBObjectStore();
-
-  objectStore->mScriptContext = aTransaction->Database()->ScriptContext();
-  objectStore->mOwner = aTransaction->Database()->Owner();
 
   objectStore->mTransaction = aTransaction;
   objectStore->mName = aStoreInfo->name;
@@ -564,7 +561,7 @@ IDBObjectStore::IsValidKeyPath(JSContext* aCx,
     }
 
     jsval stringVal;
-    if (!xpc_qsStringToJsval(aCx, token, &stringVal)) {
+    if (!xpc::StringToJsval(aCx, token, &stringVal)) {
       return false;
     }
 
@@ -1023,7 +1020,7 @@ IDBObjectStore::StructuredCloneReadCallback(JSContext* aCx,
   }
 
   const JSStructuredCloneCallbacks* runtimeCallbacks =
-    aCx->runtime->structuredCloneCallbacks;
+    js::GetContextStructuredCloneCallbacks(aCx);
 
   if (runtimeCallbacks) {
     return runtimeCallbacks->read(aCx, aReader, aTag, aData, nsnull);
@@ -1104,7 +1101,7 @@ IDBObjectStore::StructuredCloneWriteCallback(JSContext* aCx,
 
   // try using the runtime callbacks
   const JSStructuredCloneCallbacks* runtimeCallbacks =
-    aCx->runtime->structuredCloneCallbacks;
+    js::GetContextStructuredCloneCallbacks(aCx);
   if (runtimeCallbacks) {
     return runtimeCallbacks->write(aCx, aWriter, aObj, nsnull);
   }
@@ -1376,8 +1373,6 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(IDBObjectStore)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(IDBObjectStore)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR_AMBIGUOUS(mTransaction,
                                                        nsIDOMEventTarget)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mOwner)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mScriptContext)
 
   for (PRUint32 i = 0; i < tmp->mCreatedIndexes.Length(); i++) {
     NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mCreatedIndexes[i]");
@@ -1387,8 +1382,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(IDBObjectStore)
   // Don't unlink mTransaction!
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mOwner)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mScriptContext)
 
   tmp->mCreatedIndexes.Clear();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
@@ -1429,7 +1422,7 @@ IDBObjectStore::GetKeyPath(JSContext* aCx,
     for (PRUint32 i = 0; i < mKeyPathArray.Length(); ++i) {
       jsval val;
       nsString tmp(mKeyPathArray[i]);
-      if (!xpc_qsStringToJsval(aCx, tmp, &val)) {
+      if (!xpc::StringToJsval(aCx, tmp, &val)) {
         return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
       }
 
@@ -1442,7 +1435,7 @@ IDBObjectStore::GetKeyPath(JSContext* aCx,
   }
   else {
     nsString tmp(mKeyPath);
-    if (!xpc_qsStringToJsval(aCx, tmp, aVal)) {
+    if (!xpc::StringToJsval(aCx, tmp, aVal)) {
       return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
     }
   }
@@ -1776,45 +1769,15 @@ IDBObjectStore::CreateIndex(const nsAString& aName,
 
   NS_ASSERTION(mTransaction->IsOpen(), "Impossible!");
 
-  bool unique = false;
-  bool multiEntry = false;
+  mozilla::dom::IDBIndexParameters params;
 
   // Get optional arguments.
   if (!JSVAL_IS_VOID(aOptions) && !JSVAL_IS_NULL(aOptions)) {
-    if (JSVAL_IS_PRIMITIVE(aOptions)) {
-      // XXX Update spec for a real code here
-      return NS_ERROR_DOM_TYPE_ERR;
-    }
-
-    NS_ASSERTION(JSVAL_IS_OBJECT(aOptions), "Huh?!");
-    JSObject* options = JSVAL_TO_OBJECT(aOptions);
-
-    jsval val;
-    if (!JS_GetPropertyById(aCx, options, nsDOMClassInfo::sUnique_id, &val)) {
-      NS_WARNING("JS_GetPropertyById failed!");
-      return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
-    }
-
-    JSBool boolVal;
-    if (!JS_ValueToBoolean(aCx, val, &boolVal)) {
-      NS_WARNING("JS_ValueToBoolean failed!");
-      return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
-    }
-    unique = !!boolVal;
-
-    if (!JS_GetPropertyById(aCx, options, nsDOMClassInfo::sMultiEntry_id, &val)) {
-      NS_WARNING("JS_GetPropertyById failed!");
-      return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
-    }
-
-    if (!JS_ValueToBoolean(aCx, val, &boolVal)) {
-      NS_WARNING("JS_ValueToBoolean failed!");
-      return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
-    }
-    multiEntry = !!boolVal;
+    nsresult rv = params.Init(aCx, &aOptions);
+    NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  if (multiEntry && !keyPathArray.IsEmpty()) {
+  if (params.multiEntry && !keyPathArray.IsEmpty()) {
     return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
   }
 
@@ -1825,8 +1788,8 @@ IDBObjectStore::CreateIndex(const nsAString& aName,
   indexInfo->name = aName;
   indexInfo->keyPath = keyPath;
   indexInfo->keyPathArray.SwapElements(keyPathArray);
-  indexInfo->unique = unique;
-  indexInfo->multiEntry = multiEntry;
+  indexInfo->unique = params.unique;
+  indexInfo->multiEntry = params.multiEntry;
 
   // Don't leave this in the list if we fail below!
   AutoRemoveIndex autoRemove(mInfo, aName);

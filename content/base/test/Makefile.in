@@ -116,7 +116,6 @@ _TEST_FILES1 = \
 		test_bug364413.xhtml \
 		test_bug366946.html \
 		test_bug367164.html \
-		test_bug371576-1.html \
 		test_bug371576-2.html \
 		test_bug371576-3.html \
 		test_bug371576-4.html \
@@ -535,6 +534,8 @@ _TEST_FILES2 = \
 		file_bug692434.xml \
 		test_bug693615.html \
 		test_bug693875.html \
+		test_bug694754.xhtml \
+		test_bug698384.html \
 		test_nodelist_holes.html \
 		test_xhr_abort_after_load.html \
 		test_bug702439.html \
@@ -545,6 +546,12 @@ _TEST_FILES2 = \
 		file_bug707142_bom.json \
 		file_bug707142_utf-16.json \
 		test_reentrant_flush.html \
+		test_bug708620.html \
+		file_bug708620.html \
+		file_bug708620-2.html \
+		test_XHR_timeout.html \
+		test_XHR_timeout.js \
+		file_XHR_timeout.sjs \
 		test_bug717511.html \
 		file_bug717511.html \
 		file_bug717511.html^headers^ \

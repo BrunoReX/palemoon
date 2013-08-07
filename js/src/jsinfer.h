@@ -51,6 +51,10 @@
 #include "gc/Barrier.h"
 #include "js/HashTable.h"
 
+namespace JS {
+struct TypeInferenceSizes;
+}
+
 namespace js {
 namespace types {
 
@@ -67,12 +71,12 @@ struct TypeObjectKey {
  */
 class Type
 {
-    jsuword data;
-    Type(jsuword data) : data(data) {}
+    uintptr_t data;
+    Type(uintptr_t data) : data(data) {}
 
   public:
 
-    jsuword raw() const { return data; }
+    uintptr_t raw() const { return data; }
 
     bool isPrimitive() const {
         return data < JSVAL_TYPE_OBJECT;
@@ -80,7 +84,7 @@ class Type
 
     bool isPrimitive(JSValueType type) const {
         JS_ASSERT(type < JSVAL_TYPE_OBJECT);
-        return (jsuword) type == data;
+        return (uintptr_t) type == data;
     }
 
     JSValueType primitive() const {
@@ -366,7 +370,7 @@ class TypeSet
     void print(JSContext *cx);
 
     inline void sweep(JSContext *cx, JSCompartment *compartment);
-    inline size_t dynamicSize();
+    inline size_t computedSizeOfExcludingThis();
 
     /* Whether this set contains a specific type. */
     inline bool hasType(Type type);
@@ -440,7 +444,8 @@ class TypeSet
     void addSetElement(JSContext *cx, JSScript *script, jsbytecode *pc,
                        TypeSet *objectTypes, TypeSet *valueTypes);
     void addCall(JSContext *cx, TypeCallsite *site);
-    void addArith(JSContext *cx, TypeSet *target, TypeSet *other = NULL);
+    void addArith(JSContext *cx, JSScript *script, jsbytecode *pc,
+                  TypeSet *target, TypeSet *other = NULL);
     void addTransformThis(JSContext *cx, JSScript *script, TypeSet *target);
     void addPropagateThis(JSContext *cx, JSScript *script, jsbytecode *pc,
                           Type type, TypeSet *types = NULL);
@@ -865,7 +870,9 @@ struct TypeObject : gc::Cell
     inline void clearProperties();
     inline void sweep(JSContext *cx);
 
-    inline size_t dynamicSize();
+    inline size_t computedSizeOfExcludingThis();
+
+    void sizeOfExcludingThis(TypeInferenceSizes *sizes, JSMallocSizeOfFun mallocSizeOf);
 
     /*
      * Type objects don't have explicit finalizers. Memory owned by a type
@@ -877,6 +884,8 @@ struct TypeObject : gc::Cell
     static inline void writeBarrierPre(TypeObject *type);
     static inline void writeBarrierPost(TypeObject *type, void *addr);
     static inline void readBarrier(TypeObject *type);
+
+    static inline ThingRootKind rootKind() { return THING_ROOT_TYPE_OBJECT; }
 
   private:
     inline uint32_t basePropertyCount() const;
@@ -898,7 +907,7 @@ struct TypeObjectEntry
     static inline HashNumber hash(JSObject *base);
     static inline bool match(TypeObject *key, JSObject *lookup);
 };
-typedef HashSet<TypeObject *, TypeObjectEntry, SystemAllocPolicy> TypeObjectSet;
+typedef HashSet<ReadBarriered<TypeObject>, TypeObjectEntry, SystemAllocPolicy> TypeObjectSet;
 
 /*
  * Call to mark a script's arguments as having been created, recompile any
@@ -910,6 +919,13 @@ MarkArgumentsCreated(JSContext *cx, JSScript *script);
 /* Whether to use a new type object when calling 'new' at script/pc. */
 bool
 UseNewType(JSContext *cx, JSScript *script, jsbytecode *pc);
+
+/*
+ * Whether Array.prototype, or an object on its proto chain, has an
+ * indexed property.
+ */
+bool
+ArrayPrototypeHasIndexedProperty(JSContext *cx, JSScript *script);
 
 /*
  * Type information about a callsite. this is separated from the bytecode
@@ -1052,7 +1068,7 @@ class TypeScript
     bool hasScope() { return size_t(global.get()) != GLOBAL_MISSING_SCOPE; }
 
     /* Array of type type sets for variables and JOF_TYPESET ops. */
-    TypeSet *typeArray() { return (TypeSet *) (jsuword(this) + sizeof(TypeScript)); }
+    TypeSet *typeArray() { return (TypeSet *) (uintptr_t(this) + sizeof(TypeScript)); }
 
     static inline unsigned NumTypeSets(JSScript *script);
 
@@ -1085,6 +1101,11 @@ class TypeScript
     static inline void MonitorString(JSContext *cx, JSScript *script, jsbytecode *pc);
     static inline void MonitorUnknown(JSContext *cx, JSScript *script, jsbytecode *pc);
 
+    static inline void GetPcScript(JSContext *cx, JSScript **script, jsbytecode **pc);
+    static inline void MonitorOverflow(JSContext *cx);
+    static inline void MonitorString(JSContext *cx);
+    static inline void MonitorUnknown(JSContext *cx);
+
     /*
      * Monitor a bytecode pushing any value. This must be called for any opcode
      * which is JOF_TYPESET, and where either the script has not been analyzed
@@ -1094,6 +1115,7 @@ class TypeScript
      */
     static inline void Monitor(JSContext *cx, JSScript *script, jsbytecode *pc,
                                const js::Value &val);
+    static inline void Monitor(JSContext *cx, const js::Value &rval);
 
     /* Monitor an assignment at a SETELEM on a non-integer identifier. */
     static inline void MonitorAssign(JSContext *cx, JSScript *script, jsbytecode *pc,
@@ -1113,14 +1135,25 @@ class TypeScript
 };
 
 struct ArrayTableKey;
-typedef HashMap<ArrayTableKey,TypeObject*,ArrayTableKey,SystemAllocPolicy> ArrayTypeTable;
+typedef HashMap<ArrayTableKey,ReadBarriered<TypeObject>,ArrayTableKey,SystemAllocPolicy> ArrayTypeTable;
 
 struct ObjectTableKey;
 struct ObjectTableEntry;
 typedef HashMap<ObjectTableKey,ObjectTableEntry,ObjectTableKey,SystemAllocPolicy> ObjectTypeTable;
 
 struct AllocationSiteKey;
-typedef HashMap<AllocationSiteKey,TypeObject*,AllocationSiteKey,SystemAllocPolicy> AllocationSiteTable;
+typedef HashMap<AllocationSiteKey,ReadBarriered<TypeObject>,AllocationSiteKey,SystemAllocPolicy> AllocationSiteTable;
+
+struct RecompileInfo
+{
+    JSScript *script;
+    bool constructing:1;
+    uint32_t chunkIndex:31;
+
+    bool operator == (const RecompileInfo &o) const {
+        return script == o.script && constructing == o.constructing && chunkIndex == o.chunkIndex;
+    }
+};
 
 /* Type information for a compartment. */
 struct TypeCompartment
@@ -1138,7 +1171,7 @@ struct TypeCompartment
     bool pendingNukeTypes;
 
     /* Pending recompilations to perform before execution of JIT code can resume. */
-    Vector<JSScript*> *pendingRecompiles;
+    Vector<RecompileInfo> *pendingRecompiles;
 
     /*
      * Number of recompilation events and inline frame expansions that have
@@ -1153,7 +1186,7 @@ struct TypeCompartment
      * changes inducing recompilation are keyed to this script. Note: script
      * compilation is not reentrant.
      */
-    JSScript *compiledScript;
+    RecompileInfo compiledInfo;
 
     /* Table for referencing types of objects keyed to an allocation site. */
     AllocationSiteTable *allocationSiteTable;
@@ -1226,7 +1259,8 @@ struct TypeCompartment
     void setPendingNukeTypes(JSContext *cx);
 
     /* Mark a script as needing recompilation once inference has finished. */
-    void addPendingRecompile(JSContext *cx, JSScript *script);
+    void addPendingRecompile(JSContext *cx, const RecompileInfo &info);
+    void addPendingRecompile(JSContext *cx, JSScript *script, jsbytecode *pc);
 
     /* Monitor future effects on a bytecode. */
     void monitorBytecode(JSContext *cx, JSScript *script, uint32_t offset,

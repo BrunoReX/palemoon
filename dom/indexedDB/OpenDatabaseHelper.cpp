@@ -1611,9 +1611,8 @@ OpenDatabaseHelper::DoDatabaseWork()
 
   NS_ASSERTION(mOpenDBRequest, "This should never be null!");
 
-  // Once we support IDB outside of Windows this assertion will no longer hold.
-  nsPIDOMWindow* window = mOpenDBRequest->Owner();
-  NS_ASSERTION(window, "This should never be null");
+  // This will be null for non-window contexts.
+  nsPIDOMWindow* window = mOpenDBRequest->GetOwner();
 
   AutoEnterWindow autoWindow(window);
 
@@ -2114,8 +2113,7 @@ OpenDatabaseHelper::EnsureSuccessResult()
   dbInfo->nextIndexId = mLastIndexId + 1;
 
   nsRefPtr<IDBDatabase> database =
-    IDBDatabase::Create(mOpenDBRequest->ScriptContext(),
-                        mOpenDBRequest->Owner(),
+    IDBDatabase::Create(mOpenDBRequest,
                         dbInfo.forget(),
                         mASCIIOrigin,
                         mFileManager);

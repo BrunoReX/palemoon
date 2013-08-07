@@ -42,10 +42,10 @@
 #include "WorkerScope.h"
 
 #include "jsapi.h"
-#include "jscntxt.h"
+#include "jsdbgapi.h"
 
 #include "nsTraceRefcnt.h"
-#include "xpcprivate.h"
+#include "xpcpublic.h"
 
 #include "ChromeWorkerScope.h"
 #include "Events.h"
@@ -61,6 +61,9 @@
 #include "Worker.h"
 #include "WorkerPrivate.h"
 #include "XMLHttpRequest.h"
+#ifdef ANDROID
+#include <android/log.h>
+#endif
 
 #include "WorkerInlines.h"
 
@@ -522,6 +525,9 @@ private:
         return false;
       }
 
+#ifdef ANDROID
+      __android_log_print(ANDROID_LOG_INFO, "Gecko", buffer.ptr());
+#endif
       fputs(buffer.ptr(), stderr);
       fflush(stderr);
     }
@@ -547,7 +553,7 @@ private:
     }
 
     jsval result;
-    if (!nsXPConnect::Base64Decode(aCx, string, &result)) {
+    if (!xpc::Base64Decode(aCx, string, &result)) {
       return false;
     }
 
@@ -573,7 +579,7 @@ private:
     }
 
     jsval result;
-    if (!nsXPConnect::Base64Encode(aCx, binary, &result)) {
+    if (!xpc::Base64Encode(aCx, binary, &result)) {
       return false;
     }
 

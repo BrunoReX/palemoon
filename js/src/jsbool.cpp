@@ -41,7 +41,6 @@
  * JS boolean implementation.
  */
 #include "jstypes.h"
-#include "jsstdint.h"
 #include "jsutil.h"
 #include "jsapi.h"
 #include "jsatom.h"
@@ -153,7 +152,7 @@ js_InitBooleanClass(JSContext *cx, JSObject *obj)
 {
     JS_ASSERT(obj->isNative());
 
-    GlobalObject *global = obj->asGlobal();
+    GlobalObject *global = &obj->asGlobal();
 
     JSObject *booleanProto = global->createBlankPrototype(cx, &BooleanClass);
     if (!booleanProto)

@@ -44,29 +44,31 @@
   It implements all the common DOM interfaces and handles attributes.
 */
 
-#include "nsString.h"
-#include "nsCOMPtr.h"
-#include "nsIDOMSVGElement.h"
-#include "nsGenericElement.h"
-#include "nsStyledElement.h"
 #include "mozilla/css/StyleRule.h"
+#include "nsAutoPtr.h"
+#include "nsChangeHint.h"
+#include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsDOMMemoryReporter.h"
+#include "nsError.h"
+#include "nsGenericElement.h"
+#include "nsISupportsImpl.h"
+#include "nsStyledElement.h"
 
-#include "nsISMILAttr.h"
-#include "nsSMILAnimationController.h"
-
-class nsSVGSVGElement;
-class nsSVGLength2;
-class nsSVGNumber2;
-class nsSVGNumberPair;
-class nsSVGInteger;
-class nsSVGIntegerPair;
+class nsIDOMSVGElement;
+class nsIDOMSVGSVGElement;
 class nsSVGAngle;
 class nsSVGBoolean;
 class nsSVGEnum;
-struct nsSVGEnumMapping;
-class nsSVGViewBox;
+class nsSVGInteger;
+class nsSVGIntegerPair;
+class nsSVGLength2;
+class nsSVGNumber2;
+class nsSVGNumberPair;
 class nsSVGString;
-struct gfxMatrix;
+class nsSVGSVGElement;
+class nsSVGViewBox;
+
 namespace mozilla {
 class SVGAnimatedNumberList;
 class SVGNumberList;
@@ -76,7 +78,12 @@ class SVGAnimatedPointList;
 class SVGAnimatedPathSegList;
 class SVGAnimatedPreserveAspectRatio;
 class SVGAnimatedTransformList;
+class SVGStringList;
+class DOMSVGStringList;
 }
+
+struct gfxMatrix;
+struct nsSVGEnumMapping;
 
 typedef nsStyledElementNotElementCSSInlineStyle nsSVGElementBase;
 
@@ -96,6 +103,7 @@ public:
   typedef mozilla::SVGAnimatedPathSegList SVGAnimatedPathSegList;
   typedef mozilla::SVGAnimatedPreserveAspectRatio SVGAnimatedPreserveAspectRatio;
   typedef mozilla::SVGAnimatedTransformList SVGAnimatedTransformList;
+  typedef mozilla::SVGStringList SVGStringList;
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
@@ -177,6 +185,8 @@ public:
   virtual void DidChangePathSegList(bool aDoSetAttr);
   virtual void DidChangeTransformList(bool aDoSetAttr);
   virtual void DidChangeString(PRUint8 aAttrEnum) {}
+  void DidChangeStringList(bool aIsConditionalProcessingAttribute,
+                           PRUint8 aAttrEnum);
 
   virtual void DidAnimateLength(PRUint8 aAttrEnum);
   virtual void DidAnimateNumber(PRUint8 aAttrEnum);
@@ -489,6 +499,27 @@ protected:
     void Reset(PRUint8 aAttrEnum);
   };
 
+  friend class mozilla::DOMSVGStringList;
+
+  struct StringListInfo {
+    nsIAtom**    mName;
+  };
+
+  struct StringListAttributesInfo {
+    SVGStringList*    mStringLists;
+    StringListInfo*   mStringListInfo;
+    PRUint32          mStringListCount;
+
+    StringListAttributesInfo(SVGStringList  *aStringLists,
+                             StringListInfo *aStringListInfo,
+                             PRUint32 aStringListCount) :
+      mStringLists(aStringLists), mStringListInfo(aStringListInfo),
+      mStringListCount(aStringListCount)
+      {}
+
+    void Reset(PRUint8 aAttrEnum);
+  };
+
   virtual LengthAttributesInfo GetLengthInfo();
   virtual NumberAttributesInfo GetNumberInfo();
   virtual NumberPairAttributesInfo GetNumberPairInfo();
@@ -504,6 +535,7 @@ protected:
   virtual NumberListAttributesInfo GetNumberListInfo();
   virtual LengthListAttributesInfo GetLengthListInfo();
   virtual StringAttributesInfo GetStringInfo();
+  virtual StringListAttributesInfo GetStringListInfo();
 
   static nsSVGEnumMapping sSVGUnitTypesMap[];
 

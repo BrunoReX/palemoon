@@ -41,13 +41,9 @@
 
 #include "jsapi.h"
 #include "jscntxt.h"
-#include "jsstdint.h"
 
 #include "js/HashTable.h"
 #include "js/Vector.h"
-
-JS_FRIEND_API(uint64_t)
-js_GetSCOffset(JSStructuredCloneWriter* writer);
 
 namespace js {
 

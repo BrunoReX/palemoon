@@ -80,7 +80,6 @@ ifdef MOZ_UPDATER
 ifndef MOZ_NATIVE_BZ2
 tier_platform_dirs += modules/libbz2
 endif
-tier_platform_dirs += modules/libmar
 tier_platform_dirs += other-licenses/bsdiff
 endif
 
@@ -90,7 +89,7 @@ tier_platform_dirs	+= gfx/qcms
 # "gecko" - core components
 #
 
-tier_platform_dirs += ipc js/ipc js/jetpack
+tier_platform_dirs += ipc js/ipc
 
 tier_platform_dirs += \
 		hal \
@@ -100,7 +99,7 @@ tier_platform_dirs += \
 
 ifdef MOZ_ENABLE_GTK2
 ifdef MOZ_X11
-tier_platform_dirs     += widget/src/gtkxtbin
+tier_platform_dirs     += widget/gtkxtbin
 endif
 endif
 
@@ -199,20 +198,24 @@ tier_platform_dirs  += tools/profiler
 tier_platform_dirs	+= xpfe/components
 
 ifdef MOZ_ENABLE_XREMOTE
-tier_platform_dirs += widget/src/xremoteclient
+tier_platform_dirs += widget/xremoteclient
 endif
 
 ifdef MOZ_SPELLCHECK
 tier_platform_dirs	+= extensions/spellcheck
 endif
 
-tier_platform_dirs	+= toolkit
-
 ifdef MOZ_PSM
 tier_platform_dirs	+= security/manager
 else
 tier_platform_dirs	+= security/manager/boot/public security/manager/ssl/public
 endif
+
+ifdef MOZ_UPDATER
+tier_platform_dirs += modules/libmar
+endif
+
+tier_platform_dirs	+= toolkit
 
 ifdef MOZ_PREF_EXTENSIONS
 tier_platform_dirs += extensions/pref

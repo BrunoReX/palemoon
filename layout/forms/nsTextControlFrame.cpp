@@ -114,9 +114,6 @@
 
 #define DEFAULT_COLUMN_WIDTH 20
 
-#include "nsContentCID.h"
-static NS_DEFINE_IID(kRangeCID,     NS_RANGE_CID);
-
 nsIFrame*
 NS_NewTextControlFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
 {
@@ -501,14 +498,8 @@ nsTextControlFrame::ComputeAutoSize(nsRenderingContext *aRenderingContext,
                                     nsSize aMargin, nsSize aBorder,
                                     nsSize aPadding, bool aShrinkWrap)
 {
-  float inflation;
-  if (nsLayoutUtils::IsContainerForFontSizeInflation(this)) {
-    // FIXME: This won't turn out so well for the height; maybe disable
-    // inflation entirely in this case?
-    inflation = 1.0f;
-  } else {
-    inflation = nsLayoutUtils::FontSizeInflationFor(this, aCBSize.width);
-  }
+  float inflation =
+    nsLayoutUtils::FontSizeInflationFor(this, nsLayoutUtils::eInReflow);
   nsSize autoSize;
   nsresult rv = CalcIntrinsicSize(aRenderingContext, autoSize, inflation);
   if (NS_FAILED(rv)) {
@@ -615,24 +606,8 @@ nsTextControlFrame::GetBoxAscent(nsBoxLayoutState& aState)
   // Return the baseline of the first (nominal) row, with centering for
   // single-line controls.
 
-  float inflation;
-  if (nsLayoutUtils::IsContainerForFontSizeInflation(this)) {
-    inflation =
-      nsLayoutUtils::FontSizeInflationFor(this, GetContentRect().width);
-  } else {
-    const nsHTMLReflowState *outerReflowState = aState.OuterReflowState();
-    NS_ASSERTION(outerReflowState || !mParent || mParent->IsBoxFrame() ||
-                 !(mParent->GetStateBits() & NS_FRAME_IN_REFLOW),
-                 "when a text control is reflowed by one of its ancestors "
-                 "and its parent is non-XUL, we should have the outer "
-                 "reflow state in the box layout state");
-    if (outerReflowState && outerReflowState->frame == this) {
-      inflation = nsLayoutUtils::FontSizeInflationFor(*outerReflowState);
-    } else {
-      inflation = nsLayoutUtils::FontSizeInflationInner(this,
-                    nsLayoutUtils::InflationMinFontSizeFor(mParent));
-    }
-  }
+  float inflation =
+    nsLayoutUtils::FontSizeInflationFor(this, nsLayoutUtils::eInReflow);
 
   // First calculate the ascent wrt the client rect
   nsRect clientRect;
@@ -657,7 +632,7 @@ nsTextControlFrame::GetBoxAscent(nsBoxLayoutState& aState)
 }
 
 bool
-nsTextControlFrame::IsCollapsed(nsBoxLayoutState& aBoxLayoutState)
+nsTextControlFrame::IsCollapsed()
 {
   // We're never collapsed in the box sense.
   return false;
@@ -855,9 +830,7 @@ nsTextControlFrame::SetSelectionInternal(nsIDOMNode *aStartNode,
   // Note that we use a new range to avoid having to do
   // isIncreasing checks to avoid possible errors.
 
-  nsCOMPtr<nsIDOMRange> range = do_CreateInstance(kRangeCID);
-  NS_ENSURE_TRUE(range, NS_ERROR_FAILURE);
-
+  nsRefPtr<nsRange> range = new nsRange();
   nsresult rv = range->SetStart(aStartNode, aStartOffset);
   NS_ENSURE_SUCCESS(rv, rv);
 

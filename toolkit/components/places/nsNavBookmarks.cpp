@@ -57,16 +57,32 @@
 #include "mozilla/FunctionTimer.h"
 #include "mozilla/Util.h"
 
+#include "sampler.h"
+
 #define BOOKMARKS_TO_KEYWORDS_INITIAL_CACHE_SIZE 64
 #define RECENT_BOOKMARKS_INITIAL_CACHE_SIZE 10
 // Threashold to expire old bookmarks if the initial cache size is exceeded.
 #define RECENT_BOOKMARKS_THRESHOLD PRTime((PRInt64)1 * 60 * PR_USEC_PER_SEC)
 
 #define BEGIN_CRITICAL_BOOKMARK_CACHE_SECTION(_itemId_) \
+  mUncachableBookmarks.PutEntry(_itemId_); \
   mRecentBookmarksCache.RemoveEntry(_itemId_)
 
 #define END_CRITICAL_BOOKMARK_CACHE_SECTION(_itemId_) \
-  MOZ_ASSERT(!mRecentBookmarksCache.GetEntry(_itemId_))
+  MOZ_ASSERT(!mRecentBookmarksCache.GetEntry(_itemId_)); \
+  MOZ_ASSERT(mUncachableBookmarks.GetEntry(_itemId_)); \
+  mUncachableBookmarks.RemoveEntry(_itemId_)
+
+#define ADD_TO_BOOKMARK_CACHE(_itemId_, _data_) \
+  PR_BEGIN_MACRO \
+  ExpireNonrecentBookmarks(&mRecentBookmarksCache); \
+  if (!mUncachableBookmarks.GetEntry(_itemId_)) { \
+    BookmarkKeyClass* key = mRecentBookmarksCache.PutEntry(_itemId_); \
+    if (key) { \
+      key->bookmark = _data_; \
+    } \
+  } \
+  PR_END_MACRO
 
 #define TOPIC_PLACES_MAINTENANCE "places-maintenance-finished"
 
@@ -266,6 +282,8 @@ nsNavBookmarks::Init()
   NS_ENSURE_STATE(mDB);
 
   mRecentBookmarksCache.Init(RECENT_BOOKMARKS_INITIAL_CACHE_SIZE);
+  mUncachableBookmarks.Init(RECENT_BOOKMARKS_INITIAL_CACHE_SIZE);
+
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
   if (os) {
     (void)os->AddObserver(this, TOPIC_PLACES_MAINTENANCE, true);
@@ -563,13 +581,7 @@ nsNavBookmarks::InsertBookmarkInDB(PRInt64 aPlaceId,
   bookmark.parentGuid = aParentGuid;
   bookmark.grandParentId = aGrandParentId;
 
-  // Make space for the new entry.
-  ExpireNonrecentBookmarks(&mRecentBookmarksCache);
-  // Update the recent bookmarks cache.
-  BookmarkKeyClass* key = mRecentBookmarksCache.PutEntry(*_itemId);
-  if (key) {
-    key->bookmark = bookmark;
-  }
+  ADD_TO_BOOKMARK_CACHE(*_itemId, bookmark);
 
   return NS_OK;
 }
@@ -671,6 +683,7 @@ nsNavBookmarks::InsertBookmark(PRInt64 aFolder,
 NS_IMETHODIMP
 nsNavBookmarks::RemoveItem(PRInt64 aItemId)
 {
+  SAMPLE_LABEL("bookmarks", "RemoveItem");
   NS_ENSURE_ARG(aItemId != mRoot);
 
   BookmarkData bookmark;
@@ -1122,6 +1135,7 @@ nsNavBookmarks::GetDescendantChildren(PRInt64 aFolderId,
 NS_IMETHODIMP
 nsNavBookmarks::RemoveFolderChildren(PRInt64 aFolderId)
 {
+  SAMPLE_LABEL("bookmarks", "RemoveFolderChilder");
   NS_ENSURE_ARG_MIN(aFolderId, 1);
 
   BookmarkData folder;
@@ -1470,13 +1484,7 @@ nsNavBookmarks::FetchItemInfo(PRInt64 aItemId,
     _bookmark.grandParentId = -1;
   }
 
-  // Make space for the new entry.
-  ExpireNonrecentBookmarks(&mRecentBookmarksCache);
-  // Update the recent bookmarks cache.
-  key = mRecentBookmarksCache.PutEntry(aItemId);
-  if (key) {
-    key->bookmark = _bookmark;
-  }
+  ADD_TO_BOOKMARK_CACHE(aItemId, _bookmark);
 
   return NS_OK;
 }
@@ -2747,6 +2755,7 @@ nsNavBookmarks::EnsureKeywordsHash() {
 NS_IMETHODIMP
 nsNavBookmarks::RunInBatchMode(nsINavHistoryBatchCallback* aCallback,
                                nsISupports* aUserData) {
+  SAMPLE_LABEL("bookmarks", "RunInBatchMode");
   NS_ENSURE_ARG(aCallback);
 
   mBatching = true;

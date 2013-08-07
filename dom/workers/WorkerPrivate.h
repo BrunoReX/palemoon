@@ -69,16 +69,6 @@ class nsIURI;
 class nsPIDOMWindow;
 class nsITimer;
 
-namespace mozilla {
-namespace xpconnect {
-namespace memory {
-
-struct IterateData;
-
-} // namespace memory
-} // namespace xpconnect
-} // namespace mozilla
-
 BEGIN_WORKERS_NAMESPACE
 
 class WorkerPrivate;
@@ -88,11 +78,13 @@ class WorkerRunnable : public nsIRunnable
 public:
   enum Target { ParentThread, WorkerThread };
   enum BusyBehavior { ModifyBusyCount, UnchangedBusyCount };
+  enum ClearingBehavior { SkipWhenClearing, RunWhenClearing };
 
 protected:
   WorkerPrivate* mWorkerPrivate;
   Target mTarget;
-  bool mBusyBehavior;
+  BusyBehavior mBusyBehavior;
+  ClearingBehavior mClearingBehavior;
 
 public:
   NS_DECL_ISUPPORTS
@@ -103,14 +95,21 @@ public:
   static bool
   DispatchToMainThread(nsIRunnable*);
 
+  bool
+  WantsToRunDuringClear()
+  {
+    return mClearingBehavior == RunWhenClearing;
+  }
+
 protected:
   WorkerRunnable(WorkerPrivate* aWorkerPrivate, Target aTarget,
-                 BusyBehavior aBusyBehavior)
+                 BusyBehavior aBusyBehavior,
+                 ClearingBehavior aClearingBehavior)
 #ifdef DEBUG
   ;
 #else
   : mWorkerPrivate(aWorkerPrivate), mTarget(aTarget),
-    mBusyBehavior(aBusyBehavior)
+    mBusyBehavior(aBusyBehavior), mClearingBehavior(aClearingBehavior)
   { }
 #endif
 
@@ -147,8 +146,10 @@ protected:
   friend class WorkerPrivate;
 
   WorkerSyncRunnable(WorkerPrivate* aWorkerPrivate, PRUint32 aSyncQueueKey,
-                     bool aBypassSyncQueue = false)
-  : WorkerRunnable(aWorkerPrivate, WorkerThread, UnchangedBusyCount),
+                     bool aBypassSyncQueue = false,
+                     ClearingBehavior aClearingBehavior = SkipWhenClearing)
+  : WorkerRunnable(aWorkerPrivate, WorkerThread, UnchangedBusyCount,
+                   aClearingBehavior),
     mSyncQueueKey(aSyncQueueKey), mBypassSyncQueue(aBypassSyncQueue)
   { }
 
@@ -164,7 +165,7 @@ class WorkerControlRunnable : public WorkerRunnable
 protected:
   WorkerControlRunnable(WorkerPrivate* aWorkerPrivate, Target aTarget,
                         BusyBehavior aBusyBehavior)
-  : WorkerRunnable(aWorkerPrivate, aTarget, aBusyBehavior)
+  : WorkerRunnable(aWorkerPrivate, aTarget, aBusyBehavior, SkipWhenClearing)
   { }
 
   virtual ~WorkerControlRunnable()
@@ -242,6 +243,15 @@ private:
     return static_cast<Derived*>(const_cast<WorkerPrivateParent*>(this));
   }
 
+  bool
+  NotifyPrivate(JSContext* aCx, Status aStatus, bool aFromJSFinalizer);
+
+  bool
+  TerminatePrivate(JSContext* aCx, bool aFromJSFinalizer)
+  {
+    return NotifyPrivate(aCx, Terminating, aFromJSFinalizer);
+  }
+
 public:
   // May be called on any thread...
   bool
@@ -249,7 +259,10 @@ public:
 
   // Called on the parent thread.
   bool
-  Notify(JSContext* aCx, Status aStatus);
+  Notify(JSContext* aCx, Status aStatus)
+  {
+    return NotifyPrivate(aCx, aStatus, false);
+  }
 
   bool
   Cancel(JSContext* aCx)
@@ -284,7 +297,7 @@ public:
   bool
   Terminate(JSContext* aCx)
   {
-    return Notify(aCx, Terminating);
+    return TerminatePrivate(aCx, false);
   }
 
   bool
@@ -494,13 +507,13 @@ class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
 
   struct TimeoutInfo;
 
-  typedef Queue<nsIRunnable*, 50> EventQueue;
+  typedef Queue<WorkerRunnable*, 50> EventQueue;
   EventQueue mQueue;
   EventQueue mControlQueue;
 
   struct SyncQueue
   {
-    Queue<nsIRunnable*, 10> mQueue;
+    Queue<WorkerRunnable*, 10> mQueue;
     bool mComplete;
     bool mResult;
 
@@ -510,7 +523,7 @@ class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
 
     ~SyncQueue()
     {
-      nsIRunnable* event;
+      WorkerRunnable* event;
       while (mQueue.Pop(event)) {
         event->Release();
       }
@@ -677,8 +690,7 @@ public:
   ScheduleDeletion(bool aWasPending);
 
   bool
-  BlockAndCollectRuntimeStats(mozilla::xpconnect::memory::IterateData* aData,
-                              bool* aDisabled);
+  BlockAndCollectRuntimeStats(bool isQuick, void* aData, bool* aDisabled);
 
   bool
   DisableMemoryReporter();
@@ -774,8 +786,8 @@ private:
     mStatus = Dead;
     mJSContext = nsnull;
 
-    ClearQueue(&mQueue);
     ClearQueue(&mControlQueue);
+    ClearQueue(&mQueue);
   }
 
   bool

@@ -17,7 +17,7 @@ function tabLoad(aEvent) {
     openConsole();
 
     let hudId = HUDService.getHudIdByWindow(content);
-    HUD = HUDService.hudReferences[hudId];
+    let HUD = HUDService.hudReferences[hudId];
 
     inputNode = HUD.jsterm.inputNode;
 
@@ -155,7 +155,12 @@ function performTests() {
   executeSoon(finishTest);
 }
 
+registerCleanupFunction(function() {
+  Services.prefs.clearUserPref("devtools.gcli.enable");
+});
+
 function test() {
+  Services.prefs.setBoolPref("devtools.gcli.enable", false);
   addTab("data:text/html,Web Console test for bug 594497 and bug 619598");
   browser.addEventListener("load", tabLoad, true);
 }

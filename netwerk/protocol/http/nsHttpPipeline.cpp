@@ -113,6 +113,8 @@ nsHttpPipeline::~nsHttpPipeline()
     // make sure we aren't still holding onto any transactions!
     Close(NS_ERROR_ABORT);
 
+    NS_IF_RELEASE(mConnection);
+
     if (mPushBackBuf)
         free(mPushBackBuf);
 }
@@ -125,11 +127,11 @@ nsHttpPipeline::AddTransaction(nsAHttpTransaction *trans)
     NS_ADDREF(trans);
     mRequestQ.AppendElement(trans);
 
-    if (mConnection) {
+    if (mConnection && !mClosed) {
         trans->SetConnection(this);
 
         if (mRequestQ.Length() == 1)
-            mConnection->ResumeSend(trans);
+            mConnection->ResumeSend();
     }
 
     return NS_OK;
@@ -168,19 +170,19 @@ nsHttpPipeline::OnHeadersAvailable(nsAHttpTransaction *trans,
 }
 
 nsresult
-nsHttpPipeline::ResumeSend(nsAHttpTransaction *trans)
+nsHttpPipeline::ResumeSend()
 {
     if (mConnection)
-        return mConnection->ResumeSend(trans);
+        return mConnection->ResumeSend();
     return NS_ERROR_UNEXPECTED;
 }
 
 nsresult
-nsHttpPipeline::ResumeRecv(nsAHttpTransaction *trans)
+nsHttpPipeline::ResumeRecv()
 {
     NS_ASSERTION(PR_GetCurrentThread() == gSocketThread, "wrong thread");
     NS_ASSERTION(mConnection, "no connection");
-    return mConnection->ResumeRecv(trans);
+    return mConnection->ResumeRecv();
 }
 
 void
@@ -700,10 +702,6 @@ nsHttpPipeline::Close(nsresult reason)
         mResponseQ.Clear();
     }
 
-    // we must no longer reference the connection!  This needs to come
-    // after we've closed all our transactions, since they might want
-    // connection info as they close.
-    NS_IF_RELEASE(mConnection);
 }
 
 nsresult
@@ -728,8 +726,7 @@ nsHttpPipeline::FillSendBuf()
                         getter_AddRefs(mSendBufOut),
                         nsIOService::gDefaultSegmentSize,  /* segment size */
                         nsIOService::gDefaultSegmentSize,  /* max size */
-                        true, true,
-                        nsIOService::gBufferCache);
+                        true, true);
         if (NS_FAILED(rv)) return rv;
     }
 

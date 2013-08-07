@@ -174,6 +174,10 @@ static const JSC::MacroAssembler::RegisterID JSParamReg_Argc   = JSC::ARMRegiste
 static const JSC::MacroAssembler::RegisterID JSReturnReg_Type = JSC::SparcRegisters::l2;
 static const JSC::MacroAssembler::RegisterID JSReturnReg_Data = JSC::SparcRegisters::l3;
 static const JSC::MacroAssembler::RegisterID JSParamReg_Argc  = JSC::SparcRegisters::l4;
+#elif defined(JS_CPU_MIPS)
+static const JSC::MacroAssembler::RegisterID JSReturnReg_Type = JSC::MIPSRegisters::a0;
+static const JSC::MacroAssembler::RegisterID JSReturnReg_Data = JSC::MIPSRegisters::a2;
+static const JSC::MacroAssembler::RegisterID JSParamReg_Argc  = JSC::MIPSRegisters::a1;
 #endif
 
     size_t distanceOf(Label l) {
@@ -283,7 +287,7 @@ static const JSC::MacroAssembler::RegisterID JSParamReg_Argc  = JSC::SparcRegist
         static const uint64_t DoubleNegMask = 0x8000000000000000ULL;
         loadDouble(&DoubleNegMask, Registers::FPConversionTemp);
         xorDouble(Registers::FPConversionTemp, fpreg);
-#elif defined JS_CPU_ARM || defined JS_CPU_SPARC
+#elif defined JS_CPU_ARM || defined JS_CPU_SPARC || defined JS_CPU_MIPS
         negDouble(fpreg, fpreg);
 #endif
     }
@@ -317,6 +321,13 @@ static const JSC::MacroAssembler::RegisterID JSParamReg_Argc  = JSC::SparcRegist
          * back to jited code.
          */
         moveWithPatch(Imm32(intptr_t(fun)), JSC::SparcRegisters::i0);
+        return JS_FUNC_TO_DATA_PTR(void *, JaegerStubVeneer);
+#elif defined(JS_CPU_MIPS)
+        /*
+         * For MIPS, we need to call JaegerStubVeneer by passing
+         * the real target address in v0.
+         */
+        moveWithPatch(Imm32(intptr_t(fun)), JSC::MIPSRegisters::v0);
         return JS_FUNC_TO_DATA_PTR(void *, JaegerStubVeneer);
 #else
         /*
@@ -358,10 +369,14 @@ static const JSC::MacroAssembler::RegisterID JSParamReg_Argc  = JSC::SparcRegist
         pop(reg);
     }
 
+#if defined JS_CPU_MIPS
+    static const uint32_t StackAlignment = 8;
+#else
     static const uint32_t StackAlignment = 16;
+#endif
 
     static inline uint32_t alignForCall(uint32_t stackBytes) {
-#if defined(JS_CPU_X86) || defined(JS_CPU_X64)
+#if defined(JS_CPU_X86) || defined(JS_CPU_X64) || defined(JS_CPU_MIPS)
         // If StackAlignment is a power of two, % is just two shifts.
         // 16 - (x % 16) gives alignment, extra % 16 handles total == 0.
         return align(stackBytes, StackAlignment);
@@ -776,6 +791,20 @@ static const JSC::MacroAssembler::RegisterID JSParamReg_Argc  = JSC::SparcRegist
         return branch32(cond, extent, key.reg());
     }
 
+    Jump guardElementNotHole(RegisterID elements, const Int32Key &key) {
+        Jump jmp;
+
+        if (key.isConstant()) {
+            Address slot(elements, key.index() * sizeof(Value));
+            jmp = guardNotHole(slot);
+        } else {
+            BaseIndex slot(elements, key.reg(), JSVAL_SCALE);
+            jmp = guardNotHole(slot);
+        }
+
+        return jmp;
+    }
+
     // Load a jsval from an array slot, given a key. |objReg| is clobbered.
     FastArrayLoadFails fastArrayLoad(RegisterID objReg, const Int32Key &key,
                                      RegisterID typeReg, RegisterID dataReg) {
@@ -816,7 +845,7 @@ static const JSC::MacroAssembler::RegisterID JSParamReg_Argc  = JSC::SparcRegist
 
     void loadFrameActuals(JSFunction *fun, RegisterID reg) {
         /* Bias for the case where there was an arguments overflow. */
-        load32(Address(JSFrameReg, StackFrame::offsetOfArgs()), reg);
+        load32(Address(JSFrameReg, StackFrame::offsetOfNumActual()), reg);
         add32(Imm32(fun->nargs + 2), reg);
         Jump overflowArgs = branchTest32(Assembler::NonZero,
                                          Address(JSFrameReg, StackFrame::offsetOfFlags()),

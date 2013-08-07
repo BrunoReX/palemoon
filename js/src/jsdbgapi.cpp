@@ -46,7 +46,6 @@
 #include <stdarg.h>
 #include "jsprvtd.h"
 #include "jstypes.h"
-#include "jsstdint.h"
 #include "jsutil.h"
 #include "jsclist.h"
 #include "jsapi.h"
@@ -432,7 +431,7 @@ JS_FunctionHasLocalNames(JSContext *cx, JSFunction *fun)
     return fun->script()->bindings.hasLocalNames();
 }
 
-extern JS_PUBLIC_API(jsuword *)
+extern JS_PUBLIC_API(uintptr_t *)
 JS_GetFunctionLocalNameArray(JSContext *cx, JSFunction *fun, void **markp)
 {
     Vector<JSAtom *> localNames(cx);
@@ -442,18 +441,19 @@ JS_GetFunctionLocalNameArray(JSContext *cx, JSFunction *fun, void **markp)
     /* Munge data into the API this method implements.  Avert your eyes! */
     *markp = cx->tempLifoAlloc().mark();
 
-    jsuword *names = cx->tempLifoAlloc().newArray<jsuword>(localNames.length());
+    uintptr_t *names = cx->tempLifoAlloc().newArray<uintptr_t>(localNames.length());
     if (!names) {
         js_ReportOutOfMemory(cx);
         return NULL;
     }
 
-    memcpy(names, localNames.begin(), localNames.length() * sizeof(jsuword));
+    JS_ASSERT(sizeof(*names) == sizeof(*localNames.begin()));
+    js_memcpy(names, localNames.begin(), localNames.length() * sizeof(*names));
     return names;
 }
 
 extern JS_PUBLIC_API(JSAtom *)
-JS_LocalNameToAtom(jsuword w)
+JS_LocalNameToAtom(uintptr_t w)
 {
     return JS_LOCAL_NAME_TO_ATOM(w);
 }
@@ -532,7 +532,7 @@ JS_GetFrameAnnotation(JSContext *cx, JSStackFrame *fpArg)
     if (fp->annotation() && fp->isScriptFrame()) {
         JSPrincipals *principals = fp->scopeChain().principals(cx);
 
-        if (principals && principals->globalPrivilegesEnabled(cx, principals)) {
+        if (principals) {
             /*
              * Give out an annotation only if privileges have not been revoked
              * or disabled globally.
@@ -548,17 +548,6 @@ JS_PUBLIC_API(void)
 JS_SetFrameAnnotation(JSContext *cx, JSStackFrame *fp, void *annotation)
 {
     Valueify(fp)->setAnnotation(annotation);
-}
-
-JS_PUBLIC_API(void *)
-JS_GetFramePrincipalArray(JSContext *cx, JSStackFrame *fp)
-{
-    JSPrincipals *principals;
-
-    principals = Valueify(fp)->scopeChain().principals(cx);
-    if (!principals)
-        return NULL;
-    return principals->getPrincipalArray(cx, principals);
 }
 
 JS_PUBLIC_API(JSBool)
@@ -647,7 +636,7 @@ JS_GetScriptFunction(JSContext *cx, JSScript *script)
 JS_PUBLIC_API(JSObject *)
 JS_GetParentOrScopeChain(JSContext *cx, JSObject *obj)
 {
-    return obj->scopeChain();
+    return obj->enclosingScope();
 }
 
 JS_PUBLIC_API(JSBool)
@@ -866,15 +855,6 @@ JS_GetPropertyDesc(JSContext *cx, JSObject *obj, JSScopeProperty *sprop,
     }
     pd->alias = JSVAL_VOID;
 
-    if (obj->containsSlot(shape->slot())) {
-        for (Shape::Range r = obj->lastProperty()->all(); !r.empty(); r.popFront()) {
-            const Shape &aprop = r.front();
-            if (&aprop != shape && aprop.slot() == shape->slot()) {
-                pd->alias = IdToJsval(aprop.propid());
-                break;
-            }
-        }
-    }
     return JS_TRUE;
 }
 
@@ -998,7 +978,7 @@ JS_SetDebugErrorHook(JSRuntime *rt, JSDebugErrorHook hook, void *closure)
 JS_PUBLIC_API(size_t)
 JS_GetObjectTotalSize(JSContext *cx, JSObject *obj)
 {
-    return obj->slotsAndStructSize();
+    return obj->computedSizeOfIncludingThis();
 }
 
 static size_t
@@ -1639,13 +1619,13 @@ JS_PUBLIC_API(void)
 JS_DumpBytecode(JSContext *cx, JSScript *script)
 {
 #if defined(DEBUG)
-    LifoAlloc lifoAlloc(1024);
-    Sprinter sprinter;
-    INIT_SPRINTER(cx, &sprinter, &lifoAlloc, 0);
+    Sprinter sprinter(cx);
+    if (!sprinter.init())
+        return;
 
     fprintf(stdout, "--- SCRIPT %s:%d ---\n", script->filename, script->lineno);
     js_Disassemble(cx, script, true, &sprinter);
-    fputs(sprinter.base, stdout);
+    fputs(sprinter.string(), stdout);
     fprintf(stdout, "--- END SCRIPT %s:%d ---\n", script->filename, script->lineno);
 #endif
 }
@@ -1656,13 +1636,13 @@ JS_DumpPCCounts(JSContext *cx, JSScript *script)
 #if defined(DEBUG)
     JS_ASSERT(script->pcCounters);
 
-    LifoAlloc lifoAlloc(1024);
-    Sprinter sprinter;
-    INIT_SPRINTER(cx, &sprinter, &lifoAlloc, 0);
+    Sprinter sprinter(cx);
+    if (!sprinter.init())
+        return;
 
     fprintf(stdout, "--- SCRIPT %s:%d ---\n", script->filename, script->lineno);
     js_DumpPCCounts(cx, script, &sprinter);
-    fputs(sprinter.base, stdout);
+    fputs(sprinter.string(), stdout);
     fprintf(stdout, "--- END SCRIPT %s:%d ---\n", script->filename, script->lineno);
 #endif
 }

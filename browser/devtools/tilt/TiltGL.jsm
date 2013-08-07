@@ -36,8 +36,6 @@
  * the terms of any one of the MPL, the GPL or the LGPL.
  *
  ***** END LICENSE BLOCK *****/
-
-/*global Components, TiltMath, TiltUtils, mat4 */
 "use strict";
 
 const Cc = Components.classes;
@@ -46,6 +44,7 @@ const Cu = Components.utils;
 
 const WEBGL_CONTEXT_NAME = "experimental-webgl";
 
+Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource:///modules/devtools/TiltMath.jsm");
 Cu.import("resource:///modules/devtools/TiltUtils.jsm");
 
@@ -514,7 +513,7 @@ TiltGL.Renderer.prototype = {
    */
   scale: function TGLR_scale(x, y, z)
   {
-    mat4.scale(this.mvMatrix, [x, y, z || 0]);
+    mat4.scale(this.mvMatrix, [x, y, z || 1]);
   },
 
   /**
@@ -1552,6 +1551,11 @@ TiltGL.ColorShader = {
     "    gl_FragColor = fill;",
     "}"
   ].join("\n")
+};
+
+TiltGL.isWebGLForceEnabled = function TGL_isWebGLForceEnabled()
+{
+  return Services.prefs.getBoolPref("webgl.force-enabled");
 };
 
 /**

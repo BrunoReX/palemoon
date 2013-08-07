@@ -156,26 +156,19 @@ gfxMacFont::~gfxMacFont()
 }
 
 bool
-gfxMacFont::InitTextRun(gfxContext *aContext,
-                        gfxTextRun *aTextRun,
-                        const PRUnichar *aString,
-                        PRUint32 aRunStart,
-                        PRUint32 aRunLength,
-                        PRInt32 aRunScript,
-                        bool aPreferPlatformShaping)
+gfxMacFont::ShapeWord(gfxContext *aContext,
+                      gfxShapedWord *aShapedWord,
+                      const PRUnichar *aText,
+                      bool aPreferPlatformShaping)
 {
     if (!mIsValid) {
         NS_WARNING("invalid font! expect incorrect text rendering");
         return false;
     }
 
-    bool ok = gfxFont::InitTextRun(aContext, aTextRun, aString,
-                                     aRunStart, aRunLength, aRunScript,
-        static_cast<MacOSFontEntry*>(GetFontEntry())->RequiresAATLayout());
-
-    aTextRun->AdjustAdvancesForSyntheticBold(aContext, aRunStart, aRunLength);
-
-    return ok;
+    bool requiresAAT =
+        static_cast<MacOSFontEntry*>(GetFontEntry())->RequiresAATLayout();
+    return gfxFont::ShapeWord(aContext, aShapedWord, aText, requiresAAT);
 }
 
 void
@@ -511,8 +504,7 @@ gfxMacFont::GetScaledFont()
     NativeFont nativeFont;
     nativeFont.mType = NATIVE_FONT_MAC_FONT_FACE;
     nativeFont.mFont = GetCGFontRef();
-    mAzureFont =
-      mozilla::gfx::Factory::CreateScaledFontForNativeFont(nativeFont, GetAdjustedSize());
+    mAzureFont = mozilla::gfx::Factory::CreateScaledFontWithCairo(nativeFont, GetAdjustedSize(), mScaledFont);
   }
 
   return mAzureFont;

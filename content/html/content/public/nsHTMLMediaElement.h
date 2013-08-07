@@ -73,6 +73,10 @@ public:
     CANPLAY_YES
   };
 
+  CORSMode GetCORSMode() {
+    return mCORSMode;
+  }
+
   nsHTMLMediaElement(already_AddRefed<nsINodeInfo> aNodeInfo);
   virtual ~nsHTMLMediaElement();
 
@@ -233,8 +237,7 @@ public:
   // autoplay pref enabled, etc), it should start playing back.
   void NotifyAutoplayDataReady();
 
-  // Gets the pref media.enforce_same_site_origin, which determines
-  // if we should check Access Controls, or allow cross domain loads.
+  // Check if the media element had crossorigin set when loading started
   bool ShouldCheckAllowOrigin();
 
   // Is the media element potentially playing as defined by the HTML 5 specification.
@@ -354,6 +357,16 @@ public:
 
 protected:
   class MediaLoadListener;
+
+  /**
+   * Logs a warning message to the web console to report various failures.
+   * aMsg is the localized message identifier, aParams is the parameters to
+   * be substituted into the localized message, and aParamCount is the number
+   * of parameters in aParams.
+   */
+  void ReportLoadError(const char* aMsg,
+                       const PRUnichar** aParams = nsnull,
+                       PRUint32 aParamCount = 0);
 
   /**
    * Changes mHasPlayedOrSeeked to aValue. If mHasPlayedOrSeeked changes
@@ -751,6 +764,9 @@ protected:
 
   // True if a same-origin check has been done for the media element and resource.
   bool mMediaSecurityVerified;
+
+  // The CORS mode when loading the media element
+  CORSMode mCORSMode;
 };
 
 #endif

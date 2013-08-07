@@ -37,20 +37,20 @@
 #ifndef __NS_SVGFILTERSELEMENT_H__
 #define __NS_SVGFILTERSELEMENT_H__
 
-#include "nsSVGStylableElement.h"
+#include "gfxImageSurface.h"
+#include "gfxRect.h"
+#include "nsIDOMSVGFilters.h"
+#include "nsIDOMSVGURIReference.h"
+#include "nsIFrame.h"
+#include "nsImageLoadingContent.h"
 #include "nsSVGLength2.h"
 #include "nsSVGString.h"
-#include "nsIFrame.h"
-#include "gfxRect.h"
-#include "gfxImageSurface.h"
-#include "nsIDOMSVGFilters.h"
-#include "nsImageLoadingContent.h"
-#include "nsIDOMSVGURIReference.h"
+#include "nsSVGStylableElement.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
 
+class nsSVGFilterInstance;
 class nsSVGFilterResource;
 class nsSVGNumberPair;
-class nsSVGFilterInstance;
 
 struct nsSVGStringInfo {
   nsSVGStringInfo(const nsSVGString* aString,
@@ -298,7 +298,8 @@ public:
   NS_IMETHOD OnStopDecode(imgIRequest *aRequest, nsresult status,
                           const PRUnichar *statusArg);
   // imgIContainerObserver
-  NS_IMETHOD FrameChanged(imgIContainer *aContainer,
+  NS_IMETHOD FrameChanged(imgIRequest* aRequest,
+                          imgIContainer *aContainer,
                           const nsIntRect *aDirtyRect);
   // imgIContainerObserver
   NS_IMETHOD OnStartContainer(imgIRequest *aRequest,

@@ -44,6 +44,7 @@
 #include "nsContentUtils.h"
 #include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
+#include "nsWrapperCacheInlines.h"
 
 #include "IDBEvents.h"
 #include "IDBTransaction.h"
@@ -145,8 +146,8 @@ HelperBase::WrapNative(JSContext* aCx,
   NS_ASSERTION(aResult, "Null pointer!");
   NS_ASSERTION(mRequest, "Null request!");
 
-  JSObject* global = mRequest->ScriptContext()->GetNativeGlobal();
-  NS_ENSURE_TRUE(global, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+  JSObject* global = mRequest->GetParentObject();
+  NS_ASSERTION(global, "This should never be null!");
 
   nsresult rv =
     nsContentUtils::WrapNative(aCx, global, aNative, aResult);
@@ -280,7 +281,7 @@ AsyncConnectionHelper::Run()
   if (NS_SUCCEEDED(rv)) {
     bool hasSavepoint = false;
     if (mDatabase) {
-      IndexedDatabaseManager::SetCurrentWindow(mDatabase->Owner());
+      IndexedDatabaseManager::SetCurrentWindow(mDatabase->GetOwner());
 
       // Make the first savepoint.
       if (mTransaction) {

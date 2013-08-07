@@ -60,6 +60,7 @@
 #include "nsThreadUtils.h"
 #include "nsNetUtil.h"
 #include "nsAsyncDOMEvent.h"
+#include "nsGenericHTMLElement.h"
 
 #include "nsIPresShell.h"
 #include "nsEventStates.h"
@@ -159,10 +160,11 @@ nsImageLoadingContent::~nsImageLoadingContent()
  * imgIContainerObserver impl
  */
 NS_IMETHODIMP
-nsImageLoadingContent::FrameChanged(imgIContainer* aContainer,
+nsImageLoadingContent::FrameChanged(imgIRequest* aRequest,
+                                    imgIContainer* aContainer,
                                     const nsIntRect* aDirtyRect)
 {
-  LOOP_OVER_OBSERVERS(FrameChanged(aContainer, aDirtyRect));
+  LOOP_OVER_OBSERVERS(FrameChanged(aRequest, aContainer, aDirtyRect));
   return NS_OK;
 }
             
@@ -773,9 +775,9 @@ nsImageLoadingContent::LoadImage(nsIURI* aNewURI,
 
   nsLoadFlags loadFlags = aLoadFlags;
   PRInt32 corsmode = GetCORSMode();
-  if (corsmode == nsImageLoadingContent::CORS_ANONYMOUS) {
+  if (corsmode == nsGenericHTMLElement::CORS_ANONYMOUS) {
     loadFlags |= imgILoader::LOAD_CORS_ANONYMOUS;
-  } else if (corsmode == nsImageLoadingContent::CORS_USE_CREDENTIALS) {
+  } else if (corsmode == nsGenericHTMLElement::CORS_USE_CREDENTIALS) {
     loadFlags |= imgILoader::LOAD_CORS_USE_CREDENTIALS;
   }
 
@@ -1185,8 +1187,8 @@ nsImageLoadingContent::CreateStaticImageClone(nsImageLoadingContent* aDest) cons
   aDest->mSuppressed = mSuppressed;
 }
 
-nsImageLoadingContent::CORSMode
+nsGenericHTMLElement::CORSMode
 nsImageLoadingContent::GetCORSMode()
 {
-  return CORS_NONE;
+  return nsGenericHTMLElement::CORS_NONE;
 }

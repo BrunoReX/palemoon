@@ -51,7 +51,6 @@
 #include "jsiter.h"
 #include "jstypes.h"
 #include "methodjit/StubCalls.h"
-#include "jspropertycache.h"
 #include "methodjit/MonoIC.h"
 #include "jsanalyze.h"
 #include "methodjit/BaseCompiler.h"
@@ -59,14 +58,12 @@
 #include "vm/Debugger.h"
 
 #include "jsinterpinlines.h"
-#include "jspropertycacheinlines.h"
 #include "jsscopeinlines.h"
 #include "jsscriptinlines.h"
 #include "jsobjinlines.h"
 #include "jscntxtinlines.h"
 #include "jsatominlines.h"
 #include "StubCalls-inl.h"
-#include "MethodJIT-inl.h"
 
 #include "jsautooplen.h"
 
@@ -111,10 +108,11 @@ top:
             if (tn->stackDepth > cx->regs().sp - fp->base())
                 continue;
 
+            UnwindScope(cx, tn->stackDepth);
+
             jsbytecode *pc = script->main() + tn->start + tn->length;
             cx->regs().pc = pc;
-            JSBool ok = UnwindScope(cx, tn->stackDepth, JS_TRUE);
-            JS_ASSERT(cx->regs().sp == fp->base() + tn->stackDepth);
+            cx->regs().sp = fp->base() + tn->stackDepth;
 
             switch (tn->kind) {
                 case JSTRY_CATCH:
@@ -156,7 +154,7 @@ top:
                   Value v = cx->getPendingException();
                   JS_ASSERT(JSOp(*pc) == JSOP_ENDITER);
                   cx->clearPendingException();
-                  ok = !!js_CloseIterator(cx, &cx->regs().sp[-1].toObject());
+                  bool ok = !!js_CloseIterator(cx, &cx->regs().sp[-1].toObject());
                   cx->regs().sp -= 1;
                   if (!ok)
                       goto top;
@@ -177,6 +175,7 @@ InlineReturn(VMFrame &f)
 {
     JS_ASSERT(f.fp() != f.entryfp);
     JS_ASSERT(!IsActiveWithOrBlock(f.cx, f.fp()->scopeChain(), 0));
+    JS_ASSERT(!f.fp()->hasBlockChain());
     f.cx->stack.popInlineFrame(f.regs);
 
     DebugOnly<JSOp> op = JSOp(*f.regs.pc);
@@ -321,15 +320,13 @@ UncachedInlineCall(VMFrame &f, InitialFrameFlags initial,
     types::TypeMonitorCall(cx, args, construct);
 
     /* Try to compile if not already compiled. */
-    if (newscript->getJITStatus(construct) == JITScript_None) {
-        CompileStatus status = CanMethodJIT(cx, newscript, construct, CompileRequest_Interpreter);
-        if (status == Compile_Error) {
-            /* A runtime exception was thrown, get out. */
-            return false;
-        }
-        if (status == Compile_Abort)
-            *unjittable = true;
+    CompileStatus status = CanMethodJIT(cx, newscript, newscript->code, construct, CompileRequest_Interpreter);
+    if (status == Compile_Error) {
+        /* A runtime exception was thrown, get out. */
+        return false;
     }
+    if (status == Compile_Abort)
+        *unjittable = true;
 
     /*
      * Make sure we are not calling from an inline frame if we need to make a
@@ -367,11 +364,13 @@ UncachedInlineCall(VMFrame &f, InitialFrameFlags initial,
      */
     if (!newType) {
         if (JITScript *jit = newscript->getJIT(regs.fp()->isConstructing())) {
-            *pret = jit->invokeEntry;
+            if (jit->invokeEntry) {
+                *pret = jit->invokeEntry;
 
-            /* Restore the old fp around and let the JIT code repush the new fp. */
-            regs.popFrame((Value *) regs.fp());
-            return true;
+                /* Restore the old fp around and let the JIT code repush the new fp. */
+                regs.popFrame((Value *) regs.fp());
+                return true;
+            }
         }
     }
 
@@ -548,10 +547,10 @@ js_InternalThrow(VMFrame &f)
                 switch (st) {
                 case JSTRAP_ERROR:
                     cx->clearPendingException();
-                    return NULL;
+                    break;
 
                 case JSTRAP_CONTINUE:
-                  break;
+                    break;
 
                 case JSTRAP_RETURN:
                     cx->clearPendingException();
@@ -578,7 +577,8 @@ js_InternalThrow(VMFrame &f)
         // and epilogues. RunTracer(), Interpret(), and Invoke() all
         // rely on this property.
         JS_ASSERT(!f.fp()->finishedInInterpreter());
-        UnwindScope(cx, 0, cx->isExceptionPending());
+        UnwindScope(cx, 0);
+        f.regs.sp = f.fp()->base();
 
         if (cx->compartment->debugMode())
             js::ScriptDebugEpilogue(cx, f.fp(), false);
@@ -591,11 +591,11 @@ js_InternalThrow(VMFrame &f)
         if (f.entryfp == f.fp())
             break;
 
-        JS_ASSERT(f.regs.sp == cx->regs().sp);
+        JS_ASSERT(&cx->regs() == &f.regs);
         InlineReturn(f);
     }
 
-    JS_ASSERT(f.regs.sp == cx->regs().sp);
+    JS_ASSERT(&cx->regs() == &f.regs);
 
     if (!pc)
         return NULL;
@@ -619,9 +619,6 @@ js_InternalThrow(VMFrame &f)
 
     analyze::AutoEnterAnalysis enter(cx);
 
-    cx->regs().pc = pc;
-    cx->regs().sp = fp->base() + script->analysis()->getCode(pc).stackDepth;
-
     /*
      * Interpret the ENTERBLOCK and EXCEPTION opcodes, so that we don't go
      * back into the interpreter with a pending exception. This will cause
@@ -629,8 +626,8 @@ js_InternalThrow(VMFrame &f)
      */
     if (cx->isExceptionPending()) {
         JS_ASSERT(JSOp(*pc) == JSOP_ENTERBLOCK);
-        JSObject *obj = script->getObject(GET_SLOTNO(pc));
-        Value *vp = cx->regs().sp + OBJ_BLOCK_COUNT(cx, obj);
+        StaticBlockObject &blockObj = script->getObject(GET_SLOTNO(pc))->asStaticBlock();
+        Value *vp = cx->regs().sp + blockObj.slotCount();
         SetValueRangeToUndefined(cx->regs().sp, vp);
         cx->regs().sp = vp;
         JS_ASSERT(JSOp(pc[JSOP_ENTERBLOCK_LENGTH]) == JSOP_EXCEPTION);
@@ -638,6 +635,7 @@ js_InternalThrow(VMFrame &f)
         cx->clearPendingException();
         cx->regs().sp++;
         cx->regs().pc = pc + JSOP_ENTERBLOCK_LENGTH + JSOP_EXCEPTION_LENGTH;
+        cx->regs().fp()->setBlockChain(&blockObj);
     }
 
     *f.oldregs = f.regs;
@@ -694,6 +692,28 @@ void JS_FASTCALL
 stubs::ScriptProbeOnlyEpilogue(VMFrame &f)
 {
     Probes::exitJSFun(f.cx, f.fp()->fun(), f.fp()->script());
+}
+
+void JS_FASTCALL
+stubs::CrossChunkShim(VMFrame &f, void *edge_)
+{
+    DebugOnly<CrossChunkEdge*> edge = (CrossChunkEdge *) edge_;
+
+    mjit::ExpandInlineFrames(f.cx->compartment);
+
+    JSScript *script = f.script();
+    JS_ASSERT(edge->target < script->length);
+    JS_ASSERT(script->code + edge->target == f.pc());
+
+    CompileStatus status = CanMethodJIT(f.cx, script, f.pc(), f.fp()->isConstructing(),
+                                        CompileRequest_Interpreter);
+    if (status == Compile_Error)
+        THROW();
+
+    void **addr = f.returnAddressLocation();
+    *addr = JS_FUNC_TO_DATA_PTR(void *, JaegerInterpoline);
+
+    f.fp()->setRejoin(StubRejoin(REJOIN_RESUME));
 }
 
 JS_STATIC_ASSERT(JSOP_NOP == 0);
@@ -812,14 +832,16 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
 
     switch (rejoin) {
       case REJOIN_SCRIPTED: {
+        jsval_layout rval;
 #ifdef JS_NUNBOX32
-        uint64_t rvalBits = ((uint64_t)returnType << 32) | (uint32_t)returnData;
+        rval.asBits = ((uint64_t)returnType << 32) | (uint32_t)returnData;
 #elif JS_PUNBOX64
-        uint64_t rvalBits = (uint64_t)returnType | (uint64_t)returnData;
+        rval.asBits = (uint64_t)returnType | (uint64_t)returnData;
 #else
 #error "Unknown boxing format"
 #endif
-        nextsp[-1].setRawBits(rvalBits);
+
+        nextsp[-1] = IMPL_TO_JSVAL(rval);
 
         /*
          * When making a scripted call at monitored sites, it is the caller's
@@ -856,25 +878,10 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
         /*
          * We don't rejoin until after the native stub finishes execution, in
          * which case the return value will be in memory. For lowered natives,
-         * the return value will be in the 'this' value's slot. For getters,
-         * the result is at nextsp[0] (see ic::CallProp).
+         * the return value will be in the 'this' value's slot.
          */
-        if (rejoin == REJOIN_NATIVE_LOWERED) {
+        if (rejoin != REJOIN_NATIVE)
             nextsp[-1] = nextsp[0];
-        } else if (rejoin == REJOIN_NATIVE_GETTER) {
-            if (js_CodeSpec[op].format & JOF_CALLOP) {
-                /*
-                 * If we went through jsop_callprop_obj then the 'this' value
-                 * is still in its original slot and hasn't been shifted yet,
-                 * so fix that now. Yuck.
-                 */
-                if (nextsp[-2].isObject())
-                    nextsp[-1] = nextsp[-2];
-                nextsp[-2] = nextsp[0];
-            } else {
-                nextsp[-1] = nextsp[0];
-            }
-        }
 
         /* Release this reference on the orphaned native stub. */
         RemoveOrphanedNative(cx, fp);
@@ -1023,42 +1030,6 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
          * fused opcode which needs to be finished.
          */
         switch (op) {
-          case JSOP_NAME:
-          case JSOP_GETGNAME:
-          case JSOP_GETFCSLOT:
-          case JSOP_GETPROP:
-          case JSOP_GETXPROP:
-          case JSOP_LENGTH:
-            /* Non-fused opcode, state is already correct for the next op. */
-            f.regs.pc = nextpc;
-            break;
-
-          case JSOP_CALLGNAME:
-          case JSOP_CALLNAME:
-            if (!ComputeImplicitThis(cx, &fp->scopeChain(), nextsp[-2], &nextsp[-1]))
-                return js_InternalThrow(f);
-            f.regs.pc = nextpc;
-            break;
-
-          case JSOP_CALLFCSLOT:
-            /* |this| is always undefined for CALLGLOBAL/CALLFCSLOT. */
-            nextsp[-1].setUndefined();
-            f.regs.pc = nextpc;
-            break;
-
-          case JSOP_CALLPROP: {
-            /*
-             * CALLPROP is compiled in terms of GETPROP for known strings.
-             * In such cases the top two entries are in place, but are swapped.
-             */
-            JS_ASSERT(nextsp[-2].isString());
-            Value tmp = nextsp[-2];
-            nextsp[-2] = nextsp[-1];
-            nextsp[-1] = tmp;
-            f.regs.pc = nextpc;
-            break;
-          }
-
           case JSOP_INSTANCEOF: {
             /*
              * If we recompiled from a getprop used within JSOP_INSTANCEOF,
@@ -1075,7 +1046,8 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
           }
 
           default:
-            JS_NOT_REACHED("Bad rejoin getter op");
+            f.regs.pc = nextpc;
+            break;
         }
         break;
 
@@ -1100,18 +1072,16 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
         bool takeBranch = false;
         switch (JSOp(*nextpc)) {
           case JSOP_IFNE:
-          case JSOP_IFNEX:
             takeBranch = returnReg != NULL;
             break;
           case JSOP_IFEQ:
-          case JSOP_IFEQX:
             takeBranch = returnReg == NULL;
             break;
           default:
             JS_NOT_REACHED("Bad branch op");
         }
         if (takeBranch)
-            f.regs.pc = nextpc + analyze::GetJumpOffset(nextpc, nextpc);
+            f.regs.pc = nextpc + GET_JUMP_OFFSET(nextpc);
         else
             f.regs.pc = nextpc + GetBytecodeLength(nextpc);
         break;
@@ -1130,10 +1100,8 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
      * The result may not have been marked if we bailed out while inside a stub
      * for the op.
      */
-    if (f.regs.pc == nextpc && (js_CodeSpec[op].format & JOF_TYPESET)) {
-        int which = (js_CodeSpec[op].format & JOF_CALLOP) ? -2 : -1;  /* Yuck. */
-        types::TypeScript::Monitor(cx, script, pc, f.regs.sp[which]);
-    }
+    if (f.regs.pc == nextpc && (js_CodeSpec[op].format & JOF_TYPESET))
+        types::TypeScript::Monitor(cx, script, pc, f.regs.sp[-1]);
 
     /* Mark the entry frame as unfinished, and update the regs to resume at. */
     JaegerStatus status = skipTrap ? Jaeger_UnfinishedAtTrap : Jaeger_Unfinished;

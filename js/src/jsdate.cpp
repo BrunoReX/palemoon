@@ -60,7 +60,6 @@
 #include "mozilla/Util.h"
 
 #include "jstypes.h"
-#include "jsstdint.h"
 #include "jsprf.h"
 #include "prmjtime.h"
 #include "jsutil.h"
@@ -2647,7 +2646,7 @@ js_InitDateClass(JSContext *cx, JSObject *obj)
     /* Set the static LocalTZA. */
     LocalTZA = -(PRMJ_LocalGMTDifference() * msPerSecond);
 
-    GlobalObject *global = obj->asGlobal();
+    GlobalObject *global = &obj->asGlobal();
 
     JSObject *dateProto = global->createBlankPrototype(cx, &DateClass);
     if (!dateProto)

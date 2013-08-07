@@ -106,11 +106,11 @@ public:
    *
    * \return True is initialization was succesful, false when it was not.
    */
-  bool Initialize() {
-    return Initialize(CreateContext());
+  bool Initialize(bool force = false) {
+    return Initialize(CreateContext(), force);
   }
 
-  bool Initialize(nsRefPtr<GLContext> aContext);
+  bool Initialize(nsRefPtr<GLContext> aContext, bool force = false);
 
   /**
    * Sets the clipping region for this layer manager. This is important on 
@@ -308,6 +308,7 @@ public:
    * texture types.
    */
   void CreateFBOWithTexture(const nsIntRect& aRect, InitMode aInit,
+                            GLuint aCurrentFrameBuffer,
                             GLuint *aFBO, GLuint *aTexture);
 
   GLuint QuadVBO() { return mQuadVBO; }
@@ -539,6 +540,7 @@ public:
 
   LayerManagerOGL* OGLManager() const { return mOGLManager; }
   GLContext *gl() const { return mOGLManager->gl(); }
+  virtual void CleanupResources() = 0;
 
 protected:
   LayerManagerOGL *mOGLManager;

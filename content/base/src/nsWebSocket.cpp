@@ -82,6 +82,7 @@
 #include "jstypedarray.h"
 #include "prmem.h"
 #include "nsDOMFile.h"
+#include "nsWrapperCacheInlines.h"
 
 using namespace mozilla;
 
@@ -127,7 +128,7 @@ nsWebSocket::PrintErrorOnConsole(const char *aBundleURI,
     do_GetService(NS_CONSOLESERVICE_CONTRACTID, &rv));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsIScriptError2> errorObject(
+  nsCOMPtr<nsIScriptError> errorObject(
     do_CreateInstance(NS_SCRIPTERROR_CONTRACTID, &rv));
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -142,15 +143,15 @@ nsWebSocket::PrintErrorOnConsole(const char *aBundleURI,
   }
   NS_ENSURE_SUCCESS(rv, rv);
 
-  errorObject->InitWithWindowID(message.get(),
-                                NS_ConvertUTF8toUTF16(mScriptFile).get(),
-                                nsnull, mScriptLine, 0,
-                                nsIScriptError::errorFlag, "Web Socket",
-                                mInnerWindowID);
+  rv = errorObject->InitWithWindowID(message.get(),
+                                     NS_ConvertUTF8toUTF16(mScriptFile).get(),
+                                     nsnull, mScriptLine, 0,
+                                     nsIScriptError::errorFlag, "Web Socket",
+                                     mInnerWindowID);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   // print the error message directly to the JS console
-  nsCOMPtr<nsIScriptError> logError(do_QueryInterface(errorObject));
-  rv = console->LogMessage(logError);
+  rv = console->LogMessage(errorObject);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -428,6 +429,31 @@ nsWebSocket::~nsWebSocket()
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsWebSocket)
+
+NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(nsWebSocket)
+  if (tmp->IsBlack()) {
+    if (tmp->mListenerManager) {
+      tmp->mListenerManager->UnmarkGrayJSListeners();
+      NS_UNMARK_LISTENER_WRAPPER(Open)
+      NS_UNMARK_LISTENER_WRAPPER(Error)
+      NS_UNMARK_LISTENER_WRAPPER(Message)
+      NS_UNMARK_LISTENER_WRAPPER(Close)
+    }
+    return true;
+  }
+NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_END
+
+NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_IN_CC_BEGIN(nsWebSocket)
+  return tmp->IsBlack();
+NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_IN_CC_END
+
+NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_BEGIN(nsWebSocket)
+  return tmp->IsBlack();
+NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_END
+
+NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(nsWebSocket,
+                                               nsDOMEventTargetWrapperCache)
+NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsWebSocket,
                                                   nsDOMEventTargetWrapperCache)
@@ -1568,6 +1594,7 @@ nsWebSocket::Cancel(nsresult aStatus)
     return NS_OK;
 
   ConsoleError();
+  mClientReasonCode = nsIWebSocketChannel::CLOSE_GOING_AWAY;
   return CloseConnection();
 }
 

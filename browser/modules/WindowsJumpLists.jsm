@@ -23,7 +23,6 @@
  *   Jim Mathies <jmathies@mozilla.com> (Original author)
  *   Marco Bonardo <mak77@bonardo.net>
  *   Brian R. Bondy <netzen@gmail.com>
- *   Moonchild <moonchild@palemoon.org>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or

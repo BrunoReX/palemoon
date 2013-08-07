@@ -39,12 +39,11 @@
 
 #include "Key.h"
 #include "nsIStreamBufferAccess.h"
-#include "jsdate.h"
+#include "jsfriendapi.h"
 #include "nsAlgorithm.h"
 #include "nsContentUtils.h"
 #include "nsJSUtils.h"
-#include "xpcprivate.h"
-#include "XPCQuickStubs.h"
+#include "xpcpublic.h"
 
 USING_INDEXEDDB_NAMESPACE
 
@@ -244,7 +243,7 @@ Key::DecodeJSVal(const unsigned char*& aPos, const unsigned char* aEnd,
   else if (*aPos - aTypeOffset == eString) {
     nsString key;
     DecodeString(aPos, aEnd, key);
-    if (!xpc_qsStringToJsval(aCx, key, aVal)) {
+    if (!xpc::StringToJsval(aCx, key, aVal)) {
       return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
     }
   }

@@ -1,14 +1,21 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
-
-/*global Services, Components, gBrowser, executeSoon */
-/*global InspectorUI, Tilt, TiltGL, EPSILON */
 "use strict";
 
-Components.utils.import("resource:///modules/devtools/TiltGL.jsm");
-Components.utils.import("resource:///modules/devtools/TiltMath.jsm");
-Components.utils.import("resource:///modules/devtools/TiltUtils.jsm");
-Components.utils.import("resource:///modules/devtools/TiltVisualizer.jsm");
+let tempScope = {};
+Components.utils.import("resource:///modules/devtools/TiltGL.jsm", tempScope);
+Components.utils.import("resource:///modules/devtools/TiltMath.jsm", tempScope);
+Components.utils.import("resource:///modules/devtools/TiltUtils.jsm", tempScope);
+Components.utils.import("resource:///modules/devtools/TiltVisualizer.jsm", tempScope);
+let TiltGL = tempScope.TiltGL;
+let EPSILON = tempScope.EPSILON;
+let TiltMath = tempScope.TiltMath;
+let vec3 = tempScope.vec3;
+let mat3 = tempScope.mat3;
+let mat4 = tempScope.mat4;
+let quat4 = tempScope.quat4;
+let TiltUtils = tempScope.TiltUtils;
+let TiltVisualizer = tempScope.TiltVisualizer;
 
 
 const DEFAULT_HTML = "data:text/html," +
@@ -18,16 +25,16 @@ const DEFAULT_HTML = "data:text/html," +
       "<title>Three Laws</title>" +
     "</head>" +
     "<body>" +
-      "<div>" +
-        "A robot may not injure a human being or, through inaction, allow a" +
+      "<div id='first-law'>" +
+        "A robot may not injure a human being or, through inaction, allow a " +
         "human being to come to harm." +
       "</div>" +
       "<div>" +
-        "A robot must obey the orders given to it by human beings, except" +
+        "A robot must obey the orders given to it by human beings, except " +
         "where such orders would conflict with the First Law." +
       "</div>" +
       "<div>" +
-        "A robot must protect its own existence as long as such protection" +
+        "A robot must protect its own existence as long as such protection " +
         "does not conflict with the First or Second Laws." +
       "</div>" +
     "<body>" +
@@ -36,10 +43,16 @@ const DEFAULT_HTML = "data:text/html," +
 const INSPECTOR_OPENED = InspectorUI.INSPECTOR_NOTIFICATIONS.OPENED;
 const INSPECTOR_CLOSED = InspectorUI.INSPECTOR_NOTIFICATIONS.CLOSED;
 
-const TILT_INITIALIZED = Tilt.NOTIFICATIONS.INITIALIZED;
-const TILT_DESTROYED = Tilt.NOTIFICATIONS.DESTROYED;
-const TILT_SHOWN = Tilt.NOTIFICATIONS.SHOWN;
-const TILT_HIDDEN = Tilt.NOTIFICATIONS.HIDDEN;
+const INITIALIZING = Tilt.NOTIFICATIONS.INITIALIZING;
+const INITIALIZED = Tilt.NOTIFICATIONS.INITIALIZED;
+const DESTROYING = Tilt.NOTIFICATIONS.DESTROYING;
+const BEFORE_DESTROYED = Tilt.NOTIFICATIONS.BEFORE_DESTROYED;
+const DESTROYED = Tilt.NOTIFICATIONS.DESTROYED;
+const SHOWN = Tilt.NOTIFICATIONS.SHOWN;
+const HIDDEN = Tilt.NOTIFICATIONS.HIDDEN;
+const HIGHLIGHTING = Tilt.NOTIFICATIONS.HIGHLIGHTING;
+const UNHIGHLIGHTING = Tilt.NOTIFICATIONS.UNHIGHLIGHTING;
+const NODE_REMOVED = Tilt.NOTIFICATIONS.NODE_REMOVED;
 
 const TILT_ENABLED = Services.prefs.getBoolPref("devtools.tilt.enabled");
 const INSP_ENABLED = Services.prefs.getBoolPref("devtools.inspector.enabled");
@@ -53,22 +66,45 @@ function isWebGLSupported() {
   return TiltGL.isWebGLSupported() && TiltGL.create3DContext(createCanvas());
 }
 
-function isApprox(num1, num2) {
-  return Math.abs(num1 - num2) < EPSILON;
+function isApprox(num1, num2, delta) {
+  if (Math.abs(num1 - num2) > (delta || EPSILON)) {
+    info("isApprox expected " + num1 + ", got " + num2 + " instead.");
+    return false;
+  }
+  return true;
 }
 
-function isApproxVec(vec1, vec2) {
+function isApproxVec(vec1, vec2, delta) {
+  vec1 = Array.prototype.slice.call(vec1);
+  vec2 = Array.prototype.slice.call(vec2);
+
   if (vec1.length !== vec2.length) {
     return false;
   }
   for (let i = 0, len = vec1.length; i < len; i++) {
-    if (!isApprox(vec1[i], vec2[i])) {
+    if (!isApprox(vec1[i], vec2[i], delta)) {
+      info("isApproxVec expected [" + vec1 + "], got [" + vec2 + "] instead.");
       return false;
     }
   }
   return true;
 }
 
+function isEqualVec(vec1, vec2) {
+  vec1 = Array.prototype.slice.call(vec1);
+  vec2 = Array.prototype.slice.call(vec2);
+
+  if (vec1.length !== vec2.length) {
+    return false;
+  }
+  for (let i = 0, len = vec1.length; i < len; i++) {
+    if (vec1[i] !== vec2[i]) {
+      info("isEqualVec expected [" + vec1 + "], got [" + vec2 + "] instead.");
+      return false;
+    }
+  }
+  return true;
+}
 
 function createCanvas() {
   return document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
@@ -89,6 +125,8 @@ function createTab(callback, location) {
 
 
 function createTilt(callbacks, close) {
+  Services.prefs.setBoolPref("webgl.verbose", true);
+
   Services.obs.addObserver(onInspectorOpen, INSPECTOR_OPENED, false);
   InspectorUI.toggleInspectorUI();
 
@@ -99,27 +137,27 @@ function createTilt(callbacks, close) {
       if ("function" === typeof callbacks.onInspectorOpen) {
         callbacks.onInspectorOpen();
       }
-      Services.obs.addObserver(onTiltOpen, TILT_INITIALIZED, false);
+      Services.obs.addObserver(onTiltOpen, INITIALIZING, false);
       Tilt.initialize();
     });
   }
 
   function onTiltOpen() {
-    Services.obs.removeObserver(onTiltOpen, TILT_INITIALIZED);
+    Services.obs.removeObserver(onTiltOpen, INITIALIZING);
 
     executeSoon(function() {
       if ("function" === typeof callbacks.onTiltOpen) {
         callbacks.onTiltOpen(Tilt.visualizers[Tilt.currentWindowId]);
       }
       if (close) {
-        Services.obs.addObserver(onTiltClose, TILT_DESTROYED, false);
+        Services.obs.addObserver(onTiltClose, DESTROYED, false);
         Tilt.destroy(Tilt.currentWindowId);
       }
     });
   }
 
   function onTiltClose() {
-    Services.obs.removeObserver(onTiltClose, TILT_DESTROYED);
+    Services.obs.removeObserver(onTiltClose, DESTROYED);
 
     executeSoon(function() {
       if ("function" === typeof callbacks.onTiltClose) {

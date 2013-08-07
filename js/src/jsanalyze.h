@@ -203,18 +203,13 @@ GetDefCount(JSScript *script, unsigned offset)
     JS_ASSERT(offset < script->length);
     jsbytecode *pc = script->code + offset;
 
-    if (js_CodeSpec[*pc].ndefs == -1)
-        return js_GetEnterBlockStackDefs(NULL, script, pc);
-
     /*
      * Add an extra pushed value for OR/AND opcodes, so that they are included
      * in the pushed array of stack values for type inference.
      */
     switch (JSOp(*pc)) {
       case JSOP_OR:
-      case JSOP_ORX:
       case JSOP_AND:
-      case JSOP_ANDX:
         return 1;
       case JSOP_FILTER:
         return 2;
@@ -227,7 +222,7 @@ GetDefCount(JSScript *script, unsigned offset)
          */
         return (pc[1] + 1);
       default:
-        return js_CodeSpec[*pc].ndefs;
+        return StackDefs(script, pc);
     }
 }
 
@@ -240,7 +235,7 @@ GetUseCount(JSScript *script, unsigned offset)
     if (JSOp(*pc) == JSOP_PICK)
         return (pc[1] + 1);
     if (js_CodeSpec[*pc].nuses == -1)
-        return js_GetVariableStackUses(JSOp(*pc), pc);
+        return StackUses(script, pc);
     return js_CodeSpec[*pc].nuses;
 }
 
@@ -271,6 +266,29 @@ ExtendedDef(jsbytecode *pc)
     }
 }
 
+/* Return whether op bytecodes do not fallthrough (they may do a jump). */
+static inline bool
+BytecodeNoFallThrough(JSOp op)
+{
+    switch (op) {
+      case JSOP_GOTO:
+      case JSOP_DEFAULT:
+      case JSOP_RETURN:
+      case JSOP_STOP:
+      case JSOP_RETRVAL:
+      case JSOP_THROW:
+      case JSOP_TABLESWITCH:
+      case JSOP_LOOKUPSWITCH:
+      case JSOP_FILTER:
+        return true;
+      case JSOP_GOSUB:
+        /* These fall through indirectly, after executing a 'finally'. */
+        return false;
+      default:
+        return false;
+    }
+}
+
 /*
  * For opcodes which access local variables or arguments, we track an extra
  * use during SSA analysis for the value of the variable before/after the op.
@@ -289,15 +307,6 @@ ExtendedUse(jsbytecode *pc)
       default:
         return false;
     }
-}
-
-static inline ptrdiff_t
-GetJumpOffset(jsbytecode *pc, jsbytecode *pc2)
-{
-    uint32_t type = JOF_OPTYPE(*pc);
-    if (JOF_TYPE_IS_EXTENDED_JUMP(type))
-        return GET_JUMPX_OFFSET(pc2);
-    return GET_JUMP_OFFSET(pc2);
 }
 
 static inline JSOp
@@ -327,12 +336,12 @@ FollowBranch(JSContext *cx, JSScript *script, unsigned offset)
      * inserted by the emitter.
      */
     jsbytecode *pc = script->code + offset;
-    unsigned targetOffset = offset + GetJumpOffset(pc, pc);
+    unsigned targetOffset = offset + GET_JUMP_OFFSET(pc);
     if (targetOffset < offset) {
         jsbytecode *target = script->code + targetOffset;
         JSOp nop = JSOp(*target);
-        if (nop == JSOP_GOTO || nop == JSOP_GOTOX)
-            return targetOffset + GetJumpOffset(target, target);
+        if (nop == JSOP_GOTO)
+            return targetOffset + GET_JUMP_OFFSET(target);
     }
     return targetOffset;
 }
@@ -389,6 +398,30 @@ static inline uint32_t GetBytecodeSlot(JSScript *script, jsbytecode *pc)
       default:
         JS_NOT_REACHED("Bad slot opcode");
         return 0;
+    }
+}
+
+/* Slot opcodes which update SSA information. */
+static inline bool
+BytecodeUpdatesSlot(JSOp op)
+{
+    switch (op) {
+      case JSOP_SETARG:
+      case JSOP_SETLOCAL:
+      case JSOP_SETLOCALPOP:
+      case JSOP_DEFLOCALFUN:
+      case JSOP_DEFLOCALFUN_FC:
+      case JSOP_INCARG:
+      case JSOP_DECARG:
+      case JSOP_ARGINC:
+      case JSOP_ARGDEC:
+      case JSOP_INCLOCAL:
+      case JSOP_DECLOCAL:
+      case JSOP_LOCALINC:
+      case JSOP_LOCALDEC:
+        return true;
+      default:
+        return false;
     }
 }
 
@@ -604,7 +637,7 @@ class SSAValue
         return (Kind) (u.pushed.kind & 0x3);
     }
 
-    bool equals(const SSAValue &o) const {
+    bool operator==(const SSAValue &o) const {
         return !memcmp(this, &o, sizeof(SSAValue));
     }
 
@@ -1070,9 +1103,12 @@ class ScriptAnalysis
     /* For a JSOP_CALL* op, get the pc of the corresponding JSOP_CALL/NEW/etc. */
     jsbytecode *getCallPC(jsbytecode *pc)
     {
-        JS_ASSERT(js_CodeSpec[*pc].format & JOF_CALLOP);
-        SSAUseChain *uses = useChain(SSAValue::PushedValue(pc - script->code, 1));
-        JS_ASSERT(uses && !uses->next && uses->popped);
+        SSAUseChain *uses = useChain(SSAValue::PushedValue(pc - script->code, 0));
+        JS_ASSERT(uses && uses->popped);
+        JS_ASSERT_IF(uses->next,
+                     !uses->next->next &&
+                     uses->next->popped &&
+                     script->code[uses->next->offset] == JSOP_SWAP);
         return script->code + uses->offset;
     }
 
@@ -1095,8 +1131,8 @@ class ScriptAnalysis
     /*
      * Whether we distinguish different writes of this variable while doing
      * SSA analysis. Escaping locals can be written in other scripts, and the
-     * presence of NAME opcodes, switch or try blocks keeps us from tracking
-     * variable values at each point.
+     * presence of NAME opcodes which could alias local variables or arguments
+     * keeps us from tracking variable values at each point.
      */
     bool trackSlot(uint32_t slot) { return !slotEscapes(slot) && canTrackVars; }
 
@@ -1118,6 +1154,10 @@ class ScriptAnalysis
         /* Decompose the slot above. */
         bool arg;
         uint32_t index;
+
+        const Value **basePointer() const {
+            return arg ? &nesting->argArray : &nesting->varArray;
+        }
     };
     NameAccess resolveNameAccess(JSContext *cx, jsid id, bool addDependency = false);
 
@@ -1156,9 +1196,17 @@ class ScriptAnalysis
                            Vector<SlotValue> *pending);
     void checkBranchTarget(JSContext *cx, uint32_t targetOffset, Vector<uint32_t> &branchTargets,
                            SSAValue *values, uint32_t stackDepth);
+    void checkExceptionTarget(JSContext *cx, uint32_t catchOffset,
+                              Vector<uint32_t> &exceptionTargets);
     void mergeBranchTarget(JSContext *cx, const SSAValue &value, uint32_t slot,
                            const Vector<uint32_t> &branchTargets);
-    void removeBranchTarget(Vector<uint32_t> &branchTargets, uint32_t offset);
+    void mergeExceptionTarget(JSContext *cx, const SSAValue &value, uint32_t slot,
+                              const Vector<uint32_t> &exceptionTargets);
+    void mergeAllExceptionTargets(JSContext *cx, SSAValue *values,
+                                  const Vector<uint32_t> &exceptionTargets);
+    bool removeBranchTarget(Vector<uint32_t> &branchTargets,
+                            Vector<uint32_t> &exceptionTargets,
+                            uint32_t offset);
     void freezeNewValues(JSContext *cx, uint32_t offset);
 
     struct TypeInferenceState {

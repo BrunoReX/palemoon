@@ -193,6 +193,7 @@ nsresult nsBuiltinDecoder::Load(nsMediaStream* aStream,
 
     nsresult rv = aStream->Open(aStreamListener);
     if (NS_FAILED(rv)) {
+      LOG(PR_LOG_DEBUG, ("%p Failed to open stream!", this));
       delete aStream;
       return rv;
     }
@@ -202,12 +203,14 @@ nsresult nsBuiltinDecoder::Load(nsMediaStream* aStream,
 
   mDecoderStateMachine = CreateStateMachine();
   if (!mDecoderStateMachine) {
+    LOG(PR_LOG_DEBUG, ("%p Failed to create state machine!", this));
     return NS_ERROR_FAILURE;
   }
 
   nsBuiltinDecoder* cloneDonor = static_cast<nsBuiltinDecoder*>(aCloneDonor);
   if (NS_FAILED(mDecoderStateMachine->Init(cloneDonor ?
                                            cloneDonor->mDecoderStateMachine : nsnull))) {
+    LOG(PR_LOG_DEBUG, ("%p Failed to init state machine!", this));
     return NS_ERROR_FAILURE;
   }
   {
@@ -243,6 +246,7 @@ nsresult nsBuiltinDecoder::ScheduleStateMachineThread()
   NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
   NS_ASSERTION(mDecoderStateMachine,
                "Must have state machine to start state machine thread");
+  NS_ENSURE_STATE(mDecoderStateMachine);
 
   if (mShuttingDown)
     return NS_OK;
@@ -256,6 +260,7 @@ nsresult nsBuiltinDecoder::Play()
 {
   NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
   ReentrantMonitorAutoEnter mon(mReentrantMonitor);
+  NS_ASSERTION(mDecoderStateMachine != nsnull, "Should have state machine.");
   nsresult res = ScheduleStateMachineThread();
   NS_ENSURE_SUCCESS(res,res);
   if (mPlayState == PLAY_STATE_SEEKING) {
@@ -273,7 +278,7 @@ nsresult nsBuiltinDecoder::Play()
  * Returns true if aValue is inside a range of aRanges, and put the range
  * index in aIntervalIndex if it is not null.
  * If aValue is not inside a range, false is returned, and aIntervalIndex, if
- * not null, is set to the index of the range which ends immediatly before aValue
+ * not null, is set to the index of the range which ends immediately before aValue
  * (and can be -1 if aValue is before aRanges.Start(0)).
  */
 static bool IsInRanges(nsTimeRanges& aRanges, double aValue, PRInt32& aIntervalIndex) {
@@ -315,30 +320,32 @@ nsresult nsBuiltinDecoder::Seek(double aTime)
   }
 
   // If the position we want to seek to is not in a seekable range, we seek
-  // to the closest position in the seekable ranges instead . If two positions
-  // are equaly close, we seek to the closest position from the currentTime.
+  // to the closest position in the seekable ranges instead. If two positions
+  // are equally close, we seek to the closest position from the currentTime.
   // See seeking spec, point 7 :
-  // http://www.whatwg.org/specs/web-apps/current-work/multipage/the-iframe-element.html#seeking
+  // http://www.whatwg.org/specs/web-apps/current-work/multipage/the-video-element.html#seeking
   PRInt32 range = 0;
   if (!IsInRanges(seekable, aTime, range)) {
     if (range != -1) {
-      double leftBound, rightBound;
-      res = seekable.End(range, &leftBound);
-      NS_ENSURE_SUCCESS(res, NS_OK);
-      double distanceLeft = NS_ABS(leftBound - aTime);
-
-      double distanceRight = -1;
       if (range + 1 < length) {
-        res = seekable.Start(range+1, &rightBound);
+        double leftBound, rightBound;
+        res = seekable.End(range, &leftBound);
         NS_ENSURE_SUCCESS(res, NS_OK);
-        distanceRight = NS_ABS(rightBound - aTime);
+        res = seekable.Start(range + 1, &rightBound);
+        NS_ENSURE_SUCCESS(res, NS_OK);
+        double distanceLeft = NS_ABS(leftBound - aTime);
+        double distanceRight = NS_ABS(rightBound - aTime);
+        if (distanceLeft == distanceRight) {
+          distanceLeft = NS_ABS(leftBound - mCurrentTime);
+          distanceRight = NS_ABS(rightBound - mCurrentTime);
+        } 
+        aTime = (distanceLeft < distanceRight) ? leftBound : rightBound;
+      } else {
+        // Seek target is after the end last range in seekable data.
+        // Clamp the seek target to the end of the last seekable range.
+        res = seekable.End(length - 1, &aTime);
+        NS_ENSURE_SUCCESS(res, NS_OK);
       }
-
-      if (distanceLeft == distanceRight) {
-        distanceLeft = NS_ABS(leftBound - mCurrentTime);
-        distanceRight = NS_ABS(rightBound - mCurrentTime);
-      } 
-      aTime = (distanceLeft < distanceRight) ? leftBound : rightBound;
     } else {
       // aTime is before the first range in |seekable|, the closest point we can
       // seek to is the start of the first range.
@@ -828,29 +835,19 @@ void nsBuiltinDecoder::ChangeState(PlayState aState)
   }
 
   mPlayState = aState;
-  switch (aState) {
-  case PLAY_STATE_PAUSED:
-    /* No action needed */
-    break;
-  case PLAY_STATE_PLAYING:
-    mDecoderStateMachine->Play();
-    break;
-  case PLAY_STATE_SEEKING:
-    mDecoderStateMachine->Seek(mRequestedSeekTime);
-    mRequestedSeekTime = -1.0;
-    break;
-  case PLAY_STATE_LOADING:
-    /* No action needed */
-    break;
-  case PLAY_STATE_START:
-    /* No action needed */
-    break;
-  case PLAY_STATE_ENDED:
-    /* No action needed */
-    break;
-  case PLAY_STATE_SHUTDOWN:
-    /* No action needed */
-    break;
+  if (mDecoderStateMachine) {
+    switch (aState) {
+    case PLAY_STATE_PLAYING:
+      mDecoderStateMachine->Play();
+      break;
+    case PLAY_STATE_SEEKING:
+      mDecoderStateMachine->Seek(mRequestedSeekTime);
+      mRequestedSeekTime = -1.0;
+      break;
+    default:
+      /* No action needed */
+      break;
+    }
   }
   mReentrantMonitor.NotifyAll();
 }
@@ -969,7 +966,9 @@ void nsBuiltinDecoder::Resume(bool aForceBuffering)
   }
   if (aForceBuffering) {
     ReentrantMonitorAutoEnter mon(mReentrantMonitor);
-    mDecoderStateMachine->StartBuffering();
+    if (mDecoderStateMachine) {
+      mDecoderStateMachine->StartBuffering();
+    }
   }
 }
 

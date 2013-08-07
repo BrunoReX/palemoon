@@ -42,6 +42,8 @@
 
 /* The "Components" xpcom objects for JavaScript. */
 
+#include "mozilla/unused.h"
+
 #include "xpcprivate.h"
 #include "nsReadableUtils.h"
 #include "xpcIJSModuleLoader.h"
@@ -57,7 +59,9 @@
 #include "mozJSComponentLoader.h"
 #include "nsContentUtils.h"
 #include "jsgc.h"
+#include "jsfriendapi.h"
 
+using namespace mozilla;
 using namespace js;
 /***************************************************************************/
 // stuff used by all
@@ -2692,7 +2696,7 @@ nsXPCComponents_Utils::ReportError(const JS::Value &error, JSContext *cx)
 
     nsCOMPtr<nsIConsoleService> console(do_GetService(NS_CONSOLESERVICE_CONTRACTID));
 
-    nsCOMPtr<nsIScriptError2> scripterr(do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
+    nsCOMPtr<nsIScriptError> scripterr(do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
 
     if (!scripterr || !console)
         return NS_OK;
@@ -2715,8 +2719,7 @@ nsXPCComponents_Utils::ReportError(const JS::Value &error, JSContext *cx)
                 column, err->flags, "XPConnect JavaScript", innerWindowID);
         NS_ENSURE_SUCCESS(rv, NS_OK);
 
-        nsCOMPtr<nsIScriptError> logError = do_QueryInterface(scripterr);
-        console->LogMessage(logError);
+        console->LogMessage(scripterr);
         return NS_OK;
     }
 
@@ -2748,8 +2751,7 @@ nsXPCComponents_Utils::ReportError(const JS::Value &error, JSContext *cx)
             nsnull, lineNo, 0, 0, "XPConnect JavaScript", innerWindowID);
     NS_ENSURE_SUCCESS(rv, NS_OK);
 
-    nsCOMPtr<nsIScriptError> logError = do_QueryInterface(scripterr);
-    console->LogMessage(logError);
+    console->LogMessage(scripterr);
     return NS_OK;
 }
 
@@ -3007,7 +3009,7 @@ xpc_CreateSandboxObject(JSContext * cx, jsval * vp, nsISupports *prinOrSop, JSOb
                                 wantXrays, &sandbox, &compartment);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    js::AutoObjectRooter tvr(cx, sandbox);
+    JS::AutoObjectRooter tvr(cx, sandbox);
 
     {
         JSAutoEnterCompartment ac;
@@ -3225,12 +3227,17 @@ nsXPCComponents_utils_Sandbox::CallOrConstruct(nsIXPConnectWrappedNative *wrappe
 
         if (found) {
             if (!JS_GetProperty(cx, optionsObject, "sameGroupAs", &option) ||
-                JSVAL_IS_PRIMITIVE(option)) {
-                    return ThrowAndFail(NS_ERROR_INVALID_ARG, cx, _retval);
-            }
+                JSVAL_IS_PRIMITIVE(option))
+                return ThrowAndFail(NS_ERROR_INVALID_ARG, cx, _retval);
+
+            JSObject* unwrapped = UnwrapObject(JSVAL_TO_OBJECT(option));
+            JSObject* global = GetGlobalForObjectCrossCompartment(unwrapped);
+            if (GetObjectJSClass(unwrapped) != &SandboxClass &&
+                GetObjectJSClass(global) != &SandboxClass)
+                return ThrowAndFail(NS_ERROR_INVALID_ARG, cx, _retval);
 
             void* privateValue =
-                JS_GetCompartmentPrivate(cx,GetObjectCompartment(JSVAL_TO_OBJECT(option)));
+                JS_GetCompartmentPrivate(cx, GetObjectCompartment(unwrapped));
             xpc::CompartmentPrivate *compartmentPrivate =
                 static_cast<xpc::CompartmentPrivate*>(privateValue);
 
@@ -3440,7 +3447,7 @@ xpc_EvalInSandbox(JSContext *cx, JSObject *sandbox, const nsAString& source,
     XPCPerThreadData *data = XPCPerThreadData::GetData(cx);
     XPCJSContextStack *stack = nsnull;
     if (data && (stack = data->GetJSContextStack())) {
-        if (NS_FAILED(stack->Push(sandcx->GetJSContext()))) {
+        if (!stack->Push(sandcx->GetJSContext())) {
             JS_ReportError(cx,
                            "Unable to initialize XPConnect with the sandbox context");
             JSPRINCIPALS_DROP(cx, jsPrincipals);
@@ -3463,9 +3470,8 @@ xpc_EvalInSandbox(JSContext *cx, JSObject *sandbox, const nsAString& source,
         JSString *str = nsnull;
 
         if (!ac.enter(sandcx->GetJSContext(), sandbox)) {
-            if (stack) {
-                stack->Pop(nsnull);
-            }
+            if (stack)
+                unused << stack->Pop();
             return NS_ERROR_FAILURE;
         }
 
@@ -3541,9 +3547,8 @@ xpc_EvalInSandbox(JSContext *cx, JSObject *sandbox, const nsAString& source,
         }
     }
 
-    if (stack) {
-        stack->Pop(nsnull);
-    }
+    if (stack)
+        unused << stack->Pop();
 
     JSPRINCIPALS_DROP(cx, jsPrincipals);
 
@@ -3595,15 +3600,23 @@ nsXPCComponents_Utils::GetWeakReference(const JS::Value &object, JSContext *cx,
 NS_IMETHODIMP
 nsXPCComponents_Utils::ForceGC(JSContext *cx)
 {
-    JS_GC(cx);
+    js::GCForReason(cx, js::gcreason::COMPONENT_UTILS);
+    return NS_OK;
+}
+
+/* void forceShrinkingGC (); */
+NS_IMETHODIMP
+nsXPCComponents_Utils::ForceShrinkingGC(JSContext *cx)
+{
+    js::ShrinkingGC(cx, js::gcreason::COMPONENT_UTILS);
     return NS_OK;
 }
 
 class PreciseGCRunnable : public nsRunnable
 {
   public:
-    PreciseGCRunnable(JSContext *aCx, ScheduledGCCallback* aCallback)
-    : mCallback(aCallback), mCx(aCx) {}
+    PreciseGCRunnable(JSContext *aCx, ScheduledGCCallback* aCallback, bool aShrinking)
+    : mCallback(aCallback), mCx(aCx), mShrinking(aShrinking) {}
 
     NS_IMETHOD Run()
     {
@@ -3622,7 +3635,10 @@ class PreciseGCRunnable : public nsRunnable
             }
         }
 
-        JS_GC(mCx);
+        if (mShrinking)
+            js::ShrinkingGC(mCx, js::gcreason::COMPONENT_UTILS);
+        else
+            js::GCForReason(mCx, js::gcreason::COMPONENT_UTILS);
 
         mCallback->Callback();
         return NS_OK;
@@ -3631,13 +3647,22 @@ class PreciseGCRunnable : public nsRunnable
   private:
     nsRefPtr<ScheduledGCCallback> mCallback;
     JSContext *mCx;
+    bool mShrinking;
 };
 
 /* [inline_jscontext] void schedulePreciseGC(in ScheduledGCCallback callback); */
 NS_IMETHODIMP
 nsXPCComponents_Utils::SchedulePreciseGC(ScheduledGCCallback* aCallback, JSContext* aCx)
 {
-    nsRefPtr<PreciseGCRunnable> event = new PreciseGCRunnable(aCx, aCallback);
+    nsRefPtr<PreciseGCRunnable> event = new PreciseGCRunnable(aCx, aCallback, false);
+    return NS_DispatchToMainThread(event);
+}
+
+/* [inline_jscontext] void schedulePreciseShrinkingGC(in ScheduledGCCallback callback); */
+NS_IMETHODIMP
+nsXPCComponents_Utils::SchedulePreciseShrinkingGC(ScheduledGCCallback* aCallback, JSContext* aCx)
+{
+    nsRefPtr<PreciseGCRunnable> event = new PreciseGCRunnable(aCx, aCallback, true);
     return NS_DispatchToMainThread(event);
 }
 
@@ -3751,7 +3776,7 @@ nsXPCComponents_Utils::MakeObjectPropsNormal(const jsval &vobj, JSContext *cx)
     if (!ac.enter(cx, obj))
         return NS_ERROR_FAILURE;
 
-    js::AutoIdArray ida(cx, JS_Enumerate(cx, obj));
+    JS::AutoIdArray ida(cx, JS_Enumerate(cx, obj));
     if (!ida)
         return NS_ERROR_FAILURE;
 
@@ -3814,16 +3839,16 @@ nsXPCComponents_Utils::CanSetProperty(const nsIID * iid, const PRUnichar *proper
 }
 
 nsresult
-GetBoolOption(JSContext* cx, uint32 aOption, bool* aValue)
+GetBoolOption(JSContext* cx, uint32_t aOption, bool* aValue)
 {
     *aValue = !!(JS_GetOptions(cx) & aOption);
     return NS_OK;
 }
 
 nsresult
-SetBoolOption(JSContext* cx, uint32 aOption, bool aValue)
+SetBoolOption(JSContext* cx, uint32_t aOption, bool aValue)
 {
-    uint32 options = JS_GetOptions(cx);
+    uint32_t options = JS_GetOptions(cx);
     if (aValue) {
         options |= aOption;
     } else {

@@ -355,8 +355,7 @@ FrameState::bestEvictReg(uint32_t mask, bool includePinned) const
          * Evict variables which are only live in future loop iterations, and are
          * not carried around the loop in a register.
          */
-        JS_ASSERT_IF(lifetime->loopTail, loop);
-        if (lifetime->loopTail && !loop->carriesLoopReg(fe)) {
+        if (lifetime->loopTail && (!loop || !loop->carriesLoopReg(fe))) {
             JaegerSpew(JSpew_Regalloc, "result: %s (%s) only live in later iterations\n",
                        entryName(fe), reg.name());
             return reg;
@@ -579,9 +578,12 @@ FrameState::computeAllocation(jsbytecode *target)
     if (!alloc)
         return NULL;
 
-    if (a->analysis->getCode(target).exceptionEntry || a->analysis->getCode(target).switchTarget ||
-        a->script->hasBreakpointsAt(target)) {
-        /* State must be synced at exception and switch targets, and at traps. */
+    /*
+     * State must be synced at exception and switch targets, at traps and when
+     * crossing between compilation chunks.
+     */
+    if (a->analysis->getCode(target).safePoint ||
+        (!a->parent && !cc.bytecodeInChunk(target))) {
 #ifdef DEBUG
         if (IsJaegerSpewChannelActive(JSpew_Regalloc)) {
             JaegerSpew(JSpew_Regalloc, "allocation at %u:", unsigned(target - a->script->code));
@@ -1498,10 +1500,11 @@ FrameState::syncAndKill(Registers kill, Uses uses, Uses ignore)
         if (!fe || deadEntry(fe, ignore.nuses))
             continue;
 
-        JS_ASSERT(fe->isTracked() && !fe->isType(JSVAL_TYPE_DOUBLE));
+        JS_ASSERT(fe->isTracked());
 
         if (regstate(reg).type() == RematInfo::DATA) {
-            JS_ASSERT(fe->data.reg() == reg.reg());
+            JS_ASSERT_IF(reg.isFPReg(), fe->data.fpreg() == reg.fpreg());
+            JS_ASSERT_IF(!reg.isFPReg(), fe->data.reg() == reg.reg());
             JS_ASSERT(fe->data.synced());
             fe->data.setMemory();
         } else {
@@ -1529,10 +1532,12 @@ FrameState::merge(Assembler &masm, Changes changes) const
      * do not require stub paths to always generate a double when needed.
      * :FIXME: we check this on OOL stub calls, but not inline stub calls.
      */
-    for (unsigned i = 0; i < changes.nchanges; i++) {
-        FrameEntry *fe = a->sp - 1 - i;
-        if (fe->isTracked() && fe->isType(JSVAL_TYPE_DOUBLE))
-            masm.ensureInMemoryDouble(addressOf(fe));
+    if (cx->typeInferenceEnabled()) {
+        for (unsigned i = 0; i < changes.nchanges; i++) {
+            FrameEntry *fe = a->sp - 1 - i;
+            if (fe->isTracked() && fe->isType(JSVAL_TYPE_DOUBLE))
+                masm.ensureInMemoryDouble(addressOf(fe));
+        }
     }
 
     uint32_t mask = Registers::AvailAnyRegs & ~freeRegs.freeMask;

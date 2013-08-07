@@ -1,7 +1,5 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
-
-/*global ok, is, info, isApproxVec, isWebGLSupported, createCanvas, TiltGL */
 "use strict";
 
 let isWebGLAvailable;
@@ -113,4 +111,14 @@ function test() {
   ok(isApproxVec(renderer.mvMatrix, [
     1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1
   ]), "The origin wasn't reset to identity correctly.");
+
+  renderer.translate(1, 2);
+  ok(isApproxVec(renderer.mvMatrix, [
+    1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 2, 0, 1
+  ]), "The second translation transformation wasn't applied correctly.");
+
+  renderer.scale(3, 4);
+  ok(isApproxVec(renderer.mvMatrix, [
+    3, 0, 0, 0, 0, 4, 0, 0, 0, 0, 1, 0, 1, 2, 0, 1
+  ]), "The second scale transformation wasn't applied correctly.");
 }

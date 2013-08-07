@@ -74,6 +74,11 @@
 #include "mozilla/Hal.h"
 #include "nsIWebNavigation.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "Connection.h"
+
+#ifdef MOZ_B2G_RIL
+#include "TelephonyFactory.h"
+#endif
 
 // This should not be in the namespace.
 DOMCI_DATA(Navigator, mozilla::dom::Navigator)
@@ -123,6 +128,10 @@ NS_INTERFACE_MAP_BEGIN(Navigator)
   NS_INTERFACE_MAP_ENTRY(nsIDOMMozNavigatorBattery)
   NS_INTERFACE_MAP_ENTRY(nsIDOMNavigatorDesktopNotification)
   NS_INTERFACE_MAP_ENTRY(nsIDOMMozNavigatorSms)
+#ifdef MOZ_B2G_RIL
+  NS_INTERFACE_MAP_ENTRY(nsIDOMNavigatorTelephony)
+#endif
+  NS_INTERFACE_MAP_ENTRY(nsIDOMMozNavigatorNetwork)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(Navigator)
 NS_INTERFACE_MAP_END
 
@@ -158,6 +167,17 @@ Navigator::Invalidate()
   if (mSmsManager) {
     mSmsManager->Shutdown();
     mSmsManager = nsnull;
+  }
+
+#ifdef MOZ_B2G_RIL
+  if (mTelephony) {
+    mTelephony = nsnull;
+  }
+#endif
+
+  if (mConnection) {
+    mConnection->Shutdown();
+    mConnection = nsnull;
   }
 }
 
@@ -988,13 +1008,17 @@ Navigator::IsSmsAllowed() const
 bool
 Navigator::IsSmsSupported() const
 {
-  nsCOMPtr<nsISmsService> smsService = do_GetService(SMSSERVICE_CONTRACTID);
+#ifdef MOZ_WEBSMS_BACKEND
+  nsCOMPtr<nsISmsService> smsService = do_GetService(SMS_SERVICE_CONTRACTID);
   NS_ENSURE_TRUE(smsService, false);
 
   bool result = false;
   smsService->HasSupport(&result);
 
   return result;
+#else
+  return false;
+#endif
 }
 
 NS_IMETHODIMP
@@ -1022,6 +1046,61 @@ Navigator::GetMozSms(nsIDOMMozSmsManager** aSmsManager)
 
   NS_ADDREF(*aSmsManager = mSmsManager);
 
+  return NS_OK;
+}
+
+#ifdef MOZ_B2G_RIL
+
+//*****************************************************************************
+//    nsNavigator::nsIDOMNavigatorTelephony
+//*****************************************************************************
+
+NS_IMETHODIMP
+Navigator::GetMozTelephony(nsIDOMTelephony** aTelephony)
+{
+  nsCOMPtr<nsIDOMTelephony> telephony = mTelephony;
+
+  if (!telephony) {
+    nsCOMPtr<nsPIDOMWindow> window = do_QueryReferent(mWindow);
+    NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
+
+    nsresult rv = NS_NewTelephony(window, getter_AddRefs(mTelephony));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // mTelephony may be null here!
+    telephony = mTelephony;
+  }
+
+  telephony.forget(aTelephony);
+  return NS_OK;
+}
+
+#endif // MOZ_B2G_RIL
+
+//*****************************************************************************
+//    Navigator::nsIDOMNavigatorNetwork
+//*****************************************************************************
+
+NS_IMETHODIMP
+Navigator::GetMozConnection(nsIDOMMozConnection** aConnection)
+{
+  *aConnection = nsnull;
+
+  if (!mConnection) {
+    nsCOMPtr<nsPIDOMWindow> window = do_QueryReferent(mWindow);
+    NS_ENSURE_TRUE(window && window->GetDocShell(), NS_OK);
+
+    nsCOMPtr<nsIScriptGlobalObject> sgo = do_QueryInterface(window);
+    NS_ENSURE_TRUE(sgo, NS_OK);
+
+    nsIScriptContext* scx = sgo->GetContext();
+    NS_ENSURE_TRUE(scx, NS_OK);
+
+    mConnection = new network::Connection();
+    mConnection->Init(window, scx);
+  }
+
+  NS_ADDREF(*aConnection = mConnection);
   return NS_OK;
 }
 

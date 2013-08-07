@@ -214,9 +214,10 @@ public:
   NS_IMETHOD CompleteMove(bool aForward, bool aExtend);
   NS_IMETHOD ScrollPage(bool aForward);
   NS_IMETHOD ScrollLine(bool aForward);
-  NS_IMETHOD ScrollHorizontal(bool aLeft);
+  NS_IMETHOD ScrollCharacter(bool aRight);
   NS_IMETHOD SelectAll(void);
   NS_IMETHOD CheckVisibility(nsIDOMNode *node, PRInt16 startOffset, PRInt16 EndOffset, bool *_retval);
+  virtual nsresult CheckVisibilityContent(nsIContent* aNode, PRInt16 aStartOffset, PRInt16 aEndOffset, bool* aRetval);
 
 private:
   nsRefPtr<nsFrameSelection> mFrameSelection;
@@ -573,12 +574,12 @@ nsTextInputSelectionImpl::ScrollLine(bool aForward)
 }
 
 NS_IMETHODIMP
-nsTextInputSelectionImpl::ScrollHorizontal(bool aLeft)
+nsTextInputSelectionImpl::ScrollCharacter(bool aRight)
 {
   if (!mScrollFrame)
     return NS_ERROR_NOT_INITIALIZED;
 
-  mScrollFrame->ScrollBy(nsIntPoint(aLeft ? -1 : 1, 0),
+  mScrollFrame->ScrollBy(nsIntPoint(aRight ? 1 : -1, 0),
                          nsIScrollableFrame::LINES,
                          nsIScrollableFrame::SMOOTH);
   return NS_OK;
@@ -604,6 +605,22 @@ nsTextInputSelectionImpl::CheckVisibility(nsIDOMNode *node, PRInt16 startOffset,
   }
   return NS_ERROR_FAILURE;
 
+}
+
+nsresult
+nsTextInputSelectionImpl::CheckVisibilityContent(nsIContent* aNode,
+                                                 PRInt16 aStartOffset,
+                                                 PRInt16 aEndOffset,
+                                                 bool* aRetval)
+{
+  if (!mPresShellWeak) {
+    return NS_ERROR_NOT_INITIALIZED;
+  }
+
+  nsCOMPtr<nsISelectionController> shell = do_QueryReferent(mPresShellWeak);
+  NS_ENSURE_TRUE(shell, NS_ERROR_FAILURE);
+
+  return shell->CheckVisibilityContent(aNode, aStartOffset, aEndOffset, aRetval);
 }
 
 class nsTextInputListener : public nsISelectionListener,
@@ -832,15 +849,11 @@ nsTextInputListener::EditAction()
   nsCOMPtr<nsIEditor> editor;
   frame->GetEditor(getter_AddRefs(editor));
 
-  nsCOMPtr<nsITransactionManager> manager;
-  editor->GetTransactionManager(getter_AddRefs(manager));
-  NS_ENSURE_TRUE(manager, NS_ERROR_FAILURE);
-
   // Get the number of undo / redo items
   PRInt32 numUndoItems = 0;
   PRInt32 numRedoItems = 0;
-  manager->GetNumberOfUndoItems(&numUndoItems);
-  manager->GetNumberOfRedoItems(&numRedoItems);
+  editor->GetNumberOfUndoItems(&numUndoItems);
+  editor->GetNumberOfRedoItems(&numRedoItems);
   if ((numUndoItems && !mHadUndoItems) || (!numUndoItems && mHadUndoItems) ||
       (numRedoItems && !mHadRedoItems) || (!numRedoItems && mHadRedoItems)) {
     // Modify the menu if undo or redo items are different
@@ -1170,7 +1183,7 @@ nsTextEditorState::PrepareEditor(const nsAString *aValue)
 
   bool shouldInitializeEditor = false;
   nsCOMPtr<nsIEditor> newEditor; // the editor that we might create
-  nsresult rv;
+  nsresult rv = NS_OK;
   if (!mEditor) {
     shouldInitializeEditor = true;
 

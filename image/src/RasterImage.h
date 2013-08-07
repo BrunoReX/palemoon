@@ -83,12 +83,6 @@ class nsIInputStream;
 }
 
 /**
- * It would be nice if we had a macro for this in prtypes.h.
- * TODO: Place this macro in prtypes.h as PR_UINT64_MAX.
- */
-#define UINT64_MAX_VAL PRUint64(-1)
-
-/**
  * Handles static and animated image containers.
  *
  *
@@ -168,7 +162,7 @@ namespace layers {
 class LayerManager;
 class ImageContainer;
 }
-namespace imagelib {
+namespace image {
 
 class imgDecodeWorker;
 class Decoder;
@@ -343,11 +337,6 @@ public:
     kDisposeClear,          // Clear the frame's area, revealing bg
     kDisposeRestorePrevious // Restore the previous (composited) frame
   };
-
-  // Progressive decoding knobs
-  static void SetDecodeBytesAtATime(PRUint32 aBytesAtATime);
-  static void SetMaxMSBeforeYield(PRUint32 aMaxMS);
-  static void SetMaxBytesForSyncDecode(PRUint32 aMaxBytes);
 
   const char* GetURIString() { return mURIString.get();}
 
@@ -648,7 +637,7 @@ class imgDecodeRequestor : public nsRunnable
     nsWeakPtr mContainer;
 };
 
-} // namespace imagelib
+} // namespace image
 } // namespace mozilla
 
 #endif /* mozilla_imagelib_RasterImage_h_ */

@@ -174,6 +174,8 @@ enum {
   PREF_relimit,
   PREF_methodjit,
   PREF_methodjit_always,
+  PREF_typeinference,
+  PREF_jit_hardening,
   PREF_mem_max,
 
 #ifdef JS_GC_ZEAL
@@ -191,6 +193,8 @@ const char* gPrefsToWatch[] = {
   JS_OPTIONS_DOT_STR "relimit",
   JS_OPTIONS_DOT_STR "methodjit.content",
   JS_OPTIONS_DOT_STR "methodjit_always",
+  JS_OPTIONS_DOT_STR "typeinference",
+  JS_OPTIONS_DOT_STR "jit_hardening",
   JS_OPTIONS_DOT_STR "mem.max"
 
 #ifdef JS_GC_ZEAL
@@ -235,6 +239,15 @@ PrefCallback(const char* aPrefName, void* aClosure)
     if (Preferences::GetBool(gPrefsToWatch[PREF_methodjit_always])) {
       newOptions |= JSOPTION_METHODJIT_ALWAYS;
     }
+    if (Preferences::GetBool(gPrefsToWatch[PREF_typeinference])) {
+      newOptions |= JSOPTION_TYPE_INFERENCE;
+    }
+
+    // This one is special, it's enabled by default and only needs to be unset.
+    if (!Preferences::GetBool(gPrefsToWatch[PREF_jit_hardening])) {
+      newOptions |= JSOPTION_SOFTEN;
+    }
+
     RuntimeService::SetDefaultJSContextOptions(newOptions);
     rts->UpdateAllWorkerJSContextOptions();
   }
@@ -499,7 +512,8 @@ class WorkerTaskRunnable : public WorkerRunnable
 {
 public:
   WorkerTaskRunnable(WorkerPrivate* aPrivate, WorkerTask* aTask)
-    : WorkerRunnable(aPrivate, WorkerThread, UnchangedBusyCount),
+    : WorkerRunnable(aPrivate, WorkerThread, UnchangedBusyCount,
+                     SkipWhenClearing),
       mTask(aTask)
   { }
 
@@ -907,12 +921,11 @@ RuntimeService::Init()
   ok = mWindowMap.Init();
   NS_ENSURE_STATE(ok);
 
-  nsresult rv;
-  nsCOMPtr<nsIObserverService> obs =
-    do_GetService(NS_OBSERVERSERVICE_CONTRACTID, &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
+  NS_ENSURE_TRUE(obs, NS_ERROR_FAILURE);
 
-  rv = obs->AddObserver(this, NS_XPCOM_SHUTDOWN_THREADS_OBSERVER_ID, false);
+  nsresult rv =
+    obs->AddObserver(this, NS_XPCOM_SHUTDOWN_THREADS_OBSERVER_ID, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
   mObserved = true;
@@ -966,6 +979,16 @@ RuntimeService::Cleanup()
 {
   AssertIsOnMainThread();
 
+  nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
+  NS_WARN_IF_FALSE(obs, "Failed to get observer service?!");
+
+  // Tell anyone that cares that they're about to lose worker support.
+  if (obs && NS_FAILED(obs->NotifyObservers(nsnull, WORKERS_SHUTDOWN_TOPIC,
+                                            nsnull))) {
+    NS_WARNING("NotifyObservers failed!");
+  }
+
+  // That's it, no more workers.
   mShuttingDown = true;
 
   if (mIdleThreadTimer) {
@@ -1045,9 +1068,6 @@ RuntimeService::Cleanup()
       Preferences::UnregisterCallback(PrefCallback, gPrefsToWatch[index], this);
     }
 
-    nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
-    NS_WARN_IF_FALSE(obs, "Failed to get observer service?!");
-
     if (obs) {
       if (NS_FAILED(obs->RemoveObserver(this, GC_REQUEST_OBSERVER_TOPIC))) {
         NS_WARNING("Failed to unregister for GC request notifications!");
@@ -1060,7 +1080,7 @@ RuntimeService::Cleanup()
 
       nsresult rv =
         obs->RemoveObserver(this, NS_XPCOM_SHUTDOWN_THREADS_OBSERVER_ID);
-      mObserved = !NS_SUCCEEDED(rv);
+      mObserved = NS_FAILED(rv);
     }
   }
 }

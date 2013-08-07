@@ -149,14 +149,14 @@ function convertHTMLToPlainText(html) {
 
   var input = Cc["@mozilla.org/supports-string;1"].
               createInstance(Ci.nsISupportsString);
-  input.data = html.replace("\n", "<br>", "g");
+  input.data = html.replace(/\n/g, "<br>");
 
   var output = {};
   converter.convert("text/html", input, input.data.length, "text/unicode",
                     output, {});
 
   if (output.value instanceof Ci.nsISupportsString)
-    return output.value.data.replace("\r\n", "\n", "g");
+    return output.value.data.replace(/\r\n/g, "\n");
   return html;
 }
 
@@ -1321,8 +1321,10 @@ var AddonRepository = {
   // Parses addon_compatibility nodes, that describe compatibility overrides.
   _parseAddonCompatElement: function(aResultObj, aElement) {
     let guid = this._getDescendantTextContent(aElement, "guid");
-    if (!guid)
+    if (!guid) {
+        LOG("Compatibility override is missing guid.");
       return;
+    }
 
     let compat = {id: guid};
     compat.hosted = aElement.getAttribute("hosted") != "false";
@@ -1356,21 +1358,31 @@ var AddonRepository = {
     function parseRangeNode(aNode) {
       let type = aNode.getAttribute("type");
       // Only "incompatible" (blacklisting) is supported for now.
-      if (type != "incompatible")
+      if (type != "incompatible") {
+        LOG("Compatibility override of unsupported type found.");
         return null;
+      }
 
       let override = new AddonManagerPrivate.AddonCompatibilityOverride(type);
 
       override.minVersion = this._getDirectDescendantTextContent(aNode, "min_version");
       override.maxVersion = this._getDirectDescendantTextContent(aNode, "max_version");
 
-      if (!override.minVersion || !override.maxVersion)
+      if (!override.minVersion) {
+        LOG("Compatibility override is missing min_version.");
         return null;
+      }
+      if (!override.maxVersion) {
+        LOG("Compatibility override is missing max_version.");
+        return null;
+      }
 
       let appRanges = aNode.querySelectorAll("compatible_applications > application");
       let appRange = findMatchingAppRange.bind(this)(appRanges);
-      if (!appRange)
+      if (!appRange) {
+        LOG("Compatibility override is missing a valid application range.");
         return null;
+      }
 
       override.appID = appRange.appID;
       override.appMinVersion = appRange.appMinVersion;
@@ -1629,10 +1641,10 @@ var AddonDatabase = {
     }
 
     this.connection.executeSimpleSQL("PRAGMA locking_mode = EXCLUSIVE");
-    if (dbMissing)
-      this._createSchema();
 
+    // Any errors in here should rollback
     try {
+      this.connection.beginTransaction();
       switch (this.connection.schemaVersion) {
         case 0:
           LOG("Recreating database schema");
@@ -1655,14 +1667,15 @@ var AddonDatabase = {
                                       "appMinVersion TEXT, " +
                                       "appMaxVersion TEXT, " +
                                       "PRIMARY KEY (addon_internal_id, num)");
-            this._createIndices();
-            this._createTriggers();
-            this.connection.schemaVersion = DB_SCHEMA;
+          this._createIndices();
+          this._createTriggers();
+          this.connection.schemaVersion = DB_SCHEMA;
         case 3:
           break;
         default:
           return tryAgain();
       }
+      this.connection.commitTransaction();
     } catch (e) {
       ERROR("Failed to create database schema", e);
       this.logSQLError(this.connection.lastError, this.connection.lastErrorString);
@@ -2248,10 +2261,7 @@ var AddonDatabase = {
    */
   _createSchema: function AD__createSchema() {
     LOG("Creating database schema");
-    this.connection.beginTransaction();
 
-    // Any errors in here should rollback
-    try {
       this.connection.createTable("addon",
                                   "internal_id INTEGER PRIMARY KEY AUTOINCREMENT, " +
                                   "id TEXT UNIQUE, " +
@@ -2314,13 +2324,6 @@ var AddonDatabase = {
       this._createTriggers();
 
       this.connection.schemaVersion = DB_SCHEMA;
-      this.connection.commitTransaction();
-    } catch (e) {
-      ERROR("Failed to create database schema", e);
-      this.logSQLError(this.connection.lastError, this.connection.lastErrorString);
-      this.connection.rollbackTransaction();
-      throw e;
-    }
   },
 
   /**

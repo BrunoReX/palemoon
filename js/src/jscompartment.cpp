@@ -48,12 +48,14 @@
 #include "jsscope.h"
 #include "jswatchpoint.h"
 #include "jswrapper.h"
+
 #include "assembler/wtf/Platform.h"
-#include "yarr/BumpPointerAllocator.h"
+#include "js/MemoryMetrics.h"
 #include "methodjit/MethodJIT.h"
 #include "methodjit/PolyIC.h"
 #include "methodjit/MonoIC.h"
 #include "vm/Debugger.h"
+#include "yarr/BumpPointerAllocator.h"
 
 #include "jsgcinlines.h"
 #include "jsobjinlines.h"
@@ -90,6 +92,7 @@ JSCompartment::JSCompartment(JSRuntime *rt)
     watchpointMap(NULL)
 {
     PodArrayZero(evalCache);
+    setGCMaxMallocBytes(rt->gcMaxMallocBytes * 0.9);
 }
 
 JSCompartment::~JSCompartment()
@@ -142,17 +145,18 @@ JSCompartment::ensureJaegerCompartmentExists(JSContext *cx)
     return true;
 }
 
-void
-JSCompartment::sizeOfCode(size_t *method, size_t *regexp, size_t *unused) const
+size_t
+JSCompartment::sizeOfMjitCode() const
 {
-    if (jaegerCompartment_) {
-        jaegerCompartment_->execAlloc()->sizeOfCode(method, regexp, unused);
-    } else {
-        *method = 0;
-        *regexp = 0;
-        *unused = 0;
-    }
+    if (!jaegerCompartment_)
+        return 0;
+
+    size_t method, regexp, unused;
+    jaegerCompartment_->execAlloc()->sizeOfCode(&method, &regexp, &unused);
+    JS_ASSERT(regexp == 0);
+    return method + unused;
 }
+
 #endif
 
 bool
@@ -191,7 +195,7 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
      */
     JSObject *global;
     if (cx->hasfp()) {
-        global = cx->fp()->scopeChain().getGlobal();
+        global = &cx->fp()->scopeChain().global();
     } else {
         global = JS_ObjectToInnerObject(cx, cx->globalObject);
         if (!global)
@@ -566,6 +570,30 @@ JSCompartment::purge(JSContext *cx)
     toSourceCache.destroyIfConstructed();
 }
 
+void
+JSCompartment::resetGCMallocBytes()
+{
+    gcMallocBytes = ptrdiff_t(gcMaxMallocBytes);
+}
+
+void
+JSCompartment::setGCMaxMallocBytes(size_t value)
+{
+    /*
+     * For compatibility treat any value that exceeds PTRDIFF_T_MAX to
+     * mean that value.
+     */
+    gcMaxMallocBytes = (ptrdiff_t(value) >= 0) ? value : size_t(-1) >> 1;
+    resetGCMallocBytes();
+}
+
+void
+JSCompartment::onTooMuchMalloc()
+{
+    TriggerCompartmentGC(this, gcreason::TOO_MUCH_MALLOC);
+}
+
+
 MathCache *
 JSCompartment::allocMathCache(JSContext *cx)
 {
@@ -739,4 +767,13 @@ JSCompartment::createBarrierTracer()
 {
     JS_ASSERT(!gcIncrementalTracer);
     return NULL;
+}
+
+size_t
+JSCompartment::sizeOfShapeTable(JSMallocSizeOfFun mallocSizeOf)
+{
+    return baseShapes.sizeOfExcludingThis(mallocSizeOf)
+         + initialShapes.sizeOfExcludingThis(mallocSizeOf)
+         + newTypeObjects.sizeOfExcludingThis(mallocSizeOf)
+         + lazyTypeObjects.sizeOfExcludingThis(mallocSizeOf);
 }

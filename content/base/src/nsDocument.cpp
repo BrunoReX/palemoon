@@ -73,6 +73,7 @@
 
 #include "nsGUIEvent.h"
 #include "nsAsyncDOMEvent.h"
+#include "nsIDOMNodeFilter.h"
 
 #include "nsIDOMStyleSheet.h"
 #include "nsDOMAttribute.h"
@@ -144,7 +145,7 @@
 #include "nsIDOMHTMLFormElement.h"
 #include "nsIRequest.h"
 #include "nsILink.h"
-#include "nsFileDataProtocolHandler.h"
+#include "nsBlobProtocolHandler.h"
 
 #include "nsICharsetAlias.h"
 #include "nsIParser.h"
@@ -206,7 +207,6 @@
 
 #include "imgILoader.h"
 #include "nsWrapperCacheInlines.h"
-#include "nsCharSeparatedTokenizer.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -1403,11 +1403,9 @@ nsDOMImplementation::CreateDocumentType(const nsAString& aQualifiedName,
   NS_ENSURE_TRUE(name, NS_ERROR_OUT_OF_MEMORY);
 
   // Indicate that there is no internal subset (not just an empty one)
-  nsAutoString voidString;
-  voidString.SetIsVoid(true);
   return NS_NewDOMDocumentType(aReturn, mOwner->NodeInfoManager(),
                                name, aPublicId,
-                               aSystemId, voidString);
+                               aSystemId, NullString());
 }
 
 NS_IMETHODIMP
@@ -1462,14 +1460,12 @@ nsDOMImplementation::CreateHTMLDocument(const nsAString& aTitle,
 
   nsCOMPtr<nsIDOMDocumentType> doctype;
   // Indicate that there is no internal subset (not just an empty one)
-  nsAutoString voidString;
-  voidString.SetIsVoid(true);
   nsresult rv = NS_NewDOMDocumentType(getter_AddRefs(doctype),
                                       mOwner->NodeInfoManager(),
                                       nsGkAtoms::html, // aName
                                       EmptyString(), // aPublicId
                                       EmptyString(), // aSystemId
-                                      voidString); // aInternalSubset
+                                      NullString()); // aInternalSubset
   NS_ENSURE_SUCCESS(rv, rv);
 
 
@@ -1674,7 +1670,7 @@ nsDocument::~nsDocument()
   mPendingTitleChangeEvent.Revoke();
 
   for (PRUint32 i = 0; i < mFileDataUris.Length(); ++i) {
-    nsFileDataProtocolHandler::RemoveFileDataEntry(mFileDataUris[i]);
+    nsBlobProtocolHandler::RemoveFileDataEntry(mFileDataUris[i]);
   }
 
   // We don't want to leave residual locks on images. Make sure we're in an
@@ -1725,6 +1721,18 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsDocument)
 NS_IMPL_CYCLE_COLLECTING_RELEASE_WITH_DESTROY(nsDocument, 
                                               nsNodeUtils::LastRelease(this))
+
+NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(nsDocument)
+  return nsGenericElement::CanSkip(tmp, aRemovingAllowed);
+NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_END
+
+NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_IN_CC_BEGIN(nsDocument)
+  return nsGenericElement::CanSkipInCC(tmp);
+NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_IN_CC_END
+
+NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_BEGIN(nsDocument)
+  return nsGenericElement::CanSkipThis(tmp);
+NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_END
 
 static PLDHashOperator
 SubDocTraverser(PLDHashTable *table, PLDHashEntryHdr *hdr, PRUint32 number,
@@ -2533,6 +2541,7 @@ void
 nsDocument::StopDocumentLoad()
 {
   if (mParser) {
+    mParserAborted = true;
     mParser->Terminate();
   }
 }
@@ -5045,10 +5054,14 @@ NS_IMETHODIMP
 nsDocument::CreateNodeIterator(nsIDOMNode *aRoot,
                                PRUint32 aWhatToShow,
                                nsIDOMNodeFilter *aFilter,
-                               bool aEntityReferenceExpansion,
+                               PRUint8 aOptionalArgc,
                                nsIDOMNodeIterator **_retval)
 {
   *_retval = nsnull;
+
+  if (!aOptionalArgc) {
+    aWhatToShow = nsIDOMNodeFilter::SHOW_ALL;
+  }
 
   if (!aRoot)
     return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
@@ -5063,23 +5076,26 @@ nsDocument::CreateNodeIterator(nsIDOMNode *aRoot,
 
   nsNodeIterator *iterator = new nsNodeIterator(root,
                                                 aWhatToShow,
-                                                aFilter,
-                                                aEntityReferenceExpansion);
+                                                aFilter);
   NS_ENSURE_TRUE(iterator, NS_ERROR_OUT_OF_MEMORY);
 
   NS_ADDREF(*_retval = iterator);
 
-  return NS_OK; 
+  return NS_OK;
 }
 
 NS_IMETHODIMP
 nsDocument::CreateTreeWalker(nsIDOMNode *aRoot,
                              PRUint32 aWhatToShow,
                              nsIDOMNodeFilter *aFilter,
-                             bool aEntityReferenceExpansion,
+                             PRUint8 aOptionalArgc,
                              nsIDOMTreeWalker **_retval)
 {
   *_retval = nsnull;
+
+  if (!aOptionalArgc) {
+    aWhatToShow = nsIDOMNodeFilter::SHOW_ALL;
+  }
 
   if (!aRoot)
     return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
@@ -5094,8 +5110,7 @@ nsDocument::CreateTreeWalker(nsIDOMNode *aRoot,
 
   nsTreeWalker* walker = new nsTreeWalker(root,
                                           aWhatToShow,
-                                          aFilter,
-                                          aEntityReferenceExpansion);
+                                          aFilter);
   NS_ENSURE_TRUE(walker, NS_ERROR_OUT_OF_MEMORY);
 
   NS_ADDREF(*_retval = walker);
@@ -5861,24 +5876,21 @@ nsDocument::SetTextContent(const nsAString & aTextContent)
 NS_IMETHODIMP
 nsDocument::LookupPrefix(const nsAString & namespaceURI, nsAString & aResult)
 {
-  SetDOMStringToNull(aResult);
-  return NS_OK;
+  return nsINode::LookupPrefix(namespaceURI, aResult);
 }
 
 NS_IMETHODIMP
 nsDocument::IsDefaultNamespace(const nsAString & namespaceURI,
                               bool *aResult)
 {
-  *aResult = namespaceURI.IsEmpty();
-  return NS_OK;
+  return nsINode::IsDefaultNamespace(namespaceURI, aResult);
 }
 
 NS_IMETHODIMP
 nsDocument::LookupNamespaceURI(const nsAString & prefix,
                               nsAString & aResult)
 {
-  SetDOMStringToNull(aResult);
-  return NS_OK;
+  return nsINode::LookupNamespaceURI(prefix, aResult);
 }
 
 NS_IMETHODIMP
@@ -7118,8 +7130,16 @@ nsDocument::BlockOnload()
       // block onload only when there are no script blockers.
       ++mAsyncOnloadBlockCount;
       if (mAsyncOnloadBlockCount == 1) {
-        nsContentUtils::AddScriptRunner(
+        bool success = nsContentUtils::AddScriptRunner(
           NS_NewRunnableMethod(this, &nsDocument::AsyncBlockOnload));
+
+        // The script runner shouldn't fail to add. But if somebody broke
+        // something and it does, we'll thrash at 100% cpu forever. The best
+        // response is just to ignore the onload blocking request. See bug 579535.
+        if (!success) {
+          NS_WARNING("Disaster! Onload blocking script runner failed to add - expect bad things!");
+          mAsyncOnloadBlockCount = 0;
+        }
       }
       return;
     }
@@ -8040,9 +8060,12 @@ nsIDocument::CreateStaticClone(nsISupports* aCloneContainer)
   nsCOMPtr<nsIDocument> clonedDoc;
   if (NS_SUCCEEDED(rv)) {
     clonedDoc = do_QueryInterface(clonedNode);
-    nsCOMPtr<nsIDOMDocument> clonedDOMDoc = do_QueryInterface(clonedDoc);
-    if (clonedDOMDoc) {
-      clonedDoc->mOriginalDocument = this;
+    if (clonedDoc) {
+      if (IsStaticDocument()) {
+        clonedDoc->mOriginalDocument = mOriginalDocument;
+      } else {
+        clonedDoc->mOriginalDocument = this;
+      }
       PRInt32 sheetsCount = GetNumberOfStyleSheets();
       for (PRInt32 i = 0; i < sheetsCount; ++i) {
         nsRefPtr<nsCSSStyleSheet> sheet = do_QueryObject(GetStyleSheetAt(i));
@@ -8928,16 +8951,9 @@ nsDocument::RequestFullScreen(Element* aElement, bool aWasCallerChrome)
   // Remember this is the requesting full-screen document.
   sFullScreenDoc = do_GetWeakReference(static_cast<nsIDocument*>(this));
 
-  // Make the window full-screen. Note we must make the state changes above
-  // before making the window full-screen, as then the document reports as
-  // being in full-screen mode when the chrome "fullscreen" event fires,
-  // enabling chrome to distinguish between browser and dom full-screen
-  // modes. Also note that nsGlobalWindow::SetFullScreen() (which
-  // SetWindowFullScreen() calls) proxies to the root window in its hierarchy,
-  // and does not operate on the a per-nsIDOMWindow basis.
-  SetWindowFullScreen(this, true);
-
 #ifdef DEBUG
+  // Note assertions must run before SetWindowFullScreen() as that does
+  // synchronous event dispatch which can run script which exits full-screen!
   NS_ASSERTION(GetFullScreenElement() == aElement,
                "Full-screen element should be the requested element!");
   NS_ASSERTION(IsFullScreenDoc(), "Should be full-screen doc");
@@ -8947,6 +8963,15 @@ nsDocument::RequestFullScreen(Element* aElement, bool aWasCallerChrome)
   NS_ASSERTION(c->AsElement() == aElement,
     "GetMozFullScreenElement should match GetFullScreenElement()");
 #endif
+
+  // Make the window full-screen. Note we must make the state changes above
+  // before making the window full-screen, as then the document reports as
+  // being in full-screen mode when the chrome "fullscreen" event fires,
+  // enabling chrome to distinguish between browser and dom full-screen
+  // modes. Also note that nsGlobalWindow::SetFullScreen() (which
+  // SetWindowFullScreen() calls) proxies to the root window in its hierarchy,
+  // and does not operate on the a per-nsIDOMWindow basis.
+  SetWindowFullScreen(this, true);
 }
 
 NS_IMETHODIMP

@@ -58,26 +58,13 @@
 #include "prtypes.h"
 
 /*
- * This is for functions that are like malloc_usable_size but also take a
- * computed size as a fallback.  Such functions are used for measuring the size
- * of data structures.
+ * This is for functions that are like malloc_usable_size.  Such functions are
+ * used for measuring the size of data structures.
  */
-typedef size_t(*nsMallocSizeOfFun)(const void *p, size_t computedSize);
+typedef size_t(*nsMallocSizeOfFun)(const void *p);
 
 /* Core XPCOM declarations. */
 
-/**
- * Macros defining the target platform...
- */
-#ifdef _WIN32
-#define NS_WIN32 1
-
-#elif defined(__unix)
-#define NS_UNIX 1
-
-#elif defined(XP_OS2)
-#define NS_OS2 1
-#endif
 /*----------------------------------------------------------------------*/
 /* Import/export defines */
 
@@ -171,7 +158,7 @@ typedef size_t(*nsMallocSizeOfFun)(const void *p, size_t computedSize);
 #define NS_CONSTRUCTOR_FASTCALL
 #endif
 
-#ifdef NS_WIN32
+#ifdef XP_WIN
 
 #define NS_IMPORT __declspec(dllimport)
 #define NS_IMPORT_(type) __declspec(dllimport) type __stdcall
@@ -256,7 +243,7 @@ typedef size_t(*nsMallocSizeOfFun)(const void *p, size_t computedSize);
  */
 #if (__GNUC__ > 3 || (__GNUC__ == 3 && __GNUC_MINOR__ >= 1))
 # define MOZ_DEPRECATED __attribute__((deprecated))
-#elif defined(_MSC_VER) && (_MSC_VER >= 1300)
+#elif defined(_MSC_VER)
 # define MOZ_DEPRECATED __declspec(deprecated)
 #else
 # define MOZ_DEPRECATED
@@ -342,7 +329,7 @@ typedef size_t(*nsMallocSizeOfFun)(const void *p, size_t computedSize);
 #ifdef NS_NO_VTABLE
 #undef NS_NO_VTABLE
 #endif
-#if defined(_MSC_VER) && _MSC_VER >= 1100
+#if defined(_MSC_VER)
 #define NS_NO_VTABLE __declspec(novtable)
 #else
 #define NS_NO_VTABLE
@@ -385,7 +372,7 @@ typedef PRUint32 nsrefcnt;
 /* Casting macros for hiding C++ features from older compilers */
 
   /* under VC++ (Windows), we don't have autoconf yet */
-#if defined(_MSC_VER) && (_MSC_VER>=1100)
+#if defined(_MSC_VER)
   #define HAVE_CPP_2BYTE_WCHAR_T
 #endif
 
@@ -395,7 +382,7 @@ typedef PRUint32 nsrefcnt;
    * commercial build.  When this is fixed there will be no need for the
    * |reinterpret_cast| in nsLiteralString.h either.
    */
-  #if defined(HAVE_CPP_2BYTE_WCHAR_T) && defined(NS_WIN32)
+  #if defined(HAVE_CPP_2BYTE_WCHAR_T) && defined(XP_WIN)
     typedef wchar_t PRUnichar;
   #else
     typedef PRUint16 PRUnichar;

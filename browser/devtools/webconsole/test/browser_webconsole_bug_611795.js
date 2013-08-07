@@ -32,17 +32,25 @@ function onContentLoaded()
   finishTest();
 }
 
+registerCleanupFunction(function() {
+  Services.prefs.clearUserPref("devtools.gcli.enable");
+});
+
 /**
  * Unit test for bug 611795:
  * Repeated CSS messages get collapsed into one.
  */
 function test()
 {
+  Services.prefs.setBoolPref("devtools.gcli.enable", false);
   addTab(TEST_URI);
   browser.addEventListener("load", function() {
     browser.removeEventListener("load", arguments.callee, true);
 
     openConsole();
+    // Clear cached messages that are shown once the Web Console opens.
+    HUDService.getHudByWindow(content).jsterm.clearOutput(true);
+
     browser.addEventListener("load", onContentLoaded, true);
     content.location.reload();
   }, true);

@@ -56,8 +56,6 @@
 #include "prmem.h"
 #include "prenv.h"
 #include "ImageLogging.h"
-#include "mozilla/TimeStamp.h"
-#include "mozilla/Telemetry.h"
 #include "ImageLayers.h"
 
 #include "nsPNGDecoder.h"
@@ -69,8 +67,13 @@
 
 #include "gfxContext.h"
 
+#include "mozilla/Preferences.h"
+#include "mozilla/StdInt.h"
+#include "mozilla/Telemetry.h"
+#include "mozilla/TimeStamp.h"
+
 using namespace mozilla;
-using namespace mozilla::imagelib;
+using namespace mozilla::image;
 using namespace mozilla::layers;
 
 // a mask for flags that will affect the decoding
@@ -84,25 +87,24 @@ static PRLogModuleInfo *gCompressedImageAccountingLog = PR_NewLogModule ("Compre
 #define gCompressedImageAccountingLog
 #endif
 
-// Tweakable progressive decoding parameters
-static PRUint32 gDecodeBytesAtATime = 200000;
-static PRUint32 gMaxMSBeforeYield = 400;
-static PRUint32 gMaxBytesForSyncDecode = 150000;
+// Tweakable progressive decoding parameters.  These are initialized to 0 here
+// because otherwise, we have to initialize them in a static initializer, which
+// makes us slower to start up.
+static bool gInitializedPrefCaches = false;
+static PRUint32 gDecodeBytesAtATime = 0;
+static PRUint32 gMaxMSBeforeYield = 0;
+static PRUint32 gMaxBytesForSyncDecode = 0;
 
-void
-RasterImage::SetDecodeBytesAtATime(PRUint32 aBytesAtATime)
+static void
+InitPrefCaches()
 {
-  gDecodeBytesAtATime = aBytesAtATime;
-}
-void
-RasterImage::SetMaxMSBeforeYield(PRUint32 aMaxMS)
-{
-  gMaxMSBeforeYield = aMaxMS;
-}
-void
-RasterImage::SetMaxBytesForSyncDecode(PRUint32 aMaxBytes)
-{
-  gMaxBytesForSyncDecode = aMaxBytes;
+  Preferences::AddUintVarCache(&gDecodeBytesAtATime,
+                               "image.mem.decode_bytes_at_a_time", 200000);
+  Preferences::AddUintVarCache(&gMaxMSBeforeYield,
+                               "image.mem.max_ms_before_yield", 400);
+  Preferences::AddUintVarCache(&gMaxBytesForSyncDecode,
+                               "image.mem.max_bytes_for_sync_decode", 150000);
+  gInitializedPrefCaches = true;
 }
 
 /* We define our own error checking macros here for 2 reasons:
@@ -172,7 +174,7 @@ DiscardingEnabled()
 }
 
 namespace mozilla {
-namespace imagelib {
+namespace image {
 
 #ifndef DEBUG
 NS_IMPL_ISUPPORTS3(RasterImage, imgIContainer, nsIProperties,
@@ -216,6 +218,11 @@ RasterImage::RasterImage(imgStatusTracker* aStatusTracker) :
 
   // Statistics
   num_containers++;
+
+  // Register our pref observers if we haven't yet.
+  if (NS_UNLIKELY(!gInitializedPrefCaches)) {
+    InitPrefCaches();
+  }
 }
 
 //******************************************************************************
@@ -475,7 +482,7 @@ RasterImage::RequestRefresh(const mozilla::TimeStamp& aTime)
       mFramesNotified++;
     #endif
 
-    observer->FrameChanged(this, &dirtyRect);
+    observer->FrameChanged(nsnull, this, &dirtyRect);
   }
 }
 
@@ -672,7 +679,7 @@ RasterImage::GetCurrentImgFrameEndTime() const
     // doesn't work correctly if we have a negative timeout value. The reason
     // this positive infinity was chosen was because it works with the loop in
     // RequestRefresh() above.
-    return TimeStamp() + TimeDuration::FromMilliseconds(UINT64_MAX_VAL);
+    return TimeStamp() + TimeDuration::FromMilliseconds(UINT64_MAX);
   }
 
   TimeDuration durationOfTimeout = TimeDuration::FromMilliseconds(timeout);
@@ -944,6 +951,7 @@ RasterImage::GetImageContainer(LayerManager* aManager,
        (!mImageContainer->Manager() && 
         (mImageContainer->GetBackendType() == aManager->GetBackendType())))) {
     *_retval = mImageContainer;
+    NS_ADDREF(*_retval);
     return NS_OK;
   }
   
@@ -969,6 +977,7 @@ RasterImage::GetImageContainer(LayerManager* aManager,
   mImageContainer->SetCurrentImage(image);
 
   *_retval = mImageContainer;
+  NS_ADDREF(*_retval);
   return NS_OK;
 }
 
@@ -1420,7 +1429,7 @@ RasterImage::ResetAnimation()
   // Update display if we were animating before
   nsCOMPtr<imgIContainerObserver> observer(do_QueryReferent(mObserver));
   if (mAnimating && observer)
-    observer->FrameChanged(this, &(mAnim->firstFrameRefreshArea));
+    observer->FrameChanged(nsnull, this, &(mAnim->firstFrameRefreshArea));
 
   if (ShouldAnimate()) {
     StartAnimation();
@@ -2580,7 +2589,8 @@ RasterImage::Draw(gfxContext *aContext,
     mFrameDecodeFlags = DECODE_FLAGS_DEFAULT;
   }
 
-  if (!mDecoded) {
+  // We use !mDecoded && mHasSourceData to mean discarded.
+  if (!mDecoded && mHasSourceData) {
       mDrawStartTime = TimeStamp::Now();
   }
 
@@ -2835,10 +2845,10 @@ imgDecodeWorker::Run()
   mDecodeTime += decodeLatency;
 
   // Flush invalidations _after_ we've written everything we're going to.
-  // Furthermore, if this is a redecode, we don't want to do progressive
+  // Furthermore, if we have all of the data, we don't want to do progressive
   // display at all. In that case, let Decoder::PostFrameStop() do the
   // flush once the whole frame is ready.
-  if (!image->mHasBeenDecoded) {
+  if (!image->mHasSourceData) {
     image->mInDecoder = true;
     image->mDecoder->FlushInvalidations();
     image->mInDecoder = false;
@@ -2946,5 +2956,5 @@ RasterImage::GetFramesNotified(PRUint32 *aFramesNotified)
 }
 #endif
 
-} // namespace imagelib
+} // namespace image
 } // namespace mozilla

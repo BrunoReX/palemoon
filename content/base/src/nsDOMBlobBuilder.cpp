@@ -35,57 +35,22 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "nsDOMBlobBuilder.h"
 #include "jstypedarray.h"
 #include "nsAutoPtr.h"
 #include "nsDOMClassInfoID.h"
-#include "nsDOMFile.h"
 #include "nsIMultiplexInputStream.h"
 #include "nsStringStream.h"
 #include "nsTArray.h"
 #include "nsJSUtils.h"
 #include "nsContentUtils.h"
-#include "CheckedInt.h"
-
-// XXXkhuey shamelessly stolen from VideoUtils.h.  We should patch NSPR.
-#define PR_INT64_MAX (~((PRInt64)(1) << 63))
-#define PR_INT64_MIN (-PR_INT64_MAX - 1)
 
 using namespace mozilla;
-
-class nsDOMMultipartFile : public nsDOMFileBase
-{
-public:
-  // Create as a file
-  nsDOMMultipartFile(nsTArray<nsCOMPtr<nsIDOMBlob> > aBlobs,
-                     const nsAString& aName,
-                     const nsAString& aContentType)
-    : nsDOMFileBase(aName, aContentType, PR_UINT64_MAX),
-      mBlobs(aBlobs)
-  {
-  }
-
-  // Create as a blob
-  nsDOMMultipartFile(nsTArray<nsCOMPtr<nsIDOMBlob> > aBlobs,
-                     const nsAString& aContentType)
-    : nsDOMFileBase(aContentType, PR_UINT64_MAX),
-      mBlobs(aBlobs)
-  {
-  }
-
-  already_AddRefed<nsIDOMBlob>
-  CreateSlice(PRUint64 aStart, PRUint64 aLength, const nsAString& aContentType);
-
-  NS_IMETHOD GetSize(PRUint64*);
-  NS_IMETHOD GetInternalStream(nsIInputStream**);
-
-protected:
-  nsTArray<nsCOMPtr<nsIDOMBlob> > mBlobs;
-};
 
 NS_IMETHODIMP
 nsDOMMultipartFile::GetSize(PRUint64* aLength)
 {
-  if (mLength == PR_UINT64_MAX) {
+  if (mLength == UINT64_MAX) {
     CheckedUint64 length = 0;
   
     PRUint32 i;
@@ -201,67 +166,6 @@ nsDOMMultipartFile::CreateSlice(PRUint64 aStart, PRUint64 aLength,
   return blob.forget();
 }
 
-class nsDOMBlobBuilder : public nsIDOMMozBlobBuilder
-{
-public:
-  nsDOMBlobBuilder()
-    : mData(nsnull), mDataLen(0), mDataBufferLen(0)
-  {}
-
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIDOMMOZBLOBBUILDER
-protected:
-  nsresult AppendVoidPtr(void* aData, PRUint32 aLength);
-  nsresult AppendString(JSString* aString, JSContext* aCx);
-  nsresult AppendBlob(nsIDOMBlob* aBlob);
-  nsresult AppendArrayBuffer(JSObject* aBuffer);
-
-  bool ExpandBufferSize(PRUint64 aSize)
-  {
-    if (mDataBufferLen >= mDataLen + aSize) {
-      mDataLen += aSize;
-      return true;
-    }
-
-    // Start at 1 or we'll loop forever.
-    CheckedUint32 bufferLen = NS_MAX<PRUint32>(mDataBufferLen, 1);
-    while (bufferLen.valid() && bufferLen.value() < mDataLen + aSize)
-      bufferLen *= 2;
-
-    if (!bufferLen.valid())
-      return false;
-
-    // PR_ memory functions are still fallible
-    void* data = PR_Realloc(mData, bufferLen.value());
-    if (!data)
-      return false;
-
-    mData = data;
-    mDataBufferLen = bufferLen.value();
-    mDataLen += aSize;
-    return true;
-  }
-
-  void Flush() {
-    if (mData) {
-      // If we have some data, create a blob for it
-      // and put it on the stack
-
-      nsCOMPtr<nsIDOMBlob> blob =
-        new nsDOMMemoryFile(mData, mDataLen, EmptyString(), EmptyString());
-      mBlobs.AppendElement(blob);
-      mData = nsnull; // The nsDOMMemoryFile takes ownership of the buffer
-      mDataLen = 0;
-      mDataBufferLen = 0;
-    }
-  }
-
-  nsTArray<nsCOMPtr<nsIDOMBlob> > mBlobs;
-  void* mData;
-  PRUint64 mDataLen;
-  PRUint64 mDataBufferLen;
-};
-
 DOMCI_DATA(MozBlobBuilder, nsDOMBlobBuilder)
 
 NS_IMPL_ADDREF(nsDOMBlobBuilder)
@@ -273,7 +177,7 @@ NS_INTERFACE_MAP_BEGIN(nsDOMBlobBuilder)
 NS_INTERFACE_MAP_END
 
 nsresult
-nsDOMBlobBuilder::AppendVoidPtr(void* aData, PRUint32 aLength)
+nsDOMBlobBuilder::AppendVoidPtr(const void* aData, PRUint32 aLength)
 {
   NS_ENSURE_ARG_POINTER(aData);
 
@@ -322,6 +226,14 @@ NS_IMETHODIMP
 nsDOMBlobBuilder::GetBlob(const nsAString& aContentType,
                           nsIDOMBlob** aBlob)
 {
+  return GetBlobInternal(aContentType, true, aBlob);
+}
+
+nsresult
+nsDOMBlobBuilder::GetBlobInternal(const nsAString& aContentType,
+                                  bool aClearBuffer,
+                                  nsIDOMBlob** aBlob)
+{
   NS_ENSURE_ARG(aBlob);
 
   Flush();
@@ -334,7 +246,9 @@ nsDOMBlobBuilder::GetBlob(const nsAString& aContentType,
   // the existing contents of the BlobBuilder should be included
   // in the next blob produced.  This seems silly and has been raised
   // on the WHATWG listserv.
-  mBlobs.Clear();
+  if (aClearBuffer) {
+    mBlobs.Clear();
+  }
 
   return NS_OK;
 }

@@ -218,7 +218,8 @@ NS_IMETHODIMP nsImageLoader::OnStopRequest(imgIRequest *aRequest,
   return NS_OK;
 }
 
-NS_IMETHODIMP nsImageLoader::FrameChanged(imgIContainer *aContainer,
+NS_IMETHODIMP nsImageLoader::FrameChanged(imgIRequest *aRequest,
+                                          imgIContainer *aContainer,
                                           const nsIntRect *aDirtyRect)
 {
   if (!mFrame)
@@ -228,6 +229,8 @@ NS_IMETHODIMP nsImageLoader::FrameChanged(imgIContainer *aContainer,
     // We're in the middle of a paint anyway
     return NS_OK;
   }
+
+  NS_ASSERTION(aRequest == mRequest, "This is a neat trick.");
 
   nsRect r = aDirtyRect->IsEqualInterior(nsIntRect::GetMaxSizedIntRect()) ?
     nsRect(nsPoint(0, 0), mFrame->GetSize()) :

@@ -341,6 +341,7 @@ DOMCI_CLASS(SVGPoint)
 DOMCI_CLASS(SVGPointList)
 DOMCI_CLASS(SVGPreserveAspectRatio)
 DOMCI_CLASS(SVGRect)
+DOMCI_CLASS(SVGStringList)
 DOMCI_CLASS(SVGTransform)
 DOMCI_CLASS(SVGTransformList)
 DOMCI_CLASS(SVGZoomEvent)
@@ -432,6 +433,11 @@ DOMCI_CLASS(MozBatteryManager)
 DOMCI_CLASS(MozSmsManager)
 DOMCI_CLASS(MozSmsMessage)
 DOMCI_CLASS(MozSmsEvent)
+DOMCI_CLASS(MozSmsRequest)
+DOMCI_CLASS(MozSmsFilter)
+DOMCI_CLASS(MozSmsCursor)
+
+DOMCI_CLASS(MozConnection)
 
 // @font-face in CSS
 DOMCI_CLASS(CSSFontFaceRule)
@@ -525,3 +531,11 @@ DOMCI_CLASS(MozCSSKeyframesRule)
 
 DOMCI_CLASS(MediaQueryList)
 DOMCI_CLASS(CustomEvent)
+
+#ifdef MOZ_B2G_RIL
+DOMCI_CLASS(Telephony)
+DOMCI_CLASS(TelephonyCall)
+DOMCI_CLASS(CallEvent)
+#endif
+
+DOMCI_CLASS(DOMError)

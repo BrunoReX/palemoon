@@ -67,7 +67,7 @@
 #include "nsISupportsPriority.h"
 #include "nsIServiceManager.h"
 #include "nsNetUtil.h"
-#include "nsHTMLContainerFrame.h"
+#include "nsContainerFrame.h"
 #include "prprf.h"
 #include "nsCSSRendering.h"
 #include "nsILink.h"
@@ -682,7 +682,8 @@ nsImageFrame::OnStopDecode(imgIRequest *aRequest,
 }
 
 nsresult
-nsImageFrame::FrameChanged(imgIContainer *aContainer,
+nsImageFrame::FrameChanged(imgIRequest *aRequest,
+                           imgIContainer *aContainer,
                            const nsIntRect *aDirtyRect)
 {
   if (!GetStyleVisibility()->IsVisible()) {
@@ -987,7 +988,7 @@ nsImageFrame::DisplayAltText(nsPresContext*      aPresContext,
   aRenderingContext.SetColor(GetStyleColor()->mColor);
   nsRefPtr<nsFontMetrics> fm;
   nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm),
-    nsLayoutUtils::FontSizeInflationFor(this));
+    nsLayoutUtils::FontSizeInflationFor(this, nsLayoutUtils::eNotInReflow));
   aRenderingContext.SetFont(fm);
 
   // Format the text to display within the formatting rect
@@ -1209,19 +1210,13 @@ nsDisplayImage::Paint(nsDisplayListBuilder* aBuilder,
                  : (PRUint32) imgIContainer::FLAG_NONE);
 }
 
-nsCOMPtr<imgIContainer>
-nsDisplayImage::GetImage()
-{
-  return mImage;
-}
-
-nsRefPtr<ImageContainer>
+already_AddRefed<ImageContainer>
 nsDisplayImage::GetContainer(LayerManager* aManager)
 {
-  ImageContainer* container;
-  nsresult rv = mImage->GetImageContainer(aManager, &container);
-  NS_ENSURE_SUCCESS(rv, NULL);
-  return container;
+  nsRefPtr<ImageContainer> container;
+  nsresult rv = mImage->GetImageContainer(aManager, getter_AddRefs(container));
+  NS_ENSURE_SUCCESS(rv, nsnull);
+  return container.forget();
 }
 
 void
@@ -1684,7 +1679,7 @@ nsImageFrame::List(FILE* out, PRInt32 aIndent) const
   }
   fprintf(out, " {%d,%d,%d,%d}", mRect.x, mRect.y, mRect.width, mRect.height);
   if (0 != mState) {
-    fprintf(out, " [state=%016llx]", mState);
+    fprintf(out, " [state=%016llx]", (unsigned long long)mState);
   }
   fprintf(out, " [content=%p]", (void*)mContent);
   fprintf(out, " [sc=%p]", static_cast<void*>(mStyleContext));
@@ -1988,7 +1983,8 @@ nsImageFrame::IconLoad::OnDiscard(imgIRequest *aRequest)
 }
 
 NS_IMETHODIMP
-nsImageFrame::IconLoad::FrameChanged(imgIContainer *aContainer,
+nsImageFrame::IconLoad::FrameChanged(imgIRequest *aRequest,
+                                     imgIContainer *aContainer,
                                      const nsIntRect *aDirtyRect)
 {
   nsTObserverArray<nsImageFrame*>::ForwardIterator iter(mIconObservers);
@@ -2043,13 +2039,14 @@ NS_IMETHODIMP nsImageListener::OnStopDecode(imgIRequest *aRequest,
   return mFrame->OnStopDecode(aRequest, status, statusArg);
 }
 
-NS_IMETHODIMP nsImageListener::FrameChanged(imgIContainer *aContainer,
+NS_IMETHODIMP nsImageListener::FrameChanged(imgIRequest *aRequest,
+                                            imgIContainer *aContainer,
                                             const nsIntRect *aDirtyRect)
 {
   if (!mFrame)
     return NS_ERROR_FAILURE;
 
-  return mFrame->FrameChanged(aContainer, aDirtyRect);
+  return mFrame->FrameChanged(aRequest, aContainer, aDirtyRect);
 }
 
 static bool

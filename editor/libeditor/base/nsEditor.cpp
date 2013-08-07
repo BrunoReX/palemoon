@@ -121,6 +121,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/Element.h"
 #include "nsContentUtils.h"
+#include "nsCCUncollectableMarker.h"
 
 #define NS_ERROR_EDITOR_NO_SELECTION NS_ERROR_GENERATE_FAILURE(NS_ERROR_MODULE_EDITOR,1)
 #define NS_ERROR_EDITOR_NO_TEXTNODE  NS_ERROR_GENERATE_FAILURE(NS_ERROR_MODULE_EDITOR,2)
@@ -199,6 +200,12 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsEditor)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsEditor)
+ nsIDocument* currentDoc =
+   tmp->mRootElement ? tmp->mRootElement->GetCurrentDoc() : nsnull;
+ if (currentDoc &&
+     nsCCUncollectableMarker::InGeneration(cb, currentDoc->GetMarkedCCGeneration())) {
+   return NS_SUCCESS_INTERRUPTED_TRAVERSE;
+ }
  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mRootElement)
  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mInlineSpellChecker)
  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mTxnMgr)
@@ -334,6 +341,13 @@ nsEditor::PostCreate()
     if (target) {
       InitializeSelection(target);
     }
+
+    // If the text control gets reframed during focus, Focus() would not be
+    // called, so take a chance here to see if we need to spell check the text
+    // control.
+    nsEditorEventListener* listener =
+      reinterpret_cast<nsEditorEventListener*> (mEventListener.get());
+    listener->SpellCheckIfNeeded();
   }
   return NS_OK;
 }
@@ -743,6 +757,19 @@ nsEditor::EnableUndo(bool aEnable)
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsEditor::GetNumberOfUndoItems(PRInt32* aNumItems)
+{
+  *aNumItems = 0;
+  return mTxnMgr ? mTxnMgr->GetNumberOfUndoItems(aNumItems) : NS_OK;
+}
+
+NS_IMETHODIMP
+nsEditor::GetNumberOfRedoItems(PRInt32* aNumItems)
+{
+  *aNumItems = 0;
+  return mTxnMgr ? mTxnMgr->GetNumberOfRedoItems(aNumItems) : NS_OK;
+}
 
 NS_IMETHODIMP
 nsEditor::GetTransactionManager(nsITransactionManager* *aTxnManager)
@@ -993,7 +1020,8 @@ nsEditor::EndPlaceHolderTransaction()
         // since that is the only known case where the placeholdertxn would disappear on us.
         // For now just removing the assert.
       }
-      // notify editor observers of action unless it is uncommitted IME
+      // notify editor observers of action but if composing, it's done by
+      // text event handler.
       if (!mInIMEMode) NotifyEditorObservers();
     }
   }
@@ -4981,23 +5009,8 @@ nsEditor::CreateRange(nsIDOMNode *aStartParent, PRInt32 aStartOffset,
                       nsIDOMNode *aEndParent, PRInt32 aEndOffset,
                       nsIDOMRange **aRange)
 {
-  nsresult result;
-  result = CallCreateInstance("@mozilla.org/content/range;1", aRange);
-  NS_ENSURE_SUCCESS(result, result);
-
-  NS_ENSURE_TRUE(*aRange, NS_ERROR_NULL_POINTER);
-
-  result = (*aRange)->SetStart(aStartParent, aStartOffset);
-
-  if (NS_SUCCEEDED(result))
-    result = (*aRange)->SetEnd(aEndParent, aEndOffset);
-
-  if (NS_FAILED(result))
-  {
-    NS_RELEASE((*aRange));
-    *aRange = 0;
-  }
-  return result;
+  return nsRange::CreateRange(aStartParent, aStartOffset, aEndParent,
+                              aEndOffset, aRange);
 }
 
 nsresult 

@@ -192,6 +192,7 @@ HAVE_64BIT_OS	= @HAVE_64BIT_OS@
 
 CC		    = @CC@
 CXX		    = @CXX@
+CPP       = @CPP@
 
 CC_VERSION	= @CC_VERSION@
 CXX_VERSION	= @CXX_VERSION@
@@ -285,9 +286,6 @@ CXX_WRAPPER = @CXX_WRAPPER@
 
 MOZ_DEMANGLE_SYMBOLS = @MOZ_DEMANGLE_SYMBOLS@
 
-# XXX - these need to be cleaned up and have real checks added -cls
-CM_BLDTYPE=dbg
-AWT_11=1
 OS_TARGET=@OS_TARGET@
 OS_ARCH=@OS_ARCH@
 OS_RELEASE=@OS_RELEASE@

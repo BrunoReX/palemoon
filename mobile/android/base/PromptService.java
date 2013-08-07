@@ -64,8 +64,6 @@ import android.widget.LinearLayout;
 import android.widget.Spinner;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
-import android.content.DialogInterface.OnClickListener;
-import android.content.DialogInterface.OnCancelListener;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import android.text.InputType;
@@ -78,7 +76,6 @@ public class PromptService implements OnClickListener, OnCancelListener, OnItemC
     private static LayoutInflater mInflater;
     private final static int PADDING_SIZE = 32; // in dip units
     private static int mPaddingSize = 0; // calculated from PADDING_SIZE. In pixel units
-
 
     PromptService() {
         mInflater = LayoutInflater.from(GeckoApp.mAppContext);

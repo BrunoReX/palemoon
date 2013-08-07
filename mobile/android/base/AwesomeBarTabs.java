@@ -474,7 +474,7 @@ public class AwesomeBarTabs extends TabHost {
             String base64 = dataURI.substring(dataURI.indexOf(',') + 1);
             Drawable drawable = null;
             try {
-                byte[] bytes = GeckoAppShell.decodeBase64(base64);
+                byte[] bytes = GeckoAppShell.decodeBase64(base64, GeckoAppShell.BASE64_DEFAULT);
                 ByteArrayInputStream stream = new ByteArrayInputStream(bytes);
                 drawable = Drawable.createFromStream(stream, "src");
                 stream.close();
@@ -619,12 +619,12 @@ public class AwesomeBarTabs extends TabHost {
         mAllPagesCursorAdapter.setFilterQueryProvider(new FilterQueryProvider() {
             public Cursor runQuery(CharSequence constraint) {
                 ContentResolver resolver = mContext.getContentResolver();
-                long start = new Date().getTime();
+                long start = SystemClock.uptimeMillis();
 
                 Cursor c = BrowserDB.filter(resolver, constraint, MAX_RESULTS);
                 c.getCount(); // ensure the query runs at least once
 
-                long end = new Date().getTime();
+                long end = SystemClock.uptimeMillis();
                 Log.i(LOGTAG, "Got cursor in " + (end - start) + "ms");
 
                 return c;

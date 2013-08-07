@@ -102,12 +102,10 @@ NS_MEMORY_REPORTER_MALLOC_SIZEOF_FUN(HunspellMallocSizeOfForCounterInc, "hunspel
 NS_MEMORY_REPORTER_MALLOC_SIZEOF_FUN_UN(HunspellMallocSizeOfForCounterDec)
 
 void HunspellReportMemoryAllocation(void* ptr) {
-  // |computedSize| is zero because we don't know what it is.
-  gHunspellAllocatedSize += HunspellMallocSizeOfForCounterInc(ptr, 0);
+  gHunspellAllocatedSize += HunspellMallocSizeOfForCounterInc(ptr);
 }
 void HunspellReportMemoryDeallocation(void* ptr) {
-  // |computedSize| is zero because we don't know what it is.
-  gHunspellAllocatedSize -= HunspellMallocSizeOfForCounterDec(ptr, 0);
+  gHunspellAllocatedSize -= HunspellMallocSizeOfForCounterDec(ptr);
 }
 static PRInt64 HunspellGetCurrentAllocatedSize() {
   return gHunspellAllocatedSize;
@@ -362,14 +360,6 @@ NS_IMETHODIMP mozHunspell::GetDictionaryList(PRUnichar ***aDictionaries,
   *aCount = ans.count;
 
   return NS_OK;
-}
-
-static PLDHashOperator
-FindFirstString(const nsAString& aString, nsIFile* aFile, void* aClosure)
-{
-  nsAString *dic = (nsAString*) aClosure;
-  dic->Assign(aString);
-  return PL_DHASH_STOP;
 }
 
 void

@@ -67,14 +67,14 @@ browser/components/shell/Makefile
 browser/components/shell/public/Makefile
 browser/components/shell/src/Makefile
 browser/components/tabview/Makefile
-# browser/devtools/Makefile
-# browser/devtools/highlighter/Makefile
-# browser/devtools/scratchpad/Makefile
-# browser/devtools/shared/Makefile
-# browser/devtools/sourceeditor/Makefile
-# browser/devtools/styleeditor/Makefile
-# browser/devtools/styleinspector/Makefile
-# browser/devtools/webconsole/Makefile
+browser/devtools/Makefile
+browser/devtools/highlighter/Makefile
+browser/devtools/scratchpad/Makefile
+browser/devtools/shared/Makefile
+browser/devtools/sourceeditor/Makefile
+browser/devtools/styleeditor/Makefile
+browser/devtools/styleinspector/Makefile
+browser/devtools/webconsole/Makefile
 browser/fuel/Makefile
 browser/fuel/public/Makefile
 browser/fuel/src/Makefile
@@ -129,6 +129,7 @@ if [ "$ENABLE_TESTS" ]; then
     browser/components/shell/test/Makefile
     browser/components/feeds/test/Makefile
     browser/components/feeds/test/chrome/Makefile
+    browser/components/migration/tests/Makefile
     browser/components/places/tests/Makefile
     browser/components/places/tests/chrome/Makefile
     browser/components/places/tests/browser/Makefile

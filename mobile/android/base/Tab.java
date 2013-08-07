@@ -84,10 +84,10 @@ public final class Tab {
     private CheckBookmarkTask mCheckBookmarkTask;
     private String mDocumentURI;
     private String mContentType;
+    private boolean mHasTouchListeners;
     private ArrayList<View> mPluginViews;
     private HashMap<Surface, Layer> mPluginLayers;
     private boolean mHasLoaded;
-    private boolean mHasTouchListeners;
 
     public static final class HistoryEntry {
         public String mUri;         // must never be null

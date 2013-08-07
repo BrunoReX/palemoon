@@ -84,8 +84,8 @@ public class GeckoEvent {
     public static final int ACTIVITY_START = 17;
     public static final int BROADCAST = 19;
     public static final int VIEWPORT = 20;
-    public static final int TILE_SIZE = 21;
-    public static final int VISITED = 22;
+    public static final int VISITED = 21;
+    public static final int NETWORK_CHANGED = 22;
 
     public static final int IME_COMPOSITION_END = 0;
     public static final int IME_COMPOSITION_BEGIN = 1;
@@ -127,6 +127,9 @@ public class GeckoEvent {
     public int mRangeForeColor, mRangeBackColor;
     public Location mLocation;
     public Address  mAddress;
+
+    public double mBandwidth;
+    public boolean mCanBeMetered;
 
     public int mNativeWindow;
 
@@ -302,7 +305,7 @@ public class GeckoEvent {
         mRect = rect;
     }
 
-    public GeckoEvent(int etype, int w, int h, int screenw, int screenh) {
+    public GeckoEvent(int etype, int w, int h, int screenw, int screenh, int tilew, int tileh) {
         if (etype != SIZE_CHANGED) {
             mType = INVALID;
             return;
@@ -310,20 +313,10 @@ public class GeckoEvent {
 
         mType = etype;
 
-        mPoints = new Point[2];
+        mPoints = new Point[3];
         mPoints[0] = new Point(w, h);
         mPoints[1] = new Point(screenw, screenh);
-    }
-
-    public GeckoEvent(int etype, IntSize size) {
-        if (etype != TILE_SIZE) {
-            mType = INVALID;
-            return;
-        }
-
-        mType = etype;
-        mPoints = new Point[1];
-        mPoints[0] = new Point(size.width, size.height);
+        mPoints[2] = new Point(tilew, tileh);
     }
 
     public GeckoEvent(String subject, String data) {
@@ -346,5 +339,11 @@ public class GeckoEvent {
     public GeckoEvent(int type, String data) {
         mType = type;
         mCharacters = data;
+    }
+
+    public GeckoEvent(double bandwidth, boolean canBeMetered) {
+        mType = NETWORK_CHANGED;
+        mBandwidth = bandwidth;
+        mCanBeMetered = canBeMetered;
     }
 }

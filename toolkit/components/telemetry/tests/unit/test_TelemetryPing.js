@@ -15,11 +15,14 @@ Cu.import("resource://gre/modules/LightweightThemeManager.jsm");
 const PATH = "/submit/telemetry/test-ping";
 const SERVER = "http://localhost:4444";
 const IGNORE_HISTOGRAM = "test::ignore_me";
+const IGNORE_HISTOGRAM_TO_CLONE = "MEMORY_HEAP_ALLOCATED";
+const IGNORE_CLONED_HISTOGRAM = "test::ignore_me_also";
 
 const BinaryInputStream = Components.Constructor(
   "@mozilla.org/binaryinputstream;1",
   "nsIBinaryInputStream",
   "setInputStream");
+const Telemetry = Cc["@mozilla.org/base/telemetry;1"].getService(Ci.nsITelemetry);
 
 var httpserver = new nsHttpServer();
 var gFinished = false;
@@ -27,6 +30,7 @@ var gFinished = false;
 function telemetry_ping () {
   const TelemetryPing = Cc["@mozilla.org/base/telemetry-ping;1"].getService(Ci.nsIObserver);
   TelemetryPing.observe(null, "test-ping", SERVER);
+  TelemetryPing.observe(null, "sessionstore-windows-restored", null);
 }
 
 function nonexistentServerObserver(aSubject, aTopic, aData) {
@@ -43,8 +47,8 @@ function nonexistentServerObserver(aSubject, aTopic, aData) {
 function telemetryObserver(aSubject, aTopic, aData) {
   Services.obs.removeObserver(telemetryObserver, aTopic);
   httpserver.registerPathHandler(PATH, checkHistograms);
-  const Telemetry = Cc["@mozilla.org/base/telemetry;1"].getService(Ci.nsITelemetry);
   Telemetry.newHistogram(IGNORE_HISTOGRAM, 1, 2, 3, Telemetry.HISTOGRAM_BOOLEAN);
+  Telemetry.histogramFrom(IGNORE_CLONED_HISTOGRAM, IGNORE_HISTOGRAM_TO_CLONE);
   Services.startup.interrupted = true;
   telemetry_ping();
 }
@@ -57,7 +61,7 @@ function checkHistograms(request, response) {
                                              .decodeFromStream(s, s.available());
 
   do_check_eq(request.getHeader("content-type"), "application/json; charset=UTF-8");
-  do_check_true(payload.simpleMeasurements.uptime >= 0)
+  do_check_true(payload.simpleMeasurements.uptime >= 0);
   do_check_true(payload.simpleMeasurements.startupInterrupted === 1);
   // get rid of the non-deterministic field
   const expected_info = {
@@ -74,10 +78,32 @@ function checkHistograms(request, response) {
     do_check_eq(payload.info[f], expected_info[f]);
   }
 
+  try {
+    // If we've not got nsIGfxInfoDebug, then this will throw and stop us doing
+    // this test.
+    var gfxInfo = Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfoDebug);
+    var isWindows = ("@mozilla.org/windows-registry-key;1" in Components.classes);
+    var isOSX = ("nsILocalFileMac" in Components.interfaces);
+
+    if (isWindows || isOSX) {
+      do_check_true("adapterVendorID" in payload.info);
+      do_check_true("adapterDeviceID" in payload.info);
+    }
+  }
+  catch (x) {
+  }
+
   const TELEMETRY_PING = "TELEMETRY_PING";
   const TELEMETRY_SUCCESS = "TELEMETRY_SUCCESS";
   do_check_true(TELEMETRY_PING in payload.histograms);
+  let rh = Telemetry.registeredHistograms;
+  for (let name in rh) {
+    if (/SQLITE/.test(name) && name in payload.histograms) {
+      do_check_true(("STARTUP_" + name) in payload.histograms); 
+    }
+  }
   do_check_false(IGNORE_HISTOGRAM in payload.histograms);
+  do_check_false(IGNORE_CLONED_HISTOGRAM in payload.histograms);
 
   // There should be one successful report from the previous telemetry ping.
   const expected_tc = {
@@ -86,10 +112,13 @@ function checkHistograms(request, response) {
     histogram_type: 2,
     values: {0:1, 1:1, 2:0},
     sum: 1
-  }
-  let tc = payload.histograms[TELEMETRY_SUCCESS]
+  };
+  let tc = payload.histograms[TELEMETRY_SUCCESS];
   do_check_eq(uneval(tc), 
               uneval(expected_tc));
+
+  do_check_true(("mainThread" in payload.slowSQL) &&
+                ("otherThreads" in payload.slowSQL));
   gFinished = true;
 }
 
@@ -154,6 +183,14 @@ function dummyTheme(id) {
 }
 
 function run_test() {
+  try {
+    var gfxInfo = Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfoDebug);
+    gfxInfo.spoofVendorID("0xabcd");
+    gfxInfo.spoofDeviceID("0x1234");
+  } catch (x) {
+    // If we can't test gfxInfo, that's fine, we'll note it later.
+  }
+
   // Addon manager needs a profile directory
   do_get_profile();
   createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1.9.2");
@@ -170,5 +207,5 @@ function run_test() {
   // spin the event loop
   do_test_pending();
   // ensure that test runs to completion
-  do_register_cleanup(function () do_check_true(gFinished))
+  do_register_cleanup(function () do_check_true(gFinished));
  }

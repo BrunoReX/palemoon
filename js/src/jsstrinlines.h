@@ -40,6 +40,8 @@
 #ifndef jsstrinlines_h___
 #define jsstrinlines_h___
 
+#include "mozilla/Attributes.h"
+
 #include "jsatom.h"
 #include "jsstr.h"
 
@@ -75,6 +77,9 @@ class StringBuffer
     inline bool checkLength(size_t length);
     JSContext *context() const { return cb.allocPolicy().context(); }
     jschar *extractWellSized();
+
+    StringBuffer(const StringBuffer &other) MOZ_DELETE;
+    void operator=(const StringBuffer &other) MOZ_DELETE;
 
   public:
     explicit inline StringBuffer(JSContext *cx);
@@ -243,6 +248,9 @@ class RopeBuilder {
     JSContext *cx;
     JSString *res;
 
+    RopeBuilder(const RopeBuilder &other) MOZ_DELETE;
+    void operator=(const RopeBuilder &other) MOZ_DELETE;
+
   public:
     RopeBuilder(JSContext *cx)
       : cx(cx), res(cx->runtime->emptyString)
@@ -319,6 +327,25 @@ SkipSpace(const jschar *s, const jschar *end)
         s++;
 
     return s;
+}
+
+/*
+ * Return less than, equal to, or greater than zero depending on whether
+ * s1 is less than, equal to, or greater than s2.
+ */
+inline bool
+CompareChars(const jschar *s1, size_t l1, const jschar *s2, size_t l2, int32_t *result)
+{
+    size_t n = JS_MIN(l1, l2);
+    for (size_t i = 0; i < n; i++) {
+        if (int32_t cmp = s1[i] - s2[i]) {
+            *result = cmp;
+            return true;
+        }
+    }
+
+    *result = (int32_t)(l1 - l2);
+    return true;
 }
 
 }  /* namespace js */

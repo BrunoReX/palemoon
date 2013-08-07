@@ -88,7 +88,7 @@ _BROWSER_TEST_FILES = \
 	browser_webconsole_bug_582201_duplicate_errors.js \
 	browser_webconsole_bug_580454_timestamp_l10n.js \
 	browser_webconsole_netlogging.js \
-	browser_webconsole_bug_583816_tab_focus.js \
+	browser_webconsole_bug_583816_No_input_and_Tab_key_pressed.js \
 	browser_webconsole_bug_594477_clickable_output.js \
 	browser_webconsole_bug_589162_css_filter.js \
 	browser_webconsole_bug_597103_deactivateHUDForContext_unfocused_window.js \
@@ -143,6 +143,8 @@ _BROWSER_TEST_FILES = \
 	browser_webconsole_bug_678816.js \
 	browser_webconsole_bug_664131_console_group.js \
 	browser_webconsole_bug_704295.js \
+	browser_gcli_commands.js \
+	browser_gcli_helpers.js \
 	browser_gcli_inspect.js \
 	browser_gcli_integrate.js \
 	browser_gcli_require.js \
@@ -150,6 +152,7 @@ _BROWSER_TEST_FILES = \
 	browser_webconsole_bug_658368_time_methods.js \
 	browser_webconsole_bug_622303_persistent_filters.js \
 	browser_webconsole_window_zombie.js \
+	browser_cached_messages.js \
 	head.js \
 	$(NULL)
 
@@ -222,6 +225,7 @@ _BROWSER_TEST_PAGES = \
 	test-file-location.js \
 	browser_gcli_inspect.html \
 	test-bug-658368-time-methods.html \
+	test-webconsole-error-observer.html \
 	$(NULL)
 
 libs:: $(_BROWSER_TEST_FILES)

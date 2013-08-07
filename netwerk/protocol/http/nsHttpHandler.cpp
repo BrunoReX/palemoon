@@ -77,6 +77,7 @@
 #include "nsAsyncRedirectVerifyHelper.h"
 #include "nsSocketTransportService2.h"
 #include "nsAlgorithm.h"
+#include "SpdySession.h"
 
 #include "nsIXULAppInfo.h"
 
@@ -202,6 +203,7 @@ nsHttpHandler::nsHttpHandler()
     , mEnableSpdy(false)
     , mCoalesceSpdy(true)
     , mUseAlternateProtocol(false)
+    , mSpdySendingChunkSize(SpdySession::kSendingChunkSize)
 {
 #if defined(PR_LOGGING)
     gHttpLog = PR_NewLogModule("nsHttp");
@@ -556,26 +558,7 @@ nsHttpHandler::AsyncOnChannelRedirect(nsIChannel* oldChan, nsIChannel* newChan,
 nsHttpHandler::GenerateHostPort(const nsCString& host, PRInt32 port,
                                 nsCString& hostLine)
 {
-    if (strchr(host.get(), ':')) {
-        // host is an IPv6 address literal and must be encapsulated in []'s
-        hostLine.Assign('[');
-        // scope id is not needed for Host header.
-        int scopeIdPos = host.FindChar('%');
-        if (scopeIdPos == kNotFound)
-            hostLine.Append(host);
-        else if (scopeIdPos > 0)
-            hostLine.Append(Substring(host, 0, scopeIdPos));
-        else
-          return NS_ERROR_MALFORMED_URI;
-        hostLine.Append(']');
-    }
-    else
-        hostLine.Assign(host);
-    if (port != -1) {
-        hostLine.Append(':');
-        hostLine.AppendInt(port);
-    }
-    return NS_OK;
+    return NS_GenerateHostPort(host, port, hostLine);
 }
 
 //-----------------------------------------------------------------------------
@@ -1134,6 +1117,12 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
         rv = prefs->GetIntPref(HTTP_PREF("spdy.timeout"), &val);
         if (NS_SUCCEEDED(rv))
             mSpdyTimeout = (PRUint16) clamped(val, 1, 0xffff);
+    }
+
+    if (PREF_CHANGED(HTTP_PREF("spdy.chunk-size"))) {
+        rv = prefs->GetIntPref(HTTP_PREF("spdy.chunk-size"), &val);
+        if (NS_SUCCEEDED(rv))
+            mSpdySendingChunkSize = (PRUint32) clamped(val, 1, 0x7fffffff);
     }
 
     //

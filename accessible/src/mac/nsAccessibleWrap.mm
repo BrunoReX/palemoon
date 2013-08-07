@@ -41,9 +41,14 @@
 
 #import "nsRoleMap.h"
 
+#include "Role.h"
+
 #import "mozAccessible.h"
 #import "mozActionElements.h"
+#import "mozHTMLAccessible.h"
 #import "mozTextAccessible.h"
+
+using namespace mozilla::a11y;
 
 nsAccessibleWrap::
   nsAccessibleWrap(nsIContent *aContent, nsIWeakReference *aShell) :
@@ -88,37 +93,45 @@ nsAccessibleWrap::GetNativeType ()
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
 
-  PRUint32 role = Role();
+  roles::Role role = Role();
   switch (role) {
-    case nsIAccessibleRole::ROLE_PUSHBUTTON:
-    case nsIAccessibleRole::ROLE_SPLITBUTTON:
-    case nsIAccessibleRole::ROLE_TOGGLE_BUTTON:
+    case roles::PUSHBUTTON:
+    case roles::SPLITBUTTON:
+    case roles::TOGGLE_BUTTON:
     {
       // if this button may show a popup, let's make it of the popupbutton type.
-      if (HasPopup())
-        return [mozPopupButtonAccessible class];
-        
-      // regular button
-      return [mozButtonAccessible class];
+      return HasPopup() ? [mozPopupButtonAccessible class] : 
+             [mozButtonAccessible class];
     }
     
-    case nsIAccessibleRole::ROLE_CHECKBUTTON:
+    case roles::PAGETAB:
+      return [mozButtonAccessible class];
+
+    case roles::CHECKBUTTON:
       return [mozCheckboxAccessible class];
       
-    case nsIAccessibleRole::ROLE_AUTOCOMPLETE:
+    case roles::AUTOCOMPLETE:
       return [mozComboboxAccessible class];
+
+    case roles::HEADING:
+      return [mozHeadingAccessible class];
+
+    case roles::PAGETABLIST:
+      return [mozTabsAccessible class];
       
-    case nsIAccessibleRole::ROLE_ENTRY:
-    case nsIAccessibleRole::ROLE_STATICTEXT:
-    case nsIAccessibleRole::ROLE_HEADING:
-    case nsIAccessibleRole::ROLE_LABEL:
-    case nsIAccessibleRole::ROLE_CAPTION:
-    case nsIAccessibleRole::ROLE_ACCEL_LABEL:
-    case nsIAccessibleRole::ROLE_TEXT_LEAF:
+    case roles::ENTRY:
+    case roles::STATICTEXT:
+    case roles::LABEL:
+    case roles::CAPTION:
+    case roles::ACCEL_LABEL:
+    case roles::TEXT_LEAF:
       // normal textfield (static or editable)
       return [mozTextAccessible class]; 
-      
-    case nsIAccessibleRole::ROLE_COMBOBOX:
+
+    case roles::LINK:
+      return [mozLinkAccessible class];
+
+    case roles::COMBOBOX:
       return [mozPopupButtonAccessible class];
       
     default:
@@ -206,6 +219,28 @@ nsAccessibleWrap::InvalidateChildren()
   nsAccessible::InvalidateChildren();
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
+}
+
+bool
+nsAccessibleWrap::AppendChild(nsAccessible *aAccessible)
+{
+  bool appended = nsAccessible::AppendChild(aAccessible);
+  
+  if (appended && mNativeObject)
+    [mNativeObject appendChild:aAccessible];
+
+  return appended;
+}
+
+bool
+nsAccessibleWrap::RemoveChild(nsAccessible *aAccessible)
+{
+  bool removed = nsAccessible::RemoveChild(aAccessible);
+
+  if (removed && mNativeObject)
+    [mNativeObject invalidateChildren];
+
+  return removed;
 }
 
 // if we for some reason have no native accessible, we should be skipped over (and traversed)

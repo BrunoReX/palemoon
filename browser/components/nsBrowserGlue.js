@@ -174,7 +174,7 @@ BrowserGlue.prototype = {
         Services.obs.removeObserver(this, "browser-delayed-startup-finished");
         break;
       case "sessionstore-windows-restored":
-        this._onBrowserStartup();
+        this._onWindowsRestored();
         break;
       case "browser:purge-session-history":
         // reset the console service's error buffer
@@ -373,8 +373,8 @@ BrowserGlue.prototype = {
     this._sanitizer.onShutdown();
   },
 
-  // Browser startup complete. All initial windows have opened.
-  _onBrowserStartup: function BG__onBrowserStartup() {
+  // All initial windows have opened.
+  _onWindowsRestored: function BG__onWindowsRestored() {
     // Show about:rights notification, if needed.
     if (this._shouldShowRights()) {
       this._showRightsNotification();
@@ -1103,7 +1103,7 @@ BrowserGlue.prototype = {
   },
 
   _migrateUI: function BG__migrateUI() {
-    const UI_VERSION = 5;
+    const UI_VERSION = 6;
     const BROWSER_DOCURL = "chrome://browser/content/browser.xul#";
     let currentUIVersion = 0;
     try {
@@ -1223,6 +1223,15 @@ BrowserGlue.prototype = {
           this._setPersist(toolbarResource, collapsedResource, "false");
         }
       }
+    }
+
+    if (currentUIVersion < 6) {
+      // convert tabsontop attribute to pref
+      let toolboxResource = this._rdf.GetResource(BROWSER_DOCURL + "navigator-toolbox");
+      let tabsOnTopResource = this._rdf.GetResource("tabsontop");
+      let tabsOnTopAttribute = this._getPersist(toolboxResource, tabsOnTopResource);
+      if (tabsOnTopAttribute)
+        Services.prefs.setBoolPref("browser.tabs.onTop", tabsOnTopAttribute == "true");
     }
 
     if (this._dirty)
@@ -1436,7 +1445,7 @@ BrowserGlue.prototype = {
   getMostRecentBrowserWindow: function BG_getMostRecentBrowserWindow() {
     function isFullBrowserWindow(win) {
       return !win.closed &&
-             !win.document.documentElement.getAttribute("chromehidden");
+             win.toolbar.visible;
     }
 
 #ifdef BROKEN_WM_Z_ORDER
