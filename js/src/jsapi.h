@@ -683,7 +683,7 @@ class Value
 
     friend jsval_layout (::JSVAL_TO_IMPL)(Value);
     friend Value (::IMPL_TO_JSVAL)(jsval_layout l);
-} JSVAL_ALIGNMENT;
+};
 
 /************************************************************************/
 

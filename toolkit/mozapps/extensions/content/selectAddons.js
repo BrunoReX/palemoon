@@ -127,10 +127,12 @@ var gChecking = {
       aAddons.forEach(function(aAddon) {
         // Ignore disabled themes
         if (aAddon.type != "theme" || !aAddon.userDisabled) {
-          gAddons[aAddon.id] = {
-            addon: aAddon,
-            install: null,
-            wasActive: aAddon.isActive
+          if (aAddon.id != "statusbar@palemoon.org") { //exclude status bar addon
+            gAddons[aAddon.id] = {
+              addon: aAddon,
+              install: null,
+              wasActive: aAddon.isActive
+            }
           }
         }
 

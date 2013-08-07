@@ -1,7 +1,7 @@
-amazondotcom
 bing
 eBay
 google
 twitter
 wikipedia
 yahoo
+opensearch.ssl

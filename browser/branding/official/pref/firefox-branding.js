@@ -120,14 +120,14 @@ pref("extensions.update.autoUpdateDefault", false);
 //Pale Moon 7 specific
 pref("browser.urlbar.trimURLs", false); //stop being a derp, Mozilla!
 
-//Pale Moon 8 specific
+//Pale Moon 8/9 specific
 
 //cache handling 1GB -> 200MB by default, disable automatic
 //max element size 5MB -> 2MB/1MB, caching anything larger is not recommended
 pref("browser.cache.disk.smart_size.enabled",false);
-pref("browser.cache.disk.capacity",204800);
+pref("browser.cache.disk.capacity",204800); //200MB
 pref("browser.cache.disk.max_entry_size",2048);
-pref("browser.cache.memory.capacity",32768);
+pref("browser.cache.memory.capacity",16384); //16MB - doesn't seem to be intensively used.
 pref("browser.cache.memory.max_entry_size",1024);
 
 //image RAM cache size for *decoded* images; 256MB should be enough here;
@@ -140,13 +140,13 @@ pref("extensions.autoDisableScopes", 11);
 
 //Improve memory handling for js
 pref("javascript.options.mem.gc_per_compartment", false);
-pref("javascript.options.mem.high_water_mark", 32);
-pref("javascript.options.mem.max", 50000);
+pref("javascript.options.mem.high_water_mark", 64);
+pref("javascript.options.mem.max", 100000);
 
 //Disable DNS prefetching to prevent router hangups
 pref("network.dns.disablePrefetch", true);
 
-//Animate preferences window
+//Animate preferences windows
 pref("browser.preferences.animateFadeIn", true);
 
 //DOM
@@ -156,7 +156,6 @@ pref("dom.max_chrome_script_run_time", 90); //Some addons need ample time!
 pref("dom.max_script_run_time", 20); //Should be plenty for a page script to do what it needs
 
 //Image decoding tweaks
-pref("image.mem.decodeondraw", true);
-pref("image.mem.max_ms_before_yield", 200);
+pref("image.mem.max_ms_before_yield", 500);
 
 
