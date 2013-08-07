@@ -23,18 +23,7 @@
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
+ *    Moonchild <moonchild@palemoon.org>
  *
  * ***** END LICENSE BLOCK ***** */
 
@@ -1036,6 +1025,9 @@ DeoptimizeUsesWithin(Definition *dn, const TokenPos &pos)
     return ndeoptimized != 0;
 }
 
+static inline bool
+BlockIdInScope(uintN blockid, TreeContext *tc);
+
 static bool
 LeaveFunction(ParseNode *fn, TreeContext *funtc, PropertyName *funName = NULL,
               FunctionSyntaxKind kind = Expression)
@@ -1096,8 +1088,17 @@ LeaveFunction(ParseNode *fn, TreeContext *funtc, PropertyName *funName = NULL,
                 }
             }
 
-            Definition *outer_dn = tc->decls.lookupFirst(atom);
-
+            MultiDeclRange mdl = tc->decls.lookupMulti(atom);
+#if JS_HAS_BLOCK_SCOPE
+             /* See same hack in TOK_NAME case of Parser::primaryExpr. */
+            while (!mdl.empty() && mdl.front()->isLet() &&
+                   !BlockIdInScope(mdl.front()->pn_blockid, tc))
+            {
+                mdl.popFront();
+            }
+#endif
+            Definition *outer_dn = mdl.empty() ? NULL : mdl.front();
+  
             /*
              * Make sure to deoptimize lexical dependencies that are polluted
              * by eval or with, to safely bind globals (see bug 561923).
@@ -6574,6 +6575,41 @@ Parser::parseXMLText(JSObject *chain, bool allowList)
 }
 
 #endif /* JS_HAS_XMLSUPPORT */
+
+#if JS_HAS_BLOCK_SCOPE
+/*
+ * Check whether blockid is an active scoping statement in tc. This code is
+ * necessary to qualify tc->decls.lookup() hits in primaryExpr's TOK_NAME case
+ * (below) where the hits come from Scheme-ish let bindings in for loop heads
+ * and let blocks and expressions (not let declarations).
+ *
+ * Unlike let declarations ("let as the new var"), which is a kind of letrec
+ * due to hoisting, let in a for loop head, let block, or let expression acts
+ * like Scheme's let: initializers are evaluated without the new let bindings
+ * being in scope.
+ *
+ * Name binding analysis is eager with fixups, rather than multi-pass, and let
+ * bindings push on the front of the tc->decls AtomDecls (either the singular
+ * list or on a hash chain -- see JSAtomMultiList::add*) in order to shadow
+ * outer scope bindings of the same name.
+ *
+ * This simplifies binding lookup code at the price of a linear search here,
+ * but only if code uses let (var predominates), and even then this function's
+ * loop iterates more than once only in crazy cases.
+ */
+static inline bool
+BlockIdInScope(uintN blockid, TreeContext *tc)
+{
+    if (blockid > tc->blockid())
+        return false;
+    for (StmtInfo *stmt = tc->topScopeStmt; stmt; stmt = stmt->downScope) {
+        if (stmt->blockid == blockid)
+            return true;
+    }
+    return false;
+}
+#endif
+
 
 bool
 Parser::checkForFunctionNode(PropertyName *name, ParseNode *node)

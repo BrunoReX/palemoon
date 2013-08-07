@@ -22,6 +22,7 @@
 #  Brian Ryner <bryner@brianryner.com>
 #  Stuart Parmenter <pavlov@pavlov.net>
 #  Vladimir Vukicevic <vladimir@pobox.com>
+#  Moonchild <moonchild@palemoon.org>
 #
 # Alternatively, the contents of this file may be used under the terms of
 # either of the GNU General Public License Version 2 or later (the "GPL"),
@@ -58,7 +59,8 @@ DEFINES += -DPIXMAN_NO_TLS
 ifdef _MSC_VER
 ifeq (86,$(findstring 86,$(OS_TEST)))
 ifneq (64,$(findstring 64,$(OS_TEST)))
-USE_MMX=1
+# Pale Moon: Don't use the MMX library, has unsafe code (missing register derefs)
+# USE_MMX=1
 endif
 USE_SSE2=1
 MMX_CFLAGS=
@@ -137,10 +139,12 @@ CSRCS	= \
 	pixman-utils.c \
 	$(NULL)
 
-ifdef USE_MMX
-CSRCS += pixman-mmx.c
-DEFINES += -DUSE_MMX
-endif
+# Pale Moon: Don't use the MMX library or flags
+USE_MMX=
+# ifdef USE_MMX
+# CSRCS += pixman-mmx.c
+# DEFINES += -DUSE_MMX
+# endif
 
 ifdef USE_SSE2
 CSRCS += pixman-sse2.c

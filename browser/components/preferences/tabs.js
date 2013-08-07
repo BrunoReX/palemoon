@@ -100,4 +100,5 @@ var gTabsPane = {
     var linkTargeting = document.getElementById("linkTargeting");
     return linkTargeting.checked ? 3 : 2;
   }
+  
 };

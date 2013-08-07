@@ -1,7 +1,7 @@
 pref("startup.homepage_override_url","http://www.palemoon.org/");
 pref("startup.homepage_welcome_url","http://www.palemoon.org/firstrun.shtml");
-// Interval: Time between checks for a new version (in seconds) -- 1 week for Pale Moon
-pref("app.update.interval", 604800);
+// Interval: Time between checks for a new version (in seconds) -- 2 days for Pale Moon
+pref("app.update.interval", 172800);
 pref("app.update.auto", false);
 pref("app.update.enabled", true);
 // URL for update checks, re-enabled on palemoon.org (369)
@@ -36,7 +36,7 @@ pref("network.http.pipelining.ssl"  , true);
 pref("network.http.proxy.pipelining", false); // pipeline proxy requests - breaks some proxies! (406)
 pref("network.http.pipelining.maxrequests", 12);  // Max number of requests in the pipeline
 pref("network.http.max-connections",48); // Don't saturate the network layer and go easy on poor residential routers&wireless! (FF=256)
-pref("network.http.max-connections-per-server",6); // With pipelining, this should be low (FF=15)
+pref("network.http.max-connections-per-server",8); // With pipelining, this should be low (FF=15)
 pref("network.http.max-persistent-connections-per-proxy", 8);
 pref("network.http.max-persistent-connections-per-server", 6);
 
@@ -122,7 +122,7 @@ pref("browser.urlbar.trimURLs", false); //stop being a derp, Mozilla!
 pref("browser.cache.disk.smart_size.enabled",false);
 pref("browser.cache.disk.capacity",204800); //200MB
 pref("browser.cache.disk.max_entry_size",4096);
-pref("browser.cache.memory.capacity",16384); //16MB - doesn't seem to be intensively used.
+pref("browser.cache.memory.capacity",-1); //dynamically allocate as-needed - doesn't seem to be intensively used.
 pref("browser.cache.memory.max_entry_size",1024);
 
 //image RAM cache size for *decoded* images; 256MB should be enough here;
@@ -146,7 +146,7 @@ pref("dom.max_chrome_script_run_time", 90); //Some addons need ample time!
 pref("dom.max_script_run_time", 20); //Should be plenty for a page script to do what it needs
 
 //Image decoding tweaks
-pref("image.mem.max_ms_before_yield", 500);
+pref("image.mem.max_ms_before_yield", 250);
 
 //add-on/plugin blocklist -> Palemoon.org
 pref("extensions.blocklist.url","http://blocklist.palemoon.org/%VERSION%/blocklist.xml");
@@ -165,3 +165,14 @@ pref("devtools.tilt.enabled",false); //Tilt? WHY? NIIB
 
 //Set Tabs NOT on top.
 pref("browser.tabs.onTop",false);
+
+//Smooth scrolling settings
+pref("general.smoothScroll",true);
+pref("general.smoothScroll.lines.durationMinMS",100);
+pref("general.smoothScroll.lines.durationMaxMS",200);
+pref("general.smoothScroll.pages.durationMinMS",200);
+pref("general.smoothScroll.pages.durationMaxMS",600);
+pref("general.smoothScroll.pixels.durationMinMS",150);
+pref("general.smoothScroll.pixels.durationMaxMS",800);
+pref("general.smoothScroll.scrollbars.durationMinMS",100);
+pref("general.smoothScroll.scrollbars.durationMaxMS",200);

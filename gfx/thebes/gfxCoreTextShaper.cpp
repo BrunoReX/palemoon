@@ -108,23 +108,29 @@ gfxCoreTextShaper::~gfxCoreTextShaper()
 }
 
 bool
-gfxCoreTextShaper::ShapeWord(gfxContext      *aContext,
-                             gfxShapedWord   *aShapedWord,
-                             const PRUnichar *aText)
+gfxCoreTextShaper::InitTextRun(gfxContext *aContext,
+                               gfxTextRun *aTextRun,
+                               const PRUnichar *aString,
+                               PRUint32 aRunStart,
+                               PRUint32 aRunLength,
+                               PRInt32 aRunScript)
 {
+    // aRunStart and aRunLength define the section of the textRun and of aString
+    // that is to be drawn with this particular font
+
+    bool disableLigatures = (aTextRun->GetFlags() & gfxTextRunFactory::TEXT_DISABLE_OPTIONAL_LIGATURES) != 0;
+
     // Create a CFAttributedString with text and style info, so we can use CoreText to lay it out.
 
-    bool isRightToLeft = aShapedWord->IsRightToLeft();
-    PRUint32 length = aShapedWord->Length();
+    bool isRTL = aTextRun->IsRightToLeft();
 
     // we need to bidi-wrap the text if the run is RTL,
     // or if it is an LTR run but may contain (overridden) RTL chars
-    bool bidiWrap = isRightToLeft;
-    if (!bidiWrap && !aShapedWord->TextIs8Bit()) {
-        const PRUnichar *text = aShapedWord->TextUnicode();
+    bool bidiWrap = isRTL;
+    if (!bidiWrap && (aTextRun->GetFlags() & gfxTextRunFactory::TEXT_IS_8BIT) == 0) {
         PRUint32 i;
-        for (i = 0; i < length; ++i) {
-            if (gfxFontUtils::PotentialRTLChar(text[i])) {
+        for (i = aRunStart; i < aRunStart + aRunLength; ++i) {
+            if (gfxFontUtils::PotentialRTLChar(aString[i])) {
                 bidiWrap = true;
                 break;
             }
@@ -140,27 +146,31 @@ gfxCoreTextShaper::ShapeWord(gfxContext      *aContext,
     PRUint32 startOffset;
     CFStringRef stringObj;
     if (bidiWrap) {
-        startOffset = isRightToLeft ?
-            mozilla::ArrayLength(beginRTL) : mozilla::ArrayLength(beginLTR);
+        startOffset = isRTL ?
+            sizeof(beginRTL) / sizeof(beginRTL[0]) : sizeof(beginLTR) / sizeof(beginLTR[0]);
         CFMutableStringRef mutableString =
             ::CFStringCreateMutable(kCFAllocatorDefault,
-                                    length + startOffset + mozilla::ArrayLength(endBidiWrap));
+                                    aRunLength + startOffset +
+                                    sizeof(endBidiWrap) / sizeof(endBidiWrap[0]));
         ::CFStringAppendCharacters(mutableString,
-                                   isRightToLeft ? beginRTL : beginLTR,
+                                   isRTL ? beginRTL : beginLTR,
                                    startOffset);
-        ::CFStringAppendCharacters(mutableString, aText, length);
         ::CFStringAppendCharacters(mutableString,
-                                   endBidiWrap, mozilla::ArrayLength(endBidiWrap));
+                                   aString + aRunStart, aRunLength);
+        ::CFStringAppendCharacters(mutableString,
+                                   endBidiWrap,
+                                   sizeof(endBidiWrap) / sizeof(endBidiWrap[0]));
         stringObj = mutableString;
     } else {
         startOffset = 0;
         stringObj = ::CFStringCreateWithCharactersNoCopy(kCFAllocatorDefault,
-                                                         aText, length,
+                                                         aString + aRunStart,
+                                                         aRunLength,
                                                          kCFAllocatorNull);
     }
 
     CFDictionaryRef attrObj;
-    if (aShapedWord->DisableLigatures()) {
+    if (disableLigatures) {
         // For letterspacing (or maybe other situations) we need to make a copy of the CTFont
         // with the ligature feature disabled
         CTFontRef ctFont =
@@ -199,9 +209,9 @@ gfxCoreTextShaper::ShapeWord(gfxContext      *aContext,
     // not to include the extra glyphs from there
     bool success = true;
     for (PRUint32 runIndex = 0; runIndex < numRuns; runIndex++) {
-        CTRunRef aCTRun =
-            (CTRunRef)::CFArrayGetValueAtIndex(glyphRuns, runIndex);
-        if (SetGlyphsFromRun(aShapedWord, aCTRun, startOffset) != NS_OK) {
+        CTRunRef aCTRun = (CTRunRef)::CFArrayGetValueAtIndex(glyphRuns, runIndex);
+        if (SetGlyphsFromRun(aTextRun, aCTRun, startOffset,
+                             aRunStart, aRunLength) != NS_OK) {
             success = false;
             break;
         }
@@ -217,25 +227,30 @@ gfxCoreTextShaper::ShapeWord(gfxContext      *aContext,
                             // without requiring a separate allocation
 
 nsresult
-gfxCoreTextShaper::SetGlyphsFromRun(gfxShapedWord *aShapedWord,
+gfxCoreTextShaper::SetGlyphsFromRun(gfxTextRun *aTextRun,
                                     CTRunRef aCTRun,
-                                    PRInt32 aStringOffset)
+                                    PRInt32 aStringOffset, // offset in the string used to build the CTLine
+                                    PRInt32 aRunStart,     // starting offset of this font run in the gfxTextRun
+                                    PRInt32 aRunLength)    // length of this font run in characters
 {
-    // The word has been bidi-wrapped; aStringOffset is the number
+    // The textRun has been bidi-wrapped; aStringOffset is the number
     // of chars at the beginning of the CTLine that we should skip.
+    // aRunStart and aRunLength define the range of characters
+    // within the textRun that are "real" data we need to handle.
     // aCTRun is a glyph run from the CoreText layout process.
 
-    PRInt32 direction = aShapedWord->IsRightToLeft() ? -1 : 1;
+    bool isLTR = !aTextRun->IsRightToLeft();
+    PRInt32 direction = isLTR ? 1 : -1;
 
     PRInt32 numGlyphs = ::CTRunGetGlyphCount(aCTRun);
     if (numGlyphs == 0) {
         return NS_OK;
     }
 
-    PRInt32 wordLength = aShapedWord->Length();
-
     // character offsets get really confusing here, as we have to keep track of
     // (a) the text in the actual textRun we're constructing
+    // (b) the "font run" being rendered with the current font, defined by aRunStart and aRunLength
+    //     parameters to InitTextRun
     // (c) the string that was handed to CoreText, which contains the text of the font run
     //     plus directional-override padding
     // (d) the CTRun currently being processed, which may be a sub-run of the CoreText line
@@ -246,7 +261,7 @@ gfxCoreTextShaper::SetGlyphsFromRun(gfxShapedWord *aShapedWord,
     CFRange stringRange = ::CTRunGetStringRange(aCTRun);
     // skip the run if it is entirely outside the actual range of the font run
     if (stringRange.location - aStringOffset + stringRange.length <= 0 ||
-        stringRange.location - aStringOffset >= wordLength) {
+        stringRange.location - aStringOffset >= aRunLength) {
         return NS_OK;
     }
 
@@ -286,8 +301,9 @@ gfxCoreTextShaper::SetGlyphsFromRun(gfxShapedWord *aShapedWord,
         positions = positionsArray.get();
     }
 
-    // Remember that the glyphToChar indices relate to the CoreText line
-    // not to the beginning of the textRun, the font run, or the stringRange of the glyph run
+    // Remember that the glyphToChar indices relate to the CoreText line,
+    // not to the beginning of the textRun, the font run,
+    // or the stringRange of the glyph run
     glyphToChar = ::CTRunGetStringIndicesPtr(aCTRun);
     if (!glyphToChar) {
         glyphToCharArray = new (std::nothrow) CFIndex[numGlyphs];
@@ -298,10 +314,12 @@ gfxCoreTextShaper::SetGlyphsFromRun(gfxShapedWord *aShapedWord,
         glyphToChar = glyphToCharArray.get();
     }
 
-    double runWidth = ::CTRunGetTypographicBounds(aCTRun, ::CFRangeMake(0, 0), NULL, NULL, NULL);
+    double runWidth = ::CTRunGetTypographicBounds(aCTRun, ::CFRangeMake(0, 0),
+                                                  NULL, NULL, NULL);
 
     nsAutoTArray<gfxTextRun::DetailedGlyph,1> detailedGlyphs;
     gfxTextRun::CompressedGlyph g;
+    const PRUint32 appUnitsPerDevUnit = aTextRun->GetAppUnitsPerDevUnit();
 
     // CoreText gives us the glyphindex-to-charindex mapping, which relates each glyph
     // to a source text character; we also need the charindex-to-glyphindex mapping to
@@ -341,23 +359,24 @@ gfxCoreTextShaper::SetGlyphsFromRun(gfxShapedWord *aShapedWord,
     //
     // NB: In the case of RTL layouts, we iterate over the stringRange in reverse.
     //
-
-    // This may find characters that fall outside the range 0:wordLength,
+    // This may find characters that fall outside the range aRunStart:aRunLength,
     // so we won't necessarily use everything we find here.
 
-    bool isRightToLeft = aShapedWord->IsRightToLeft();
     PRInt32 glyphStart = 0; // looking for a clump that starts at this glyph index
-    PRInt32 charStart = isRightToLeft ?
-        stringRange.length - 1 : 0; // and this char index (in the stringRange of the glyph run)
+    PRInt32 charStart = isLTR ?
+        0 : stringRange.length-1; // and this char index (in the stringRange of the glyph run)
 
     while (glyphStart < numGlyphs) { // keep finding groups until all glyphs are accounted for
-
         bool inOrder = true;
         PRInt32 charEnd = glyphToChar[glyphStart] - stringRange.location;
-        NS_ASSERTION(charEnd >= 0 && charEnd < stringRange.length,
-                     "glyph-to-char mapping points outside string range");
+        NS_WARN_IF_FALSE(charEnd >= 0 && charEnd < stringRange.length,
+                         "glyph-to-char mapping points outside string range");
+        // clamp charEnd to the valid range of the string
+        charEnd = NS_MAX(charEnd, 0);
+        charEnd = NS_MIN(charEnd, PRInt32(stringRange.length));
+
         PRInt32 glyphEnd = glyphStart;
-        PRInt32 charLimit = isRightToLeft ? -1 : stringRange.length;
+        PRInt32 charLimit = isLTR ? stringRange.length : -1;
         do {
             // This is normally executed once for each iteration of the outer loop,
             // but in unusual cases where the character/glyph association is complex,
@@ -373,9 +392,19 @@ gfxCoreTextShaper::SetGlyphsFromRun(gfxShapedWord *aShapedWord,
             }
 
             // find the maximum glyph index covered by the clump so far
-            for (PRInt32 i = charStart; i != charEnd; i += direction) {
-                if (charToGlyph[i] != NO_GLYPH) {
-                    glyphEnd = NS_MAX(glyphEnd, charToGlyph[i] + 1); // update extent of glyph range
+            if (!isLTR) {
+                for (PRInt32 i = charStart; i > charEnd; --i) {
+                    if (charToGlyph[i] != NO_GLYPH) {
+                        // update extent of glyph range
+                        glyphEnd = NS_MAX(glyphEnd, charToGlyph[i] + 1);
+                    }
+                }
+            } else {
+                for (PRInt32 i = charStart; i < charEnd; ++i) {
+                    if (charToGlyph[i] != NO_GLYPH) {
+                        // update extent of glyph range
+                        glyphEnd = NS_MAX(glyphEnd, charToGlyph[i] + 1);
+                    }
                 }
             }
 
@@ -396,21 +425,21 @@ gfxCoreTextShaper::SetGlyphsFromRun(gfxShapedWord *aShapedWord,
             PRInt32 prevGlyphCharIndex = charStart;
             for (PRInt32 i = glyphStart; i < glyphEnd; ++i) {
                 PRInt32 glyphCharIndex = glyphToChar[i] - stringRange.location;
-                if (isRightToLeft) {
-                    if (glyphCharIndex > charStart || glyphCharIndex <= charEnd) {
-                        allGlyphsAreWithinCluster = false;
-                        break;
-                    }
-                    if (glyphCharIndex > prevGlyphCharIndex) {
-                        inOrder = false;
-                    }
-                    prevGlyphCharIndex = glyphCharIndex;
-                } else {
+                if (isLTR) {
                     if (glyphCharIndex < charStart || glyphCharIndex >= charEnd) {
                         allGlyphsAreWithinCluster = false;
                         break;
                     }
                     if (glyphCharIndex < prevGlyphCharIndex) {
+                        inOrder = false;
+                    }
+                    prevGlyphCharIndex = glyphCharIndex;
+                } else {
+                    if (glyphCharIndex > charStart || glyphCharIndex <= charEnd) {
+                        allGlyphsAreWithinCluster = false;
+                        break;
+                    }
+                    if (glyphCharIndex > prevGlyphCharIndex) {
                         inOrder = false;
                     }
                     prevGlyphCharIndex = glyphCharIndex;
@@ -421,41 +450,53 @@ gfxCoreTextShaper::SetGlyphsFromRun(gfxShapedWord *aShapedWord,
             }
         } while (charEnd != charLimit);
 
-        NS_ASSERTION(glyphStart < glyphEnd, "character/glyph clump contains no glyphs!");
-        NS_ASSERTION(charStart != charEnd, "character/glyph contains no characters!");
+        NS_WARN_IF_FALSE(glyphStart < glyphEnd,
+                         "character/glyph clump contains no glyphs!");
+        if (glyphStart == glyphEnd) {
+            ++glyphStart; // make progress - avoid potential infinite loop
+            charStart = charEnd;
+            continue;
+        }
+
+        NS_WARN_IF_FALSE(charStart != charEnd,
+                         "character/glyph clump contains no characters!");
+        if (charStart == charEnd) {
+            glyphStart = glyphEnd; // this is bad - we'll discard the glyph(s),
+                                   // as there's nowhere to attach them
+            continue;
+        }
 
         // Now charStart..charEnd is a ligature clump, corresponding to glyphStart..glyphEnd;
         // Set baseCharIndex to the char we'll actually attach the glyphs to (1st of ligature),
         // and endCharIndex to the limit (position beyond the last char),
         // adjusting for the offset of the stringRange relative to the textRun.
         PRInt32 baseCharIndex, endCharIndex;
-        if (isRightToLeft) {
-            while (charEnd >= 0 && charToGlyph[charEnd] == NO_GLYPH) {
-                charEnd--;
-            }
-            baseCharIndex = charEnd + stringRange.location - aStringOffset + 1;
-            endCharIndex = charStart + stringRange.location - aStringOffset + 1;
-        } else {
+        if (isLTR) {
             while (charEnd < stringRange.length && charToGlyph[charEnd] == NO_GLYPH) {
                 charEnd++;
             }
-            baseCharIndex = charStart + stringRange.location - aStringOffset;
-            endCharIndex = charEnd + stringRange.location - aStringOffset;
+            baseCharIndex = charStart + stringRange.location - aStringOffset + aRunStart;
+            endCharIndex = charEnd + stringRange.location - aStringOffset + aRunStart;
+        } else {
+            while (charEnd >= 0 && charToGlyph[charEnd] == NO_GLYPH) {
+                charEnd--;
+            }
+            baseCharIndex = charEnd + stringRange.location - aStringOffset + aRunStart + 1;
+            endCharIndex = charStart + stringRange.location - aStringOffset + aRunStart + 1;
         }
 
         // Then we check if the clump falls outside our actual string range; if so, just go to the next.
-        if (endCharIndex <= 0 || baseCharIndex >= wordLength) {
+        if (endCharIndex <= aRunStart || baseCharIndex >= aRunStart + aRunLength) {
             glyphStart = glyphEnd;
             charStart = charEnd;
             continue;
         }
-        // Ensure we won't try to go beyond the valid length of the word's text
-        baseCharIndex = NS_MAX(baseCharIndex, 0);
-        endCharIndex = NS_MIN(endCharIndex, wordLength);
+        // Ensure we won't try to go beyond the valid length of the textRun's text
+        baseCharIndex = NS_MAX(baseCharIndex, aRunStart);
+        endCharIndex = NS_MIN(endCharIndex, aRunStart + aRunLength);
 
         // Now we're ready to set the glyph info in the textRun; measure the glyph width
         // of the first (perhaps only) glyph, to see if it is "Simple"
-        PRInt32 appUnitsPerDevUnit = aShapedWord->AppUnitsPerDevUnit();
         double toNextGlyph;
         if (glyphStart < numGlyphs-1) {
             toNextGlyph = positions[glyphStart+1].x - positions[glyphStart].x;
@@ -469,12 +510,11 @@ gfxCoreTextShaper::SetGlyphsFromRun(gfxShapedWord *aShapedWord,
         if (glyphsInClump == 1 &&
             gfxTextRun::CompressedGlyph::IsSimpleGlyphID(glyphs[glyphStart]) &&
             gfxTextRun::CompressedGlyph::IsSimpleAdvance(advance) &&
-            aShapedWord->IsClusterStart(baseCharIndex) &&
+            aTextRun->IsClusterStart(baseCharIndex) &&
             positions[glyphStart].y == 0.0)
         {
-            aShapedWord->SetSimpleGlyph(baseCharIndex,
-                                        g.SetSimpleGlyph(advance,
-                                                         glyphs[glyphStart]));
+            aTextRun->SetSimpleGlyph(baseCharIndex,
+                                     g.SetSimpleGlyph(advance, glyphs[glyphStart]));
         } else {
             // collect all glyphs in a list to be assigned to the first char;
             // there must be at least one in the clump, and we already measured its advance,
@@ -497,18 +537,18 @@ gfxCoreTextShaper::SetGlyphsFromRun(gfxShapedWord *aShapedWord,
             }
 
             gfxTextRun::CompressedGlyph g;
-            g.SetComplex(aShapedWord->IsClusterStart(baseCharIndex),
+            g.SetComplex(aTextRun->IsClusterStart(baseCharIndex),
                          true, detailedGlyphs.Length());
-            aShapedWord->SetGlyphs(baseCharIndex, g, detailedGlyphs.Elements());
+            aTextRun->SetGlyphs(baseCharIndex, g, detailedGlyphs.Elements());
 
             detailedGlyphs.Clear();
         }
 
         // the rest of the chars in the group are ligature continuations, no associated glyphs
-        while (++baseCharIndex != endCharIndex && baseCharIndex < wordLength) {
-            g.SetComplex(inOrder && aShapedWord->IsClusterStart(baseCharIndex),
+        while (++baseCharIndex != endCharIndex && baseCharIndex < aRunStart + aRunLength) {
+            g.SetComplex(inOrder && aTextRun->IsClusterStart(baseCharIndex),
                          false, 0);
-            aShapedWord->SetGlyphs(baseCharIndex, g, nsnull);
+            aTextRun->SetGlyphs(baseCharIndex, g, nsnull);
         }
 
         glyphStart = glyphEnd;

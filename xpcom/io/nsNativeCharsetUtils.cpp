@@ -25,6 +25,7 @@
  *   Brendan Eich <brendan@mozilla.org>
  *   Sergei Dolgov <sergei_d@fi.fi.tartu.ee>
  *   Jungshik Shin <jshin@i18nl10n.com>
+ *   Moonchild <moonchild@palemoon.org>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -564,9 +565,9 @@ nsNativeCharsetConverter::UnicodeToNative(const PRUnichar **input,
     if (gUnicodeToNative != INVALID_ICONV_T) {
         res = xp_iconv(gUnicodeToNative, (const char **) input, &inLeft, output, &outLeft);
 
+        *inputLeft = inLeft / 2;
+        *outputLeft = outLeft;
         if (res != (size_t) -1) {
-            *inputLeft = inLeft / 2;
-            *outputLeft = outLeft;
             return NS_OK;
         }
 
@@ -607,10 +608,10 @@ nsNativeCharsetConverter::UnicodeToNative(const PRUnichar **input,
             inLeft -= sizeof(PRUnichar);
         }
 
+        (*input) += (*inputLeft - inLeft/2);
+        *inputLeft = inLeft/2;
+        *outputLeft = outLeft;
         if (res != (size_t) -1) {
-            (*input) += (*inputLeft - inLeft/2);
-            *inputLeft = inLeft/2;
-            *outputLeft = outLeft;
             return NS_OK;
         }
 
@@ -621,6 +622,7 @@ nsNativeCharsetConverter::UnicodeToNative(const PRUnichar **input,
 #endif
 
     // fallback: truncate and hope for the best
+    // Pale Moon: why hasn't anyone done better yet?
     utf16_to_isolatin1(input, inputLeft, output, outputLeft);
 
     return NS_OK;

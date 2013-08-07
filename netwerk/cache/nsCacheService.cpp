@@ -136,7 +136,7 @@ static const char * prefList[] = {
 };
 
 // Cache sizes, in KB
-const PRInt32 DEFAULT_CACHE_SIZE = 250 * 1024;  // 250 MB
+const PRInt32 DEFAULT_CACHE_SIZE = 200 * 1024;  // 200 MB
 const PRInt32 MIN_CACHE_SIZE = 50 * 1024;       //  50 MB
 const PRInt32 MAX_CACHE_SIZE = 1024 * 1024;     //   1 GB
 // Default cache size was 50 MB for many years until FF 4:
@@ -694,7 +694,9 @@ nsCacheProfilePrefObserver::PermittedToSmartSize(nsIPrefBranch* branch, bool
         }
         // Set manual setting to MAX cache size as starting val for any
         // adjustment by user: (bug 559942 comment 65)
-        branch->SetIntPref(DISK_CACHE_CAPACITY_PREF, MAX_CACHE_SIZE);
+        // Pale Moon: Set manual setting to DEFAULT cache size.
+        // Is this even needed? why adjust? Why not leave it alone? 
+        // branch->SetIntPref(DISK_CACHE_CAPACITY_PREF, DEFAULT_CACHE_SIZE);
     }
 
     rv = branch->GetBoolPref(DISK_CACHE_SMART_SIZE_ENABLED_PREF,

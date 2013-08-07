@@ -24,6 +24,7 @@
 # Contributor(s):
 #   Ben Goodger <ben@mozilla.org>
 #   Jeff Walden <jwalden+bmo@mit.edu>
+#   Moonchild <moonchild@palemoon.org>
 #
 # Alternatively, the contents of this file may be used under the terms of
 # either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -64,6 +65,11 @@
 #ifdef XP_WIN
       <preference id="browser.taskbar.previews.enable" name="browser.taskbar.previews.enable" type="bool"/>
 #endif
+      <preference id="browser.tabs.insertRelatedAfterCurrent"  name="browser.tabs.insertRelatedAfterCurrent"  type="bool"/>
+      <preference id="browser.tabs.closeWindowWithLastTab"     name="browser.tabs.closeWindowWithLastTab"     type="bool"/>
+      <preference id="browser.newtab.url"
+                  name="browser.newtab.url"
+                  type="string" /> 
     </preferences>
     
     <script type="application/javascript" src="chrome://browser/content/preferences/tabs.js"/>
@@ -93,6 +99,22 @@
                 accesskey="&showTabsInTaskbar.accesskey;"
                 preference="browser.taskbar.previews.enable"/>
 #endif
+<!-- Pale Moon additions -->
+<!-- Hard-coded text for now. -->
+      <checkbox id="insertRelatedAfterCurrent" label="Insert related tabs next to the current tab"
+                preference="browser.tabs.insertRelatedAfterCurrent"/>
+      <checkbox id="closeWindowWithLastTab" label="Close the window when the last tab is closed"
+                preference="browser.tabs.closeWindowWithLastTab"/>
+      <hbox align="center">
+        <label value="When opening a new tab, show:"/>
+        <menulist id="newtabPage" preference="browser.newtab.url">
+          <menupopup>
+            <menuitem label="A blank page"     value="about:blank" id="newtabPageBlank"/>
+            <menuitem label="The Pale Moon start page"      value="http://start.palemoon.org/" id="newtabPageHome"/>
+            <menuitem label="The Quickdial page" value="about:newtab" id="newtabPageQuickdial"/>
+          </menupopup>
+        </menulist>
+      </hbox> 
     </vbox>
 
   </prefpane>

@@ -15,3 +15,11 @@
 
 <!ENTITY showTabsInTaskbar.label          "Show tab previews in the Windows taskbar">
 <!ENTITY showTabsInTaskbar.accesskey      "k">
+
+<!ENTITY insertRelatedAfterCurrent.label  "Insert related tabs next to the current tab">
+<!ENTITY closeWindowWithLastTab.label     "Close the window when the last tab is closed">
+
+<!ENTITY newtabPage.label                 "When opening a new tab, show:">
+<!ENTITY newtabPageBlank.label            "A blank page">
+<!ENTITY newtabPageHome.label             "The Pale Moon home page">
+<!ENTITY newtabPageQuickdial.label        "The Quickdial page">
