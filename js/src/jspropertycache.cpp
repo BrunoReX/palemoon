@@ -52,7 +52,6 @@ JS_REQUIRES_STACK PropertyCacheEntry *
 PropertyCache::fill(JSContext *cx, JSObject *obj, uintN scopeIndex, JSObject *pobj,
                     const Shape *shape, JSBool adding)
 {
-    jsbytecode *pc;
     jsuword kshape, vshape;
     JSOp op;
     const JSCodeSpec *cs;
@@ -71,7 +70,7 @@ PropertyCache::fill(JSContext *cx, JSObject *obj, uintN scopeIndex, JSObject *po
      * Check for fill from js_SetPropertyHelper where the setter removed shape
      * from pobj (via unwatch or delete, e.g.).
      */
-    if (!pobj->nativeContains(*shape)) {
+    if (!pobj->nativeContains(cx, *shape)) {
         PCMETER(oddfills++);
         return JS_NO_PROP_CACHE_FILL;
     }
@@ -127,8 +126,9 @@ PropertyCache::fill(JSContext *cx, JSObject *obj, uintN scopeIndex, JSObject *po
      * Optimize the cached vword based on our parameters and the current pc's
      * opcode format flags.
      */
-    pc = cx->regs().pc;
-    op = js_GetOpcode(cx, cx->fp()->script(), pc);
+    jsbytecode *pc;
+    JSScript *script = cx->stack.currentScript(&pc);
+    op = js_GetOpcode(cx, script, pc);
     cs = &js_CodeSpec[op];
     kshape = 0;
 
@@ -151,7 +151,12 @@ PropertyCache::fill(JSContext *cx, JSObject *obj, uintN scopeIndex, JSObject *po
                 break;
             }
 
-            if (!pobj->generic() && shape->hasDefaultGetter() && pobj->containsSlot(shape->slot)) {
+            /*
+             * N.B. Objects are not branded if type inference is enabled, to
+             * allow property accesses without shape checks in JIT code.
+             */
+            if (!pobj->generic() && shape->hasDefaultGetter() && pobj->containsSlot(shape->slot) &&
+                !cx->typeInferenceEnabled()) {
                 const Value &v = pobj->nativeGetSlot(shape->slot);
                 JSObject *funobj;
 
@@ -171,7 +176,7 @@ PropertyCache::fill(JSContext *cx, JSObject *obj, uintN scopeIndex, JSObject *po
                     if (!pobj->branded()) {
                         PCMETER(brandfills++);
 #ifdef DEBUG_notme
-                        JSFunction *fun = GET_FUNCTION_PRIVATE(cx, JSVAL_TO_OBJECT(v));
+                        JSFunction *fun = JSVAL_TO_OBJECT(v)->getFunctionPrivate();
                         JSAutoByteString funNameBytes;
                         if (const char *funName = GetFunctionNameBytes(cx, fun, &funNameBytes)) {
                             fprintf(stderr,
@@ -305,9 +310,10 @@ GetAtomFromBytecode(JSContext *cx, jsbytecode *pc, JSOp op, const JSCodeSpec &cs
     if (op == JSOP_INSTANCEOF)
         return cx->runtime->atomState.classPrototypeAtom;
 
+    JSScript *script = cx->stack.currentScript();
     ptrdiff_t pcoff = (JOF_TYPE(cs.format) == JOF_SLOTATOM) ? SLOTNO_LEN : 0;
     JSAtom *atom;
-    GET_ATOM_FROM_BYTECODE(cx->fp()->script(), pc, pcoff, atom);
+    GET_ATOM_FROM_BYTECODE(script, pc, pcoff, atom);
     return atom;
 }
 
@@ -318,13 +324,13 @@ PropertyCache::fullTest(JSContext *cx, jsbytecode *pc, JSObject **objp, JSObject
     JSObject *obj, *pobj, *tmp;
     uint32 vcap;
 
-    StackFrame *fp = cx->fp();
+    JSScript *script = cx->stack.currentScript();
 
     JS_ASSERT(this == &JS_PROPERTY_CACHE(cx));
-    JS_ASSERT(uintN((fp->hasImacropc() ? fp->imacropc() : pc) - fp->script()->code)
-              < fp->script()->length);
+    JS_ASSERT(uintN((cx->fp()->hasImacropc() ? cx->fp()->imacropc() : pc) - script->code)
+              < script->length);
 
-    JSOp op = js_GetOpcode(cx, fp->script(), pc);
+    JSOp op = js_GetOpcode(cx, script, pc);
     const JSCodeSpec &cs = js_CodeSpec[op];
 
     obj = *objp;
@@ -393,7 +399,7 @@ PropertyCache::fullTest(JSContext *cx, jsbytecode *pc, JSObject **objp, JSObject
         jsid id = ATOM_TO_JSID(atom);
 
         id = js_CheckForStringIndex(id);
-        JS_ASSERT(pobj->nativeContains(id));
+        JS_ASSERT(pobj->nativeContains(cx, id));
 #endif
         *pobjp = pobj;
         return NULL;

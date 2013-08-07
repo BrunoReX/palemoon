@@ -60,7 +60,6 @@
 #include "nsSVGOuterSVGFrame.h"
 #include "nsSVGInnerSVGFrame.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
-#include "nsSVGMatrix.h"
 #include "nsSVGClipPathFrame.h"
 #include "nsSVGMaskFrame.h"
 #include "nsSVGContainerFrame.h"
@@ -69,7 +68,6 @@
 #include "nsGenericElement.h"
 #include "nsSVGGraphicElement.h"
 #include "nsAttrValue.h"
-#include "nsSVGGeometryFrame.h"
 #include "nsIScriptError.h"
 #include "gfxContext.h"
 #include "gfxMatrix.h"
@@ -85,6 +83,7 @@
 #include "nsSVGGeometryFrame.h"
 #include "nsComputedDOMStyle.h"
 #include "nsSVGPathGeometryFrame.h"
+#include "nsSVGPathGeometryElement.h"
 #include "prdtoa.h"
 #include "mozilla/dom/Element.h"
 #include "gfxUtils.h"
@@ -574,7 +573,7 @@ nsSVGUtils::FindFilterInvalidation(nsIFrame *aFrame, const nsRect& aRect)
       float x, y, width, height;
       static_cast<nsSVGSVGElement*>(innerSvg->GetContent())->
         GetAnimatedLengthValues(&x, &y, &width, &height, nsnull);
-      gfxRect bounds = nsSVGUtils::GetCanvasTM(innerSvgParent).
+      gfxRect bounds = GetCanvasTM(innerSvgParent).
                          TransformBounds(gfxRect(x, y, width, height));
       bounds.RoundOut();
       nsIntRect r;
@@ -603,7 +602,7 @@ nsSVGUtils::InvalidateCoveredRegion(nsIFrame *aFrame)
   if (aFrame->GetStateBits() & NS_STATE_SVG_NONDISPLAY_CHILD)
     return;
 
-  nsSVGOuterSVGFrame* outerSVGFrame = nsSVGUtils::GetOuterSVGFrame(aFrame);
+  nsSVGOuterSVGFrame* outerSVGFrame = GetOuterSVGFrame(aFrame);
   NS_ASSERTION(outerSVGFrame, "no outer svg frame");
   if (outerSVGFrame)
     outerSVGFrame->InvalidateCoveredRegion(aFrame);
@@ -619,7 +618,7 @@ nsSVGUtils::UpdateGraphic(nsISVGChildFrame *aSVGFrame)
   if (frame->GetStateBits() & NS_STATE_SVG_NONDISPLAY_CHILD)
     return;
 
-  nsSVGOuterSVGFrame *outerSVGFrame = nsSVGUtils::GetOuterSVGFrame(frame);
+  nsSVGOuterSVGFrame *outerSVGFrame = GetOuterSVGFrame(frame);
   if (!outerSVGFrame) {
     NS_ERROR("null outerSVGFrame");
     return;
@@ -874,7 +873,7 @@ nsSVGUtils::GetCanvasTM(nsIFrame *aFrame)
 void 
 nsSVGUtils::NotifyChildrenOfSVGChange(nsIFrame *aFrame, PRUint32 aFlags)
 {
-  nsIFrame *kid = aFrame->GetFirstChild(nsnull);
+  nsIFrame *kid = aFrame->GetFirstPrincipalChild();
 
   while (kid) {
     nsISVGChildFrame* SVGFrame = do_QueryFrame(kid);
@@ -884,7 +883,7 @@ nsSVGUtils::NotifyChildrenOfSVGChange(nsIFrame *aFrame, PRUint32 aFlags)
       NS_ASSERTION(kid->IsFrameOfType(nsIFrame::eSVG), "SVG frame expected");
       // recurse into the children of container frames e.g. <clipPath>, <mask>
       // in case they have child frames with transformation matrices
-      nsSVGUtils::NotifyChildrenOfSVGChange(kid, aFlags);
+      NotifyChildrenOfSVGChange(kid, aFlags);
     }
     kid = kid->GetNextSibling();
   }
@@ -1087,7 +1086,7 @@ nsSVGUtils::HitTestChildren(nsIFrame *aFrame, const nsPoint &aPoint)
   // Traverse the list in reverse order, so that if we get a hit we know that's
   // the topmost frame that intersects the point; then we can just return it.
   nsIFrame* result = nsnull;
-  for (nsIFrame* current = aFrame->GetChildList(nsnull).LastChild();
+  for (nsIFrame* current = aFrame->PrincipalChildList().LastChild();
        current;
        current = current->GetPrevSibling()) {
     nsISVGChildFrame* SVGFrame = do_QueryFrame(current);
@@ -1144,10 +1143,10 @@ gfxIntSize
 nsSVGUtils::ConvertToSurfaceSize(const gfxSize& aSize,
                                  PRBool *aResultOverflows)
 {
-  gfxIntSize surfaceSize(ClampToInt(aSize.width), ClampToInt(aSize.height));
+  gfxIntSize surfaceSize(ClampToInt(ceil(aSize.width)), ClampToInt(ceil(aSize.height)));
 
-  *aResultOverflows = surfaceSize.width != NS_round(aSize.width) ||
-    surfaceSize.height != NS_round(aSize.height);
+  *aResultOverflows = surfaceSize.width != ceil(aSize.width) ||
+    surfaceSize.height != ceil(aSize.height);
 
   if (!gfxASurface::CheckSurfaceSize(surfaceSize)) {
     surfaceSize.width = NS_MIN(NS_SVG_OFFSCREEN_MAX_DIMENSION,
@@ -1158,22 +1157,6 @@ nsSVGUtils::ConvertToSurfaceSize(const gfxSize& aSize,
   }
 
   return surfaceSize;
-}
-
-gfxMatrix
-nsSVGUtils::ConvertSVGMatrixToThebes(nsIDOMSVGMatrix *aMatrix)
-{
-  if (!aMatrix) {
-    return gfxMatrix();
-  }
-  float A, B, C, D, E, F;
-  aMatrix->GetA(&A);
-  aMatrix->GetB(&B);
-  aMatrix->GetC(&C);
-  aMatrix->GetD(&D);
-  aMatrix->GetE(&E);
-  aMatrix->GetF(&F);
-  return gfxMatrix(A, B, C, D, E, F);
 }
 
 PRBool
@@ -1329,10 +1312,10 @@ nsSVGUtils::GetRelativeRect(PRUint16 aUnits, const nsSVGLength2 *aXYWH,
     width = ObjectSpace(aBBox, &aXYWH[2]);
     height = ObjectSpace(aBBox, &aXYWH[3]);
   } else {
-    x = nsSVGUtils::UserSpace(aFrame, &aXYWH[0]);
-    y = nsSVGUtils::UserSpace(aFrame, &aXYWH[1]);
-    width = nsSVGUtils::UserSpace(aFrame, &aXYWH[2]);
-    height = nsSVGUtils::UserSpace(aFrame, &aXYWH[3]);
+    x = UserSpace(aFrame, &aXYWH[0]);
+    y = UserSpace(aFrame, &aXYWH[1]);
+    width = UserSpace(aFrame, &aXYWH[2]);
+    height = UserSpace(aFrame, &aXYWH[3]);
   }
   return gfxRect(x, y, width, height);
 }
@@ -1431,26 +1414,14 @@ nsSVGUtils::WritePPM(const char *fname, gfxImageSurface *aSurface)
 }
 #endif
 
-/*static*/ gfxRect
-nsSVGUtils::PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
-                                          nsSVGGeometryFrame* aFrame)
+// The logic here comes from _cairo_stroke_style_max_distance_from_path
+static gfxRect
+PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
+                              nsSVGGeometryFrame* aFrame,
+                              double styleExpansionFactor)
 {
-  // The logic here comes from _cairo_stroke_style_max_distance_from_path
-
-  double style_expansion = 0.5;
-
-  const nsStyleSVG* style = aFrame->GetStyleSVG();
-
-  if (style->mStrokeLinecap == NS_STYLE_STROKE_LINECAP_SQUARE) {
-    style_expansion = M_SQRT1_2;
-  }
-
-  if (style->mStrokeLinejoin == NS_STYLE_STROKE_LINEJOIN_MITER &&
-      style_expansion < style->mStrokeMiterlimit) {
-    style_expansion = style->mStrokeMiterlimit;
-  }
-
-  style_expansion *= aFrame->GetStrokeWidth();
+  double style_expansion =
+    styleExpansionFactor * aFrame->GetStrokeWidth();
 
   gfxMatrix ctm = aFrame->GetCanvasTM();
 
@@ -1460,6 +1431,38 @@ nsSVGUtils::PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
   gfxRect strokeExtents = aPathExtents;
   strokeExtents.Inflate(dx, dy);
   return strokeExtents;
+}
+
+/*static*/ gfxRect
+nsSVGUtils::PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
+                                          nsSVGGeometryFrame* aFrame)
+{
+  return ::PathExtentsToMaxStrokeExtents(aPathExtents, aFrame, 0.5);
+}
+
+/*static*/ gfxRect
+nsSVGUtils::PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
+                                          nsSVGPathGeometryFrame* aFrame)
+{
+  double styleExpansionFactor = 0.5;
+
+  if (static_cast<nsSVGPathGeometryElement*>(aFrame->GetContent())->IsMarkable()) {
+    const nsStyleSVG* style = aFrame->GetStyleSVG();
+
+    if (style->mStrokeLinecap == NS_STYLE_STROKE_LINECAP_SQUARE) {
+      styleExpansionFactor = M_SQRT1_2;
+    }
+
+    if (style->mStrokeLinejoin == NS_STYLE_STROKE_LINEJOIN_MITER &&
+        styleExpansionFactor < style->mStrokeMiterlimit &&
+        aFrame->GetContent()->Tag() != nsGkAtoms::line) {
+      styleExpansionFactor = style->mStrokeMiterlimit;
+    }
+  }
+
+  return ::PathExtentsToMaxStrokeExtents(aPathExtents,
+                                         aFrame,
+                                         styleExpansionFactor);
 }
 
 // ----------------------------------------------------------------------

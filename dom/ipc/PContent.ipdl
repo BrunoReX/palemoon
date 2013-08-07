@@ -83,9 +83,13 @@ union StorageConstructData
 };
 
 struct FontListEntry {
-    nsCString familyName;
+    nsString  familyName;
+    nsString  faceName;
     nsCString filepath;
-    PRUint32  index;
+    PRUint16  weight;
+    PRInt16   stretch;
+    PRUint8   italic;
+    PRUint8   index;
 };
 
 rpc protocol PContent
@@ -129,6 +133,9 @@ child:
 
     FlushMemory(nsString reason);
 
+    GarbageCollect();
+    CycleCollect();
+    
     /**
      * Start accessibility engine in content process.
      */

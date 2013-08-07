@@ -540,15 +540,21 @@ gfxFontFamily::FindFontForStyle(const gfxFontStyle& aFontStyle,
 void
 gfxFontFamily::CheckForSimpleFamily()
 {
-    if (mAvailableFonts.Length() > 4 || mAvailableFonts.Length() == 0) {
+    PRUint32 count = mAvailableFonts.Length();
+    if (count > 4 || count == 0) {
         return; // can't be "simple" if there are >4 faces;
                 // if none then the family is unusable anyway
+    }
+
+    if (count == 1) {
+        mIsSimpleFamily = PR_TRUE;
+        return;
     }
 
     PRInt16 firstStretch = mAvailableFonts[0]->Stretch();
 
     gfxFontEntry *faces[4] = { 0 };
-    for (PRUint8 i = 0; i < mAvailableFonts.Length(); ++i) {
+    for (PRUint8 i = 0; i < count; ++i) {
         gfxFontEntry *fe = mAvailableFonts[i];
         if (fe->Stretch() != firstStretch) {
             return; // font-stretch doesn't match, don't treat as simple family
@@ -581,12 +587,28 @@ StyleDistance(gfxFontEntry *aFontEntry,
     // and the given fontEntry,
     // considering italicness and font-stretch but not weight.
 
-    // TODO (refine CSS spec...): discuss priority of italic vs stretch;
-    // whether penalty for stretch mismatch should depend on actual difference in values;
-    // whether a sign mismatch in stretch should increase the effective distance
-
-    return (aFontEntry->IsItalic() != anItalic ? 1 : 0) +
-           (aFontEntry->mStretch != aStretch ? 10 : 0);
+    PRInt32 distance = 0;
+    if (aStretch != aFontEntry->mStretch) {
+        // stretch values are in the range -4 .. +4
+        // if aStretch is positive, we prefer more-positive values;
+        // if zero or negative, prefer more-negative
+        if (aStretch > 0) {
+            distance = (aFontEntry->mStretch - aStretch) * 2;
+        } else {
+            distance = (aStretch - aFontEntry->mStretch) * 2;
+        }
+        // if the computed "distance" here is negative, it means that
+        // aFontEntry lies in the "non-preferred" direction from aStretch,
+        // so we treat that as larger than any preferred-direction distance
+        // (max possible is 8) by adding an extra 10 to the absolute value
+        if (distance < 0) {
+            distance = -distance + 10;
+        }
+    }
+    if (aFontEntry->IsItalic() != anItalic) {
+        distance += 1;
+    }
+    return PRUint32(distance);
 }
 
 PRBool
@@ -609,9 +631,11 @@ gfxFontFamily::FindWeightsForStyle(gfxFontEntry* aFontsForWeights[],
                 aFontsForWeights[wt] = fe;
                 ++foundWeights;
             } else {
-                PRUint32 prevDistance = StyleDistance(aFontsForWeights[wt], anItalic, aStretch);
+                PRUint32 prevDistance =
+                    StyleDistance(aFontsForWeights[wt], anItalic, aStretch);
                 if (prevDistance >= distance) {
-                    // replacing a weight we already found, so don't increment foundWeights
+                    // replacing a weight we already found,
+                    // so don't increment foundWeights
                     aFontsForWeights[wt] = fe;
                 }
             }
@@ -1035,10 +1059,10 @@ gfxFont::RunMetrics::CombineWith(const RunMetrics& aOther, PRBool aOtherIsOnLeft
 gfxFont::gfxFont(gfxFontEntry *aFontEntry, const gfxFontStyle *aFontStyle,
                  AntialiasOption anAAOption) :
     mFontEntry(aFontEntry), mIsValid(PR_TRUE),
+    mApplySyntheticBold(PR_FALSE),
     mStyle(*aFontStyle),
     mAdjustedSize(0.0),
     mFUnitsConvFactor(0.0f),
-    mSyntheticBoldOffset(0),
     mAntialiasOption(anAAOption),
     mPlatformShaper(nsnull),
     mHarfBuzzShaper(nsnull)
@@ -1093,10 +1117,10 @@ struct GlyphBuffer {
 
     void Flush(cairo_t *aCR, PRBool aDrawToPath, PRBool aReverse,
                PRBool aFinish = PR_FALSE) {
-        // Ensure there's enough room for at least two glyphs in the
-        // buffer (because we may allocate two glyphs between flushes)
-        if (!aFinish && mNumGlyphs + 2 <= GLYPH_BUFFER_SIZE)
+        // Ensure there's enough room for a glyph to be added to the buffer
+        if (!aFinish && mNumGlyphs < GLYPH_BUFFER_SIZE) {
             return;
+        }
 
         if (aReverse) {
             for (PRUint32 i = 0; i < mNumGlyphs/2; ++i) {
@@ -1115,6 +1139,33 @@ struct GlyphBuffer {
 #undef GLYPH_BUFFER_SIZE
 };
 
+// Bug 674909. When synthetic bolding text by drawing twice, need to
+// render using a pixel offset in device pixels, otherwise text
+// doesn't appear bolded, it appears as if a bad text shadow exists
+// when a non-identity transform exists.  Use an offset factor so that
+// the second draw occurs at a constant offset in device pixels.
+
+static double
+CalcXScale(gfxContext *aContext)
+{
+    // determine magnitude of a 1px x offset in device space
+    gfxSize t = aContext->UserToDevice(gfxSize(1.0, 0.0));
+    if (t.width == 1.0 && t.height == 0.0) {
+        // short-circuit the most common case to avoid sqrt() and division
+        return 1.0;
+    }
+
+    double m = sqrt(t.width * t.width + t.height * t.height);
+
+    NS_ASSERTION(m != 0.0, "degenerate transform while synthetic bolding");
+    if (m == 0.0) {
+        return 0.0; // effectively disables offset
+    }
+
+    // scale factor so that offsets are 1px in device pixels
+    return 1.0 / m;
+}
+
 void
 gfxFont::Draw(gfxTextRun *aTextRun, PRUint32 aStart, PRUint32 aEnd,
               gfxContext *aContext, PRBool aDrawToPath, gfxPoint *aPt,
@@ -1128,9 +1179,18 @@ gfxFont::Draw(gfxTextRun *aTextRun, PRUint32 aStart, PRUint32 aEnd,
     const double devUnitsPerAppUnit = 1.0/double(appUnitsPerDevUnit);
     PRBool isRTL = aTextRun->IsRightToLeft();
     double direction = aTextRun->GetDirection();
-    // double-strike in direction of run
-    double synBoldDevUnitOffsetAppUnits =
-      direction * (double) mSyntheticBoldOffset * appUnitsPerDevUnit;
+
+    // synthetic-bold strikes are each offset one device pixel in run direction
+    // (these values are only needed if IsSyntheticBold() is true)
+    double synBoldOnePixelOffset;
+    PRInt32 strikes;
+    if (IsSyntheticBold()) {
+        double xscale = CalcXScale(aContext);
+        synBoldOnePixelOffset = direction * xscale;
+        // use as many strikes as needed for the the increased advance
+        strikes = NS_lroundf(GetSyntheticBoldOffset() / xscale);
+    }
+
     PRUint32 i;
     // Current position in appunits
     double x = aPt->x;
@@ -1168,19 +1228,25 @@ gfxFont::Draw(gfxTextRun *aTextRun, PRUint32 aStart, PRUint32 aEnd,
             }
             glyph->x = ToDeviceUnits(glyphX, devUnitsPerAppUnit);
             glyph->y = ToDeviceUnits(y, devUnitsPerAppUnit);
-            
-            // synthetic bolding by drawing with a one-pixel offset
-            if (mSyntheticBoldOffset) {
-                cairo_glyph_t *doubleglyph;
-                doubleglyph = glyphs.AppendGlyph();
-                doubleglyph->index = glyph->index;
-                doubleglyph->x =
-                  ToDeviceUnits(glyphX + synBoldDevUnitOffsetAppUnits,
-                                devUnitsPerAppUnit);
-                doubleglyph->y = glyph->y;
-            }
-            
             glyphs.Flush(cr, aDrawToPath, isRTL);
+            
+            // synthetic bolding by multi-striking with 1-pixel offsets
+            // at least once, more if there's room (large font sizes)
+            if (IsSyntheticBold()) {
+                double strikeOffset = synBoldOnePixelOffset;
+                PRInt32 strikeCount = strikes;
+                do {
+                    cairo_glyph_t *doubleglyph;
+                    doubleglyph = glyphs.AppendGlyph();
+                    doubleglyph->index = glyph->index;
+                    doubleglyph->x =
+                        ToDeviceUnits(glyphX + strikeOffset * appUnitsPerDevUnit,
+                                      devUnitsPerAppUnit);
+                    doubleglyph->y = glyph->y;
+                    strikeOffset += synBoldOnePixelOffset;
+                    glyphs.Flush(cr, aDrawToPath, isRTL);
+                } while (--strikeCount > 0);
+            }
         } else {
             PRUint32 glyphCount = glyphData->GetGlyphCount();
             if (glyphCount > 0) {
@@ -1215,19 +1281,24 @@ gfxFont::Draw(gfxTextRun *aTextRun, PRUint32 aStart, PRUint32 aEnd,
                         }
                         glyph->x = ToDeviceUnits(glyphX, devUnitsPerAppUnit);
                         glyph->y = ToDeviceUnits(y + details->mYOffset, devUnitsPerAppUnit);
-
-                        // synthetic bolding by drawing with a one-pixel offset
-                        if (mSyntheticBoldOffset) {
-                            cairo_glyph_t *doubleglyph;
-                            doubleglyph = glyphs.AppendGlyph();
-                            doubleglyph->index = glyph->index;
-                            doubleglyph->x =
-                                ToDeviceUnits(glyphX + synBoldDevUnitOffsetAppUnits,
-                                              devUnitsPerAppUnit);
-                            doubleglyph->y = glyph->y;
-                        }
-
                         glyphs.Flush(cr, aDrawToPath, isRTL);
+
+                        if (IsSyntheticBold()) {
+                            double strikeOffset = synBoldOnePixelOffset;
+                            PRInt32 strikeCount = strikes;
+                            do {
+                                cairo_glyph_t *doubleglyph;
+                                doubleglyph = glyphs.AppendGlyph();
+                                doubleglyph->index = glyph->index;
+                                doubleglyph->x =
+                                    ToDeviceUnits(glyphX + strikeOffset *
+                                                      appUnitsPerDevUnit,
+                                                  devUnitsPerAppUnit);
+                                doubleglyph->y = glyph->y;
+                                strikeOffset += synBoldOnePixelOffset;
+                                glyphs.Flush(cr, aDrawToPath, isRTL);
+                            } while (--strikeCount > 0);
+                        }
                     }
                     x += direction*advance;
                 }
@@ -1760,7 +1831,7 @@ gfxFont::SanitizeMetrics(gfxFont::Metrics *aMetrics, PRBool aIsBadUnderlineFont)
 {
     // Even if this font size is zero, this font is created with non-zero size.
     // However, for layout and others, we should return the metrics of zero size font.
-    if (mStyle.size == 0) {
+    if (mStyle.size == 0.0) {
         memset(aMetrics, 0, sizeof(gfxFont::Metrics));
         return;
     }
@@ -2484,6 +2555,17 @@ gfxFontGroup::InitTextRun(gfxContext *aContext,
                       runStart, runLimit, runScript);
     }
 
+    // It's possible for CoreText to omit glyph runs if it decides they contain
+    // only invisibles (e.g., U+FEFF, see reftest 474417-1). In this case, we
+    // need to eliminate them from the glyph run array to avoid drawing "partial
+    // ligatures" with the wrong font.
+    // We don't do this during InitScriptRun (or gfxFont::InitTextRun) because
+    // it will iterate back over all glyphruns in the textrun, which leads to
+    // pathologically-bad perf in the case where a textrun contains many script
+    // changes (see bug 680402) - we'd end up re-sanitizing all the earlier runs
+    // every time a new script subrun is processed.
+    aTextRun->SanitizeGlyphRuns();
+
     aTextRun->SortGlyphRuns();
 }
 
@@ -2565,13 +2647,6 @@ gfxFontGroup::InitScriptRun(gfxContext *aContext,
 
         runStart += matchedLength;
     }
-
-    // It's possible for CoreText to omit glyph runs if it decides they contain
-    // only invisibles (e.g., U+FEFF, see reftest 474417-1). In this case, we
-    // need to eliminate them from the glyph run array to avoid drawing "partial
-    // ligatures" with the wrong font.
-    aTextRun->SanitizeGlyphRuns();
-
 }
 
 
@@ -3488,7 +3563,9 @@ struct BufferAlphaColor {
 };
 
 void
-gfxTextRun::AdjustAdvancesForSyntheticBold(PRUint32 aStart, PRUint32 aLength)
+gfxTextRun::AdjustAdvancesForSyntheticBold(gfxContext *aContext,
+                                           PRUint32 aStart,
+                                           PRUint32 aLength)
 {
     const PRUint32 appUnitsPerDevUnit = GetAppUnitsPerDevUnit();
     PRBool isRTL = IsRightToLeft();
@@ -3497,7 +3574,9 @@ gfxTextRun::AdjustAdvancesForSyntheticBold(PRUint32 aStart, PRUint32 aLength)
     while (iter.NextRun()) {
         gfxFont *font = iter.GetGlyphRun()->mFont;
         if (font->IsSyntheticBold()) {
-            PRUint32 synAppUnitOffset = font->GetSyntheticBoldOffset() * appUnitsPerDevUnit;
+            PRUint32 synAppUnitOffset =
+                font->GetSyntheticBoldOffset() *
+                    appUnitsPerDevUnit * CalcXScale(aContext);
             PRUint32 start = iter.GetStringStart();
             PRUint32 end = iter.GetStringEnd();
             PRUint32 i;
@@ -4045,6 +4124,9 @@ gfxTextRun::SortGlyphRuns()
     }
 }
 
+// Note that SanitizeGlyphRuns scans all glyph runs in the textrun;
+// therefore we only call it once, at the end of textrun construction,
+// NOT incrementally as each glyph run is added (bug 680402).
 void
 gfxTextRun::SanitizeGlyphRuns()
 {

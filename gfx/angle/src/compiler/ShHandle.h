@@ -16,6 +16,7 @@
 
 #include "GLSLANG/ShaderLang.h"
 
+#include "compiler/BuiltInFunctionEmulator.h"
 #include "compiler/ExtensionBehavior.h"
 #include "compiler/InfoSink.h"
 #include "compiler/SymbolTable.h"
@@ -77,6 +78,10 @@ protected:
     void mapLongVariableNames(TIntermNode* root);
     // Translate to object code.
     virtual void translate(TIntermNode* root) = 0;
+    // Get built-in extensions with default behavior.
+    const TExtensionBehavior& getExtensionBehavior() const;
+
+    const BuiltInFunctionEmulator& getBuiltInFunctionEmulator() const;
 
 private:
     ShShaderType shaderType;
@@ -88,13 +93,15 @@ private:
     // Built-in extensions with default behavior.
     TExtensionBehavior extensionBehavior;
 
+    BuiltInFunctionEmulator builtInFunctionEmulator;
+
     // Results of compilation.
     TInfoSink infoSink;  // Output sink.
     TVariableInfoList attribs;  // Active attributes in the compiled shader.
     TVariableInfoList uniforms;  // Active uniforms in the compiled shader.
 
     // Pair of long varying varibale name <originalName, mappedName>.
-    TMap<TString, TString> varyingLongNameMap;
+    std::map<std::string, std::string> varyingLongNameMap;
 };
 
 //
@@ -106,7 +113,8 @@ private:
 // destroy the machine dependent objects, which contain the
 // above machine independent information.
 //
-TCompiler* ConstructCompiler(ShShaderType type, ShShaderSpec spec);
+TCompiler* ConstructCompiler(
+    ShShaderType type, ShShaderSpec spec, ShShaderOutput output);
 void DeleteCompiler(TCompiler*);
 
 #endif // _SHHANDLE_INCLUDED_

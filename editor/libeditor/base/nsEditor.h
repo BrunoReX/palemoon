@@ -66,6 +66,7 @@
 #include "nsStubMutationObserver.h"
 #include "nsIViewManager.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsIObserver.h"
 
 class nsIDOMCharacterData;
 class nsIDOMRange;
@@ -100,6 +101,7 @@ class nsIDOMNSEvent;
 class nsEditor : public nsIEditor,
                  public nsIEditorIMESupport,
                  public nsSupportsWeakReference,
+                 public nsIObserver,
                  public nsIPhonetic
 {
 public:
@@ -153,6 +155,9 @@ public:
   /* ------------ nsIEditorIMESupport methods -------------- */
   NS_DECL_NSIEDITORIMESUPPORT
   
+  /* ------------ nsIObserver methods -------------- */
+  NS_DECL_NSIOBSERVER
+
   // nsIPhonetic
   NS_DECL_NSIPHONETIC
 
@@ -200,6 +205,8 @@ public:
                                         nsIPrivateTextRangeList *aTextRange)=0;
   nsresult EndIMEComposition();
 
+  void SwitchTextDirectionTo(PRUint32 aDirection);
+
   void BeginKeypressHandling() { mLastKeypressEventWasTrusted = eTriTrue; }
   void BeginKeypressHandling(nsIDOMNSEvent* aEvent);
   void EndKeypressHandling() { mLastKeypressEventWasTrusted = eTriUnset; }
@@ -225,6 +232,8 @@ public:
 
 protected:
   nsCString mContentMIMEType;       // MIME type of the doc we are editing.
+
+  nsresult DetermineCurrentDirection();
 
   /** create a transaction for setting aAttribute to aValue on aElement
     */
@@ -718,6 +727,11 @@ public:
   // a host of the editor, i.e., the editor doesn't get focus, this does
   // nothing.
   nsresult InitializeSelection(nsIDOMEventTarget* aFocusEventTarget);
+
+  // This method has to be called by nsEditorEventListener::Focus.
+  // All actions that have to be done when the editor is focused needs to be
+  // added here.
+  void OnFocus(nsIDOMEventTarget* aFocusEventTarget);
 
 protected:
 

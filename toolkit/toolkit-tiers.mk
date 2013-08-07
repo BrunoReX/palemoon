@@ -77,11 +77,6 @@ ifndef MOZ_NATIVE_JPEG
 tier_platform_dirs	+= jpeg
 endif
 
-# Installer needs standalone libjar, hence standalone zlib
-ifdef MOZ_INSTALLER
-tier_platform_dirs	+= modules/zlib/standalone
-endif
-
 ifdef MOZ_UPDATER
 ifndef MOZ_NATIVE_BZ2
 tier_platform_dirs += modules/libbz2
@@ -111,7 +106,6 @@ endif
 
 tier_platform_dirs	+= \
 		modules/libjar \
-		db \
 		storage \
 		$(NULL)
 
@@ -162,9 +156,12 @@ tier_platform_dirs += \
 		$(NULL)
 endif
 
+ifndef MOZ_NATIVE_PNG
+tier_platform_dirs += modules/libimg/png
+endif
+
 tier_platform_dirs	+= \
 		uriloader \
-		modules/libimg \
 		caps \
 		parser \
 		gfx \
@@ -224,6 +221,8 @@ endif
 tier_platform_dirs += services/crypto/component
 
 tier_platform_dirs += startupcache
+
+tier_platform_dirs += js/ductwork
 
 ifdef APP_LIBXUL_STATICDIRS
 # Applications can cheat and ask for code to be

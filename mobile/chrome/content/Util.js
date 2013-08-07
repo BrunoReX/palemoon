@@ -161,15 +161,41 @@ let Util = {
     return (!appInfo || appInfo.getService(Ci.nsIXULRuntime).processType == Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT);
   },
 
-  isTablet: function isTablet() {
+  isTablet: function isTablet(options) {
+    let forceUpdate = options && 'forceUpdate' in options && options.forceUpdate;
+
+    if ('_isTablet' in this && !forceUpdate)
+      return this._isTablet;
+
+    let tabletPref = Services.prefs.getIntPref("browser.ui.layout.tablet");
+
+    // Act according to user prefs if tablet mode has been
+    // explicitly disabled or enabled.
+    if (tabletPref == 0)
+      return this._isTablet = false;
+    else if (tabletPref == 1)
+      return this._isTablet = true;
+
+#ifdef ANDROID
+    // Disable tablet mode on non-honeycomb devices because of theme bugs (bug 705026)
+    let sysInfo = Cc["@mozilla.org/system-info;1"].getService(Ci.nsIPropertyBag2);
+    let shellVersion = sysInfo.get("shellVersion") || "";
+    let matches = shellVersion.match(/\((\d+)\)$/);
+    if (matches) {
+      let sdkVersion = parseInt(matches[1]);
+      if (sdkVersion < 11 || sdkVersion > 13)
+        return this._isTablet = false;
+    }
+#endif
+
     let dpi = this.displayDPI;
     if (dpi <= 96)
-      return (window.innerWidth > 1024);
+      return this._isTablet = (window.innerWidth > 1024);
 
     // See the tablet_panel_minwidth from mobile/themes/core/defines.inc
     let tablet_panel_minwidth = 124;
     let dpmm = 25.4 * window.innerWidth / dpi;
-    return (dpmm >= tablet_panel_minwidth);
+    return this._isTablet = (dpmm >= tablet_panel_minwidth);
   },
 
   isPortrait: function isPortrait() {
@@ -182,10 +208,84 @@ let Util = {
 #endif
   },
 
+  modifierMaskFromEvent: function modifierMaskFromEvent(aEvent) {
+    return (aEvent.altKey   ? Ci.nsIDOMNSEvent.ALT_MASK     : 0) |
+           (aEvent.ctrlKey  ? Ci.nsIDOMNSEvent.CONTROL_MASK : 0) |
+           (aEvent.shiftKey ? Ci.nsIDOMNSEvent.SHIFT_MASK   : 0) |
+           (aEvent.metaKey  ? Ci.nsIDOMNSEvent.META_MASK    : 0);
+  },
+
   get displayDPI() {
     delete this.displayDPI;
     return this.displayDPI = this.getWindowUtils(window).displayDPI;
-  }
+  },
+
+  LOCALE_DIR_RTL: -1,
+  LOCALE_DIR_LTR: 1,
+  get localeDir() {
+    // determine browser dir first to know which direction to snap to
+    let chromeReg = Cc["@mozilla.org/chrome/chrome-registry;1"].getService(Ci.nsIXULChromeRegistry);
+    return chromeReg.isLocaleRTL("global") ? this.LOCALE_DIR_RTL : this.LOCALE_DIR_LTR;
+  },
+
+  createShortcut: function Util_createShortcut(aTitle, aURL, aIconURL, aType) {
+    // The background images are 72px, but Android will resize as needed.
+    // Bigger is better than too small.
+    const kIconSize = 72;
+    const kOverlaySize = 32;
+    const kOffset = 20;
+
+    // We have to fallback to something
+    aTitle = aTitle || aURL;
+
+    let canvas = document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
+    canvas.setAttribute("style", "display: none");
+
+    function _createShortcut() {
+      let icon = canvas.toDataURL("image/png", "");
+      canvas = null;
+      try {
+        let shell = Cc["@mozilla.org/browser/shell-service;1"].createInstance(Ci.nsIShellService);
+        shell.createShortcut(aTitle, aURL, icon, aType);
+      } catch(e) {
+        Cu.reportError(e);
+      }
+    }
+
+    // Load the main background image first
+    let image = new Image();
+    image.onload = function() {
+      canvas.width = canvas.height = kIconSize;
+      let ctx = canvas.getContext("2d");
+      ctx.drawImage(image, 0, 0, kIconSize, kIconSize);
+
+      // If we have a favicon, lets draw it next
+      if (aIconURL) {
+        let favicon = new Image();
+        favicon.onload = function() {
+          // Center the favicon and overlay it on the background
+          ctx.drawImage(favicon, kOffset, kOffset, kOverlaySize, kOverlaySize);
+          _createShortcut();
+        }
+
+        favicon.onerror = function() {
+          Cu.reportError("CreateShortcut: favicon image load error");
+        }
+
+        favicon.src = aIconURL;
+      } else {
+        _createShortcut();
+      }
+    }
+
+    image.onerror = function() {
+      Cu.reportError("CreateShortcut: background image load error");
+    }
+
+    // Pick the right background
+    image.src = aIconURL ? "chrome://browser/skin/images/homescreen-blank-hdpi.png"
+                         : "chrome://browser/skin/images/homescreen-default-hdpi.png";
+  },
 };
 
 

@@ -219,6 +219,8 @@ public:
   };
   friend class AutoUseBasicLayerManager;
 
+  PRBool                  Destroyed() { return mOnDestroyCalled; }
+
 protected:
 
   virtual void            ResolveIconName(const nsAString &aIconName,
@@ -264,7 +266,7 @@ protected:
 
   BasicLayerManager* CreateBasicLayerManager();
 
-protected: 
+protected:
   void*             mClientData;
   ViewWrapper*      mViewWrapperPtr;
   EVENT_CALLBACK    mEventCallback;
@@ -289,12 +291,11 @@ protected:
   PRInt32           mZIndex;
   nsSizeMode        mSizeMode;
   nsPopupLevel      mPopupLevel;
-  PRBool            mDrawFPS;
 
   // the last rolled up popup. Only set this when an nsAutoRollup is in scope,
   // so it can be cleared automatically.
   static nsIContent* mLastRollup;
-    
+
 #ifdef DEBUG
 protected:
   static nsAutoString debug_GuiEventToString(nsGUIEvent * aGuiEvent);
@@ -312,7 +313,7 @@ protected:
                               nsGUIEvent *          aGuiEvent,
                               const nsCAutoString & aWidgetName,
                               PRInt32               aWindowID);
-  
+
   static void debug_DumpPaintEvent(FILE *                aFileOut,
                                    nsIWidget *           aWidget,
                                    nsPaintEvent *        aPaintEvent,

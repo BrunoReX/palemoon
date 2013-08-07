@@ -436,6 +436,7 @@ static const char *sExtensionNames[] = {
     "GL_ARB_ES2_compatibility",
     "GL_OES_texture_float",
     "GL_ARB_texture_float",
+    "GL_EXT_unpack_subimage",
     NULL
 };
 
@@ -575,20 +576,8 @@ BasicTextureImage::BeginUpdate(nsIntRegion& aRegion)
     NS_ASSERTION(!mUpdateSurface, "BeginUpdate() without EndUpdate()?");
 
     // determine the region the client will need to repaint
-    ImageFormat format =
-        (GetContentType() == gfxASurface::CONTENT_COLOR) ?
-        gfxASurface::ImageFormatRGB24 : gfxASurface::ImageFormatARGB32;
-    if (mTextureState != Valid)
-    {
-        // if the texture hasn't been initialized yet, or something important
-        // changed, we need to recreate our backing surface and force the
-        // client to paint everything
-        mUpdateRegion = nsIntRect(nsIntPoint(0, 0), mSize);
-    } else {
-        mUpdateRegion = aRegion;
-    }
-
-    aRegion = mUpdateRegion;
+    GetUpdateRegion(aRegion);
+    mUpdateRegion = aRegion;
 
     nsIntRect rgnSize = mUpdateRegion.GetBounds();
     if (!nsIntRect(nsIntPoint(0, 0), mSize).Contains(rgnSize)) {
@@ -596,7 +585,10 @@ BasicTextureImage::BeginUpdate(nsIntRegion& aRegion)
         return NULL;
     }
 
-    mUpdateSurface = 
+    ImageFormat format =
+        (GetContentType() == gfxASurface::CONTENT_COLOR) ?
+        gfxASurface::ImageFormatRGB24 : gfxASurface::ImageFormatARGB32;
+    mUpdateSurface =
         GetSurfaceForUpdate(gfxIntSize(rgnSize.width, rgnSize.height), format);
 
     if (!mUpdateSurface || mUpdateSurface->CairoStatus()) {
@@ -607,6 +599,16 @@ BasicTextureImage::BeginUpdate(nsIntRegion& aRegion)
     mUpdateSurface->SetDeviceOffset(gfxPoint(-rgnSize.x, -rgnSize.y));
 
     return mUpdateSurface;
+}
+
+void
+BasicTextureImage::GetUpdateRegion(nsIntRegion& aForRegion)
+{
+  // if the texture hasn't been initialized yet, or something important
+  // changed, we need to recreate our backing surface and force the
+  // client to paint everything
+  if (mTextureState != Valid)
+      aForRegion = nsIntRect(nsIntPoint(0, 0), mSize);
 }
 
 void
@@ -729,10 +731,9 @@ TiledTextureImage::~TiledTextureImage()
 bool 
 TiledTextureImage::DirectUpdate(gfxASurface* aSurf, const nsIntRegion& aRegion, const nsIntPoint& aFrom /* = nsIntPoint(0, 0) */)
 {
-    nsIntRect bounds = aRegion.GetBounds();
     nsIntRegion region;
     if (mTextureState != Valid) {
-        bounds = nsIntRect(0, 0, mSize.width, mSize.height);
+        nsIntRect bounds = nsIntRect(0, 0, mSize.width, mSize.height);
         region = nsIntRegion(bounds);
     } else {
         region = aRegion;
@@ -740,8 +741,8 @@ TiledTextureImage::DirectUpdate(gfxASurface* aSurf, const nsIntRegion& aRegion, 
 
     PRBool result = PR_TRUE;
     for (unsigned i = 0; i < mImages.Length(); i++) {
-        unsigned int xPos = (i % mColumns) * mTileSize;
-        unsigned int yPos = (i / mColumns) * mTileSize;
+        int xPos = (i % mColumns) * mTileSize;
+        int yPos = (i / mColumns) * mTileSize;
         nsIntRegion tileRegion;
         tileRegion.And(region, nsIntRect(nsIntPoint(xPos,yPos), mImages[i]->GetSize())); // intersect with tile
         if (tileRegion.IsEmpty())
@@ -757,25 +758,66 @@ TiledTextureImage::DirectUpdate(gfxASurface* aSurf, const nsIntRegion& aRegion, 
     return result;
 }
 
+void
+TiledTextureImage::GetUpdateRegion(nsIntRegion& aForRegion)
+{
+    if (mTextureState != Valid) {
+        // if the texture hasn't been initialized yet, or something important
+        // changed, we need to recreate our backing surface and force the
+        // client to paint everything
+        aForRegion = nsIntRect(nsIntPoint(0, 0), mSize);
+        return;
+    }
+
+    nsIntRegion newRegion;
+
+    // We need to query each texture with the region it will be drawing and
+    // set aForRegion to be the combination of all of these regions
+    for (unsigned i = 0; i < mImages.Length(); i++) {
+        int xPos = (i % mColumns) * mTileSize;
+        int yPos = (i / mColumns) * mTileSize;
+        nsIntRect imageRect = nsIntRect(nsIntRect(nsIntPoint(xPos,yPos), mImages[i]->GetSize()));
+
+        if (aForRegion.Intersects(imageRect)) {
+            // Make a copy of the region
+            nsIntRegion subRegion;
+            subRegion.And(aForRegion, imageRect);
+            // Translate it into tile-space
+            subRegion.MoveBy(-xPos, -yPos);
+            // Query region
+            mImages[i]->GetUpdateRegion(subRegion);
+            // Translate back
+            subRegion.MoveBy(xPos, yPos);
+            // Add to the accumulated region
+            newRegion.Or(newRegion, subRegion);
+        }
+    }
+
+    aForRegion = newRegion;
+}
+
 gfxASurface*
 TiledTextureImage::BeginUpdate(nsIntRegion& aRegion)
 {
     NS_ASSERTION(!mInUpdate, "nested update");
     mInUpdate = PR_TRUE;
 
+    // Note, we don't call GetUpdateRegion here as if the updated region is
+    // fully contained in a single tile, we get to avoid iterating through
+    // the tiles again (and a little copying).
     if (mTextureState != Valid)
     {
         // if the texture hasn't been initialized yet, or something important
         // changed, we need to recreate our backing surface and force the
         // client to paint everything
-        mUpdateRegion = nsIntRect(nsIntPoint(0, 0), mSize);
-    } else {
-        mUpdateRegion = aRegion;
+        aRegion = nsIntRect(nsIntPoint(0, 0), mSize);
     }
 
+    nsIntRect bounds = aRegion.GetBounds();
+
     for (unsigned i = 0; i < mImages.Length(); i++) {
-        unsigned int xPos = (i % mColumns) * mTileSize;
-        unsigned int yPos = (i / mColumns) * mTileSize;
+        int xPos = (i % mColumns) * mTileSize;
+        int yPos = (i / mColumns) * mTileSize;
         nsIntRegion imageRegion = nsIntRegion(nsIntRect(nsIntPoint(xPos,yPos), mImages[i]->GetSize()));
 
         // a single Image can handle this update request
@@ -786,6 +828,10 @@ TiledTextureImage::BeginUpdate(nsIntRegion& aRegion)
             nsRefPtr<gfxASurface> surface = mImages[i]->BeginUpdate(aRegion);
             // caller expects container space
             aRegion.MoveBy(xPos, yPos);
+            // Correct the device offset
+            gfxPoint offset = surface->GetDeviceOffset();
+            surface->SetDeviceOffset(gfxPoint(offset.x - xPos,
+                                              offset.y - yPos));
             // we don't have a temp surface
             mUpdateSurface = nsnull;
             // remember which image to EndUpdate
@@ -793,15 +839,21 @@ TiledTextureImage::BeginUpdate(nsIntRegion& aRegion)
             return surface.get();
         }
     }
+
+    // Get the real updated region, taking into account the capabilities of
+    // each TextureImage tile
+    GetUpdateRegion(aRegion);
+    mUpdateRegion = aRegion;
+    bounds = aRegion.GetBounds();
+
     // update covers multiple Images - create a temp surface to paint in
     gfxASurface::gfxImageFormat format =
         (GetContentType() == gfxASurface::CONTENT_COLOR) ?
         gfxASurface::ImageFormatRGB24 : gfxASurface::ImageFormatARGB32;
-
-    nsIntRect bounds = aRegion.GetBounds();
     mUpdateSurface = gfxPlatform::GetPlatform()->
         CreateOffscreenSurface(gfxIntSize(bounds.width, bounds.height), gfxASurface::ContentFromFormat(format));
     mUpdateSurface->SetDeviceOffset(gfxPoint(-bounds.x, -bounds.y));
+
     return mUpdateSurface;
 }
 
@@ -820,9 +872,10 @@ TiledTextureImage::EndUpdate()
 
     // upload tiles from temp surface
     for (unsigned i = 0; i < mImages.Length(); i++) {
-        unsigned int xPos = (i % mColumns) * mTileSize;
-        unsigned int yPos = (i / mColumns) * mTileSize;
+        int xPos = (i % mColumns) * mTileSize;
+        int yPos = (i / mColumns) * mTileSize;
         nsIntRect imageRect = nsIntRect(nsIntPoint(xPos,yPos), mImages[i]->GetSize());
+
         nsIntRegion subregion;
         subregion.And(mUpdateRegion, imageRect);
         if (subregion.IsEmpty())
@@ -842,6 +895,7 @@ TiledTextureImage::EndUpdate()
     mInUpdate = PR_FALSE;
     mShaderType = mImages[0]->GetShaderProgramType();
     mIsRGBFormat = mImages[0]->IsRGB();
+    mTextureState = Valid;
 }
 
 void TiledTextureImage::BeginTileIteration()
@@ -899,6 +953,11 @@ void TiledTextureImage::Resize(const nsIntSize& aSize)
       }
     }
     mTextureState = Allocated;
+}
+
+PRUint32 TiledTextureImage::GetTileCount()
+{
+    return mImages.Length();
 }
 
 PRBool
@@ -1781,9 +1840,23 @@ GLContext::TexImage2D(GLenum target, GLint level, GLint internalformat,
                         GetAddressAlignment((ptrdiff_t)stride)));
 
 #ifndef USE_GLES2
-    fPixelStorei(LOCAL_GL_UNPACK_ROW_LENGTH, stride/pixelsize);
+    bool useUnpackRowLength = true;
 #else
-    if (stride != width * pixelsize) {
+    // A Khronos extension, GL_EXT_unpack_subimage, that restores support
+    // for GL_UNPACK_ROW_LENGTH, GL_UNPACK_SKIP_ROWS and GL_UNPACK_SKIP_PIXELS
+    // exists on Tegra 2 (and possibly other chipsets)
+    bool useUnpackRowLength = IsExtensionSupported(EXT_unpack_subimage);
+#endif
+
+    // Don't use UNPACK_ROW_LENGTH if the length would be greater than the
+    // maximum texture size
+    int rowLength = stride/pixelsize;
+    if (rowLength > mMaxTextureSize)
+      useUnpackRowLength = false;
+
+    if (useUnpackRowLength) {
+        fPixelStorei(LOCAL_GL_UNPACK_ROW_LENGTH, rowLength);
+    } else if (stride != width * pixelsize) {
         // Not using the whole row of texture data and GLES doesn't 
         // support GL_UNPACK_ROW_LENGTH. We need to upload each row
         // separately.
@@ -1815,7 +1888,6 @@ GLContext::TexImage2D(GLenum target, GLint level, GLint internalformat,
         fPixelStorei(LOCAL_GL_UNPACK_ALIGNMENT, 4);
         return;
     }
-#endif
 
     fTexImage2D(target,
                 level,
@@ -1827,9 +1899,8 @@ GLContext::TexImage2D(GLenum target, GLint level, GLint internalformat,
                 type,
                 pixels);
 
-#ifndef USE_GLES2
-    fPixelStorei(LOCAL_GL_UNPACK_ROW_LENGTH, 0);
-#endif
+    if (useUnpackRowLength)
+        fPixelStorei(LOCAL_GL_UNPACK_ROW_LENGTH, 0);
     fPixelStorei(LOCAL_GL_UNPACK_ALIGNMENT, 4);
 }
 
@@ -1845,9 +1916,18 @@ GLContext::TexSubImage2D(GLenum target, GLint level,
                         GetAddressAlignment((ptrdiff_t)stride)));
 
 #ifndef USE_GLES2
-    fPixelStorei(LOCAL_GL_UNPACK_ROW_LENGTH, stride/pixelsize);
+    bool useUnpackRowLength = true;
 #else
-    if (stride != width * pixelsize) {
+    bool useUnpackRowLength = IsExtensionSupported(EXT_unpack_subimage);
+#endif
+
+    int rowLength = stride/pixelsize;
+    if (rowLength > mMaxTextureSize)
+      useUnpackRowLength = false;
+
+    if (useUnpackRowLength) {
+        fPixelStorei(LOCAL_GL_UNPACK_ROW_LENGTH, rowLength);
+    } else if (stride != width * pixelsize) {
         // Not using the whole row of texture data and GLES doesn't 
         // support GL_UNPACK_ROW_LENGTH. We need to upload each row
         // separately.
@@ -1869,7 +1949,6 @@ GLContext::TexSubImage2D(GLenum target, GLint level,
         fPixelStorei(LOCAL_GL_UNPACK_ALIGNMENT, 4);
         return;
     }
-#endif
 
     fTexSubImage2D(target,
                    level,
@@ -1881,9 +1960,8 @@ GLContext::TexSubImage2D(GLenum target, GLint level,
                    type,
                    pixels);
 
-#ifndef USE_GLES2
-    fPixelStorei(LOCAL_GL_UNPACK_ROW_LENGTH, 0);
-#endif
+    if (useUnpackRowLength)
+        fPixelStorei(LOCAL_GL_UNPACK_ROW_LENGTH, 0);
     fPixelStorei(LOCAL_GL_UNPACK_ALIGNMENT, 4);
 }
 

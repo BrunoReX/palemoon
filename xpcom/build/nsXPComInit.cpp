@@ -128,7 +128,7 @@ extern nsresult nsStringInputStreamConstructor(nsISupports *, REFNSIID, void **)
 #include "nsWindowsRegKey.h"
 #endif
 
-#ifdef XP_MACOSX
+#ifdef MOZ_WIDGET_COCOA
 #include "nsMacUtilsImpl.h"
 #endif
 
@@ -150,6 +150,7 @@ extern nsresult nsStringInputStreamConstructor(nsISupports *, REFNSIID, void **)
 #include "base/message_loop.h"
 
 #include "mozilla/ipc/BrowserProcessSubThread.h"
+#include "mozilla/MapsMemoryReporter.h"
 
 using base::AtExitManager;
 using mozilla::ipc::BrowserProcessSubThread;
@@ -215,7 +216,7 @@ NS_GENERIC_AGGREGATED_CONSTRUCTOR_INIT(nsProperties, Init)
 
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsUUIDGenerator, Init)
 
-#ifdef XP_MACOSX
+#ifdef MOZ_WIDGET_COCOA
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsMacUtilsImpl)
 #endif
 
@@ -526,6 +527,8 @@ NS_InitXPCOM2(nsIServiceManager* *result,
 #ifdef XP_WIN
     ScheduleMediaCacheRemover();
 #endif
+
+    mozilla::MapsMemoryReporter::Init();
 
     return NS_OK;
 }

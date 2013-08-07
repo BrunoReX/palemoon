@@ -195,34 +195,38 @@ extern NS_TLS mozilla::threads::ID gTLSThreadID;
 PRThread* gCycleCollectorThread = nsnull;
 #endif
 
+// If PR_TRUE, always log cycle collector graphs.
+const PRBool gAlwaysLogCCGraphs = PR_FALSE;
+
 // Various parameters of this collector can be tuned using environment
 // variables.
 
 struct nsCycleCollectorParams
 {
     PRBool mDoNothing;
+    PRBool mLogGraphs;
 #ifdef DEBUG_CC
     PRBool mReportStats;
     PRBool mHookMalloc;
-    PRBool mDrawGraphs;
     PRBool mFaultIsFatal;
     PRBool mLogPointers;
-
     PRUint32 mShutdownCollections;
 #endif
     
     nsCycleCollectorParams() :
 #ifdef DEBUG_CC
         mDoNothing     (PR_GetEnv("XPCOM_CC_DO_NOTHING") != NULL),
+        mLogGraphs     (gAlwaysLogCCGraphs ||
+                        PR_GetEnv("XPCOM_CC_DRAW_GRAPHS") != NULL),
         mReportStats   (PR_GetEnv("XPCOM_CC_REPORT_STATS") != NULL),
         mHookMalloc    (PR_GetEnv("XPCOM_CC_HOOK_MALLOC") != NULL),
-        mDrawGraphs    (PR_GetEnv("XPCOM_CC_DRAW_GRAPHS") != NULL),
         mFaultIsFatal  (PR_GetEnv("XPCOM_CC_FAULT_IS_FATAL") != NULL),
         mLogPointers   (PR_GetEnv("XPCOM_CC_LOG_POINTERS") != NULL),
 
         mShutdownCollections(DEFAULT_SHUTDOWN_COLLECTIONS)
 #else
-        mDoNothing     (PR_FALSE)
+        mDoNothing     (PR_FALSE),
+        mLogGraphs     (gAlwaysLogCCGraphs)
 #endif
     {
 #ifdef DEBUG_CC
@@ -1074,7 +1078,9 @@ struct nsCycleCollector
     void SelectPurple(GCGraphBuilder &builder);
     void MarkRoots(GCGraphBuilder &builder);
     void ScanRoots();
-    PRBool CollectWhite(); // returns whether anything was collected
+
+    // returns whether anything was collected
+    PRBool CollectWhite(nsICycleCollectorListener *aListener);
 
     nsCycleCollector();
     ~nsCycleCollector();
@@ -1096,7 +1102,7 @@ struct nsCycleCollector
 
     // Start and finish an individual collection.
     PRBool BeginCollection(nsICycleCollectorListener *aListener);
-    PRBool FinishCollection();
+    PRBool FinishCollection(nsICycleCollectorListener *aListener);
 
     PRUint32 SuspectedCount();
     void Shutdown();
@@ -1371,40 +1377,43 @@ public:
 
         return mStream ? NS_OK : NS_ERROR_FAILURE;
     }
-    NS_IMETHOD NoteObject(PRUint64 aAddress, const char *aObjectDescription)
+    NS_IMETHOD NoteRefCountedObject(PRUint64 aAddress, PRUint32 refCount,
+                                    const char *aObjectDescription)
     {
-        fprintf(mStream, "%p %s\n", (void*)aAddress, aObjectDescription);
+        fprintf(mStream, "%p [rc=%u] %s\n", (void*)aAddress, refCount,
+                aObjectDescription);
 
         return NS_OK;
     }
-    NS_IMETHOD NoteEdge(PRUint64 aFromAddress, PRUint64 aToAddress,
-                        const char *aEdgeName)
+    NS_IMETHOD NoteGCedObject(PRUint64 aAddress, PRBool aMarked,
+                              const char *aObjectDescription)
+    {
+        fprintf(mStream, "%p [gc%s] %s\n", (void*)aAddress,
+                aMarked ? ".marked" : "", aObjectDescription);
+
+        return NS_OK;
+    }
+    NS_IMETHOD NoteEdge(PRUint64 aToAddress, const char *aEdgeName)
     {
         fprintf(mStream, "> %p %s\n", (void*)aToAddress, aEdgeName);
 
         return NS_OK;
     }
-    NS_IMETHOD BeginDescriptions()
+    NS_IMETHOD BeginResults()
     {
         fputs("==========\n", mStream);
 
         return NS_OK;
     }
-    NS_IMETHOD DescribeRefcountedObject(PRUint64 aAddress, PRUint32 aKnownEdges,
-                                        PRUint32 aTotalEdges)
+    NS_IMETHOD DescribeRoot(PRUint64 aAddress, PRUint32 aKnownEdges)
     {
-        PRBool root = aKnownEdges != aTotalEdges;
-        fprintf(mStream, "%p", (void*)aAddress);
-        if (root) {
-            fprintf(mStream, " [root] [%u/%u]", aKnownEdges, aTotalEdges);
-        }
-        fputc('\n', mStream);
+        fprintf(mStream, "%p [known=%u]\n", (void*)aAddress, aKnownEdges);
 
         return NS_OK;
     }
-    NS_IMETHOD DescribeGCedObject(PRUint64 aAddress, PRBool aMarked)
+    NS_IMETHOD DescribeGarbage(PRUint64 aAddress)
     {
-        fprintf(mStream, "%p%s\n", (void*)aAddress, aMarked ? " [root]" : "");
+        fprintf(mStream, "%p [garbage]\n", (void*)aAddress);
 
         return NS_OK;
     }
@@ -1510,18 +1519,10 @@ private:
                       size_t objSz,
                       const char *objName)
     {
+        mCurrPi->mRefCount = refCount;
 #ifdef DEBUG_CC
         mCurrPi->mBytes = objSz;
         mCurrPi->mName = PL_strdup(objName);
-#endif
-
-        if (mListener) {
-            mListener->NoteObject((PRUint64)mCurrPi->mPointer, objName);
-        }
-
-        mCurrPi->mRefCount = refCount;
-
-#ifdef DEBUG_CC
         sCollector->mStats.mVisitedNode++;
 #endif
     }
@@ -1669,6 +1670,12 @@ GCGraphBuilder::DescribeRefCountedNode(nsrefcnt refCount, size_t objSz,
     if (refCount == PR_UINT32_MAX)
         Fault("overflowing refcount", mCurrPi);
     sCollector->mVisitedRefCounted++;
+
+    if (mListener) {
+        mListener->NoteRefCountedObject((PRUint64)mCurrPi->mPointer, refCount,
+                                        objName);
+    }
+
     DescribeNode(refCount, objSz, objName);
 }
 
@@ -1678,6 +1685,12 @@ GCGraphBuilder::DescribeGCedNode(PRBool isMarked, size_t objSz,
 {
     PRUint32 refCount = isMarked ? PR_UINT32_MAX : 0;
     sCollector->mVisitedGCed++;
+
+    if (mListener) {
+        mListener->NoteGCedObject((PRUint64)mCurrPi->mPointer, isMarked,
+                                  objName);
+    }
+
     DescribeNode(refCount, objSz, objName);
 }
 
@@ -1708,8 +1721,7 @@ GCGraphBuilder::NoteXPCOMChild(nsISupports *child)
         mCurrPi->mEdgeNames.AppendElement(edgeName);
 #endif
         if (mListener) {
-            mListener->NoteEdge((PRUint64)mCurrPi->mPointer, (PRUint64)child,
-                                edgeName.get());
+            mListener->NoteEdge((PRUint64)child, edgeName.get());
         }
         ++childPi->mInternalRefs;
     }
@@ -1737,8 +1749,7 @@ GCGraphBuilder::NoteNativeChild(void *child,
     mCurrPi->mEdgeNames.AppendElement(edgeName);
 #endif
     if (mListener) {
-        mListener->NoteEdge((PRUint64)mCurrPi->mPointer, (PRUint64)child,
-                            edgeName.get());
+        mListener->NoteEdge((PRUint64)child, edgeName.get());
     }
     ++childPi->mInternalRefs;
 }
@@ -1783,8 +1794,7 @@ GCGraphBuilder::NoteScriptChild(PRUint32 langID, void *child)
     mCurrPi->mEdgeNames.AppendElement(edgeName);
 #endif
     if (mListener) {
-        mListener->NoteEdge((PRUint64)mCurrPi->mPointer, (PRUint64)child,
-                            edgeName.get());
+        mListener->NoteEdge((PRUint64)child, edgeName.get());
     }
     ++childPi->mInternalRefs;
 }
@@ -1962,7 +1972,7 @@ nsCycleCollector::ScanRoots()
 ////////////////////////////////////////////////////////////////////////
 
 PRBool
-nsCycleCollector::CollectWhite()
+nsCycleCollector::CollectWhite(nsICycleCollectorListener *aListener)
 {
     // Explanation of "somewhat modified": we have no way to collect the
     // set of whites "all at once", we have to ask each of them to drop
@@ -2004,6 +2014,15 @@ nsCycleCollector::CollectWhite()
 #endif
 
     PRUint32 i, count = mWhiteNodes->Length();
+
+    if (aListener) {
+        for (i = 0; i < count; ++i) {
+            PtrInfo *pinfo = mWhiteNodes->ElementAt(i);
+            aListener->DescribeGarbage((PRUint64)pinfo->mPointer);
+        }
+        aListener->End();
+    }
+
     for (i = 0; i < count; ++i) {
         PtrInfo *pinfo = mWhiteNodes->ElementAt(i);
         rv = pinfo->mParticipant->Unlink(pinfo->mPointer);
@@ -2675,7 +2694,8 @@ nsCycleCollector::Collect(PRUint32 aTryCollections,
     while (aTryCollections > totalCollections) {
         // Synchronous cycle collection. Always force a JS GC beforehand.
         GCIfNeeded(PR_TRUE);
-        if (!(BeginCollection(aListener) && FinishCollection()))
+        if (!(BeginCollection(aListener) &&
+              FinishCollection(aListener)))
             break;
 
         ++totalCollections;
@@ -2777,24 +2797,18 @@ nsCycleCollector::BeginCollection(nsICycleCollectorListener *aListener)
         mScanInProgress = PR_FALSE;
 
         if (aListener) {
-            aListener->BeginDescriptions();
+            aListener->BeginResults();
 
             NodePool::Enumerator etor(mGraph.mNodes);
             while (!etor.IsDone()) {
                 PtrInfo *pi = etor.GetNext();
-                if (pi->mColor == black) {
-                    PRUint64 p = (PRUint64)pi->mPointer;
-                    if (pi->mRefCount > 0 && pi->mRefCount < PR_UINT32_MAX) {
-                        aListener->DescribeRefcountedObject(p, pi->mInternalRefs,
-                                                           pi->mRefCount);
-                    }
-                    else {
-                        aListener->DescribeGCedObject(p, pi->mRefCount != 0);
-                    }
+                if (pi->mColor == black &&
+                    pi->mRefCount > 0 && pi->mRefCount < PR_UINT32_MAX &&
+                    pi->mInternalRefs != pi->mRefCount) {
+                    aListener->DescribeRoot((PRUint64)pi->mPointer,
+                                            pi->mInternalRefs);
                 }
             }
-
-            aListener->End();
         }
 
 #ifdef DEBUG_CC
@@ -2829,13 +2843,13 @@ nsCycleCollector::BeginCollection(nsICycleCollectorListener *aListener)
 }
 
 PRBool
-nsCycleCollector::FinishCollection()
+nsCycleCollector::FinishCollection(nsICycleCollectorListener *aListener)
 {
 #ifdef COLLECT_TIME_DEBUG
     PRTime now = PR_Now();
 #endif
 
-    PRBool collected = CollectWhite();
+    PRBool collected = CollectWhite(aListener);
 
 #ifdef COLLECT_TIME_DEBUG
     printf("cc: CollectWhite() took %lldms\n",
@@ -2894,14 +2908,11 @@ nsCycleCollector::Shutdown()
     // Here we want to run a final collection and then permanently
     // disable the collector because the program is shutting down.
 
-#ifdef DEBUG_CC
-    if (sCollector->mParams.mDrawGraphs) {
-        nsCOMPtr<nsICycleCollectorListener> listener =
-            new nsCycleCollectorLogger();
-        Collect(SHUTDOWN_COLLECTIONS(mParams), listener);
-    } else
-#endif
-    Collect(SHUTDOWN_COLLECTIONS(mParams), nsnull);
+    nsCOMPtr<nsCycleCollectorLogger> listener;
+    if (mParams.mLogGraphs) {
+        listener = new nsCycleCollectorLogger();
+    }
+    Collect(SHUTDOWN_COLLECTIONS(mParams), listener);
 
 #ifdef DEBUG_CC
     GCGraphBuilder builder(mGraph, mRuntimes, nsnull);
@@ -3523,7 +3534,7 @@ public:
         mListener = nsnull;
 
         if (mCollected) {
-            mCollected = mCollector->FinishCollection();
+            mCollected = mCollector->FinishCollection(aListener);
 
             mCollector->CleanupAfterCollection();
 
@@ -3582,11 +3593,9 @@ nsCycleCollector_collect(nsICycleCollectorListener *aListener)
 {
     NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
     nsCOMPtr<nsICycleCollectorListener> listener(aListener);
-#ifdef DEBUG_CC
-    if (!aListener && sCollector && sCollector->mParams.mDrawGraphs) {
+    if (!aListener && sCollector && sCollector->mParams.mLogGraphs) {
         listener = new nsCycleCollectorLogger();
     }
-#endif
 
     if (sCollectorRunner)
         return sCollectorRunner->Collect(listener);

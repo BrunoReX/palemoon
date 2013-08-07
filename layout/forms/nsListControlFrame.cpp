@@ -67,7 +67,6 @@
 #include "nsXPCOM.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIComponentManager.h"
-#include "nsILookAndFeel.h"
 #include "nsFontMetrics.h"
 #include "nsIScrollableFrame.h"
 #include "nsIDOMNSEvent.h"
@@ -85,6 +84,9 @@
 #include "nsLayoutUtils.h"
 #include "nsDisplayList.h"
 #include "nsContentUtils.h"
+#include "mozilla/LookAndFeel.h"
+
+using namespace mozilla;
 
 // Constants
 const nscoord kMaxDropDownRows          = 20; // This matches the setting for 4.x browsers
@@ -304,7 +306,7 @@ void nsListControlFrame::PaintFocus(nsRenderingContext& aRC, nsPoint aPt)
     if (!childframe) {
       // Failing all else, try the first thing we have, but only if
       // it's an element.  Text frames need not apply.
-      childframe = containerFrame->GetFirstChild(nsnull);
+      childframe = containerFrame->GetFirstPrincipalChild();
       if (childframe && !childframe->GetContent()->IsElement()) {
         childframe = nsnull;
       }
@@ -336,11 +338,10 @@ void nsListControlFrame::PaintFocus(nsRenderingContext& aRC, nsPoint aPt)
   }
 
   // set up back stop colors and then ask L&F service for the real colors
-  nscolor color;
-  presContext->LookAndFeel()->
-    GetColor(lastItemIsSelected ?
-             nsILookAndFeel::eColor_WidgetSelectForeground :
-             nsILookAndFeel::eColor_WidgetSelectBackground, color);
+  nscolor color =
+    LookAndFeel::GetColor(lastItemIsSelected ?
+                            LookAndFeel::eColorID_WidgetSelectForeground :
+                            LookAndFeel::eColorID_WidgetSelectBackground);
 
   nsCSSRendering::PaintFocus(presContext, aRC, fRect, color);
 }
@@ -387,7 +388,7 @@ static nscoord
 GetMaxOptionHeight(nsIFrame* aContainer)
 {
   nscoord result = 0;
-  for (nsIFrame* option = aContainer->GetFirstChild(nsnull);
+  for (nsIFrame* option = aContainer->GetFirstPrincipalChild();
        option; option = option->GetNextSibling()) {
     nscoord optionHeight;
     if (nsCOMPtr<nsIDOMHTMLOptGroupElement>
@@ -1032,7 +1033,7 @@ nsListControlFrame::HandleEvent(nsPresContext* aPresContext,
 
 //---------------------------------------------------------
 NS_IMETHODIMP
-nsListControlFrame::SetInitialChildList(nsIAtom*       aListName,
+nsListControlFrame::SetInitialChildList(ChildListID    aListID,
                                         nsFrameList&   aChildList)
 {
   // First check to see if all the content has been added
@@ -1041,7 +1042,7 @@ nsListControlFrame::SetInitialChildList(nsIAtom*       aListName,
     mIsAllFramesHere    = PR_FALSE;
     mHasBeenInitialized = PR_FALSE;
   }
-  nsresult rv = nsHTMLScrollFrame::SetInitialChildList(aListName, aChildList);
+  nsresult rv = nsHTMLScrollFrame::SetInitialChildList(aListID, aChildList);
 
   // If all the content is here now check
   // to see if all the frames have been created

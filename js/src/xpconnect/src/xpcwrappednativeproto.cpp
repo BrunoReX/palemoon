@@ -134,7 +134,7 @@ XPCWrappedNativeProto::Init(
     mJSProtoObject =
         xpc_NewSystemInheritingJSObject(ccx, js::Jsvalify(jsclazz),
                                         mScope->GetPrototypeJSObject(),
-                                        parent);
+                                        true, parent);
 
     JSBool ok = mJSProtoObject && JS_SetPrivate(ccx, mJSProtoObject, this);
 
@@ -215,8 +215,8 @@ XPCWrappedNativeProto::GetNewOrUsed(XPCCallContext& ccx,
     NS_ASSERTION(ClassInfo, "bad param");
 
     AutoMarkingWrappedNativeProtoPtr proto(ccx);
-    ClassInfo2WrappedNativeProtoMap* map;
-    XPCLock* lock;
+    ClassInfo2WrappedNativeProtoMap* map = nsnull;
+    XPCLock* lock = nsnull;
     JSBool shared;
 
     JSUint32 ciFlags;

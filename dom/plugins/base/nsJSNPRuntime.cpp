@@ -361,7 +361,7 @@ GetJSContext(NPP npp)
   nsIScriptContext *scx = sgo->GetContext();
   NS_ENSURE_TRUE(scx, nsnull);
 
-  return (JSContext *)scx->GetNativeContext();
+  return scx->GetNativeContext();
 }
 
 }
@@ -1686,6 +1686,8 @@ NPObjWrapper_NewResolve(JSContext *cx, JSObject *obj, jsid id, uintN flags,
 static JSBool
 NPObjWrapper_Convert(JSContext *cx, JSObject *obj, JSType hint, jsval *vp)
 {
+  JS_ASSERT(hint == JSTYPE_NUMBER || hint == JSTYPE_STRING || hint == JSTYPE_VOID);
+
   // Plugins do not simply use JS_ConvertStub, and the default [[DefaultValue]]
   // behavior, because that behavior involves calling toString or valueOf on
   // objects which weren't designed to accommodate this.  Usually this wouldn't

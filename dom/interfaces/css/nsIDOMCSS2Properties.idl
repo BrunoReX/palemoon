@@ -657,6 +657,9 @@ interface nsIDOMCSS2Properties : nsISupports
            attribute DOMString        MozBorderImage;
                                         // raises(DOMException) on setting
 
+           attribute DOMString        MozColumns;
+                                        // raises(DOMException) on setting
+
            attribute DOMString        MozColumnRule;
                                         // raises(DOMException) on setting
 

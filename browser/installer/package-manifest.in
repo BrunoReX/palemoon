@@ -45,9 +45,7 @@
 @BINPATH@/@DLL_PREFIX@xpcom@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@nspr4@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@mozalloc@DLL_SUFFIX@
-#ifdef MOZ_MEMORY_DARWIN
-@BINPATH@/@DLL_PREFIX@jemalloc@DLL_SUFFIX@
-#endif
+@BINPATH@/@DLL_PREFIX@mozutils@DLL_SUFFIX@
 #ifdef XP_MACOSX
 @BINPATH@/XUL
 #else
@@ -60,15 +58,6 @@
 @BINPATH@/@MOZ_CHILD_PROCESS_NAME@
 #endif
 #ifdef XP_WIN32
-#ifdef MOZ_MEMORY
-#ifdef WIN32_OLD_STYLE_JEMALLOC
-@BINPATH@/mozcrt19.dll
-@BINPATH@/mozcpp19.dll
-#else
-@BINPATH@/jemalloc.dll
-#endif
-#endif
-#else
 #if _MSC_VER == 1400
 @BINPATH@/Microsoft.VC80.CRT.manifest
 @BINPATH@/msvcm80.dll
@@ -185,6 +174,7 @@
 @BINPATH@/components/jar.xpt
 @BINPATH@/components/jetpack.xpt
 @BINPATH@/components/jsdservice.xpt
+@BINPATH@/components/jsdebugger.xpt
 @BINPATH@/components/layout_base.xpt
 @BINPATH@/components/layout_forms.xpt
 #ifdef NS_PRINTING

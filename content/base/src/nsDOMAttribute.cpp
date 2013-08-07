@@ -60,7 +60,6 @@
 #include "mozAutoDocUpdate.h"
 #include "nsMutationEvent.h"
 #include "nsPLDOMEvent.h"
-#include "nsContentUtils.h" // NS_IMPL_CYCLE_COLLECTION_UNLINK_LISTENERMANAGER
 
 using namespace mozilla::dom;
 
@@ -105,25 +104,25 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(nsDOMAttribute)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsDOMAttribute)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mNodeInfo)
+
+  if (!nsINode::Traverse(tmp, cb)) {
+    return NS_SUCCESS_INTERRUPTED_TRAVERSE;
+  }
+
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_RAWPTR(mChild)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_LISTENERMANAGER
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_USERDATA
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(nsDOMAttribute)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
+  nsINode::Trace(tmp, aCallback, aClosure);
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsDOMAttribute)
+  nsINode::Unlink(tmp);
   if (tmp->mChild) {
     static_cast<nsTextNode*>(tmp->mChild)->UnbindFromAttribute();
     NS_RELEASE(tmp->mChild);
     tmp->mFirstChild = nsnull;
   }
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_LISTENERMANAGER
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_USERDATA
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 DOMCI_NODE_DATA(Attr, nsDOMAttribute)
@@ -361,6 +360,13 @@ nsDOMAttribute::GetParentNode(nsIDOMNode** aParentNode)
   }
 
   *aParentNode = nsnull;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMAttribute::GetParentElement(nsIDOMElement** aParentElement)
+{
+  *aParentElement = nsnull;
   return NS_OK;
 }
 
@@ -654,8 +660,19 @@ nsDOMAttribute::SetTextContent(const nsAString& aTextContent)
 NS_IMETHODIMP
 nsDOMAttribute::IsSameNode(nsIDOMNode *other, PRBool *aResult)
 {
+  nsIDocument* document = GetOwnerDoc();
+  if (document) {
+    document->WarnOnceAbout(nsIDocument::eIsSameNode);
+  }
+
   *aResult = other == this;
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMAttribute::Contains(nsIDOMNode* aOther, PRBool* aReturn)
+{
+  return nsINode::Contains(aOther, aReturn);
 }
 
 NS_IMETHODIMP

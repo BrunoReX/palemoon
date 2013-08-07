@@ -809,9 +809,9 @@ NS_IMETHODIMP nsPrinterEnumeratorGTK::InitPrintSettingsFromPrinter(const PRUnich
       path = PR_GetEnv("HOME");
   
     if (path)
-      filename = nsPrintfCString(PATH_MAX, "%s/mozilla.ps", path);
+      filename = nsPrintfCString(PATH_MAX, "%s/mozilla.pdf", path);
     else
-      filename.AssignLiteral("mozilla.ps");
+      filename.AssignLiteral("mozilla.pdf");
   }  
   DO_PR_DEBUG_LOG(("Setting default filename to '%s'\n", filename.get()));
   aPrintSettings->SetToFileName(NS_ConvertUTF8toUTF16(filename).get());
@@ -973,11 +973,9 @@ nsresult GlobalPrinters::InitializeGlobalPrinters ()
   }
 
   mGlobalPrinterList = new nsTArray<nsString>();
-  if (!mGlobalPrinterList) 
-    return NS_ERROR_OUT_OF_MEMORY;
 
   nsPSPrinterList psMgr;
-  if (NS_SUCCEEDED(psMgr.Init()) && psMgr.Enabled()) {
+  if (psMgr.Enabled()) {
     /* Get the list of PostScript-module printers */
     // XXX: this function is the only user of GetPrinterList
     // So it may be interesting to convert the nsCStrings

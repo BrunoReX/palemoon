@@ -104,6 +104,10 @@ unsigned char *_mbsstr( const unsigned char *str,
 #define FILE_ATTRIBUTE_NOT_CONTENT_INDEXED  0x00002000
 #endif
 
+ILCreateFromPathWPtr nsLocalFile::sILCreateFromPathW = NULL;
+SHOpenFolderAndSelectItemsPtr nsLocalFile::sSHOpenFolderAndSelectItems = NULL;
+PRLibrary *nsLocalFile::sLibShell = NULL;
+
 class nsDriveEnumerator : public nsISimpleEnumerator
 {
 public:
@@ -250,6 +254,10 @@ static nsresult ConvertWinError(DWORD winErr)
         case ERROR_ACCESS_DENIED:
         case ERROR_NOT_SAME_DEVICE:
             rv = NS_ERROR_FILE_ACCESS_DENIED;
+            break;
+        case ERROR_SHARING_VIOLATION: // CreateFile without sharing flags
+        case ERROR_LOCK_VIOLATION: // LockFile, LockFileEx
+            rv = NS_ERROR_FILE_IS_LOCKED;
             break;
         case ERROR_NOT_ENOUGH_MEMORY:
         case ERROR_INVALID_BLOCK:
@@ -798,8 +806,9 @@ nsLocalFile::ResolveAndStat()
 
     // first we will see if the working path exists. If it doesn't then
     // there is nothing more that can be done
-    if (NS_FAILED(GetFileInfo(nsprPath, &mFileInfo64)))
-        return NS_ERROR_FILE_NOT_FOUND;
+    nsresult rv = GetFileInfo(nsprPath, &mFileInfo64);
+    if (NS_FAILED(rv))
+        return rv;
 
     // if this isn't a shortcut file or we aren't following symlinks then we're done 
     if (!mFollowSymlinks 
@@ -814,7 +823,7 @@ nsLocalFile::ResolveAndStat()
     // set mResolvedPath. Even if it fails we need to have the resolved
     // path equal to working path for those functions that always use
     // the resolved path.
-    nsresult rv = ResolveShortcut();
+    rv = ResolveShortcut();
     if (NS_FAILED(rv))
     {
         mResolvedPath.Assign(mWorkingPath);
@@ -822,8 +831,9 @@ nsLocalFile::ResolveAndStat()
     }
 
     // get the details of the resolved path
-    if (NS_FAILED(GetFileInfo(mResolvedPath, &mFileInfo64)))
-        return NS_ERROR_FILE_NOT_FOUND;
+    rv = GetFileInfo(mResolvedPath, &mFileInfo64);
+    if (NS_FAILED(rv))
+        return rv;
 
     mDirty = PR_FALSE;
     return NS_OK;
@@ -956,6 +966,7 @@ nsLocalFile::Create(PRUint32 type, PRUint32 attributes)
     // search for first slash after the drive (or volume) name
     PRUnichar* slash = wcschr(path, L'\\');
 
+    nsresult directoryCreateError = NS_OK;
     if (slash)
     {
         // skip the first '\\'
@@ -968,12 +979,20 @@ nsLocalFile::Create(PRUint32 type, PRUint32 attributes)
 
             if (!::CreateDirectoryW(mResolvedPath.get(), NULL)) {
                 rv = ConvertWinError(GetLastError());
+                if (NS_ERROR_FILE_NOT_FOUND == rv &&
+                    NS_ERROR_FILE_ACCESS_DENIED == directoryCreateError) {
+                    // If a previous CreateDirectory failed due to access, return that.
+                    return NS_ERROR_FILE_ACCESS_DENIED;
+                }
                 // perhaps the base path already exists, or perhaps we don't have
                 // permissions to create the directory.  NOTE: access denied could
                 // occur on a parent directory even though it exists.
-                if (rv != NS_ERROR_FILE_ALREADY_EXISTS &&
-                    rv != NS_ERROR_FILE_ACCESS_DENIED)
+                else if (NS_ERROR_FILE_ALREADY_EXISTS != rv &&
+                         NS_ERROR_FILE_ACCESS_DENIED != rv) {
                     return rv;
+                }
+
+                directoryCreateError = rv;
             }
             *slash = L'\\';
             ++slash;
@@ -996,14 +1015,26 @@ nsLocalFile::Create(PRUint32 type, PRUint32 attributes)
             PRBool isdir;
             if (NS_SUCCEEDED(IsDirectory(&isdir)) && isdir)
                 rv = NS_ERROR_FILE_ALREADY_EXISTS;
+        } else if (NS_ERROR_FILE_NOT_FOUND == rv && 
+                   NS_ERROR_FILE_ACCESS_DENIED == directoryCreateError) {
+            // If a previous CreateDirectory failed due to access, return that.
+            return NS_ERROR_FILE_ACCESS_DENIED;
         }
         return rv;
     }
 
     if (type == DIRECTORY_TYPE)
     {
-        if (!::CreateDirectoryW(mResolvedPath.get(), NULL))
-            return ConvertWinError(GetLastError());
+        if (!::CreateDirectoryW(mResolvedPath.get(), NULL)) {
+          rv = ConvertWinError(GetLastError());
+          if (NS_ERROR_FILE_NOT_FOUND == rv && 
+              NS_ERROR_FILE_ACCESS_DENIED == directoryCreateError) {
+              // If a previous CreateDirectory failed due to access, return that.
+              return NS_ERROR_FILE_ACCESS_DENIED;
+          } else {
+              return rv;
+          }
+        }
         else
             return NS_OK;
     }
@@ -1237,7 +1268,7 @@ nsLocalFile::GetLeafName(nsAString &aLeafName)
 {
     aLeafName.Truncate();
 
-    if(mWorkingPath.IsEmpty())
+    if (mWorkingPath.IsEmpty())
         return NS_ERROR_FILE_UNRECOGNIZED_PATH;
 
     PRInt32 offset = mWorkingPath.RFindChar(L'\\');
@@ -1256,7 +1287,7 @@ nsLocalFile::SetLeafName(const nsAString &aLeafName)
 {
     MakeDirty();
 
-    if(mWorkingPath.IsEmpty())
+    if (mWorkingPath.IsEmpty())
         return NS_ERROR_FILE_UNRECOGNIZED_PATH;
 
     // cannot use nsCString::RFindChar() due to 0x5c problem
@@ -2139,6 +2170,15 @@ nsLocalFile::GetDiskSpaceAvailable(PRInt64 *aDiskSpaceAvailable)
 
     ResolveAndStat();
 
+    if (mFileInfo64.type == PR_FILE_FILE) {
+      // Since GetDiskFreeSpaceExW works only on directories, use the parent.
+      nsCOMPtr<nsIFile> parent;
+      if (NS_SUCCEEDED(GetParent(getter_AddRefs(parent))) && parent) {
+        nsCOMPtr<nsILocalFile> localParent = do_QueryInterface(parent);
+        return localParent->GetDiskSpaceAvailable(aDiskSpaceAvailable);
+      }
+    }
+
     ULARGE_INTEGER liFreeBytesAvailableToCaller, liTotalNumberOfBytes;
     if (::GetDiskFreeSpaceExW(mResolvedPath.get(), &liFreeBytesAvailableToCaller, 
                               &liTotalNumberOfBytes, NULL))
@@ -2188,8 +2228,7 @@ nsLocalFile::GetParent(nsIFile * *aParent)
     nsCOMPtr<nsILocalFile> localFile;
     nsresult rv = NS_NewLocalFile(parentPath, mFollowSymlinks, getter_AddRefs(localFile));
 
-    if(NS_SUCCEEDED(rv) && localFile)
-    {
+    if (NS_SUCCEEDED(rv) && localFile) {
         return CallQueryInterface(localFile, aParent);
     }
     return rv;
@@ -2206,7 +2245,7 @@ nsLocalFile::Exists(PRBool *_retval)
 
     MakeDirty();
     nsresult rv = ResolveAndStat();
-    *_retval = NS_SUCCEEDED(rv);
+    *_retval = NS_SUCCEEDED(rv) || rv == NS_ERROR_FILE_IS_LOCKED;
 
     return NS_OK;
 }
@@ -2217,22 +2256,51 @@ nsLocalFile::IsWritable(PRBool *aIsWritable)
     // Check we are correctly initialized.
     CHECK_mWorkingPath();
 
-    //TODO: extend to support NTFS file permissions
-
     // The read-only attribute on a FAT directory only means that it can't 
     // be deleted. It is still possible to modify the contents of the directory.
     nsresult rv = IsDirectory(aIsWritable);
-    if (NS_FAILED(rv))
+    if (rv == NS_ERROR_FILE_ACCESS_DENIED) {
+      *aIsWritable = PR_TRUE;
+      return NS_OK;
+    } else if (rv == NS_ERROR_FILE_IS_LOCKED) {
+      // If the file is normally allowed write access
+      // we should still return that the file is writable.
+    } else if (NS_FAILED(rv)) {
         return rv;
+    }
     if (*aIsWritable)
         return NS_OK;
 
     // writable if the file doesn't have the readonly attribute
     rv = HasFileAttribute(FILE_ATTRIBUTE_READONLY, aIsWritable);
-    if (NS_FAILED(rv))
+    if (rv == NS_ERROR_FILE_ACCESS_DENIED) {
+        *aIsWritable = PR_FALSE;
+        return NS_OK;
+    } else if (rv == NS_ERROR_FILE_IS_LOCKED) {
+      // If the file is normally allowed write access
+      // we should still return that the file is writable.
+    } else if (NS_FAILED(rv)) {
         return rv;
+    }
     *aIsWritable = !*aIsWritable;
 
+    // If the read only attribute is not set, check to make sure
+    // we can open the file with write access.
+    if (*aIsWritable) {
+        PRFileDesc* file;
+        rv = OpenFile(mResolvedPath, PR_WRONLY, 0, &file);
+        if (NS_SUCCEEDED(rv)) {
+            PR_Close(file);
+        } else if (rv == NS_ERROR_FILE_ACCESS_DENIED) {
+          *aIsWritable = false;
+        } else if (rv == NS_ERROR_FILE_IS_LOCKED) {
+            // If it is locked and read only we would have 
+            // gotten access denied
+            *aIsWritable = true; 
+        } else {
+            return rv;
+        }
+    }
     return NS_OK;
 }
 
@@ -2681,32 +2749,113 @@ nsLocalFile::Reveal()
     nsresult rv = ResolveAndStat();
     if (NS_FAILED(rv) && rv != NS_ERROR_FILE_NOT_FOUND)
         return rv;
+
+    // First try revealing with the shell, and if that fails fall back
+    // to the classic way using explorer.exe command line parameters
+    rv = RevealUsingShell();
+    if (NS_FAILED(rv)) {
+      rv = RevealClassic();
+    }
+
+    return rv;
+}
+
+nsresult
+nsLocalFile::RevealClassic()
+{
+  // use the full path to explorer for security
+  nsCOMPtr<nsILocalFile> winDir;
+  nsresult rv = GetSpecialSystemDirectory(Win_WindowsDirectory, getter_AddRefs(winDir));
+  NS_ENSURE_SUCCESS(rv, rv);
+  nsAutoString explorerPath;
+  rv = winDir->GetPath(explorerPath);  
+  NS_ENSURE_SUCCESS(rv, rv);
+  explorerPath.AppendLiteral("\\explorer.exe");
+
+  // Always open a new window for files because Win2K doesn't appear to select
+  // the file if a window showing that folder was already open. If the resolved 
+  // path is a directory then instead of opening the parent and selecting it, 
+  // we open the directory itself.
+  nsAutoString explorerParams;
+  if (mFileInfo64.type != PR_FILE_DIRECTORY) // valid because we ResolveAndStat above
+    explorerParams.AppendLiteral("/n,/select,");
+  explorerParams.Append(L'\"');
+  explorerParams.Append(mResolvedPath);
+  explorerParams.Append(L'\"');
+
+  if (::ShellExecuteW(NULL, L"open", explorerPath.get(), explorerParams.get(),
+    NULL, SW_SHOWNORMAL) <= (HINSTANCE) 32)
+    return NS_ERROR_FAILURE;
+
+  return NS_OK;
+}
+
+nsresult 
+nsLocalFile::RevealUsingShell()
+{
+  // All of these shell32.dll related pointers should be non NULL 
+  // on XP and later.
+  if (!sLibShell || !sILCreateFromPathW || !sSHOpenFolderAndSelectItems) {
+    return NS_ERROR_FAILURE;
+  }
+
+  PRBool isDirectory;
+  nsresult rv = IsDirectory(&isDirectory);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  HRESULT hr;
+  if (isDirectory) {
+    // We have a directory so we should open the directory itself.
+    ITEMIDLIST *dir = sILCreateFromPathW(mResolvedPath.get());
+    if (!dir) {
+      return NS_ERROR_FAILURE;
+    }
+
+    const ITEMIDLIST* selection[] = { dir };
+    UINT count = PR_ARRAY_SIZE(selection);
+
+    //Perform the open of the directory.
+    hr = sSHOpenFolderAndSelectItems(dir, count, selection, 0);
+    CoTaskMemFree(dir);
+  }
+  else {
+    // Obtain the parent path of the item we are revealing.
+    nsCOMPtr<nsIFile> parentDirectory;
+    rv = GetParent(getter_AddRefs(parentDirectory));
+    NS_ENSURE_SUCCESS(rv, rv);
+    nsAutoString parentDirectoryPath;
+    rv = parentDirectory->GetPath(parentDirectoryPath);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // We have a file so we should open the parent directory.
+    ITEMIDLIST *dir = sILCreateFromPathW(parentDirectoryPath.get());
+    if (!dir) {
+      return NS_ERROR_FAILURE;
+    }
+
+    // Set the item in the directory to select to the file we want to reveal.
+    ITEMIDLIST *item = sILCreateFromPathW(mResolvedPath.get());
+    if (!item) {
+      CoTaskMemFree(dir);
+      return NS_ERROR_FAILURE;
+    }
     
-    // use the full path to explorer for security
-    nsCOMPtr<nsILocalFile> winDir;
-    rv = GetSpecialSystemDirectory(Win_WindowsDirectory, getter_AddRefs(winDir));
-    NS_ENSURE_SUCCESS(rv, rv);
-    nsAutoString explorerPath;
-    rv = winDir->GetPath(explorerPath);  
-    NS_ENSURE_SUCCESS(rv, rv);
-    explorerPath.Append(L"\\explorer.exe");
+    const ITEMIDLIST* selection[] = { item };
+    UINT count = PR_ARRAY_SIZE(selection);
 
-    // Always open a new window for files because Win2K doesn't appear to select
-    // the file if a window showing that folder was already open. If the resolved 
-    // path is a directory then instead of opening the parent and selecting it, 
-    // we open the directory itself.
-    nsAutoString explorerParams;
-    if (mFileInfo64.type != PR_FILE_DIRECTORY) // valid because we ResolveAndStat above
-        explorerParams.Append(L"/n,/select,");
-    explorerParams.Append(L'\"');
-    explorerParams.Append(mResolvedPath);
-    explorerParams.Append(L'\"');
+    //Perform the selection of the file.
+    hr = sSHOpenFolderAndSelectItems(dir, count, selection, 0);
 
-    if (::ShellExecuteW(NULL, L"open", explorerPath.get(), explorerParams.get(),
-                        NULL, SW_SHOWNORMAL) <= (HINSTANCE) 32)
-        return NS_ERROR_FAILURE;
-
+    CoTaskMemFree(dir);
+    CoTaskMemFree(item);
+  }
+  
+  if (SUCCEEDED(hr)) {
     return NS_OK;
+  }
+  else {
+    return NS_ERROR_FAILURE;
+  }
 }
 
 NS_IMETHODIMP
@@ -3002,11 +3151,29 @@ nsLocalFile::GlobalInit()
 {
     nsresult rv = NS_CreateShortcutResolver();
     NS_ASSERTION(NS_SUCCEEDED(rv), "Shortcut resolver could not be created");
+
+    // shell32.dll should be loaded already, so we are not actually 
+    // loading the library here.
+    sLibShell = PR_LoadLibrary("shell32.dll");
+    if (sLibShell) {
+      // ILCreateFromPathW is available in XP and up.
+      sILCreateFromPathW = (ILCreateFromPathWPtr) 
+                           PR_FindFunctionSymbol(sLibShell, 
+                                                 "ILCreateFromPathW");
+
+      // SHOpenFolderAndSelectItems is available in XP and up.
+      sSHOpenFolderAndSelectItems = (SHOpenFolderAndSelectItemsPtr) 
+                                     PR_FindFunctionSymbol(sLibShell, 
+                                                           "SHOpenFolderAndSelectItems");
+    }
 }
 
 void
 nsLocalFile::GlobalShutdown()
 {
+    if (sLibShell) {
+      PR_UnloadLibrary(sLibShell);
+    }
     NS_DestroyShortcutResolver();
 }
 

@@ -5,7 +5,6 @@ const Ci = Components.interfaces;
 const Cu = Components.utils;
 const Cr = Components.results;
 
-Cu.import("resource:///modules/tabview/AllTabs.jsm");
 Cu.import("resource:///modules/tabview/utils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
@@ -44,10 +43,35 @@ var gTabViewDeck = gWindow.document.getElementById("tab-view-deck");
 var gBrowserPanel = gWindow.document.getElementById("browser-panel");
 var gTabViewFrame = gWindow.document.getElementById("tab-view");
 
+let AllTabs = {
+  _events: {
+    attrModified: "TabAttrModified",
+    close:        "TabClose",
+    move:         "TabMove",
+    open:         "TabOpen",
+    select:       "TabSelect",
+    pinned:       "TabPinned",
+    unpinned:     "TabUnpinned"
+  },
+
+  get tabs() {
+    return Array.filter(gBrowser.tabs, function (tab) !tab.closing);
+  },
+
+  register: function AllTabs_register(eventName, callback) {
+    gBrowser.tabContainer.addEventListener(this._events[eventName], callback, false);
+  },
+
+  unregister: function AllTabs_unregister(eventName, callback) {
+    gBrowser.tabContainer.removeEventListener(this._events[eventName], callback, false);
+  }
+};
+
 # NB: Certain files need to evaluate before others
 
 #include iq.js
 #include storage.js
+#include storagePolicy.js
 #include items.js
 #include groupitems.js
 #include tabitems.js

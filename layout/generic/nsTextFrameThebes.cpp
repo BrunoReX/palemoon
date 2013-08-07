@@ -90,7 +90,6 @@
 #include "nsFrameSelection.h"
 #include "nsISelection.h"
 #include "nsIDOMRange.h"
-#include "nsILookAndFeel.h"
 #include "nsCSSRendering.h"
 #include "nsContentUtils.h"
 #include "nsLineBreaker.h"
@@ -106,6 +105,7 @@
 #include "nsAutoPtr.h"
 
 #include "nsBidiUtils.h"
+#include "nsPrintfCString.h"
 
 #include "gfxFont.h"
 #include "gfxContext.h"
@@ -114,6 +114,7 @@
 
 #include "mozilla/dom/Element.h"
 #include "mozilla/Util.h" // for DebugOnly
+#include "mozilla/LookAndFeel.h"
 
 #ifdef NS_DEBUG
 #undef NOISY_BLINK
@@ -228,6 +229,11 @@ NS_DECLARE_FRAME_PROPERTY(OffsetToFrameProperty, nsnull)
 
 // nsTextFrame.h has
 // #define TEXT_HAS_NONCOLLAPSED_CHARACTERS NS_FRAME_STATE_BIT(31)
+
+// If true, then this frame is being removed due to a SetLength() on a
+// previous continuation and the style context of that previous
+// continuation is the same as this frame's
+#define TEXT_STYLE_MATCHES_PREV_CONTINUATION NS_FRAME_STATE_BIT(62)
 
 // Whether this frame is cached in the Offset Frame Cache (OffsetToFrameProperty)
 #define TEXT_IN_OFFSET_CACHE       NS_FRAME_STATE_BIT(63)
@@ -1067,8 +1073,9 @@ CanTextCrossFrameBoundary(nsIFrame* aFrame, nsIAtom* aType)
     }
   } else {
     if (continuesTextRun) {
-      result.mFrameToScan = aFrame->GetFirstChild(nsnull);
-      result.mOverflowFrameToScan = aFrame->GetFirstChild(nsGkAtoms::overflowList);
+      result.mFrameToScan = aFrame->GetFirstPrincipalChild();
+      result.mOverflowFrameToScan =
+        aFrame->GetFirstChild(nsIFrame::kOverflowList);
       NS_WARN_IF_FALSE(!result.mOverflowFrameToScan,
                        "Scanning overflow inline frames is something we should avoid");
       result.mScanSiblings = PR_TRUE;
@@ -1194,7 +1201,7 @@ BuildTextRuns(gfxContext* aContext, nsTextFrame* aForFrame,
     // just one line
     scanner.SetAtStartOfLine();
     scanner.SetCommonAncestorWithLastFrame(nsnull);
-    nsIFrame* child = aLineContainer->GetFirstChild(nsnull);
+    nsIFrame* child = aLineContainer->GetFirstPrincipalChild();
     while (child) {
       scanner.ScanFrame(child);
       child = child->GetNextSibling();
@@ -3263,12 +3270,10 @@ nsTextPaintStyle::GetHighlightColors(nscolor* aForeColor,
   NS_ASSERTION(aForeColor, "aForeColor is null");
   NS_ASSERTION(aBackColor, "aBackColor is null");
   
-  nsILookAndFeel* look = mPresContext->LookAndFeel();
-  nscolor foreColor, backColor;
-  look->GetColor(nsILookAndFeel::eColor_TextHighlightBackground,
-                 backColor);
-  look->GetColor(nsILookAndFeel::eColor_TextHighlightForeground,
-                 foreColor);
+  nscolor backColor =
+    LookAndFeel::GetColor(LookAndFeel::eColorID_TextHighlightBackground);
+  nscolor foreColor =
+    LookAndFeel::GetColor(LookAndFeel::eColorID_TextHighlightForeground);
   EnsureSufficientContrast(&foreColor, &backColor);
   *aForeColor = foreColor;
   *aBackColor = backColor;
@@ -3350,14 +3355,12 @@ nsTextPaintStyle::InitCommonColors()
   NS_ASSERTION(NS_GET_A(defaultBgColor) == 255,
                "default background color is not opaque");
 
-  nsILookAndFeel* look = mPresContext->LookAndFeel();
-  nscolor defaultWindowBackgroundColor, selectionTextColor, selectionBGColor;
-  look->GetColor(nsILookAndFeel::eColor_TextSelectBackground,
-                 selectionBGColor);
-  look->GetColor(nsILookAndFeel::eColor_TextSelectForeground,
-                 selectionTextColor);
-  look->GetColor(nsILookAndFeel::eColor_WindowBackground,
-                 defaultWindowBackgroundColor);
+  nscolor defaultWindowBackgroundColor =
+    LookAndFeel::GetColor(LookAndFeel::eColorID_WindowBackground);
+  nscolor selectionTextColor =
+    LookAndFeel::GetColor(LookAndFeel::eColorID_TextSelectForeground);
+  nscolor selectionBGColor =
+    LookAndFeel::GetColor(LookAndFeel::eColorID_TextSelectBackground);
 
   mSufficientContrast =
     NS_MIN(NS_MIN(NS_SUFFICIENT_LUMINOSITY_DIFFERENCE,
@@ -3421,28 +3424,26 @@ nsTextPaintStyle::InitSelectionColors()
     }
   }
 
-  nsILookAndFeel* look = mPresContext->LookAndFeel();
-
-  nscolor selectionBGColor;
-  look->GetColor(nsILookAndFeel::eColor_TextSelectBackground,
-                 selectionBGColor);
+  nscolor selectionBGColor =
+    LookAndFeel::GetColor(LookAndFeel::eColorID_TextSelectBackground);
 
   if (selectionStatus == nsISelectionController::SELECTION_ATTENTION) {
-    look->GetColor(nsILookAndFeel::eColor_TextSelectBackgroundAttention,
-                   mSelectionBGColor);
+    mSelectionBGColor =
+      LookAndFeel::GetColor(
+        LookAndFeel::eColorID_TextSelectBackgroundAttention);
     mSelectionBGColor  = EnsureDifferentColors(mSelectionBGColor,
                                                selectionBGColor);
   } else if (selectionStatus != nsISelectionController::SELECTION_ON) {
-    look->GetColor(nsILookAndFeel::eColor_TextSelectBackgroundDisabled,
-                   mSelectionBGColor);
+    mSelectionBGColor =
+      LookAndFeel::GetColor(LookAndFeel::eColorID_TextSelectBackgroundDisabled);
     mSelectionBGColor  = EnsureDifferentColors(mSelectionBGColor,
                                                selectionBGColor);
   } else {
     mSelectionBGColor = selectionBGColor;
   }
 
-  look->GetColor(nsILookAndFeel::eColor_TextSelectForeground,
-                 mSelectionTextColor);
+  mSelectionTextColor =
+    LookAndFeel::GetColor(LookAndFeel::eColorID_TextSelectForeground);
 
   // On MacOS X, we don't exchange text color and BG color.
   if (mSelectionTextColor == NS_DONT_CHANGE_COLOR) {
@@ -3462,36 +3463,36 @@ nsTextPaintStyle::GetSelectionStyle(PRInt32 aIndex)
 }
 
 struct StyleIDs {
-  nsILookAndFeel::nsColorID mForeground, mBackground, mLine;
-  nsILookAndFeel::nsMetricID mLineStyle;
-  nsILookAndFeel::nsMetricFloatID mLineRelativeSize;
+  LookAndFeel::ColorID mForeground, mBackground, mLine;
+  LookAndFeel::IntID mLineStyle;
+  LookAndFeel::FloatID mLineRelativeSize;
 };
 static StyleIDs SelectionStyleIDs[] = {
-  { nsILookAndFeel::eColor_IMERawInputForeground,
-    nsILookAndFeel::eColor_IMERawInputBackground,
-    nsILookAndFeel::eColor_IMERawInputUnderline,
-    nsILookAndFeel::eMetric_IMERawInputUnderlineStyle,
-    nsILookAndFeel::eMetricFloat_IMEUnderlineRelativeSize },
-  { nsILookAndFeel::eColor_IMESelectedRawTextForeground,
-    nsILookAndFeel::eColor_IMESelectedRawTextBackground,
-    nsILookAndFeel::eColor_IMESelectedRawTextUnderline,
-    nsILookAndFeel::eMetric_IMESelectedRawTextUnderlineStyle,
-    nsILookAndFeel::eMetricFloat_IMEUnderlineRelativeSize },
-  { nsILookAndFeel::eColor_IMEConvertedTextForeground,
-    nsILookAndFeel::eColor_IMEConvertedTextBackground,
-    nsILookAndFeel::eColor_IMEConvertedTextUnderline,
-    nsILookAndFeel::eMetric_IMEConvertedTextUnderlineStyle,
-    nsILookAndFeel::eMetricFloat_IMEUnderlineRelativeSize },
-  { nsILookAndFeel::eColor_IMESelectedConvertedTextForeground,
-    nsILookAndFeel::eColor_IMESelectedConvertedTextBackground,
-    nsILookAndFeel::eColor_IMESelectedConvertedTextUnderline,
-    nsILookAndFeel::eMetric_IMESelectedConvertedTextUnderline,
-    nsILookAndFeel::eMetricFloat_IMEUnderlineRelativeSize },
-  { nsILookAndFeel::eColor_LAST_COLOR,
-    nsILookAndFeel::eColor_LAST_COLOR,
-    nsILookAndFeel::eColor_SpellCheckerUnderline,
-    nsILookAndFeel::eMetric_SpellCheckerUnderlineStyle,
-    nsILookAndFeel::eMetricFloat_SpellCheckerUnderlineRelativeSize }
+  { LookAndFeel::eColorID_IMERawInputForeground,
+    LookAndFeel::eColorID_IMERawInputBackground,
+    LookAndFeel::eColorID_IMERawInputUnderline,
+    LookAndFeel::eIntID_IMERawInputUnderlineStyle,
+    LookAndFeel::eFloatID_IMEUnderlineRelativeSize },
+  { LookAndFeel::eColorID_IMESelectedRawTextForeground,
+    LookAndFeel::eColorID_IMESelectedRawTextBackground,
+    LookAndFeel::eColorID_IMESelectedRawTextUnderline,
+    LookAndFeel::eIntID_IMESelectedRawTextUnderlineStyle,
+    LookAndFeel::eFloatID_IMEUnderlineRelativeSize },
+  { LookAndFeel::eColorID_IMEConvertedTextForeground,
+    LookAndFeel::eColorID_IMEConvertedTextBackground,
+    LookAndFeel::eColorID_IMEConvertedTextUnderline,
+    LookAndFeel::eIntID_IMEConvertedTextUnderlineStyle,
+    LookAndFeel::eFloatID_IMEUnderlineRelativeSize },
+  { LookAndFeel::eColorID_IMESelectedConvertedTextForeground,
+    LookAndFeel::eColorID_IMESelectedConvertedTextBackground,
+    LookAndFeel::eColorID_IMESelectedConvertedTextUnderline,
+    LookAndFeel::eIntID_IMESelectedConvertedTextUnderline,
+    LookAndFeel::eFloatID_IMEUnderlineRelativeSize },
+  { LookAndFeel::eColorID_LAST_COLOR,
+    LookAndFeel::eColorID_LAST_COLOR,
+    LookAndFeel::eColorID_SpellCheckerUnderline,
+    LookAndFeel::eIntID_SpellCheckerUnderlineStyle,
+    LookAndFeel::eFloatID_SpellCheckerUnderlineRelativeSize }
 };
 
 void
@@ -3504,17 +3505,16 @@ nsTextPaintStyle::InitSelectionStyle(PRInt32 aIndex)
 
   StyleIDs* styleIDs = &SelectionStyleIDs[aIndex];
 
-  nsILookAndFeel* look = mPresContext->LookAndFeel();
   nscolor foreColor, backColor;
-  if (styleIDs->mForeground == nsILookAndFeel::eColor_LAST_COLOR) {
+  if (styleIDs->mForeground == LookAndFeel::eColorID_LAST_COLOR) {
     foreColor = NS_SAME_AS_FOREGROUND_COLOR;
   } else {
-    look->GetColor(styleIDs->mForeground, foreColor);
+    foreColor = LookAndFeel::GetColor(styleIDs->mForeground);
   }
-  if (styleIDs->mBackground == nsILookAndFeel::eColor_LAST_COLOR) {
+  if (styleIDs->mBackground == LookAndFeel::eColorID_LAST_COLOR) {
     backColor = NS_TRANSPARENT;
   } else {
-    look->GetColor(styleIDs->mBackground, backColor);
+    backColor = LookAndFeel::GetColor(styleIDs->mBackground);
   }
 
   // Convert special color to actual color
@@ -3557,20 +3557,15 @@ nsTextPaintStyle::GetSelectionUnderline(nsPresContext* aPresContext,
   NS_ASSERTION(aStyle, "aStyle is null");
   NS_ASSERTION(aIndex >= 0 && aIndex < 5, "Index out of range");
 
-  nsILookAndFeel* look = aPresContext->LookAndFeel();
-
   StyleIDs& styleID = SelectionStyleIDs[aIndex];
-  nscolor color;
-  float size;
-  PRInt32 style;
 
-  look->GetColor(styleID.mLine, color);
-  look->GetMetric(styleID.mLineStyle, style);
+  nscolor color = LookAndFeel::GetColor(styleID.mLine);
+  PRInt32 style = LookAndFeel::GetInt(styleID.mLineStyle);
   if (style > NS_STYLE_TEXT_DECORATION_STYLE_MAX) {
     NS_ERROR("Invalid underline style value is specified");
     style = NS_STYLE_TEXT_DECORATION_STYLE_SOLID;
   }
-  look->GetMetric(styleID.mLineRelativeSize, size);
+  float size = LookAndFeel::GetFloat(styleID.mLineRelativeSize);
 
   NS_ASSERTION(size, "selection underline relative size must be larger than 0");
 
@@ -3826,8 +3821,10 @@ nsContinuingTextFrame::DestroyFrom(nsIFrame* aDestructRoot)
   // we have to clear the textrun because we're going away and the
   // textrun had better not keep a dangling reference to us.
   if ((GetStateBits() & TEXT_IN_TEXTRUN_USER_DATA) ||
-      !mPrevContinuation ||
-      mPrevContinuation->GetStyleContext() != GetStyleContext()) {
+      (!mPrevContinuation &&
+       !(GetStateBits() & TEXT_STYLE_MATCHES_PREV_CONTINUATION)) ||
+      (mPrevContinuation &&
+       mPrevContinuation->GetStyleContext() != GetStyleContext())) {
     ClearTextRun(nsnull);
     // Clear the previous continuation's text run also, so that it can rebuild
     // the text run to include our text.
@@ -4529,7 +4526,9 @@ ComputeSelectionUnderlineHeight(nsPresContext* aPresContext,
  * This, plus SelectionTypesWithDecorations, encapsulates all knowledge about
  * drawing text decoration for selections.
  */
-static void DrawSelectionDecorations(gfxContext* aContext, SelectionType aType,
+static void DrawSelectionDecorations(gfxContext* aContext,
+    const gfxRect& aDirtyRect,
+    SelectionType aType,
     nsTextFrame* aFrame,
     nsTextPaintStyle& aTextPaintStyle,
     const nsTextRangeStyle &aRangeStyle,
@@ -4611,7 +4610,7 @@ static void DrawSelectionDecorations(gfxContext* aContext, SelectionType aType,
   }
   size.height *= relativeSize;
   nsCSSRendering::PaintDecorationLine(
-    aContext, color, pt, size, aAscent, aFontMetrics.underlineOffset,
+    aContext, aDirtyRect, color, pt, size, aAscent, aFontMetrics.underlineOffset,
     NS_STYLE_TEXT_DECORATION_LINE_UNDERLINE, style, descentLimit);
 }
 
@@ -4847,7 +4846,9 @@ nsTextFrame::PaintOneShadow(PRUint32 aOffset, PRUint32 aLength,
   // Remember that the box blur context has a device offset on it, so we don't need to
   // translate any coordinates to fit on the surface.
   gfxFloat advanceWidth;
-  DrawText(shadowContext, aFramePt + shadowOffset,
+  gfxRect dirtyRect(aDirtyRect.x, aDirtyRect.y,
+                    aDirtyRect.width, aDirtyRect.height);
+  DrawText(shadowContext, dirtyRect, aFramePt + shadowOffset,
            aTextBaselinePt + shadowOffset, aOffset, aLength, *aProvider,
            nsTextPaintStyle(this), aClipEdges, advanceWidth,
            (GetStateBits() & TEXT_HYPHEN_BREAK) != 0, decorationOverrideColor);
@@ -4958,7 +4959,7 @@ nsTextFrame::PaintTextWithSelectionColors(gfxContext* aCtx,
     aCtx->SetColor(gfxRGBA(foreground));
     gfxFloat advance;
 
-    DrawText(aCtx, aFramePt, gfxPoint(aFramePt.x + xOffset, aTextBaselinePt.y),
+    DrawText(aCtx, aDirtyRect, aFramePt, gfxPoint(aFramePt.x + xOffset, aTextBaselinePt.y),
              offset, length, aProvider, aTextPaintStyle, aClipEdges, advance,
              hyphenWidth > 0);
     if (hyphenWidth) {
@@ -5019,6 +5020,8 @@ nsTextFrame::PaintTextSelectionDecorations(gfxContext* aCtx,
   PRInt32 app = aTextPaintStyle.PresContext()->AppUnitsPerDevPixel();
   // XXX aTextBaselinePt is in AppUnits, shouldn't it be nsFloatPoint?
   gfxPoint pt(0.0, (aTextBaselinePt.y - mAscent) / app);
+  gfxRect dirtyRect(aDirtyRect.x / app, aDirtyRect.y / app,
+                    aDirtyRect.width / app, aDirtyRect.height / app);
   SelectionType type;
   nsTextRangeStyle selectedStyle;
   while (iterator.GetNextSegment(&xOffset, &offset, &length, &hyphenWidth,
@@ -5029,7 +5032,7 @@ nsTextFrame::PaintTextSelectionDecorations(gfxContext* aCtx,
       pt.x = (aFramePt.x + xOffset -
              (mTextRun->IsRightToLeft() ? advance : 0)) / app;
       gfxFloat width = NS_ABS(advance) / app;
-      DrawSelectionDecorations(aCtx, aSelectionType, this, aTextPaintStyle,
+      DrawSelectionDecorations(aCtx, dirtyRect, aSelectionType, this, aTextPaintStyle,
                                selectedStyle,
                                pt, width, mAscent / app, decorationMetrics);
     }
@@ -5309,7 +5312,7 @@ nsTextFrame::PaintText(nsRenderingContext* aRenderingContext, nsPoint aPt,
   ctx->SetColor(gfxRGBA(foregroundColor));
 
   gfxFloat advanceWidth;
-  DrawText(ctx, framePt, textBaselinePt, startOffset, maxLength, provider,
+  DrawText(ctx, dirtyRect, framePt, textBaselinePt, startOffset, maxLength, provider,
            textPaintStyle, clipEdges, advanceWidth,
            (GetStateBits() & TEXT_HYPHEN_BREAK) != 0);
 }
@@ -5342,7 +5345,7 @@ nsTextFrame::DrawTextRun(gfxContext* const aCtx,
 
 void
 nsTextFrame::DrawTextRunAndDecorations(
-    gfxContext* const aCtx,
+    gfxContext* const aCtx, const gfxRect& aDirtyRect,
     const gfxPoint& aFramePt, const gfxPoint& aTextBaselinePt,
     PRUint32 aOffset, PRUint32 aLength,
     PropertyProvider& aProvider,
@@ -5365,6 +5368,9 @@ nsTextFrame::DrawTextRunAndDecorations(
     const gfxFloat ascent = gfxFloat(mAscent) / app;
     const gfxFloat frameTop = aFramePt.y;
 
+    gfxRect dirtyRect(aDirtyRect.x / app, aDirtyRect.y / app,
+                      aDirtyRect.Width() / app, aDirtyRect.Height() / app);
+
     // Underlines
     for (PRUint32 i = aDecorations.mUnderlines.Length(); i-- > 0; ) {
       const LineDecoration& dec = aDecorations.mUnderlines[i];
@@ -5376,7 +5382,7 @@ nsTextFrame::DrawTextRunAndDecorations(
       decPt.y = (frameTop - dec.mBaselineOffset) / app;
 
       const nscolor lineColor = aDecorationOverrideColor ? *aDecorationOverrideColor : dec.mColor;
-      nsCSSRendering::PaintDecorationLine(aCtx, lineColor, decPt, decSize, ascent,
+      nsCSSRendering::PaintDecorationLine(aCtx, dirtyRect, lineColor, decPt, decSize, ascent,
         metrics.underlineOffset, NS_STYLE_TEXT_DECORATION_LINE_UNDERLINE,
         dec.mStyle);
     }
@@ -5391,7 +5397,7 @@ nsTextFrame::DrawTextRunAndDecorations(
       decPt.y = (frameTop - dec.mBaselineOffset) / app;
 
       const nscolor lineColor = aDecorationOverrideColor ? *aDecorationOverrideColor : dec.mColor;
-      nsCSSRendering::PaintDecorationLine(aCtx, lineColor, decPt, decSize, ascent,
+      nsCSSRendering::PaintDecorationLine(aCtx, dirtyRect, lineColor, decPt, decSize, ascent,
         metrics.maxAscent, NS_STYLE_TEXT_DECORATION_LINE_OVERLINE, dec.mStyle);
     }
 
@@ -5411,7 +5417,7 @@ nsTextFrame::DrawTextRunAndDecorations(
       decPt.y = (frameTop - dec.mBaselineOffset) / app;
 
       const nscolor lineColor = aDecorationOverrideColor ? *aDecorationOverrideColor : dec.mColor;
-      nsCSSRendering::PaintDecorationLine(aCtx, lineColor, decPt, decSize, ascent,
+      nsCSSRendering::PaintDecorationLine(aCtx, dirtyRect, lineColor, decPt, decSize, ascent,
         metrics.strikeoutOffset, NS_STYLE_TEXT_DECORATION_LINE_LINE_THROUGH,
         dec.mStyle);
     }
@@ -5419,7 +5425,7 @@ nsTextFrame::DrawTextRunAndDecorations(
 
 void
 nsTextFrame::DrawText(
-    gfxContext* const aCtx,
+    gfxContext* const aCtx, const gfxRect& aDirtyRect,
     const gfxPoint& aFramePt, const gfxPoint& aTextBaselinePt,
     PRUint32 aOffset, PRUint32 aLength,
     PropertyProvider& aProvider,
@@ -5436,7 +5442,7 @@ nsTextFrame::DrawText(
   const bool drawDecorations = !aProvider.GetFontGroup()->ShouldSkipDrawing() &&
                                decorations.HasDecorationLines();
   if (drawDecorations) {
-    DrawTextRunAndDecorations(aCtx, aFramePt, aTextBaselinePt, aOffset, aLength,
+    DrawTextRunAndDecorations(aCtx, aDirtyRect, aFramePt, aTextBaselinePt, aOffset, aLength,
                               aProvider, aTextStyle, aClipEdges, aAdvanceWidth,
                               aDrawSoftHyphen, decorations,
                               aDecorationOverrideColor);
@@ -6628,8 +6634,7 @@ RoundOut(const gfxRect& aRect)
 nsRect
 nsTextFrame::ComputeTightBounds(gfxContext* aContext) const
 {
-  if ((GetStyleContext()->HasTextDecorationLines() &&
-       eCompatibility_NavQuirks == PresContext()->CompatibilityMode()) ||
+  if (GetStyleContext()->HasTextDecorationLines() ||
       (GetStateBits() & TEXT_HYPHEN_BREAK)) {
     // This is conservative, but OK.
     return GetVisualOverflowRect();
@@ -6672,6 +6677,53 @@ HasSoftHyphenBefore(const nsTextFragment* aFrag, gfxTextRun* aTextRun,
       return PR_TRUE;
   }
   return PR_FALSE;
+}
+
+static void
+RemoveInFlows(nsIFrame* aFrame, nsIFrame* aFirstToNotRemove)
+{
+  NS_PRECONDITION(aFrame != aFirstToNotRemove, "This will go very badly");
+  // We have to be careful here, because some RemoveFrame implementations
+  // remove and destroy not only the passed-in frame but also all its following
+  // in-flows (and sometimes all its following continuations in general).  So
+  // we remove |f| and everything up to but not including firstToNotRemove from
+  // the flow first, to make sure that only the things we want destroyed are
+  // destroyed.
+
+  // This sadly duplicates some of the logic from
+  // nsSplittableFrame::RemoveFromFlow.  We can get away with not duplicating
+  // all of it, because we know that the prev-continuation links of
+  // firstToNotRemove and f are fluid, and non-null.
+  NS_ASSERTION(aFirstToNotRemove->GetPrevContinuation() ==
+               aFirstToNotRemove->GetPrevInFlow() &&
+               aFirstToNotRemove->GetPrevInFlow() != nsnull,
+               "aFirstToNotRemove should have a fluid prev continuation");
+  NS_ASSERTION(aFrame->GetPrevContinuation() ==
+               aFrame->GetPrevInFlow() &&
+               aFrame->GetPrevInFlow() != nsnull,
+               "aFrame should have a fluid prev continuation");
+  
+  nsIFrame* prevContinuation = aFrame->GetPrevContinuation();
+  nsIFrame* lastRemoved = aFirstToNotRemove->GetPrevContinuation();
+
+  prevContinuation->SetNextInFlow(aFirstToNotRemove);
+  aFirstToNotRemove->SetPrevInFlow(prevContinuation);
+
+  aFrame->SetPrevInFlow(nsnull);
+  lastRemoved->SetNextInFlow(nsnull);
+
+  nsIFrame *parent = aFrame->GetParent();
+  nsBlockFrame *parentBlock = nsLayoutUtils::GetAsBlock(parent);
+  if (parentBlock) {
+    // Manually call DoRemoveFrame so we can tell it that we're
+    // removing empty frames; this will keep it from blowing away
+    // text runs.
+    parentBlock->DoRemoveFrame(aFrame, nsBlockFrame::FRAMES_ARE_EMPTY);
+  } else {
+    // Just remove it normally; use the nextBidi list to avoid
+    // posting new reflows.
+    parent->RemoveFrame(nsIFrame::kNoReflowPrincipalList, aFrame);
+  }
 }
 
 void
@@ -6720,7 +6772,7 @@ nsTextFrame::SetLength(PRInt32 aLength, nsLineLayout* aLineLayout,
       if (NS_SUCCEEDED(rv)) {
         nsTextFrame* next = static_cast<nsTextFrame*>(newFrame);
         nsFrameList temp(next, next);
-        GetParent()->InsertFrames(nsGkAtoms::nextBidi, this, temp);
+        GetParent()->InsertFrames(kNoReflowPrincipalList, this, temp);
         f = next;
       }
     }
@@ -6737,6 +6789,10 @@ nsTextFrame::SetLength(PRInt32 aLength, nsLineLayout* aLineLayout,
   // We don't dirty those lines. That's OK, because when we reflow
   // our empty next-in-flow, it will take text from its next-in-flow and
   // dirty that line.
+
+  // Note that in the process we may end up removing some frames from
+  // the flow if they end up empty.
+  nsIFrame *framesToRemove = nsnull;
   while (f && f->mContentOffset < end) {
     f->mContentOffset = end;
     if (f->GetTextRun() != mTextRun) {
@@ -6752,19 +6808,34 @@ nsTextFrame::SetLength(PRInt32 aLength, nsLineLayout* aLineLayout,
         (aSetLengthFlags & ALLOW_FRAME_CREATION_AND_DESTRUCTION)) {
       // |f| is now empty.  We may as well remove it, instead of copying all
       // the text from |next| into it instead; the latter leads to use
-      // rebuilding textruns for all following continuations.  We have to be
-      // careful here, though, because some RemoveFrame implementations remove
-      // and destroy not only the passed-in frame but also all its following
-      // in-flows (and sometimes all its following continuations in general).
-      // So we remove |f| from the flow first, to make sure that only |f| is
-      // destroyed.
+      // rebuilding textruns for all following continuations.
       // We skip this optimization if we were called during bidi resolution,
       // since the bidi resolver may try to handle the destroyed frame later
       // and crash
-      nsSplittableFrame::RemoveFromFlow(f);
-      f->GetParent()->RemoveFrame(nsGkAtoms::nextBidi, f);
+      if (!framesToRemove) {
+        // Remember that we have to remove this frame.
+        framesToRemove = f;
+      }
+
+      // Important: if |f| has the same style context as its prev continuation,
+      // mark it accordingly so we can skip clearing textruns as needed.  Note
+      // that at this point f always has a prev continuation.
+      if (f->GetStyleContext() == f->GetPrevContinuation()->GetStyleContext()) {
+        f->AddStateBits(TEXT_STYLE_MATCHES_PREV_CONTINUATION);
+      }
+    } else if (framesToRemove) {
+      RemoveInFlows(framesToRemove, f);
+      framesToRemove = nsnull;
     }
     f = next;
+  }
+  NS_POSTCONDITION(!framesToRemove || (f && f->mContentOffset == end),
+                   "How did we exit the loop if we null out framesToRemove if "
+                   "!next || next->mContentOffset > end ?");
+  if (framesToRemove) {
+    // We are guaranteed that we exited the loop with f not null, per the
+    // postcondition above
+    RemoveInFlows(framesToRemove, f);
   }
 
 #ifdef DEBUG

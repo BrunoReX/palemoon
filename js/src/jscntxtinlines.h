@@ -52,6 +52,25 @@
 
 namespace js {
 
+struct PreserveRegsGuard
+{
+    PreserveRegsGuard(JSContext *cx, FrameRegs &regs)
+      : prevContextRegs(cx->maybeRegs()), cx(cx), regs_(regs) {
+        cx->stack.repointRegs(&regs_);
+    }
+    ~PreserveRegsGuard() {
+        JS_ASSERT(cx->maybeRegs() == &regs_);
+        *prevContextRegs = regs_;
+        cx->stack.repointRegs(prevContextRegs);
+    }
+
+    FrameRegs *prevContextRegs;
+
+  private:
+    JSContext *cx;
+    FrameRegs &regs_;
+};
+
 static inline GlobalObject *
 GetGlobalForScopeChain(JSContext *cx)
 {
@@ -156,10 +175,6 @@ class CompartmentChecker
             check(v.toString());
     }
 
-    void check(jsval v) {
-        check(Valueify(v));
-    }
-
     void check(const ValueArray &arr) {
         for (size_t i = 0; i < arr.length; i++)
             check(arr.array[i]);
@@ -191,7 +206,7 @@ class CompartmentChecker
 
     void check(JSScript *script) {
         if (script) {
-            check(script->compartment);
+            check(script->compartment());
             if (script->u.object)
                 check(script->u.object);
         }
@@ -272,7 +287,7 @@ assertSameCompartment(JSContext *cx, T1 t1, T2 t2, T3 t3, T4 t4, T5 t5)
 
 STATIC_PRECONDITION_ASSUME(ubound(args.argv_) >= argc)
 JS_ALWAYS_INLINE bool
-CallJSNative(JSContext *cx, js::Native native, const CallArgs &args)
+CallJSNative(JSContext *cx, Native native, const CallArgs &args)
 {
 #ifdef DEBUG
     JSBool alreadyThrowing = cx->isExceptionPending();
@@ -290,7 +305,7 @@ extern JSBool CallOrConstructBoundFunction(JSContext *, uintN, js::Value *);
 
 STATIC_PRECONDITION(ubound(args.argv_) >= argc)
 JS_ALWAYS_INLINE bool
-CallJSNativeConstructor(JSContext *cx, js::Native native, const CallArgs &args)
+CallJSNativeConstructor(JSContext *cx, Native native, const CallArgs &args)
 {
 #ifdef DEBUG
     JSObject &callee = args.callee();
@@ -315,19 +330,17 @@ CallJSNativeConstructor(JSContext *cx, js::Native native, const CallArgs &args)
      *
      * (new Object(Object)) returns the callee.
      */
-    extern JSBool proxy_Construct(JSContext *, uintN, Value *);
-    extern JSBool callable_Construct(JSContext *, uintN, Value *);
-    JS_ASSERT_IF(native != proxy_Construct &&
-                 native != callable_Construct &&
+    JS_ASSERT_IF(native != FunctionProxyClass.construct &&
+                 native != CallableObjectClass.construct &&
                  native != js::CallOrConstructBoundFunction &&
-                 (!callee.isFunction() || callee.getFunctionPrivate()->u.n.clasp != &js_ObjectClass),
+                 (!callee.isFunction() || callee.getFunctionPrivate()->u.n.clasp != &ObjectClass),
                  !args.rval().isPrimitive() && callee != args.rval().toObject());
 
     return true;
 }
 
 JS_ALWAYS_INLINE bool
-CallJSPropertyOp(JSContext *cx, js::PropertyOp op, JSObject *receiver, jsid id, js::Value *vp)
+CallJSPropertyOp(JSContext *cx, PropertyOp op, JSObject *receiver, jsid id, Value *vp)
 {
     assertSameCompartment(cx, receiver, id, *vp);
     JSBool ok = op(cx, receiver, id, vp);
@@ -337,19 +350,19 @@ CallJSPropertyOp(JSContext *cx, js::PropertyOp op, JSObject *receiver, jsid id, 
 }
 
 JS_ALWAYS_INLINE bool
-CallJSPropertyOpSetter(JSContext *cx, js::StrictPropertyOp op, JSObject *obj, jsid id,
-                       JSBool strict, js::Value *vp)
+CallJSPropertyOpSetter(JSContext *cx, StrictPropertyOp op, JSObject *obj, jsid id,
+                       JSBool strict, Value *vp)
 {
     assertSameCompartment(cx, obj, id, *vp);
     return op(cx, obj, id, strict, vp);
 }
 
 inline bool
-CallSetter(JSContext *cx, JSObject *obj, jsid id, js::StrictPropertyOp op, uintN attrs,
-           uintN shortid, JSBool strict, js::Value *vp)
+CallSetter(JSContext *cx, JSObject *obj, jsid id, StrictPropertyOp op, uintN attrs,
+           uintN shortid, JSBool strict, Value *vp)
 {
     if (attrs & JSPROP_SETTER)
-        return ExternalGetOrSet(cx, obj, id, CastAsObjectJsval(op), JSACC_WRITE, 1, vp, vp);
+        return InvokeGetterOrSetter(cx, obj, CastAsObjectJsval(op), 1, vp, vp);
 
     if (attrs & JSPROP_GETTER)
         return js_ReportGetterOnlyAssignment(cx);
@@ -413,7 +426,7 @@ inline void
 JSContext::setPendingException(js::Value v) {
     this->throwing = true;
     this->exception = v;
-    assertSameCompartment(this, v);
+    js::assertSameCompartment(this, v);
 }
 
 inline bool

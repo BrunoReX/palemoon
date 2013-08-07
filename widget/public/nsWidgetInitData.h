@@ -132,7 +132,8 @@ struct nsWidgetInitData {
       mListenForResizes(PR_FALSE),
       mUnicode(PR_TRUE),
       mRTL(PR_FALSE),
-      mNoAutoHide(PR_FALSE)
+      mNoAutoHide(PR_FALSE),
+      mIsDragPopup(PR_FALSE)
   {
   }
 
@@ -146,6 +147,7 @@ struct nsWidgetInitData {
   PRPackedBool  mUnicode;
   PRPackedBool  mRTL;
   PRPackedBool  mNoAutoHide; // true for noautohide panels
+  PRPackedBool  mIsDragPopup;  // true for drag feedback panels
 };
 
 #endif // nsWidgetInitData_h__

@@ -24,6 +24,7 @@
  *   Daniel Glazman <glazman@netscape.com>
  *   Masayuki Nakano <masayuki@d-toybox.com>
  *   Mats Palmgren <matspal@gmail.com>
+ *   Jesper Kristensen <mail@jesperkristensen.dk>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either of the GNU General Public License Version 2 or later (the "GPL"),
@@ -48,6 +49,11 @@
 #include "nsFocusManager.h"
 #include "nsUnicharUtils.h"
 #include "nsReadableUtils.h"
+#include "nsIObserverService.h"
+#include "mozilla/Services.h"
+#include "mozISpellCheckingEngine.h"
+#include "nsIEditorSpellCheck.h"
+#include "mozInlineSpellChecker.h"
 
 #include "nsIDOMText.h"
 #include "nsIDOMElement.h"
@@ -207,6 +213,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsEditor)
  NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
  NS_INTERFACE_MAP_ENTRY(nsIEditorIMESupport)
  NS_INTERFACE_MAP_ENTRY(nsIEditor)
+ NS_INTERFACE_MAP_ENTRY(nsIObserver)
  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIEditor)
 NS_INTERFACE_MAP_END
 
@@ -300,6 +307,13 @@ nsEditor::PostCreate()
     // update the UI with our state
     NotifyDocumentListeners(eDocumentCreated);
     NotifyDocumentListeners(eDocumentStateChanged);
+
+    nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+    if (obs) {
+      obs->AddObserver(this,
+                       SPELLCHECK_DICTIONARY_UPDATE_NOTIFICATION,
+                       PR_FALSE);
+    }
   }
 
   // update nsTextStateManager and caret if we have focus
@@ -412,6 +426,12 @@ nsEditor::PreDestroy(PRBool aDestroyingFrames)
   if (mDidPreDestroy)
     return NS_OK;
 
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if (obs) {
+    obs->RemoveObserver(this,
+                        SPELLCHECK_DICTIONARY_UPDATE_NOTIFICATION);
+  }
+
   // Let spellchecker clean up its observers etc. It is important not to
   // actually free the spellchecker here, since the spellchecker could have
   // caused flush notifications, which could have gotten here if a textbox
@@ -481,6 +501,26 @@ nsEditor::SetFlags(PRUint32 aFlags)
       nsIMEStateManager::UpdateIMEState(newState, focusedContent);
     }
   }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsEditor::GetIsSelectionEditable(PRBool *aIsSelectionEditable)
+{
+  NS_ENSURE_ARG_POINTER(aIsSelectionEditable);
+
+  // get current selection
+  nsCOMPtr<nsISelection> selection;
+  nsresult res = GetSelection(getter_AddRefs(selection));
+  NS_ENSURE_SUCCESS(res, res);
+  NS_ENSURE_TRUE(selection, NS_ERROR_NULL_POINTER);
+
+  // XXX we just check that the anchor node is editable at the moment
+  //     we should check that all nodes in the selection are editable
+  nsCOMPtr<nsIDOMNode> anchorNode;
+  selection->GetAnchorNode(getter_AddRefs(anchorNode));
+  *aIsSelectionEditable = anchorNode && IsEditable(anchorNode);
 
   return NS_OK;
 }
@@ -755,7 +795,6 @@ nsEditor::Undo(PRUint32 aCount)
     }
   }
 
-  NotifyEditorObservers();  
   return result;
 }
 
@@ -807,7 +846,6 @@ nsEditor::Redo(PRUint32 aCount)
     }
   }
 
-  NotifyEditorObservers();  
   return result;
 }
 
@@ -1265,6 +1303,13 @@ NS_IMETHODIMP nsEditor::GetInlineSpellChecker(PRBool autoCreate,
     return autoCreate ? NS_ERROR_NOT_AVAILABLE : NS_OK;
   }
 
+  // We don't want to show the spell checking UI if there are no spell check dictionaries available.
+  PRBool canSpell = mozInlineSpellChecker::CanEnableInlineSpellChecking();
+  if (!canSpell) {
+    *aInlineSpellChecker = nsnull;
+    return NS_ERROR_FAILURE;
+  }
+
   nsresult rv;
   if (!mInlineSpellChecker && autoCreate) {
     mInlineSpellChecker = do_CreateInstance(MOZ_INLINESPELLCHECKER_CONTRACTID, &rv);
@@ -1283,17 +1328,49 @@ NS_IMETHODIMP nsEditor::GetInlineSpellChecker(PRBool autoCreate,
   return NS_OK;
 }
 
+NS_IMETHODIMP nsEditor::Observe(nsISupports* aSubj, const char *aTopic,
+                                const PRUnichar *aData)
+{
+  NS_ASSERTION(!strcmp(aTopic,
+                       SPELLCHECK_DICTIONARY_UPDATE_NOTIFICATION),
+               "Unexpected observer topic");
+
+  // When mozInlineSpellChecker::CanEnableInlineSpellChecking changes
+  SyncRealTimeSpell();
+
+  // When nsIEditorSpellCheck::GetCurrentDictionary changes
+  if (mInlineSpellChecker) {
+    // if the current dictionary is no longer available, find another one
+    nsCOMPtr<nsIEditorSpellCheck> editorSpellCheck;
+    mInlineSpellChecker->GetSpellChecker(getter_AddRefs(editorSpellCheck));
+    if (editorSpellCheck) {
+      // Note: This might change the current dictionary, which may call
+      // this observer recursively.
+      editorSpellCheck->CheckCurrentDictionary();
+    }
+
+    // update the inline spell checker to reflect the new current dictionary
+    mInlineSpellChecker->SpellCheckRange(nsnull); // causes recheck
+  }
+
+  return NS_OK;
+}
+
 NS_IMETHODIMP nsEditor::SyncRealTimeSpell()
 {
   NS_TIME_FUNCTION;
 
   PRBool enable = GetDesiredSpellCheckState();
 
+  // Initializes mInlineSpellChecker
   nsCOMPtr<nsIInlineSpellChecker> spellChecker;
   GetInlineSpellChecker(enable, getter_AddRefs(spellChecker));
 
-  if (spellChecker) {
-    spellChecker->SetEnableRealTimeSpell(enable);
+  if (mInlineSpellChecker) {
+    // We might have a mInlineSpellChecker even if there are no dictionaries
+    // available since we don't destroy the mInlineSpellChecker when the last
+    // dictionariy is removed, but in that case spellChecker is null
+    mInlineSpellChecker->SetEnableRealTimeSpell(enable && spellChecker);
   }
 
   return NS_OK;
@@ -1946,7 +2023,7 @@ nsEditor::ForceCompositionEnd()
 // We can test mInIMEMode and do some optimization for Mac and Window
 // Howerver, since UNIX support over-the-spot, we cannot rely on that 
 // flag for Unix.
-// We should use nsILookAndFeel to resolve this
+// We should use LookAndFeel to resolve this
 
 #if defined(XP_MACOSX) || defined(XP_WIN) || defined(XP_OS2)
   // XXXmnakano see bug 558976, ResetInputState() has two meaning which are
@@ -5122,8 +5199,8 @@ nsEditor::GetRoot()
   return mRootElement;
 }
 
-NS_IMETHODIMP
-nsEditor::SwitchTextDirection()
+nsresult
+nsEditor::DetermineCurrentDirection()
 {
   // Get the current root direction from its frame
   nsIDOMElement *rootElement = GetRoot();
@@ -5149,6 +5226,18 @@ nsEditor::SwitchTextDirection()
     }
   }
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsEditor::SwitchTextDirection()
+{
+  // Get the current root direction from its frame
+  nsIDOMElement *rootElement = GetRoot();
+
+  nsresult rv = DetermineCurrentDirection();
+  NS_ENSURE_SUCCESS(rv, rv);
+
   // Apply the opposite direction
   if (mFlags & nsIPlaintextEditor::eEditorRightToLeft) {
     NS_ASSERTION(!(mFlags & nsIPlaintextEditor::eEditorLeftToRight),
@@ -5165,6 +5254,33 @@ nsEditor::SwitchTextDirection()
   }
 
   return rv;
+}
+
+void
+nsEditor::SwitchTextDirectionTo(PRUint32 aDirection)
+{
+  // Get the current root direction from its frame
+  nsIDOMElement *rootElement = GetRoot();
+
+  nsresult rv = DetermineCurrentDirection();
+  NS_ENSURE_SUCCESS(rv, );
+
+  // Apply the requested direction
+  if (aDirection == nsIPlaintextEditor::eEditorLeftToRight &&
+      (mFlags & nsIPlaintextEditor::eEditorRightToLeft)) {
+    NS_ASSERTION(!(mFlags & nsIPlaintextEditor::eEditorLeftToRight),
+                 "Unexpected mutually exclusive flag");
+    mFlags &= ~nsIPlaintextEditor::eEditorRightToLeft;
+    mFlags |= nsIPlaintextEditor::eEditorLeftToRight;
+    rootElement->SetAttribute(NS_LITERAL_STRING("dir"), NS_LITERAL_STRING("ltr"));
+  } else if (aDirection == nsIPlaintextEditor::eEditorRightToLeft &&
+             (mFlags & nsIPlaintextEditor::eEditorLeftToRight)) {
+    NS_ASSERTION(!(mFlags & nsIPlaintextEditor::eEditorRightToLeft),
+                 "Unexpected mutually exclusive flag");
+    mFlags |= nsIPlaintextEditor::eEditorRightToLeft;
+    mFlags &= ~nsIPlaintextEditor::eEditorLeftToRight;
+    rootElement->SetAttribute(NS_LITERAL_STRING("dir"), NS_LITERAL_STRING("rtl"));
+  }
 }
 
 #if DEBUG_JOE
@@ -5309,5 +5425,14 @@ nsEditor::BeginKeypressHandling(nsIDOMNSEvent* aEvent)
     PRBool isTrusted = PR_FALSE;
     aEvent->GetIsTrusted(&isTrusted);
     mLastKeypressEventWasTrusted = isTrusted ? eTriTrue : eTriFalse;
+  }
+}
+
+void
+nsEditor::OnFocus(nsIDOMEventTarget* aFocusEventTarget)
+{
+  InitializeSelection(aFocusEventTarget);
+  if (mInlineSpellChecker) {
+    mInlineSpellChecker->UpdateCurrentDictionary();
   }
 }

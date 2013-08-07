@@ -2,21 +2,25 @@
   background-image: url("chrome://branding/content/about-background.png");
   background-repeat: no-repeat;
   background-color: #F7F7F7;
+  background-size: cover;
   color: #000020;
 }
 
-.text-link {
-  color: #303090 !important;
+#clientBox {
+  background-image: url("chrome://branding/content/about-background.png");
+  background-repeat: no-repeat;
+  background-color: #F7F7F7;
+  background-size: cover;
+  color: #000020;
 } 
 
-/* #clientBox {
-  background-color: #F7F7F7;
-  color: #222222;
-} */
+.text-link {
+  color: #303090 !important;
+}
 
 #leftBox {
-//  background-image: url("chrome://branding/content/about-logo.png");
-//  background-repeat: no-repeat;
+/*  background-image: url("chrome://branding/content/about-logo.png"); */
+  background-repeat: no-repeat;
   /* min-width and min-height create room for the logo */
   min-width: 210px;
   min-height: 210px;
@@ -32,7 +36,7 @@
 #bottomBox {
   padding: 15px 10px 0;
   background-color: rgba(240,240,255,.7);
-} 
+}  
 
 #updateDeck > hbox > label:not([class="text-link"]) {
   color: #909090;

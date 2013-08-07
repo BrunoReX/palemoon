@@ -392,7 +392,7 @@ interface nsIXPCFunctionThisTranslator : nsISupports
     { 0xbd, 0xd6, 0x0, 0x0, 0x64, 0x65, 0x73, 0x74 } }
 %}
 
-[uuid(f99ffb06-4e7b-4bab-83d4-7d573235a08a)]
+[uuid(a995b541-d514-43f1-ac0e-f49746c0b063)]
 interface nsIXPConnect : nsISupports
 {
 %{ C++
@@ -725,13 +725,6 @@ interface nsIXPConnect : nsISupports
                                            in nsCCTraversalCallbackRef aCb);
 
     /**
-     * Get the JSEqualityOp pointer to use for identifying JSObjects that hold
-     * a pointer to a nsIXPConnectWrappedNative or to the native in their
-     * private date. See IS_WRAPPER_CLASS in xpcprivate.h for details.
-     */
-    void GetXPCWrappedNativeJSClassInfo(out JSEqualityOp equality);
-
-    /**
      * Whether or not XPConnect should report all JS exceptions when returning
      * from JS into C++. False by default, although any value set in the
      * MOZ_REPORT_ALL_JS_EXCEPTIONS environment variable will override the value
@@ -803,4 +796,13 @@ interface nsIXPConnect : nsISupports
      * stack reaches zero length.
      */
     [noscript] void setDebugModeWhenPossible(in boolean mode);
+};
+
+[uuid(44bf9047-914a-4f47-a1ec-e417927bacd1)]
+interface nsIXPConnect_MOZILLA_10_BRANCH : nsISupports
+{
+    // A 2-argument form of setDebugModeWhenPossible that allows
+    // controlling whether sync disable of debug mode is allowed.
+    [noscript] void setDebugModeWhenPossible(in boolean mode,
+                                             in boolean allowSyncDisable);
 };

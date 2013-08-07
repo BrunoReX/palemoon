@@ -69,7 +69,7 @@
 #endif
 
 class nsIInputStream;
-class nsIntRect;
+struct nsIntRect;
 class nsPluginDOMContextMenuListener;
 class nsObjectFrame;
 class nsDisplayListBuilder;
@@ -83,7 +83,9 @@ class gfxXlibSurface;
 #endif
 
 #ifdef MOZ_WIDGET_QT
+#ifdef MOZ_X11
 #include "gfxQtNativeRenderer.h"
+#endif
 #endif
 
 #ifdef XP_OS2
@@ -128,6 +130,9 @@ public:
   
   nsresult MouseDown(nsIDOMEvent* aKeyEvent);
   nsresult KeyPress(nsIDOMEvent* aKeyEvent);
+#if defined(MOZ_WIDGET_QT) && (MOZ_PLATFORM_MAEMO == 6)
+  nsresult Text(nsIDOMEvent* aTextEvent);
+#endif
 
   nsresult Destroy();  
   
@@ -139,7 +144,7 @@ public:
   void Paint(const gfxRect& aDirtyRect, CGContextRef cgContext);  
   void RenderCoreAnimation(CGContextRef aCGContext, int aWidth, int aHeight);
   void DoCocoaEventDrawRect(const gfxRect& aDrawRect, CGContextRef cgContext);
-#elif defined(MOZ_X11)
+#elif defined(MOZ_X11) || defined(ANDROID)
   void Paint(gfxContext* aContext,
              const gfxRect& aFrameRect,
              const gfxRect& aDirtyRect);
@@ -179,6 +184,7 @@ public:
   static void AddToCARefreshTimer(nsPluginInstanceOwner *aPluginInstance);
   static void RemoveFromCARefreshTimer(nsPluginInstanceOwner *aPluginInstance);
   void SetupCARefresh();
+  // This calls into the plugin (NPP_SetWindow) and can run script.
   void* FixUpPluginWindow(PRInt32 inPaintState);
   void HidePluginWindow();
   // Set a flag that (if true) indicates the plugin port info has changed and
@@ -202,6 +208,7 @@ public:
 #else // XP_MACOSX
   void UpdateWindowPositionAndClipRect(PRBool aSetWindow);
   void UpdateWindowVisibility(PRBool aVisible);
+  void UpdateDocumentActiveState(PRBool aIsActive);
 #endif // XP_MACOSX
   void CallSetWindow();
   
@@ -302,7 +309,10 @@ private:
   }
   
   void FixUpURLS(const nsString &name, nsAString &value);
-  
+#ifdef ANDROID
+  void RemovePluginView();
+#endif 
+ 
   nsPluginNativeWindow       *mPluginWindow;
   nsRefPtr<nsNPAPIPluginInstance> mInstance;
   nsObjectFrame              *mObjectFrame; // owns nsPluginInstanceOwner
@@ -343,6 +353,7 @@ private:
   PRPackedBool                mFlash10Quirks;
 #endif
   PRPackedBool                mPluginWindowVisible;
+  PRPackedBool                mPluginDocumentActiveState;
   
   // If true, destroy the widget on destruction. Used when plugin stop
   // is being delayed to a safer point in time.

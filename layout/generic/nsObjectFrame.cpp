@@ -751,7 +751,11 @@ nsObjectFrame::FixupWindow(const nsSize& aSize)
   NS_ENSURE_TRUE(window, /**/);
 
 #ifdef XP_MACOSX
+  nsWeakFrame weakFrame(this);
   mInstanceOwner->FixUpPluginWindow(nsPluginInstanceOwner::ePluginPaintDisable);
+  if (!weakFrame.IsAlive()) {
+    return;
+  }
 #endif
 
   PRBool windowless = (window->type == NPWindowTypeDrawable);
@@ -795,7 +799,11 @@ nsObjectFrame::CallSetWindow(PRBool aCheckIsHidden)
 
   nsPluginNativeWindow *window = (nsPluginNativeWindow *)win;
 #ifdef XP_MACOSX
+  nsWeakFrame weakFrame(this);
   mInstanceOwner->FixUpPluginWindow(nsPluginInstanceOwner::ePluginPaintDisable);
+  if (!weakFrame.IsAlive()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
 #endif
 
   if (aCheckIsHidden && IsHidden())
@@ -819,8 +827,13 @@ nsObjectFrame::CallSetWindow(PRBool aCheckIsHidden)
   window->width = intBounds.width;
   window->height = intBounds.height;
 
-  // this will call pi->SetWindow and take care of window subclassing
-  // if needed, see bug 132759.
+  // Calling SetWindow might destroy this frame. We need to use the instance
+  // owner to clean up so hold a ref.
+  nsRefPtr<nsPluginInstanceOwner> instanceOwnerRef(mInstanceOwner);
+
+  // This will call pi->SetWindow and take care of window subclassing
+  // if needed, see bug 132759. Calling SetWindow can destroy this frame
+  // so check for that before doing anything else with this frame's memory.
   if (mInstanceOwner->UseAsyncRendering()) {
     rv = pi->AsyncSetWindow(window);
   }
@@ -828,7 +841,8 @@ nsObjectFrame::CallSetWindow(PRBool aCheckIsHidden)
     rv = window->CallSetWindow(pi);
   }
 
-  mInstanceOwner->ReleasePluginPort(window->window);
+  instanceOwnerRef->ReleasePluginPort(window->window);
+
   return rv;
 }
 
@@ -1631,7 +1645,15 @@ nsObjectFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
     UpdateImageLayer(container, r);
 
     imglayer->SetContainer(container);
-    imglayer->SetFilter(nsLayoutUtils::GetGraphicsFilterForFrame(this));
+    gfxPattern::GraphicsFilter filter =
+      nsLayoutUtils::GetGraphicsFilterForFrame(this);
+#ifdef MOZ_GFX_OPTIMIZE_MOBILE
+    if (!aManager->IsCompositingCheap()) {
+      // Pixman just horrible with bilinear filter scaling
+      filter = gfxPattern::FILTER_NEAREST;
+    }
+#endif
+    imglayer->SetFilter(filter);
 
     layer->SetContentFlags(IsOpaque() ? Layer::CONTENT_OPAQUE : 0);
   } else {
@@ -1683,6 +1705,22 @@ nsObjectFrame::PaintPlugin(nsDisplayListBuilder* aBuilder,
                            nsRenderingContext& aRenderingContext,
                            const nsRect& aDirtyRect, const nsRect& aPluginRect)
 {
+#if defined(ANDROID)
+  if (mInstanceOwner) {
+    NPWindow *window;
+    mInstanceOwner->GetWindow(window);
+
+    gfxRect frameGfxRect =
+      PresContext()->AppUnitsToGfxUnits(aPluginRect);
+    gfxRect dirtyGfxRect =
+      PresContext()->AppUnitsToGfxUnits(aDirtyRect);
+    gfxContext* ctx = aRenderingContext.ThebesContext();
+
+    mInstanceOwner->Paint(ctx, frameGfxRect, dirtyGfxRect);
+    return;
+  }
+#endif
+
   // Screen painting code
 #if defined(XP_MACOSX)
   // delegate all painting to the plugin instance.
@@ -2495,6 +2533,16 @@ nsObjectFrame::GetCursor(const nsPoint& aPoint, nsIFrame::Cursor& aCursor)
 }
 
 void
+nsObjectFrame::SetIsDocumentActive(PRBool aIsActive)
+{
+#ifndef XP_MACOSX
+  if (mInstanceOwner) {
+    mInstanceOwner->UpdateDocumentActiveState(aIsActive);
+  }
+#endif
+}
+
+void
 nsObjectFrame::NotifyContentObjectWrapper()
 {
   nsCOMPtr<nsIDocument> doc = mContent->GetDocument();
@@ -2509,7 +2557,7 @@ nsObjectFrame::NotifyContentObjectWrapper()
   if (!scx)
     return;
 
-  JSContext *cx = (JSContext *)scx->GetNativeContext();
+  JSContext *cx = scx->GetNativeContext();
 
   nsCOMPtr<nsIXPConnectWrappedNative> wrapper;
   nsContentUtils::XPConnect()->
@@ -2535,7 +2583,7 @@ nsObjectFrame::NotifyContentObjectWrapper()
 nsIObjectFrame *
 nsObjectFrame::GetNextObjectFrame(nsPresContext* aPresContext, nsIFrame* aRoot)
 {
-  nsIFrame* child = aRoot->GetFirstChild(nsnull);
+  nsIFrame* child = aRoot->GetFirstPrincipalChild();
 
   while (child) {
     nsIObjectFrame* outFrame = do_QueryFrame(child);

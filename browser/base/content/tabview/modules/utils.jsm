@@ -50,7 +50,7 @@
 // **********
 // Title: utils.js
 
-let EXPORTED_SYMBOLS = ["Point", "Rect", "Range", "Subscribable", "Utils"];
+let EXPORTED_SYMBOLS = ["Point", "Rect", "Range", "Subscribable", "Utils", "MRUList"];
 
 // #########
 const Ci = Components.interfaces;
@@ -776,5 +776,82 @@ let Utils = {
 
     // Return the modified object
     return target;
+  },
+
+  // ----------
+  // Function: attempt
+  // Tries to execute a number of functions. Returns immediately the return
+  // value of the first non-failed function without executing successive
+  // functions, or null.
+  attempt: function () {
+    let args = arguments;
+
+    for (let i = 0; i < args.length; i++) {
+      try {
+        return args[i]();
+      } catch (e) {}
+    }
+
+    return null;
   }
 };
+
+// ##########
+// Class: MRUList
+// A most recently used list.
+//
+// Constructor: MRUList
+// If a is an array of entries, creates a copy of it.
+function MRUList(a) {
+  if (Array.isArray(a))
+    this._list = a.concat();
+  else
+    this._list = [];
+};
+
+MRUList.prototype = {
+  // ----------
+  // Function: toString
+  // Prints [List (entry1, entry2, ...)] for debug use
+  toString: function MRUList_toString() {
+    return "[List (" + this._list.join(", ") + ")]";
+  },
+
+  // ----------
+  // Function: update
+  // Updates/inserts the given entry as the most recently used one in the list.
+  update: function MRUList_update(entry) {
+    this.remove(entry);
+    this._list.unshift(entry);
+  },
+
+  // ----------
+  // Function: remove
+  // Removes the given entry from the list.
+  remove: function MRUList_remove(entry) {
+    let index = this._list.indexOf(entry);
+    if (index > -1)
+      this._list.splice(index, 1);
+  },
+
+  // ----------
+  // Function: peek
+  // Returns the most recently used entry.  If a filter exists, gets the most 
+  // recently used entry which matches the filter.
+  peek: function MRUList_peek(filter) {
+    let match = null;
+    if (filter && typeof filter == "function")
+      this._list.some(function MRUList_peek_getEntry(entry) {
+        if (filter(entry)) {
+          match = entry
+          return true;
+        }
+        return false;
+      });
+    else 
+      match = this._list.length > 0 ? this._list[0] : null;
+
+    return match;
+  },
+};
+

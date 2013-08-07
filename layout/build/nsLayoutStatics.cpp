@@ -122,6 +122,7 @@
 #include "nsRefreshDriver.h"
 
 #include "nsHyphenationManager.h"
+#include "nsEditorSpellCheck.h"
 #include "nsDOMMemoryReporter.h"
 
 extern void NS_ShutdownChainItemPool();
@@ -157,6 +158,8 @@ nsLayoutStatics::Initialize()
     NS_ERROR("Could not initialize nsRegion");
     return rv;
   }
+
+  nsGlobalWindow::Init();
 
   rv = nsContentUtils::Init();
   if (NS_FAILED(rv)) {
@@ -358,4 +361,5 @@ nsLayoutStatics::Shutdown()
   nsLayoutUtils::Shutdown();
 
   nsHyphenationManager::Shutdown();
+  nsEditorSpellCheck::ShutDown();
 }

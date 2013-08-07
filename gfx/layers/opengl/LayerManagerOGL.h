@@ -139,7 +139,8 @@ public:
 
   virtual bool EndEmptyTransaction();
   virtual void EndTransaction(DrawThebesLayerCallback aCallback,
-                              void* aCallbackData);
+                              void* aCallbackData,
+                              EndTransactionFlags aFlags = END_DEFAULT);
 
   virtual void SetRoot(Layer* aLayer) { mRoot = aLayer; }
 
@@ -407,8 +408,6 @@ public:
   gfxMatrix& GetWorldTransform(void);
   void WorldTransformRect(nsIntRect& aRect);
 
-  void SetRenderFPS(bool aRenderFPS) { mRenderFPS = aRenderFPS; };
-
 private:
   /** Widget associated with this layer manager */
   nsIWidget *mWidget;
@@ -501,11 +500,13 @@ private:
         , fps(0)
         , initialized(false)
         , fcount(0)
-      {}
+      {
+        last = TimeStamp::Now();
+      }
       void DrawFPS(GLContext*, CopyProgram*);
   } mFPS;
 
-  bool mRenderFPS;
+  static PRBool sDrawFPS;
 };
 
 /**

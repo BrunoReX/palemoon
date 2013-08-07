@@ -50,6 +50,7 @@
 #include "jswatchpoint.h"
 #include "jswrapper.h"
 #include "assembler/wtf/Platform.h"
+#include "assembler/jit/ExecutableAllocator.h"
 #include "yarr/BumpPointerAllocator.h"
 #include "methodjit/MethodJIT.h"
 #include "methodjit/PolyIC.h"
@@ -99,9 +100,7 @@ JSCompartment::JSCompartment(JSRuntime *rt)
     breakpointSites(rt),
     watchpointMap(NULL)
 {
-    JS_INIT_CLIST(&scripts);
-
-    PodArrayZero(scriptsToGC);
+    PodArrayZero(evalCache);
 }
 
 JSCompartment::~JSCompartment()
@@ -122,17 +121,22 @@ JSCompartment::~JSCompartment()
     Foreground::delete_(watchpointMap);
 
 #ifdef DEBUG
-    for (size_t i = 0; i != JS_ARRAY_LENGTH(scriptsToGC); ++i)
-        JS_ASSERT(!scriptsToGC[i]);
+    for (size_t i = 0; i != JS_ARRAY_LENGTH(evalCache); ++i)
+        JS_ASSERT(!evalCache[i]);
 #endif
 }
 
 bool
-JSCompartment::init()
+JSCompartment::init(JSContext *cx)
 {
-    for (unsigned i = 0; i < FINALIZE_LIMIT; i++)
-        arenas[i].init();
-    freeLists.init();
+    activeAnalysis = activeInference = false;
+    types.init(cx);
+
+    /* Duplicated from jscntxt.cpp. :XXX: bug 675150 fix hack. */
+    static const size_t ARENA_HEADER_SIZE_HACK = 40;
+
+    JS_InitArenaPool(&pool, "analysis", 4096 - ARENA_HEADER_SIZE_HACK, 8);
+
     if (!crossCompartmentWrappers.init())
         return false;
 
@@ -167,22 +171,18 @@ JSCompartment::ensureJaegerCompartmentExists(JSContext *cx)
     return true;
 }
 
-size_t
-JSCompartment::getMjitCodeSize() const
+void
+JSCompartment::getMjitCodeStats(size_t& method, size_t& regexp, size_t& unused) const
 {
-    return jaegerCompartment_ ? jaegerCompartment_->execAlloc()->getCodeSize() : 0;
+    if (jaegerCompartment_) {
+        jaegerCompartment_->execAlloc()->getCodeStats(method, regexp, unused);
+    } else {
+        method = 0;
+        regexp = 0;
+        unused = 0;
+    }
 }
 #endif
-
-bool
-JSCompartment::arenaListsAreEmpty()
-{
-  for (unsigned i = 0; i < FINALIZE_LIMIT; i++) {
-       if (!arenas[i].isEmpty())
-           return false;
-  }
-  return true;
-}
 
 static bool
 IsCrossCompartmentWrapper(JSObject *wrapper)
@@ -207,10 +207,6 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
     if (vp->isString()) {
         JSString *str = vp->toString();
 
-        /* Static atoms do not have to be wrapped. */
-        if (str->isStaticAtom())
-            return true;
-
         /* If the string is already in this compartment, we are done. */
         if (str->compartment() == this)
             return true;
@@ -225,8 +221,7 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
     /*
      * Wrappers should really be parented to the wrapped parent of the wrapped
      * object, but in that case a wrapped global object would have a NULL
-     * parent without being a proper global object (JSCLASS_IS_GLOBAL). Instead
-,
+     * parent without being a proper global object (JSCLASS_IS_GLOBAL). Instead,
      * we parent all wrappers to the global object in their home compartment.
      * This loses us some transparency, and is generally very cheesy.
      */
@@ -248,7 +243,7 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
             return true;
 
         /* Translate StopIteration singleton. */
-        if (obj->getClass() == &js_StopIterationClass)
+        if (obj->isStopIteration())
             return js_FindClassObject(cx, NULL, JSProto_StopIteration, vp);
 
         /* Don't unwrap an outer window proxy. */
@@ -343,7 +338,9 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
 
     vp->setObject(*wrapper);
 
-    wrapper->setProto(proto);
+    if (wrapper->getProto() != proto && !SetProto(cx, wrapper, proto, false))
+        return false;
+
     if (!crossCompartmentWrappers.put(wrapper->getProxyPrivate(), *vp))
         return false;
 
@@ -450,7 +447,16 @@ ScriptPoolDestroyed(JSContext *cx, mjit::JITScript *jit,
     }
     return pool->m_destroy;
 }
-#endif
+
+static inline void
+ScriptTryDestroyCode(JSContext *cx, JSScript *script, bool normal,
+                     uint32 releaseInterval, uint32 &counter)
+{
+    mjit::JITScript *jit = normal ? script->jitNormal : script->jitCtor;
+    if (jit && ScriptPoolDestroyed(cx, jit, releaseInterval, counter))
+        mjit::ReleaseScriptCode(cx, script, !normal);
+}
+#endif // JS_METHODJIT && JS_MONOIC
 
 /*
  * This method marks pointers that cross compartment boundaries. It should be
@@ -464,6 +470,35 @@ JSCompartment::markCrossCompartmentWrappers(JSTracer *trc)
 
     for (WrapperMap::Enum e(crossCompartmentWrappers); !e.empty(); e.popFront())
         MarkValue(trc, e.front().key, "cross-compartment wrapper");
+}
+
+void
+JSCompartment::markTypes(JSTracer *trc)
+{
+    /*
+     * Mark all scripts, type objects and singleton JS objects in the
+     * compartment. These can be referred to directly by type sets, which we
+     * cannot modify while code which depends on these type sets is active.
+     */
+    JS_ASSERT(activeAnalysis);
+
+    for (CellIterUnderGC i(this, FINALIZE_SCRIPT); !i.done(); i.next()) {
+        JSScript *script = i.get<JSScript>();
+        MarkScript(trc, script, "mark_types_script");
+    }
+
+    for (size_t thingKind = FINALIZE_OBJECT0;
+         thingKind <= FINALIZE_FUNCTION_AND_OBJECT_LAST;
+         thingKind++) {
+        for (CellIterUnderGC i(this, AllocKind(thingKind)); !i.done(); i.next()) {
+            JSObject *object = i.get<JSObject>();
+            if (!object->isNewborn() && object->hasSingletonType())
+                MarkObject(trc, *object, "mark_types_singleton");
+        }
+    }
+
+    for (CellIterUnderGC i(this, FINALIZE_TYPE_OBJECT); !i.done(); i.next())
+        MarkTypeObject(trc, i.get<types::TypeObject>(), "mark_types_scan");
 }
 
 void
@@ -506,6 +541,37 @@ JSCompartment::sweep(JSContext *cx, uint32 releaseInterval)
         traceMonitor()->sweep(cx);
 #endif
 
+#ifdef JS_METHODJIT
+    /*
+     * Purge PICs in the compartment, along with native call stubs for
+     * compartments which do not have such stubs on the stack. PICs can
+     * reference shapes and type data, and native call stubs are disassociated
+     * from the PIC or MIC they were generated for.
+     */
+    bool canPurgeNativeCalls = true;
+    VMFrame *f = hasJaegerCompartment() ? jaegerCompartment()->activeFrame() : NULL;
+    for (; f; f = f->previous) {
+        if (f->stubRejoin)
+            canPurgeNativeCalls = false;
+    }
+    for (CellIterUnderGC i(this, FINALIZE_SCRIPT); !i.done(); i.next()) {
+        JSScript *script = i.get<JSScript>();
+        if (script->hasJITCode()) {
+#ifdef JS_POLYIC
+            mjit::ic::PurgePICs(cx, script);
+#endif
+            if (canPurgeNativeCalls) {
+                if (script->jitNormal)
+                    script->jitNormal->purgeNativeCallStubs();
+                if (script->jitCtor)
+                    script->jitCtor->purgeNativeCallStubs();
+            }
+        }
+    }
+#endif
+
+    bool discardScripts = !active && (releaseInterval != 0 || hasDebugModeCodeToDrop);
+
 #if defined JS_METHODJIT && defined JS_MONOIC
 
     /*
@@ -516,29 +582,84 @@ JSCompartment::sweep(JSContext *cx, uint32 releaseInterval)
      * for compartments which currently have active stack frames.
      */
     uint32 counter = 1;
-    bool discardScripts = !active && (releaseInterval != 0 || hasDebugModeCodeToDrop);
     if (discardScripts)
         hasDebugModeCodeToDrop = false;
 
-    for (JSCList *cursor = scripts.next; cursor != &scripts; cursor = cursor->next) {
-        JSScript *script = reinterpret_cast<JSScript *>(cursor);
+    for (CellIterUnderGC i(this, FINALIZE_SCRIPT); !i.done(); i.next()) {
+        JSScript *script = i.get<JSScript>();
         if (script->hasJITCode()) {
             mjit::ic::SweepCallICs(cx, script, discardScripts);
             if (discardScripts) {
-                if (script->jitNormal &&
-                    ScriptPoolDestroyed(cx, script->jitNormal, releaseInterval, counter)) {
-                    mjit::ReleaseScriptCode(cx, script);
-                    continue;
-                }
-                if (script->jitCtor &&
-                    ScriptPoolDestroyed(cx, script->jitCtor, releaseInterval, counter)) {
-                    mjit::ReleaseScriptCode(cx, script);
-                }
+                ScriptTryDestroyCode(cx, script, true, releaseInterval, counter);
+                ScriptTryDestroyCode(cx, script, false, releaseInterval, counter);
             }
         }
     }
 
-#endif /* JS_METHODJIT && JS_MONOIC */
+#endif
+
+#ifdef JS_METHODJIT
+    if (types.inferenceEnabled)
+        mjit::ClearAllFrames(this);
+#endif
+
+    if (activeAnalysis) {
+        /*
+         * Analysis information is in use, so don't clear the analysis pool.
+         * jitcode still needs to be released, if this is a shape-regenerating
+         * GC then shape numbers baked into the code may change.
+         */
+#ifdef JS_METHODJIT
+        if (types.inferenceEnabled) {
+            for (CellIterUnderGC i(this, FINALIZE_SCRIPT); !i.done(); i.next()) {
+                JSScript *script = i.get<JSScript>();
+                mjit::ReleaseScriptCode(cx, script);
+            }
+        }
+#endif
+    } else {
+        /*
+         * Clear the analysis pool, but don't release its data yet. While
+         * sweeping types any live data will be allocated into the pool.
+         */
+        JSArenaPool oldPool;
+        MoveArenaPool(&pool, &oldPool);
+
+        /*
+         * Sweep analysis information and everything depending on it from the
+         * compartment, including all remaining mjit code if inference is
+         * enabled in the compartment.
+         */
+        if (types.inferenceEnabled) {
+            for (CellIterUnderGC i(this, FINALIZE_SCRIPT); !i.done(); i.next()) {
+                JSScript *script = i.get<JSScript>();
+                if (script->types) {
+                    types::TypeScript::Sweep(cx, script);
+
+                    /*
+                     * On each 1/8 lifetime, release observed types for all scripts.
+                     * This is always safe to do when there are no frames for the
+                     * compartment on the stack.
+                     */
+                    if (discardScripts) {
+                        script->types->destroy();
+                        script->types = NULL;
+                        script->typesPurged = true;
+                    }
+                }
+            }
+        }
+
+        types.sweep(cx);
+
+        for (CellIterUnderGC i(this, FINALIZE_SCRIPT); !i.done(); i.next()) {
+            JSScript *script = i.get<JSScript>();
+            script->clearAnalysis();
+        }
+
+        /* Reset the analysis pool, releasing all analysis and intermediate type data. */
+        JS_FinishArenaPool(&oldPool);
+    }
 
     active = false;
 }
@@ -546,11 +667,23 @@ JSCompartment::sweep(JSContext *cx, uint32 releaseInterval)
 void
 JSCompartment::purge(JSContext *cx)
 {
-    freeLists.purge();
+    arenas.purge();
     dtoaCache.purge();
 
-    /* Destroy eval'ed scripts. */
-    js_DestroyScriptsToGC(cx, this);
+    /*
+     * Clear the hash and reset all evalHashLink to null before the GC. This
+     * way MarkChildren(trc, JSScript *) can assume that JSScript::u.object is
+     * not null when we have script owned by an object and not from the eval
+     * cache.
+     */
+    for (size_t i = 0; i != JS_ARRAY_LENGTH(evalCache); ++i) {
+        for (JSScript **listHeadp = &evalCache[i]; *listHeadp; ) {
+            JSScript *script = *listHeadp;
+            JS_ASSERT(GetGCThingTraceKind(script) == JSTRACE_SCRIPT);
+            *listHeadp = NULL;
+            listHeadp = &script->u.evalHashLink;
+        }
+    }
 
     nativeIterCache.purge();
     toSourceCache.destroyIfConstructed();
@@ -565,22 +698,16 @@ JSCompartment::purge(JSContext *cx)
             traceMonitor()->needFlush = JS_TRUE;
 #endif
 
-#ifdef JS_METHODJIT
-    for (JSScript *script = (JSScript *)scripts.next;
-         &script->links != &scripts;
-         script = (JSScript *)script->links.next) {
-        if (script->hasJITCode()) {
-# if defined JS_POLYIC
-            mjit::ic::PurgePICs(cx, script);
-# endif
-# if defined JS_MONOIC
-            /*
-             * MICs do not refer to data which can be GC'ed and do not generate stubs
-             * which might need to be discarded, but are sensitive to shape regeneration.
-             */
-            if (cx->runtime->gcRegenShapes)
+#if defined JS_METHODJIT && defined JS_MONOIC
+    /*
+     * MICs do not refer to data which can be GC'ed and do not generate stubs
+     * which might need to be discarded, but are sensitive to shape regeneration.
+     */
+    if (cx->runtime->gcRegenShapes) {
+        for (CellIterUnderGC i(this, FINALIZE_SCRIPT); !i.done(); i.next()) {
+            JSScript *script = i.get<JSScript>();
+            if (script->hasJITCode())
                 mjit::ic::PurgeMICs(cx, script);
-# endif
         }
     }
 #endif
@@ -634,7 +761,7 @@ JSCompartment::hasScriptsOnStack(JSContext *cx)
 {
     for (AllFramesIter i(cx->stack.space()); !i.done(); ++i) {
         JSScript *script = i.fp()->maybeScript();
-        if (script && script->compartment == this)
+        if (script && script->compartment() == this)
             return true;
     }
     return false;
@@ -667,7 +794,7 @@ JSCompartment::setDebugModeFromC(JSContext *cx, bool b)
 
     debugModeBits = (debugModeBits & ~uintN(DebugFromC)) | (b ? DebugFromC : 0);
     JS_ASSERT(debugMode() == enabledAfter);
-    if (enabledBefore != enabledAfter && !onStack)
+    if (enabledBefore != enabledAfter)
         updateForDebugMode(cx);
     return true;
 }
@@ -675,6 +802,12 @@ JSCompartment::setDebugModeFromC(JSContext *cx, bool b)
 void
 JSCompartment::updateForDebugMode(JSContext *cx)
 {
+    for (ThreadContextRange r(cx); !r.empty(); r.popFront()) {
+        JSContext *cx = r.front();
+        if (cx->compartment == this) 
+            cx->updateJITEnabled();
+    }
+
 #ifdef JS_METHODJIT
     bool enabled = debugMode();
 
@@ -685,12 +818,12 @@ JSCompartment::updateForDebugMode(JSContext *cx)
         return;
     }
 
-    // Discard JIT code for any scripts that change debugMode. This assumes
-    // that 'comp' is in the same thread as 'cx'.
-    for (JSScript *script = (JSScript *) scripts.next;
-         &script->links != &scripts;
-         script = (JSScript *) script->links.next)
-    {
+    /*
+     * Discard JIT code for any scripts that change debugMode. This assumes
+     * that 'comp' is in the same thread as 'cx'.
+     */
+    for (gc::CellIter i(cx, this, gc::FINALIZE_SCRIPT); !i.done(); i.next()) {
+        JSScript *script = i.get<JSScript>();
         if (script->debugMode != enabled) {
             mjit::ReleaseScriptCode(cx, script);
             script->debugMode = enabled;
@@ -772,7 +905,7 @@ void
 JSCompartment::clearBreakpointsIn(JSContext *cx, js::Debugger *dbg, JSScript *script,
                                   JSObject *handler)
 {
-    JS_ASSERT_IF(script, script->compartment == this);
+    JS_ASSERT_IF(script, script->compartment() == this);
 
     for (BreakpointSiteMap::Enum e(breakpointSites); !e.empty(); e.popFront()) {
         BreakpointSite *site = e.front().value;
@@ -798,7 +931,7 @@ JSCompartment::clearTraps(JSContext *cx, JSScript *script)
 }
 
 bool
-JSCompartment::markBreakpointsIteratively(JSTracer *trc)
+JSCompartment::markTrapClosuresIteratively(JSTracer *trc)
 {
     bool markedAny = false;
     JSContext *cx = trc->context;
@@ -808,7 +941,7 @@ JSCompartment::markBreakpointsIteratively(JSTracer *trc)
         // Mark jsdbgapi state if any. But if we know the scriptObject, put off
         // marking trap state until we know the scriptObject is live.
         if (site->trapHandler &&
-            (!site->scriptObject || IsAboutToBeFinalized(cx, site->scriptObject)))
+            (!site->scriptObject || !IsAboutToBeFinalized(cx, site->scriptObject)))
         {
             if (site->trapClosure.isMarkable() &&
                 IsAboutToBeFinalized(cx, site->trapClosure.toGCThing()))
@@ -816,26 +949,6 @@ JSCompartment::markBreakpointsIteratively(JSTracer *trc)
                 markedAny = true;
             }
             MarkValue(trc, site->trapClosure, "trap closure");
-        }
-
-        // Mark js::Debugger breakpoints. If either the debugger or the script is
-        // collected, then the breakpoint is collected along with it. So do not
-        // mark the handler in that case.
-        //
-        // If scriptObject is non-null, examine it to see if the script will be
-        // collected. If scriptObject is null, then site->script is an eval
-        // script on the stack, so it is definitely live.
-        //
-        if (!site->scriptObject || !IsAboutToBeFinalized(cx, site->scriptObject)) {
-            for (Breakpoint *bp = site->firstBreakpoint(); bp; bp = bp->nextInSite()) {
-                if (!IsAboutToBeFinalized(cx, bp->debugger->toJSObject()) &&
-                    bp->handler &&
-                    IsAboutToBeFinalized(cx, bp->handler))
-                {
-                    MarkObject(trc, *bp->handler, "breakpoint handler");
-                    markedAny = true;
-                }
-            }
         }
     }
     return markedAny;

@@ -1,10 +1,12 @@
 //
-// Copyright (c) 2002-2010 The ANGLE Project Authors. All rights reserved.
+// Copyright (c) 2002-2011 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 
+#include "compiler/BuiltInFunctionEmulator.h"
 #include "compiler/DetectRecursion.h"
+#include "compiler/ForLoopUnroll.h"
 #include "compiler/Initialize.h"
 #include "compiler/ParseHelper.h"
 #include "compiler/ShHandle.h"
@@ -19,7 +21,10 @@ bool InitializeSymbolTable(
 {
     TIntermediate intermediate(infoSink);
     TExtensionBehavior extBehavior;
-    TParseContext parseContext(symbolTable, extBehavior, intermediate, type, spec, 0, NULL, infoSink);
+    InitExtensionBehavior(resources, extBehavior);
+    // The builtins deliberately don't specify precisions for the function
+    // arguments and return types. For that reason we don't try to check them.
+    TParseContext parseContext(symbolTable, extBehavior, intermediate, type, spec, 0, false, NULL, infoSink);
 
     GlobalParseContext = &parseContext;
 
@@ -83,7 +88,8 @@ TShHandleBase::~TShHandleBase() {
 
 TCompiler::TCompiler(ShShaderType type, ShShaderSpec spec)
     : shaderType(type),
-      shaderSpec(spec) 
+      shaderSpec(spec),
+      builtInFunctionEmulator(type)
 {
 }
 
@@ -128,7 +134,7 @@ bool TCompiler::compile(const char* const shaderStrings[],
 
     TIntermediate intermediate(infoSink);
     TParseContext parseContext(symbolTable, extensionBehavior, intermediate,
-                               shaderType, shaderSpec, compileOptions,
+                               shaderType, shaderSpec, compileOptions, true,
                                sourcePath, infoSink);
     GlobalParseContext = &parseContext;
 
@@ -151,6 +157,14 @@ bool TCompiler::compile(const char* const shaderStrings[],
 
         if (success && (compileOptions & SH_VALIDATE_LOOP_INDEXING))
             success = validateLimitations(root);
+
+        // Unroll for-loop markup needs to happen after validateLimitations pass.
+        if (success && (compileOptions & SH_UNROLL_FOR_LOOP_WITH_INTEGER_INDEX))
+            ForLoopUnroll::MarkForLoopsWithIntegerIndicesForUnrolling(root);
+
+        // Built-in function emulation needs to happen after validateLimitations pass.
+        if (success && (compileOptions & SH_EMULATE_BUILT_IN_FUNCTIONS))
+            builtInFunctionEmulator.MarkBuiltInFunctionsForEmulation(root);
 
         // Call mapLongVariableNames() before collectAttribsUniforms() so in
         // collectAttribsUniforms() we already have the mapped symbol names and
@@ -195,6 +209,8 @@ void TCompiler::clearResults()
 
     attribs.clear();
     uniforms.clear();
+
+    builtInFunctionEmulator.Cleanup();
 }
 
 bool TCompiler::detectRecursion(TIntermNode* root)
@@ -236,5 +252,15 @@ void TCompiler::mapLongVariableNames(TIntermNode* root)
 
 int TCompiler::getMappedNameMaxLength() const
 {
-    return MAX_IDENTIFIER_NAME_SIZE + 1;
+    return MAX_SHORTENED_IDENTIFIER_SIZE + 1;
+}
+
+const TExtensionBehavior& TCompiler::getExtensionBehavior() const
+{
+    return extensionBehavior;
+}
+
+const BuiltInFunctionEmulator& TCompiler::getBuiltInFunctionEmulator() const
+{
+    return builtInFunctionEmulator;
 }

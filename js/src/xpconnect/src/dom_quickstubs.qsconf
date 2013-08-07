@@ -125,6 +125,7 @@ members = [
     #'nsIDOMDocument.location',
     'nsIDOMDocument.elementFromPoint',
     'nsIDOMDocument.activeElement',
+    'nsIDOMDocument.onreadystatechange',
     'nsIDOMElement.removeAttributeNS',
     'nsIDOMElement.removeAttribute',
     'nsIDOMElement.getAttribute',
@@ -181,12 +182,12 @@ members = [
     #XXX Can't quickstub initProgressEvent because it has long long parameters.
     'nsIDOMNSEvent.originalTarget',
     'nsIDOMNSEvent.getPreventDefault',
-    'nsIDOMNSUIEvent.which',
-    'nsIDOMNSUIEvent.rangeParent',
-    'nsIDOMNSUIEvent.rangeOffset',
-    'nsIDOMNSUIEvent.pageX',
-    'nsIDOMNSUIEvent.pageY',
-    'nsIDOMNSUIEvent.isChar',
+    'nsIDOMUIEvent.which',
+    'nsIDOMUIEvent.rangeParent',
+    'nsIDOMUIEvent.rangeOffset',
+    'nsIDOMUIEvent.pageX',
+    'nsIDOMUIEvent.pageY',
+    'nsIDOMUIEvent.isChar',
 
     'nsIDOMTouch.*',
     'nsIDOMTouchList.*',
@@ -597,6 +598,11 @@ customMethodCalls = {
         'code': '    nsINode *result = self->GetNodeParent();',
         'canFail': False
         },
+    'nsIDOMNode_GetParentElement': {
+        'thisType': 'nsINode',
+        'code': '    nsINode *result = self->GetElementParent();',
+        'canFail': False
+        },
     'nsIDOMNode_InsertBefore': {
         'thisType': 'nsINode',
         'arg0Type': 'nsINode',
@@ -811,12 +817,6 @@ customMethodCalls = {
         'thisType': 'nsINode',
         'canFail': False
         },
-    'nsIDOM3Node_IsSameNode': {
-        'thisType': 'nsINode',
-        'arg0Type': 'nsINode',
-        'code': '    PRBool result = self == arg0;',
-        'canFail': False
-        },
     'nsIDOMNode_LookupPrefix': {
         'thisType': 'nsINode',
         'canFail': False
@@ -837,6 +837,12 @@ customMethodCalls = {
         },
     'nsIDOMNode_GetUserData': {
         'thisType': 'nsINode',
+        'canFail': False
+        },
+    'nsIDOMNode_Contains': {
+        'thisType': 'nsINode',
+        'arg0Type': 'nsINode',
+        'code': '    PRBool result = self->Contains(arg0);',
         'canFail': False
         },
     'nsIDOMNSHTMLElement_': {
@@ -902,6 +908,14 @@ customMethodCalls = {
         'code': '    nsCOMPtr<nsIContent> result;\n'
                 '    rv = self->CreateTextNode(arg0, getter_AddRefs(result));'
     },
+    'nsIDOMDocument_GetOnreadystatechange' : {
+        'thisType' : 'nsDocument',
+        'unwrapThisFailureFatal' : False
+        },
+    'nsIDOMDocument_SetOnreadystatechange' : {
+        'thisType' : 'nsDocument',
+        'unwrapThisFailureFatal' : False
+        },
     # WebGL
     'nsIDOMWebGLRenderingContext_BufferData': CUSTOM_QS,
     'nsIDOMWebGLRenderingContext_BufferSubData': CUSTOM_QS,

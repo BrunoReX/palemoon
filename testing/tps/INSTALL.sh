@@ -57,6 +57,11 @@ fi
 cd ${CWD}
 python setup.py install
 
+# clean up files created by setup.py
+rm -rf build/
+rm -rf dist/
+rm -rf tps.egg-info/
+
 if [ "$?" -gt 0 ]
 then
   exit 1
@@ -68,7 +73,7 @@ NEWCONFIG=${CONFIG:0:${#CONFIG}-3}
 cd "../../services/sync/tests/tps"
 TESTDIR="`pwd`"
 
-cd "../../tps"
+cd "../../tps/extensions"
 EXTDIR="`pwd`"
 
 sed 's|__TESTDIR__|'"${TESTDIR}"'|' "${CONFIG}" | sed 's|__EXTENSIONDIR__|'"${EXTDIR}"'|' > "${NEWCONFIG}"

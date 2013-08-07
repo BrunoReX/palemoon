@@ -650,15 +650,6 @@ protected:
     void DoGetPositionAndSize(PRInt32 * x, PRInt32 * y, PRInt32 * cx,
                               PRInt32 * cy);
     
-    // Check whether aURI should inherit our security context
-    static nsresult URIInheritsSecurityContext(nsIURI* aURI, PRBool* aResult);
-
-    // Check whether aURI is a URI_IS_LOCAL_FILE or not
-    static PRBool URIIsLocalFile(nsIURI *aURI);
-
-    // Check whether aURI is about:blank
-    static PRBool IsAboutBlank(nsIURI* aURI);
-
     // Call this when a URI load is handed to us (via OnLinkClick or
     // InternalLoad).  This makes sure that we're not inside unload, or that if
     // we are it's still OK to load this URI.
@@ -731,7 +722,11 @@ protected:
     // Somebody give me better name
     nsCOMPtr<nsISHEntry>       mOSHE;
     // Reference to the SHEntry for this docshell until the page is loaded
-    // Somebody give me better name
+    // Somebody give me better name.
+    // If mLSHE is non-null, non-pushState subframe loads don't create separate
+    // root history entries. That is, frames loaded during the parent page
+    // load don't generate history entries the way frame navigation after the
+    // parent has loaded does. (This isn't the only purpose of mLSHE.)
     nsCOMPtr<nsISHEntry>       mLSHE;
 
     // Holds a weak pointer to a RestorePresentationEvent object if any that

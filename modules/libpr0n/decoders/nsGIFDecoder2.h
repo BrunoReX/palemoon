@@ -63,13 +63,14 @@ public:
 
   virtual void WriteInternal(const char* aBuffer, PRUint32 aCount);
   virtual void FinishInternal();
+  virtual Telemetry::ID SpeedHistogram();
 
 private:
   /* These functions will be called when the decoder has a decoded row,
    * frame size information, etc. */
 
   void      BeginGIF();
-  nsresult  BeginImageFrame(gfx_depth aDepth);
+  nsresult  BeginImageFrame(PRUint16 aDepth);
   void      EndImageFrame();
   void      FlushImageData();
   void      FlushImageData(PRUint32 fromRow, PRUint32 rows);

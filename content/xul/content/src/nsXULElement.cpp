@@ -159,7 +159,6 @@ public:
 
     // nsIScriptEventHandlerOwner
     virtual nsresult CompileEventHandler(nsIScriptContext* aContext,
-                                         nsISupports* aTarget,
                                          nsIAtom *aName,
                                          const nsAString& aBody,
                                          const char* aURL,
@@ -252,6 +251,13 @@ nsXULElement::nsXULSlots::~nsXULSlots()
     if (mFrameLoader) {
         mFrameLoader->Destroy();
     }
+}
+
+void
+nsXULElement::nsXULSlots::Traverse(nsCycleCollectionTraversalCallback &cb)
+{
+    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mSlots->mFrameLoader");
+    cb.NoteXPCOMChild(NS_ISUPPORTS_CAST(nsIFrameLoader*, mFrameLoader));
 }
 
 nsINode::nsSlots*
@@ -373,10 +379,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsXULElement,
     {
         nsXULSlots* slots = static_cast<nsXULSlots*>(tmp->GetExistingSlots());
         if (slots) {
-            NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mFrameLoader");
-            nsISupports *frameLoader =
-                static_cast<nsIFrameLoader*>(slots->mFrameLoader);
-            cb.NoteXPCOMChild(frameLoader);
+            slots->Traverse(cb);
         }
     }
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
@@ -506,7 +509,7 @@ nsXULElement::GetElementsByAttributeNS(const nsAString& aNamespaceURI,
 }
 
 nsEventListenerManager*
-nsXULElement::GetEventListenerManagerForAttr(PRBool* aDefer)
+nsXULElement::GetEventListenerManagerForAttr(nsIAtom* aAttrName, PRBool* aDefer)
 {
     // XXXbz sXBL/XBL2 issue: should we instead use GetCurrentDoc()
     // here, override BindToTree for those classes and munge event
@@ -526,7 +529,7 @@ nsXULElement::GetEventListenerManagerForAttr(PRBool* aDefer)
         return piTarget->GetListenerManager(PR_TRUE);
     }
 
-    return nsStyledElement::GetEventListenerManagerForAttr(aDefer);
+    return nsStyledElement::GetEventListenerManagerForAttr(aAttrName, aDefer);
 }
 
 // returns true if the element is not a list
@@ -577,8 +580,7 @@ nsXULElement::IsFocusable(PRInt32 *aTabIndex, PRBool aWithMouse)
     return PR_FALSE;
 #endif
 
-  nsCOMPtr<nsIDOMXULControlElement> xulControl = 
-    do_QueryInterface(static_cast<nsIContent*>(this));
+  nsCOMPtr<nsIDOMXULControlElement> xulControl = do_QueryObject(this);
   if (xulControl) {
     // a disabled element cannot be focused and is not part of the tab order
     PRBool disabled;
@@ -695,7 +697,7 @@ nsXULElement::PerformAccesskey(PRBool aKeyCausesActivation,
           }
         }
         if (aKeyCausesActivation && tag != nsGkAtoms::textbox && tag != nsGkAtoms::menulist) {
-          elm->ClickWithInputSource(nsIDOMNSMouseEvent::MOZ_SOURCE_KEYBOARD);
+          elm->ClickWithInputSource(nsIDOMMouseEvent::MOZ_SOURCE_KEYBOARD);
         }
     }
     else {
@@ -743,7 +745,6 @@ nsScriptEventHandlerOwnerTearoff::GetCompiledEventHandler(
 nsresult
 nsScriptEventHandlerOwnerTearoff::CompileEventHandler(
                                                 nsIScriptContext* aContext,
-                                                nsISupports* aTarget,
                                                 nsIAtom *aName,
                                                 const nsAString& aBody,
                                                 const char* aURL,
@@ -786,8 +787,6 @@ nsScriptEventHandlerOwnerTearoff::CompileEventHandler(
         NS_ENSURE_TRUE(context, NS_ERROR_UNEXPECTED);
     }
     else {
-        // We don't have a prototype, so the passed context is ok.
-        NS_ASSERTION(aTarget != nsnull, "no prototype and no target?!");
         context = aContext;
     }
 
@@ -798,7 +797,7 @@ nsScriptEventHandlerOwnerTearoff::CompileEventHandler(
                                      &argNames);
 
     nsCxPusher pusher;
-    if (!pusher.Push((JSContext*)context->GetNativeContext())) {
+    if (!pusher.Push(context->GetNativeContext())) {
       return NS_ERROR_FAILURE;
     }
 
@@ -806,12 +805,6 @@ nsScriptEventHandlerOwnerTearoff::CompileEventHandler(
                                       aBody, aURL, aLineNo,
                                       SCRIPTVERSION_DEFAULT,  // for now?
                                       aHandler);
-    if (NS_FAILED(rv)) return rv;
-
-    // XXX: Shouldn't this use context and not aContext?
-    // XXXmarkh - is GetNativeGlobal() the correct scope?
-    rv = aContext->BindCompiledEventHandler(aTarget, aContext->GetNativeGlobal(),
-                                            aName, aHandler);
     if (NS_FAILED(rv)) return rv;
 
     nsXULPrototypeAttribute *attr =
@@ -964,7 +957,7 @@ nsXULElement::RemoveChildAt(PRUint32 aIndex, PRBool aNotify)
       // and cells going away.
       // First, retrieve the tree.
       // Check first whether this element IS the tree
-      controlElement = do_QueryInterface(static_cast<nsIContent*>(this));
+      controlElement = do_QueryObject(this);
 
       // If it's not, look at our parent
       if (!controlElement)
@@ -2063,7 +2056,7 @@ NS_IMETHODIMP
 nsXULElement::Focus()
 {
     nsIFocusManager* fm = nsFocusManager::GetFocusManager();
-    nsCOMPtr<nsIDOMElement> elem = do_QueryInterface(static_cast<nsIContent*>(this));
+    nsCOMPtr<nsIDOMElement> elem = do_QueryObject(this);
     return fm ? fm->SetFocus(this, 0) : NS_OK;
 }
 
@@ -2087,7 +2080,7 @@ nsXULElement::Blur()
 NS_IMETHODIMP
 nsXULElement::Click()
 {
-  return ClickWithInputSource(nsIDOMNSMouseEvent::MOZ_SOURCE_UNKNOWN);
+  return ClickWithInputSource(nsIDOMMouseEvent::MOZ_SOURCE_UNKNOWN);
 }
 
 nsresult

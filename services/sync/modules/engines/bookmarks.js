@@ -113,8 +113,9 @@ PlacesItem.prototype = {
   _logName: "Sync.Record.PlacesItem",
 };
 
-Utils.deferGetSet(PlacesItem, "cleartext", ["hasDupe", "parentid", "parentName",
-                                            "type"]);
+Utils.deferGetSet(PlacesItem,
+                  "cleartext",
+                  ["hasDupe", "parentid", "parentName", "type"]);
 
 function Bookmark(collection, id, type) {
   PlacesItem.call(this, collection, id, type || "bookmark");
@@ -124,8 +125,10 @@ Bookmark.prototype = {
   _logName: "Sync.Record.Bookmark",
 };
 
-Utils.deferGetSet(Bookmark, "cleartext", ["title", "bmkUri", "description",
-  "loadInSidebar", "tags", "keyword"]);
+Utils.deferGetSet(Bookmark,
+                  "cleartext",
+                  ["title", "bmkUri", "description",
+                   "loadInSidebar", "tags", "keyword"]);
 
 function BookmarkQuery(collection, id) {
   Bookmark.call(this, collection, id, "query");
@@ -135,8 +138,9 @@ BookmarkQuery.prototype = {
   _logName: "Sync.Record.BookmarkQuery",
 };
 
-Utils.deferGetSet(BookmarkQuery, "cleartext", ["folderName",
-                                               "queryId"]);
+Utils.deferGetSet(BookmarkQuery,
+                  "cleartext",
+                  ["folderName", "queryId"]);
 
 function BookmarkFolder(collection, id, type) {
   PlacesItem.call(this, collection, id, type || "folder");
@@ -169,14 +173,6 @@ BookmarkSeparator.prototype = {
 
 Utils.deferGetSet(BookmarkSeparator, "cleartext", "pos");
 
-
-function archiveBookmarks() {
-  // Some nightly builds of 3.7 don't have this function
-  try {
-    PlacesUtils.archiveBookmarksFile(null, true);
-  }
-  catch(ex) {}
-}
 
 let kSpecialIds = {
 
@@ -389,8 +385,9 @@ BookmarksEngine.prototype = {
     SyncEngine.prototype._syncStartup.call(this);
 
     // For first-syncs, make a backup for the user to restore
-    if (this.lastSync == 0)
-      archiveBookmarks();
+    if (this.lastSync == 0) {
+      PlacesUtils.archiveBookmarksFile(null, true);
+    }
 
     this.__defineGetter__("_guidMap", function() {
       // Create a mapping of folder titles and separator positions to GUID.
@@ -467,8 +464,10 @@ function BookmarksStore(name) {
 
   // Explicitly nullify our references to our cached services so we don't leak
   Svc.Obs.add("places-shutdown", function() {
-    for each ([query, stmt] in Iterator(this._stmts))
+    for each ([query, stmt] in Iterator(this._stmts)) {
       stmt.finalize();
+    }
+    this._stmts = {};
   }, this);
 }
 BookmarksStore.prototype = {
@@ -692,7 +691,7 @@ BookmarksStore.prototype = {
           PlacesUtils.annotations.EXPIRE_NEVER);
       }
 
-      if (Utils.isArray(record.tags)) {
+      if (Array.isArray(record.tags)) {
         this._tagURI(uri, record.tags);
       }
       PlacesUtils.bookmarks.setKeywordForBookmark(newId, record.keyword);
@@ -840,7 +839,7 @@ BookmarksStore.prototype = {
         PlacesUtils.bookmarks.changeBookmarkURI(itemId, Utils.makeURI(val));
         break;
       case "tags":
-        if (Utils.isArray(val)) {
+        if (Array.isArray(val)) {
           this._tagURI(PlacesUtils.bookmarks.getBookmarkURI(itemId), val);
         }
         break;
@@ -1070,8 +1069,9 @@ BookmarksStore.prototype = {
 
   _stmts: {},
   _getStmt: function(query) {
-    if (query in this._stmts)
+    if (query in this._stmts) {
       return this._stmts[query];
+    }
 
     this._log.trace("Creating SQL statement: " + query);
     let db = PlacesUtils.history.QueryInterface(Ci.nsPIPlacesDatabase)
@@ -1174,7 +1174,7 @@ BookmarksStore.prototype = {
     if (record.parentid == "toolbar")
       index += 150;
 
-    // Add in the bookmark's frecency if we have something
+    // Add in the bookmark's frecency if we have something.
     if (record.bmkUri != null) {
       this._frecencyStm.params.url = record.bmkUri;
       let result = Async.querySpinningly(this._frecencyStm, this._frecencyCols);
@@ -1217,10 +1217,10 @@ BookmarksStore.prototype = {
   },
 
   _tagURI: function BStore_tagURI(bmkURI, tags) {
-    // Filter out any null/undefined/empty tags
+    // Filter out any null/undefined/empty tags.
     tags = tags.filter(function(t) t);
 
-    // Temporarily tag a dummy uri to preserve tag ids when untagging
+    // Temporarily tag a dummy URI to preserve tag ids when untagging.
     let dummyURI = Utils.makeURI("about:weave#BStore_tagURI");
     PlacesUtils.tagging.tagURI(dummyURI, tags);
     PlacesUtils.tagging.untagURI(bmkURI, null);
@@ -1239,8 +1239,8 @@ BookmarksStore.prototype = {
   },
 
   wipe: function BStore_wipe() {
-    // Save a backup before clearing out all bookmarks
-    archiveBookmarks();
+    // Save a backup before clearing out all bookmarks.
+    PlacesUtils.archiveBookmarksFile(null, true);
 
     for each (let guid in kSpecialIds.guids)
       if (guid != "places") {
@@ -1310,10 +1310,10 @@ BookmarksTracker.prototype = {
   ]),
 
   /**
-   * Add a bookmark guid to be uploaded and bump up the sync score
+   * Add a bookmark GUID to be uploaded and bump up the sync score.
    *
    * @param itemGuid
-   *        Guid of the bookmark to upload
+   *        GUID of the bookmark to upload.
    */
   _add: function BMT__add(itemId, guid) {
     guid = kSpecialIds.specialGUIDForId(itemId) || guid;
@@ -1321,14 +1321,14 @@ BookmarksTracker.prototype = {
       this._upScore();
   },
 
-  /* Every add/remove/change will trigger a sync for MULTI_DEVICE */
+  /* Every add/remove/change will trigger a sync for MULTI_DEVICE. */
   _upScore: function BMT__upScore() {
     this.score += SCORE_INCREMENT_XLARGE;
   },
 
   /**
    * Determine if a change should be ignored: we're ignoring everything or the
-   * folder is for livemarks
+   * folder is for livemarks.
    *
    * @param itemId
    *        Item under consideration to ignore

@@ -80,9 +80,9 @@ function getSourceString(aSource) {
   var strings = Services.strings.createBundle("chrome://mozapps/locale/extensions/selectAddons.properties");
   switch (aSource) {
     case PROFILE:
-    case DIST:
       return strings.GetStringFromName("source.profile");
-    case APP:
+    case DIST:
+      return strings.GetStringFromName("source.bundled");
     default:
       return strings.GetStringFromName("source.other");
   }

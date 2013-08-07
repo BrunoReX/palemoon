@@ -2098,6 +2098,7 @@ nsStyleDisplay::nsStyleDisplay()
   mPerspectiveOrigin[1].SetPercentValue(0.5f);
   mChildPerspective.SetCoordValue(0);
   mBackfaceVisibility = NS_STYLE_BACKFACE_VISIBILITY_VISIBLE;
+  mTransformStyle = NS_STYLE_TRANSFORM_STYLE_FLAT;
   mOrient = NS_STYLE_ORIENT_HORIZONTAL;
 
   mTransitions.AppendElement();
@@ -2168,6 +2169,7 @@ nsStyleDisplay::nsStyleDisplay(const nsStyleDisplay& aSource)
   mPerspectiveOrigin[1] = aSource.mPerspectiveOrigin[1];
   mChildPerspective = aSource.mChildPerspective;
   mBackfaceVisibility = aSource.mBackfaceVisibility;
+  mTransformStyle = aSource.mTransformStyle;
 }
 
 nsChangeHint nsStyleDisplay::CalcDifference(const nsStyleDisplay& aOther) const
@@ -2178,8 +2180,8 @@ nsChangeHint nsStyleDisplay::CalcDifference(const nsStyleDisplay& aOther) const
       || mPosition != aOther.mPosition
       || mDisplay != aOther.mDisplay
       || (mFloats == NS_STYLE_FLOAT_NONE) != (aOther.mFloats == NS_STYLE_FLOAT_NONE)
-      || (mOverflowX != aOther.mOverflowX && mDisplay != NS_STYLE_DISPLAY_INLINE)
-      || (mOverflowY != aOther.mOverflowY && mDisplay != NS_STYLE_DISPLAY_INLINE)
+      || mOverflowX != aOther.mOverflowX
+      || mOverflowY != aOther.mOverflowY
       || mResize != aOther.mResize)
     NS_UpdateHint(hint, nsChangeHint_ReconstructFrame);
 
@@ -2243,6 +2245,10 @@ nsChangeHint nsStyleDisplay::CalcDifference(const nsStyleDisplay& aOther) const
 
     if (mBackfaceVisibility != aOther.mBackfaceVisibility)
       NS_UpdateHint(hint, nsChangeHint_RepaintFrame);
+
+    if (mTransformStyle != aOther.mTransformStyle)
+      NS_UpdateHint(hint, NS_CombineHint(nsChangeHint_ReflowFrame,
+                                         nsChangeHint_RepaintFrame));
   }
 
   // Note:  Our current behavior for handling changes to the

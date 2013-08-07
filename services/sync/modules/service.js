@@ -58,9 +58,6 @@ const KEYS_WBO = "keys";
 
 const LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S";
 
-const LOG_PREFIX_SUCCESS = "success-";
-const LOG_PREFIX_ERROR   = "error-";
-
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://services-sync/record.js");
 Cu.import("resource://services-sync/constants.js");
@@ -366,7 +363,12 @@ WeaveSvc.prototype = {
    */
   onStartup: function onStartup() {
     this._migratePrefs();
-    this._initLogs();
+    ErrorHandler.init();
+
+    this._log = Log4Moz.repository.getLogger("Sync.Service");
+    this._log.level =
+      Log4Moz.Level[Svc.Prefs.get("log.logger.service.main")];
+
     this._log.info("Loading Weave " + WEAVE_VERSION);
 
     this.enabled = true;
@@ -384,11 +386,6 @@ WeaveSvc.prototype = {
     }
 
     Svc.Obs.add("weave:service:setup-complete", this);
-    Svc.Obs.add("weave:service:sync:finish", this);
-    Svc.Obs.add("weave:service:login:error", this);
-    Svc.Obs.add("weave:service:sync:error", this);
-    Svc.Obs.add("weave:engine:sync:applied", this);
-    Svc.Obs.add("weave:resource:status:401", this);
     Svc.Prefs.observe("engine.", this);
 
     SyncScheduler.init();
@@ -460,47 +457,6 @@ WeaveSvc.prototype = {
     Svc.Prefs.set("migrated", true);
   },
 
-  _initLogs: function WeaveSvc__initLogs() {
-    this._log = Log4Moz.repository.getLogger("Sync.Service");
-    this._log.level =
-      Log4Moz.Level[Svc.Prefs.get("log.logger.service.main")];
-
-    let root = Log4Moz.repository.getLogger("Sync");
-    root.level = Log4Moz.Level[Svc.Prefs.get("log.rootLogger")];
-
-    let formatter = new Log4Moz.BasicFormatter();
-    let capp = new Log4Moz.ConsoleAppender(formatter);
-    capp.level = Log4Moz.Level[Svc.Prefs.get("log.appender.console")];
-    root.addAppender(capp);
-
-    let dapp = new Log4Moz.DumpAppender(formatter);
-    dapp.level = Log4Moz.Level[Svc.Prefs.get("log.appender.dump")];
-    root.addAppender(dapp);
-
-    let fapp = this._logAppender = new Log4Moz.StorageStreamAppender(formatter);
-    fapp.level = Log4Moz.Level[Svc.Prefs.get("log.appender.file.level")];
-    root.addAppender(fapp);
-  },
-
-  _resetFileLog: function _resetFileLog(flushToFile, filenamePrefix) {
-    let inStream = this._logAppender.getInputStream();
-    this._logAppender.reset();
-    if (flushToFile && inStream) {
-      try {
-        let filename = filenamePrefix + Date.now() + ".txt";
-        let file = FileUtils.getFile("ProfD", ["weave", "logs", filename]);
-        let outStream = FileUtils.openFileOutputStream(file);
-        NetUtil.asyncCopy(inStream, outStream, function () {
-          Svc.Obs.notify("weave:service:reset-file-log");
-        });
-      } catch (ex) {
-        Svc.Obs.notify("weave:service:reset-file-log");
-      }
-    } else {
-      Svc.Obs.notify("weave:service:reset-file-log");
-    }
-  },
-
   /**
    * Register the built-in engines for certain applications
    */
@@ -528,49 +484,6 @@ WeaveSvc.prototype = {
         let status = this._checkSetup();
         if (status != STATUS_DISABLED && status != CLIENT_NOT_CONFIGURED)
             Svc.Obs.notify("weave:engine:start-tracking");
-        break;
-      case "weave:service:login:error":
-        if (Status.login == LOGIN_FAILED_NETWORK_ERROR &&
-            !Services.io.offline) {
-          this._ignorableErrorCount += 1;
-        } else {
-          this._resetFileLog(Svc.Prefs.get("log.appender.file.logOnError"),
-                             LOG_PREFIX_ERROR);
-        }
-        break;
-      case "weave:service:sync:error":
-        switch (Status.sync) {
-          case LOGIN_FAILED_NETWORK_ERROR:
-            if (!Services.io.offline) {
-              this._ignorableErrorCount += 1;
-            }
-            break;
-          case CREDENTIALS_CHANGED:
-            this.logout();
-            break;
-          default:
-            this._resetFileLog(Svc.Prefs.get("log.appender.file.logOnError"),
-                               LOG_PREFIX_ERROR);
-            break;
-        }
-        break;
-      case "weave:service:sync:finish":
-        this._resetFileLog(Svc.Prefs.get("log.appender.file.logOnSuccess"),
-                           LOG_PREFIX_SUCCESS);
-        this._ignorableErrorCount = 0;
-        break;
-      case "weave:engine:sync:applied":
-        if (subject.newFailed) {
-          // An engine isn't able to apply one or more incoming records.
-          // We don't fail hard on this, but it usually indicates a bug,
-          // so for now treat it as sync error (c.f. Service._syncEngine())
-          Status.engines = [data, ENGINE_APPLY_FAIL];
-          this._syncError = true;
-          this._log.debug(data + " failed to apply some records.");
-        }
-        break;
-      case "weave:resource:status:401":
-        this._handleResource401(subject);
         break;
       case "nsPref:changed":
         if (this._ignorePrefObserver)
@@ -603,7 +516,7 @@ WeaveSvc.prototype = {
       switch (node.status) {
         case 400:
           Status.login = LOGIN_FAILED_LOGIN_REJECTED;
-          fail = "Find cluster denied: " + this._errorStr(node);
+          fail = "Find cluster denied: " + ErrorHandler.errorStr(node);
           break;
         case 404:
           this._log.debug("Using serverURL as data cluster (multi-cluster support disabled)");
@@ -614,12 +527,14 @@ WeaveSvc.prototype = {
             node = null;
           return node;
         default:
+          ErrorHandler.checkServerError(node);
           fail = "Unexpected response code: " + node.status;
           break;
       }
     } catch (e) {
       this._log.debug("Network error on findCluster");
       Status.login = LOGIN_FAILED_NETWORK_ERROR;
+      ErrorHandler.checkServerError(e);
       fail = e;
     }
     throw fail;
@@ -666,11 +581,11 @@ WeaveSvc.prototype = {
     try {
       info = new Resource(infoURL).get();
     } catch (ex) {
-      this._checkServerError(ex);
+      ErrorHandler.checkServerError(ex);
       throw ex;
     }
     if (!info.success) {
-      this._checkServerError(info);
+      ErrorHandler.checkServerError(info);
       throw "aborting sync, failed to get collections";
     }
     return info;
@@ -708,6 +623,7 @@ WeaveSvc.prototype = {
       if (infoResponse.status != 200) {
         this._log.warn("info/collections returned non-200 response. Failing key fetch.");
         Status.login = LOGIN_FAILED_SERVER_ERROR;
+        ErrorHandler.checkServerError(infoResponse);
         return false;
       }
 
@@ -740,8 +656,9 @@ WeaveSvc.prototype = {
             }
             else {
               // Some other problem.
-              this._log.warn("Got status " + cryptoResp.status + " fetching crypto keys.");
               Status.login = LOGIN_FAILED_SERVER_ERROR;
+              ErrorHandler.checkServerError(cryptoResp);
+              this._log.warn("Got status " + cryptoResp.status + " fetching crypto keys.");
               return false;
             }
           }
@@ -885,8 +802,8 @@ WeaveSvc.prototype = {
 
           default:
             // Server didn't respond with something that we expected
-            this._checkServerError(test);
             Status.login = LOGIN_FAILED_SERVER_ERROR;
+            ErrorHandler.checkServerError(test);
             return false;
         }
       }
@@ -894,6 +811,7 @@ WeaveSvc.prototype = {
         // Must have failed on some network issue
         this._log.debug("verifyLogin failed: " + Utils.exceptionStr(ex));
         Status.login = LOGIN_FAILED_NETWORK_ERROR;
+        ErrorHandler.checkServerError(ex);
         return false;
       }
     })(),
@@ -1100,31 +1018,6 @@ WeaveSvc.prototype = {
     Svc.Obs.notify("weave:service:logout:finish");
   },
 
-  _errorStr: function WeaveSvc__errorStr(code) {
-    switch (code.toString()) {
-    case "1":
-      return "illegal-method";
-    case "2":
-      return "invalid-captcha";
-    case "3":
-      return "invalid-username";
-    case "4":
-      return "cannot-overwrite-resource";
-    case "5":
-      return "userid-mismatch";
-    case "6":
-      return "json-parse-failure";
-    case "7":
-      return "invalid-password";
-    case "8":
-      return "invalid-record";
-    case "9":
-      return "weak-password";
-    default:
-      return "generic-server-error";
-    }
-  },
-
   checkAccount: function checkAccount(account) {
     let username = this._usernameFromAccount(account);
     let url = this.userAPI + username;
@@ -1145,7 +1038,7 @@ WeaveSvc.prototype = {
     catch(ex) {}
 
     // Convert to the error string, or default to generic on exception.
-    return this._errorStr(data);
+    return ErrorHandler.errorStr(data);
   },
 
   createAccount: function createAccount(email, password,
@@ -1177,7 +1070,7 @@ WeaveSvc.prototype = {
 
       // Must have failed, so figure out the reason
       if (register.status == 400)
-        error = this._errorStr(register);
+        error = ErrorHandler.errorStr(register);
     }
     catch(ex) {
       this._log.warn("Failed to create account: " + ex);
@@ -1249,8 +1142,8 @@ WeaveSvc.prototype = {
       // abort the server wipe if the GET status was anything other than 404 or 200
       let status = Records.response.status;
       if (status != 200 && status != 404) {
-        this._checkServerError(Records.response);
         Status.sync = METARECORD_DOWNLOAD_FAIL;
+        ErrorHandler.checkServerError(Records.response);
         this._log.warn("Unknown error while downloading metadata record. " +
                        "Aborting sync.");
         return false;
@@ -1360,14 +1253,6 @@ WeaveSvc.prototype = {
       return "";
 
     return reason;
-  },
-
-  _ignorableErrorCount: 0,
-  shouldIgnoreError: function shouldIgnoreError() {
-    // Never show an error bar for a locked master password.
-    return (Status.login == MASTER_PASSWORD_LOCKED) ||
-           ([Status.login, Status.sync].indexOf(LOGIN_FAILED_NETWORK_ERROR) != -1
-            && this._ignorableErrorCount < MAX_IGNORE_ERROR_COUNT);
   },
 
   sync: function sync() {
@@ -1511,19 +1396,18 @@ WeaveSvc.prototype = {
         delete meta.changed;
       }
 
-      if (this._syncError) {
-        throw "Some engines did not sync correctly";
-      } else {
+      // If there were no sync engine failures
+      if (Status.service != SYNC_FAILED_PARTIAL) {
         Svc.Prefs.set("lastSync", new Date().toString());
         Status.sync = SYNC_SUCCEEDED;
-        let syncTime = ((Date.now() - syncStartTime) / 1000).toFixed(2);
-        let dateStr = new Date().toLocaleFormat(LOG_DATE_FORMAT);
-        this._log.info("Sync completed successfully at " + dateStr
-                       + " after " + syncTime + " secs.");
       }
     } finally {
-      this._syncError = false;
       Svc.Prefs.reset("firstSync");
+
+      let syncTime = ((Date.now() - syncStartTime) / 1000).toFixed(2);
+      let dateStr = new Date().toLocaleFormat(LOG_DATE_FORMAT);
+      this._log.info("Sync completed at " + dateStr
+                     + " after " + syncTime + " secs.");
     }
   }))(),
 
@@ -1578,7 +1462,7 @@ WeaveSvc.prototype = {
     }
 
     // Any remaining engines were either enabled locally or disabled remotely.
-    for each (engineName in enabled) {
+    for each (let engineName in enabled) {
       let engine = Engines.get(engineName);
       if (Svc.Prefs.get("engineStatusChanged." + engine.prefName, false)) {
         this._log.trace("The " + engineName + " engine was enabled locally.");
@@ -1605,19 +1489,12 @@ WeaveSvc.prototype = {
         // Log out and clear the cluster URL pref. That will make us perform
         // cluster detection and password check on next sync, which handles
         // both causes of 401s; in either case, we won't proceed with this
-        // sync, so return false, but kick off a sync for next time.
+        // sync so return false, but kick off a sync for next time.
         this.logout();
         Svc.Prefs.reset("clusterURL");
         Utils.nextTick(this.sync, this);
         return false;
       }
-
-      this._checkServerError(e);
-
-      Status.engines = [engine.name, e.failureCode || ENGINE_UNKNOWN_FAIL];
-
-      this._syncError = true;
-      this._log.debug(engine.name + " failed: " + Utils.exceptionStr(e));
       return true;
     }
   },
@@ -1699,49 +1576,6 @@ WeaveSvc.prototype = {
     // Generate, upload, and download new keys. Do this last so we don't wipe
     // them...
     this.generateNewSymmetricKeys();
-  },
-
-  /**
-   * Handle HTTP response results or exceptions and set the appropriate
-   * Status.* bits.
-   */
-  _checkServerError: function WeaveSvc__checkServerError(resp) {
-    switch (resp.status) {
-      case 400:
-        if (resp == RESPONSE_OVER_QUOTA) {
-          Status.sync = OVER_QUOTA;
-        }
-        break;
-
-      case 401:
-        this.logout();
-        Status.login = LOGIN_FAILED_LOGIN_REJECTED;
-        break;
-
-      case 500:
-      case 502:
-      case 503:
-      case 504:
-        Status.enforceBackoff = true;
-        if (resp.status == 503 && resp.headers["retry-after"]) {
-          Svc.Obs.notify("weave:service:backoff:interval",
-                         parseInt(resp.headers["retry-after"], 10));
-        }
-        break;
-    }
-
-    switch (resp.result) {
-      case Cr.NS_ERROR_UNKNOWN_HOST:
-      case Cr.NS_ERROR_CONNECTION_REFUSED:
-      case Cr.NS_ERROR_NET_TIMEOUT:
-      case Cr.NS_ERROR_NET_RESET:
-      case Cr.NS_ERROR_NET_INTERRUPT:
-      case Cr.NS_ERROR_PROXY_CONNECTION_REFUSED:
-        // The constant says it's about login, but in fact it just
-        // indicates general network error.
-        Status.sync = LOGIN_FAILED_NETWORK_ERROR;
-        break;
-    }
   },
 
   /**

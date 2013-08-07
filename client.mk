@@ -268,6 +268,7 @@ else
 ####################################
 # Configure
 
+MAKEFILE      = $(wildcard $(OBJDIR)/Makefile)
 CONFIG_STATUS = $(wildcard $(OBJDIR)/config.status)
 CONFIG_CACHE  = $(wildcard $(OBJDIR)/config.cache)
 
@@ -278,6 +279,7 @@ EXTRA_CONFIG_DEPS := \
 	$(NULL)
 
 $(CONFIGURES): %: %.in $(EXTRA_CONFIG_DEPS)
+	@$(PYTHON) $(TOPSRCDIR)/js/src/config/check-sync-dirs.py $(TOPSRCDIR)/js/src/build $(TOPSRCDIR)/build
 	@echo Generating $@ using autoconf
 	cd $(@D); $(AUTOCONF)
 
@@ -315,7 +317,13 @@ endif
                \"$(MAKE) -f client.mk build\"" && exit 1 )
 	@touch $(OBJDIR)/Makefile
 
-$(OBJDIR)/Makefile $(OBJDIR)/config.status: $(CONFIG_STATUS_DEPS)
+ifneq (,$(MAKEFILE))
+$(OBJDIR)/Makefile: $(OBJDIR)/config.status
+
+$(OBJDIR)/config.status: $(CONFIG_STATUS_DEPS)
+else
+$(OBJDIR)/Makefile: $(CONFIG_STATUS_DEPS)
+endif
 	@$(MAKE) -f $(TOPSRCDIR)/client.mk configure
 
 ifneq (,$(CONFIG_STATUS))
@@ -346,6 +354,7 @@ endif
 # Build it
 
 realbuild::  $(OBJDIR)/Makefile $(OBJDIR)/config.status
+	@$(PYTHON) $(TOPSRCDIR)/js/src/config/check-sync-dirs.py $(TOPSRCDIR)/js/src/config $(TOPSRCDIR)/config
 	$(MOZ_MAKE)
 
 ####################################

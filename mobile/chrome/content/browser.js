@@ -59,9 +59,6 @@ function getBrowser() {
 
 const kBrowserViewZoomLevelPrecision = 10000;
 
-const kDefaultBrowserWidth = 800;
-const kFallbackBrowserWidth = 980;
-
 // allow panning after this timeout on pages with registered touch listeners
 const kTouchTimeout = 300;
 
@@ -158,6 +155,13 @@ var Browser = {
   pageScrollboxScroller: null,
   styles: {},
 
+  get defaultBrowserWidth() {
+    delete this.defaultBrowserWidth;
+    var width = Services.prefs.getIntPref("browser.viewport.desktopWidth");
+    this.defaultBrowserWidth = width;
+    return width;
+  },
+
   startup: function startup() {
     var self = this;
 
@@ -241,8 +245,9 @@ var Browser = {
       let { x: x2, y: y2 } = Browser.getScrollboxPosition(Browser.pageScrollboxScroller);
       let [,, leftWidth, rightWidth] = Browser.computeSidebarVisibility();
 
-      let shouldHideSidebars = Browser.controlsPosition ? Browser.controlsPosition.hideSidebars : true;
-      Browser.controlsPosition = { x: x1, y: y2, hideSidebars: shouldHideSidebars,
+      // hiddenSidebars counts how many times resizeHandler has called hideSidebars
+      let hiddenSidebars = Browser.controlsPosition ? Browser.controlsPosition.hiddenSidebars : 0;
+      Browser.controlsPosition = { x: x1, y: y2, hiddenSidebars: hiddenSidebars,
                                    leftSidebar: leftWidth, rightSidebar: rightWidth };
     }, true);
 
@@ -272,10 +277,22 @@ var Browser = {
       ViewableAreaObserver.update();
 
       // Restore the previous scroll position
-      let restorePosition = Browser.controlsPosition || { hideSidebars: true };
-      if (restorePosition.hideSidebars) {
-        restorePosition.hideSidebars = false;
+      let restorePosition = Browser.controlsPosition || { hiddenSidebars: 0 };
+
+      // HACK: The first time we hide the sidebars during startup might be too
+      // early, before layout is completed.  Make sure to hide the sidebars on
+      // the first *two* resize events (bug 691541).
+      if (restorePosition.hiddenSidebars < 2) {
+        // Since this happens early in the startup process, we need to make sure
+        // the UI has really responded
+        let x = {}, y = {};
         Browser.hideSidebars();
+        Browser.controlsScrollboxScroller.getPosition(x, y);
+        if (x.value > 0) {
+          // Update the control position data so we are set correctly for the next resize
+          restorePosition.hiddenSidebars++;
+          restorePosition.x = x.value;
+        }
       } else {
         // Handle Width transformation of the tabs sidebar
         if (restorePosition.x) {
@@ -322,6 +339,12 @@ var Browser = {
     os.addObserver(SessionHistoryObserver, "browser:purge-session-history", false);
     os.addObserver(ContentCrashObserver, "ipc:content-shutdown", false);
     os.addObserver(MemoryObserver, "memory-pressure", false);
+    os.addObserver(ActivityObserver, "application-background", false);
+    os.addObserver(ActivityObserver, "application-foreground", false);
+    os.addObserver(ActivityObserver, "system-active", false);
+    os.addObserver(ActivityObserver, "system-idle", false);
+    os.addObserver(ActivityObserver, "system-display-on", false);
+    os.addObserver(ActivityObserver, "system-display-off", false);
 
     // Listens for change in the viewable area
 #if MOZ_PLATFORM_MAEMO == 6
@@ -371,6 +394,7 @@ var Browser = {
       this.addTab(commandURL || this.getHomePage(), true);
     }
 
+    messageManager.addMessageListener("MozScrolledAreaChanged", this);
     messageManager.addMessageListener("Browser:ViewportMetadata", this);
     messageManager.addMessageListener("Browser:CanCaptureMouse:Return", this);
     messageManager.addMessageListener("Browser:FormSubmit", this);
@@ -386,12 +410,6 @@ var Browser = {
     let event = document.createEvent("Events");
     event.initEvent("UIReady", true, false);
     window.dispatchEvent(event);
-
-    // If we have an opener this was not the first window opened and will not
-    // receive an initial resize event. instead we fire the resize handler manually
-    // Bug 610834
-    if (window.opener)
-      resizeHandler({ target: window });
   },
 
   _alertShown: function _alertShown() {
@@ -476,6 +494,7 @@ var Browser = {
   shutdown: function shutdown() {
     BrowserUI.uninit();
 
+    messageManager.removeMessageListener("MozScrolledAreaChanged", this);
     messageManager.removeMessageListener("Browser:ViewportMetadata", this);
     messageManager.removeMessageListener("Browser:FormSubmit", this);
     messageManager.removeMessageListener("Browser:KeyPress", this);
@@ -491,6 +510,12 @@ var Browser = {
     os.removeObserver(SessionHistoryObserver, "browser:purge-session-history");
     os.removeObserver(ContentCrashObserver, "ipc:content-shutdown");
     os.removeObserver(MemoryObserver, "memory-pressure");
+    os.removeObserver(ActivityObserver, "application-background", false);
+    os.removeObserver(ActivityObserver, "application-foreground", false);
+    os.removeObserver(ActivityObserver, "system-active", false);
+    os.removeObserver(ActivityObserver, "system-idle", false);
+    os.removeObserver(ActivityObserver, "system-display-on", false);
+    os.removeObserver(ActivityObserver, "system-display-off", false);
 
     window.controllers.removeController(this);
     window.controllers.removeController(BrowserUI);
@@ -536,9 +561,18 @@ var Browser = {
   },
 
   hideSidebars: function scrollSidebarsOffscreen() {
+    if (Util.isTablet()) // Never scroll the sidebar away in tablet mode.
+      return;
     let rect = Elements.browsers.getBoundingClientRect();
     this.controlsScrollboxScroller.scrollBy(Math.round(rect.left), 0);
     this.tryUnfloatToolbar();
+  },
+
+  /** Workaround to hide the tabstrip if it is partially visible (bug 524469 and bug 626660) */
+  hidePartialTabSidebar: function hidePartialSidebars() {
+    let [tabsVisibility,,,] = this.computeSidebarVisibility();
+    if (tabsVisibility > 0.0 && tabsVisibility < 1.0)
+      this.hideSidebars();
   },
 
   hideTitlebar: function hideTitlebar() {
@@ -572,8 +606,7 @@ var Browser = {
         this.closeTab(oldTab, { forceClose: true });
         oldTab = null;
       }
-    }
-    else {
+    } else {
       let params = aParams || {};
       let flags = params.flags || Ci.nsIWebNavigation.LOAD_FLAGS_NONE;
       browser.loadURIWithFlags(aURI, flags, params.referrerURI, params.charset, params.postData);
@@ -821,7 +854,10 @@ var Browser = {
     if (tab)
       tab.active = true;
 
-    if (!isFirstTab) {
+    if (isFirstTab) {
+      // Don't waste time at startup updating the whole UI; just display the URL.
+      BrowserUI._titleChanged(browser);
+    } else {
       // Update all of our UI to reflect the new tab's location
       BrowserUI.updateURI();
       getIdentityHandler().checkIdentity();
@@ -996,11 +1032,7 @@ var Browser = {
 
     let snappedX = 0;
 
-    // determine browser dir first to know which direction to snap to
-    let chromeReg = Cc["@mozilla.org/chrome/chrome-registry;1"].
-                      getService(Ci.nsIXULChromeRegistry);
-    let dirVal = chromeReg.isLocaleRTL("global") ? -1 : 1;
-
+    let dirVal = Util.localeDir;
     if (leftvis != 0 && leftvis != 1) {
       if (leftvis >= 0.6666) {
         snappedX = -((1 - leftvis) * leftw) * dirVal;
@@ -1020,7 +1052,7 @@ var Browser = {
   },
 
   tryFloatToolbar: function tryFloatToolbar(dx, dy) {
-    if (this.floatedWhileDragging)
+    if (this.floatedWhileDragging || Util.isTablet())
       return;
 
     let [leftvis, ritevis, leftw, ritew] = Browser.computeSidebarVisibility(dx, dy);
@@ -1070,7 +1102,7 @@ var Browser = {
   /** Rect should be in browser coordinates. */
   _getZoomLevelForRect: function _getZoomLevelForRect(rect) {
     const margin = 15;
-    return this.selectedTab.clampZoomLevel(window.innerWidth / (rect.width + margin * 2));
+    return this.selectedTab.clampZoomLevel(ViewableAreaObserver.width / (rect.width + margin * 2));
   },
 
   /**
@@ -1172,6 +1204,12 @@ var Browser = {
     let browser = aMessage.target;
 
     switch (aMessage.name) {
+      case "MozScrolledAreaChanged": {
+        let tab = this.getTabForBrowser(browser);
+        if (tab)
+          tab.scrolledAreaChanged();
+        break;
+      }
       case "Browser:ViewportMetadata": {
         let tab = this.getTabForBrowser(browser);
         // Some browser such as iframes loaded dynamically into the chrome UI
@@ -1238,6 +1276,60 @@ var Browser = {
         this._handleErrorPage(aMessage);
         break;
     }
+  },
+
+  _grabbedSidebar: false, // true while the user is dragging the sidebar
+  _sidebarOffset: 0, // tracks how far the sidebar has been dragged
+  _slideMultiplier: 1, // set greater than 1 to amplify sidebar drags (makes swiping easier)
+
+  /**
+   * Call this function in landscape tablet mode to begin dragging the tab sidebar.
+   * Hiding the sidebar makes the viewable area grow; showing the sidebar makes it shrink.
+   */
+  grabSidebar: function grabSidebar() {
+    this._grabbedSidebar = true;
+    ViewableAreaObserver.update();
+
+    let ltr = (Util.localeDir == Util.LOCALE_DIR_LTR);
+
+    if (TabsPopup.visible) {
+      this._setSidebarOffset(ltr ? 0 : ViewableAreaObserver.sidebarWidth);
+      this._slideMultiplier = 3;
+    } else {
+      // If the tab bar is hidden, un-collapse it but scroll it offscreen.
+      TabsPopup.show();
+      this._setSidebarOffset(ltr ? ViewableAreaObserver.sidebarWidth : 0);
+      this._slideMultiplier = 6;
+    }
+  },
+
+  /** Move the tablet sidebar by aX pixels. */
+  slideSidebarBy: function slideSidebarBy(aX) {
+    this._setSidebarOffset(this._sidebarOffset + (aX * this._slideMultiplier));
+  },
+
+  /** Call this when tablet sidebar dragging is finished. */
+  ungrabSidebar: function ungrabSidebar() {
+    if (!this._grabbedSidebar)
+      return;
+    this._grabbedSidebar = false;
+
+    let finalOffset = this._sidebarOffset;
+    this._setSidebarOffset(0);
+
+    let rtl = (Util.localeDir == Util.LOCALE_DIR_RTL);
+    if (finalOffset > (ViewableAreaObserver.sidebarWidth / 2) ^ rtl)
+      TabsPopup.hide();
+    else
+      // we already called TabsPopup.show() in grabSidebar; just need to update the width again.
+      ViewableAreaObserver.update();
+  },
+
+  /** Move the tablet sidebar. */
+  _setSidebarOffset: function _setSidebarOffset(aOffset) {
+    this._sidebarOffset = aOffset;
+    let scrollX = Util.clamp(aOffset, 0, ViewableAreaObserver.sidebarWidth);
+    Browser.controlsScrollboxScroller.scrollTo(scrollX, 0);
   }
 };
 
@@ -1265,7 +1357,19 @@ Browser.MainDragger.prototype = {
     let bcr = browser.getBoundingClientRect();
     this._contentView = browser.getViewAt(clientX - bcr.left, clientY - bcr.top);
     this._stopAtSidebar = 0;
-    this._panToolbars = !Elements.urlbarState.getAttribute("tablet");
+
+    let isTablet = Util.isTablet();
+    this._panToolbars = !isTablet;
+
+    // In landscape portrait mode, swiping from the left margin drags the tab sidebar.
+    this._grabSidebar = isTablet && !Util.isPortrait() &&
+      ((Util.localeDir == Util.LOCALE_DIR_LTR) ?
+       (clientX - bcr.left < 30) :
+       (bcr.right - clientX < 30));
+
+    if (this._grabSidebar)
+      Browser.grabSidebar();
+
     if (this._sidebarTimeout) {
       clearTimeout(this._sidebarTimeout);
       this._sidebarTimeout = null;
@@ -1273,6 +1377,10 @@ Browser.MainDragger.prototype = {
   },
 
   dragStop: function dragStop(dx, dy, scroller) {
+    if (this._grabSidebar) {
+      Browser.ungrabSidebar();
+      return;
+    }
     if (this._contentView && this._contentView._updateCacheViewport)
       this._contentView._updateCacheViewport();
     this._contentView = null;
@@ -1281,6 +1389,11 @@ Browser.MainDragger.prototype = {
   },
 
   dragMove: function dragMove(dx, dy, scroller, aIsKinetic) {
+    if (this._grabSidebar) {
+      Browser.slideSidebarBy(dx);
+      return;
+    }
+
     let doffset = new Point(dx, dy);
     let sidebarOffset = null;
 
@@ -1339,7 +1452,8 @@ Browser.MainDragger.prototype = {
           x: (width + ALLOWED_MARGIN) < contentWidth ? (width - SCROLL_CORNER_SIZE) / contentWidth : 0,
           y: (height + ALLOWED_MARGIN) < contentHeight ? (height - SCROLL_CORNER_SIZE) / contentHeight : 0
         }
-        this._showScrollbars();
+        if (!this._grabSidebar)
+          this._showScrollbars();
         break;
       }
       case "PanFinished":
@@ -1442,7 +1556,7 @@ Browser.MainDragger.prototype = {
         let [tabsSidebar, controlsSidebar] = [Elements.tabs.getBoundingClientRect(), Elements.controls.getBoundingClientRect()];
 
         // Check if the sidebars are inverted (rtl)
-        let direction = (tabsSidebar.left > controlsSidebar.left) ? 1 : -1;
+        let direction = -1 * Util.localeDir;
         x = Math.round(tabsW * tabsVis) * direction
       }
 
@@ -1522,7 +1636,6 @@ Browser.WebProgress.prototype = {
             CrashReporter.annotateCrashReport("URL", spec);
 #endif
           this._waitForLoad(tab);
-          tab.useFallbackWidth = false;
         }
 
         let event = document.createEvent("UIEvents");
@@ -1574,10 +1687,12 @@ Browser.WebProgress.prototype = {
 
   _waitForLoad: function _waitForLoad(aTab) {
     let browser = aTab.browser;
-    browser.messageManager.removeMessageListener("MozScrolledAreaChanged", aTab.scrolledAreaChanged);
+
+    aTab._firstPaint = false;
 
     browser.messageManager.addMessageListener("Browser:FirstPaint", function firstPaintListener(aMessage) {
       browser.messageManager.removeMessageListener(aMessage.name, arguments.callee);
+      aTab._firstPaint = true;
 
       // We're about to have new page content, so scroll the content area
       // so the new paints will draw correctly.
@@ -1588,12 +1703,13 @@ Browser.WebProgress.prototype = {
                                        Math.floor(json.y * browser.scale));
         if (json.x == 0 && json.y == 0)
           Browser.pageScrollboxScroller.scrollTo(0, 0);
+        else
+          Browser.pageScrollboxScroller.scrollTo(0, Number.MAX_VALUE);
       }
 
-      aTab.scrolledAreaChanged();
+      aTab.scrolledAreaChanged(true);
       aTab.updateThumbnail();
 
-      browser.messageManager.addMessageListener("MozScrolledAreaChanged", aTab.scrolledAreaChanged);
       aTab.updateContentCapture();
     });
   }
@@ -1770,7 +1886,7 @@ const ContentTouchHandler = {
           case "TapUp":
             if (aEvent.isClick) {
               if (!Browser.selectedTab.allowZoom) {
-                this.tapSingle(aEvent.clientX, aEvent.clientY, aEvent.modifiers);
+                this.tapSingle(aEvent.clientX, aEvent.clientY, Util.modifierMaskFromEvent(aEvent));
                 aEvent.preventDefault();
               }
             }
@@ -1882,7 +1998,7 @@ const ContentTouchHandler = {
     // or if the urlbar is showing
     this.canCancelPan = (aX >= rect.left + kSafetyX) && (aX <= rect.right - kSafetyX) &&
                         (aY >= rect.top  + kSafetyY) &&
-                        (bcr.top == 0 || Elements.urlbarState.getAttribute("tablet"));
+                        (bcr.top == 0 || Util.isTablet());
   },
 
   tapDown: function tapDown(aX, aY) {
@@ -1934,7 +2050,7 @@ const ContentTouchHandler = {
     if (!tab.allowZoom)
       return;
 
-    let width = window.innerWidth / Browser.getScaleRatio();
+    let width = ViewableAreaObserver.width / Browser.getScaleRatio();
     this._dispatchMouseEvent("Browser:ZoomToPoint", aX, aY, { width: width });
   },
 
@@ -2175,7 +2291,7 @@ IdentityHandler.prototype = {
 
       // Build an appropriate supplemental block out of whatever location data we have
       if (iData.city)
-        supplemental += iData.city + " ";
+        supplemental += iData.city + "\n";
       if (iData.state && iData.country)
         supplemental += Strings.browser.formatStringFromName("identity.identified.state_and_country", [iData.state, iData.country], 2);
       else if (iData.state) // State only
@@ -2201,7 +2317,7 @@ IdentityHandler.prototype = {
     Elements.contentShowing.setAttribute("disabled", "true");
 
     // dismiss any dialog which hide the identity popup
-    BrowserUI.activePanel = null;
+    AwesomeScreen.activePanel = null;
     while (BrowserUI.activeDialog)
       BrowserUI.activeDialog.close();
 
@@ -2209,13 +2325,17 @@ IdentityHandler.prototype = {
     this.setPopupMessages(this._identityBox.getAttribute("mode") || this.IDENTITY_MODE_UNKNOWN);
 
     this._identityPopup.hidden = false;
-    this._identityPopup.top = BrowserUI.toolbarH - this._identityPopup.offset;
-    this._identityPopup.anchorTo(this._identityBox);
+    let anchorPos = "";
+    if (Util.isTablet())
+      anchorPos = "after_start";
+    else
+      this._identityPopup.top = BrowserUI.toolbarH - this._identityPopup.offset;
 
     this._identityBox.setAttribute("open", "true");
 
     BrowserUI.pushPopup(this, [this._identityPopup, this._identityBox, Elements.toolbarContainer]);
     BrowserUI.lockToolbar();
+    this._identityPopup.anchorTo(this._identityBox, anchorPos);
   },
 
   hide: function ih_hide() {
@@ -2590,6 +2710,34 @@ var MemoryObserver = {
   }
 };
 
+var ActivityObserver = {
+  _inBackground : false,
+  _notActive : false,
+  _isDisplayOff : false,
+  observe: function ao_observe(aSubject, aTopic, aData) {
+    if (aTopic == "application-background") {
+      this._inBackground = true;
+    } else if (aTopic == "application-foreground") {
+      this._inBackground = false;
+    } else if (aTopic == "system-idle") {
+      this._notActive = true;
+    } else if (aTopic == "system-active") {
+      this._notActive = false;
+    } else if (aTopic == "system-display-on") {
+      this._isDisplayOff = false;
+    } else if (aTopic == "system-display-off") {
+      this._isDisplayOff = true;
+    }
+    let activeTabState = !this._inBackground && !this._notActive && !this._isDisplayOff;
+    if (Browser.selectedTab.active != activeTabState) {
+      // On Maemo all backgrounded applications getting portrait orientation
+      // so if browser had landscape mode then we need timeout in order
+      // to finish last rotate/paint operation and have nice lookine browser in TS
+      setTimeout(function() { Browser.selectedTab.active = activeTabState; }, 0);
+    }
+  }
+};
+
 function getNotificationBox(aBrowser) {
   return Browser.getNotificationBox(aBrowser);
 }
@@ -2651,7 +2799,6 @@ function Tab(aURI, aParams) {
   this._metadata = null;
 
   this.contentMightCaptureMouse = false;
-  this.useFallbackWidth = false;
   this.owner = null;
 
   this.hostChanged = false;
@@ -2667,8 +2814,6 @@ function Tab(aURI, aParams) {
 
   // default tabs to inactive (i.e. no display port)
   this.active = false;
-
-  this.scrolledAreaChanged = this.scrolledAreaChanged.bind(this);
 }
 
 Tab.prototype = {
@@ -2743,20 +2888,17 @@ Tab.prototype = {
       let validW = viewportW > 0;
       let validH = viewportH > 0;
 
-      if (validW && !validH) {
+      if (!validW)
+        viewportW = validH ? (viewportH * (screenW / screenH)) : Browser.defaultBrowserWidth;
+      if (!validH)
         viewportH = viewportW * (screenH / screenW);
-      } else if (!validW && validH) {
-        viewportW = viewportH * (screenW / screenH);
-      } else if (!validW && !validH) {
-        viewportW = this.useFallbackWidth ? kFallbackBrowserWidth : kDefaultBrowserWidth;
-        viewportH = kDefaultBrowserWidth * (screenH / screenW);
-      }
     }
 
     // Make sure the viewport height is not shorter than the window when
     // the page is zoomed out to show its full width.
-    if (viewportH * this.clampZoomLevel(this.getPageZoomLevel()) < screenH)
-      viewportH = Math.max(viewportH, screenH * (browser.contentDocumentWidth / screenW));
+    let pageZoomLevel = this.getPageZoomLevel(screenW);
+    let minScale = this.clampZoomLevel(pageZoomLevel, pageZoomLevel);
+    viewportH = Math.max(viewportH, screenH / minScale);
 
     if (browser.contentWindowWidth != viewportW || browser.contentWindowHeight != viewportH)
       browser.setWindowSize(viewportW, viewportH);
@@ -2795,7 +2937,7 @@ Tab.prototype = {
   },
 
   create: function create(aURI, aParams) {
-    this._chromeTab = document.getElementById("tabs").addTab();
+    this._chromeTab = Elements.tabList.addTab();
     let browser = this._createBrowser(aURI, null);
 
     // Should we fully load the new browser, or wait until later
@@ -2804,15 +2946,17 @@ Tab.prototype = {
 
     try {
       let flags = aParams.flags || Ci.nsIWebNavigation.LOAD_FLAGS_NONE;
-      let postData = aParams.postData ? aParams.postData.value : null;
-      browser.loadURIWithFlags(aURI, flags, aParams.referrerURI, aParams.charset, postData);
+      let postData = ("postData" in aParams && aParams.postData) ? aParams.postData.value : null;
+      let referrerURI = "referrerURI" in aParams ? aParams.referrerURI : null;
+      let charset = "charset" in aParams ? aParams.charset : null;
+      browser.loadURIWithFlags(aURI, flags, referrerURI, charset, postData);
     } catch(e) {
       dump("Error: " + e + "\n");
     }
   },
 
   destroy: function destroy() {
-    document.getElementById("tabs").removeTab(this._chromeTab);
+    Elements.tabList.removeTab(this._chromeTab);
     this._chromeTab = null;
     this._destroyBrowser();
   },
@@ -2849,7 +2993,6 @@ Tab.prototype = {
     let notification = this._notification = document.createElement("notificationbox");
     notification.classList.add("inputHandler");
 
-    // Create the browser using the current width the dynamically size the height
     let browser = this._browser = document.createElement("browser");
     browser.setAttribute("class", "viewable-width viewable-height");
     this._chromeTab.linkedBrowser = browser;
@@ -2888,11 +3031,23 @@ Tab.prototype = {
     }
   },
 
-  clampZoomLevel: function clampZoomLevel(aScale) {
+  /**
+   * Takes a scale and restricts it based on this tab's zoom limits.
+   * @param aScale The original scale.
+   * @param aPageZoomLevel (optional) The zoom-to-fit scale, if known.
+   *   This is a performance optimization to avoid extra calls.
+   */
+  clampZoomLevel: function clampZoomLevel(aScale, aPageZoomLevel) {
+    let md = this.metadata;
+    if (!this.allowZoom) {
+      return (md && md.defaultZoom)
+        ? md.defaultZoom
+        : (aPageZoomLevel || this.getPageZoomLevel());
+    }
+
     let browser = this._browser;
     let bounded = Util.clamp(aScale, ZoomManager.MIN, ZoomManager.MAX);
 
-    let md = this.metadata;
     if (md && md.minZoom)
       bounded = Math.max(bounded, md.minZoom);
     if (md && md.maxZoom)
@@ -2909,16 +3064,16 @@ Tab.prototype = {
     this._defaultZoomLevel = this._browser.scale;
   },
 
-  scrolledAreaChanged: function scrolledAreaChanged() {
+  scrolledAreaChanged: function scrolledAreaChanged(firstPaint) {
     if (!this._browser)
       return;
 
+    if (firstPaint) {
+      // You only get one shot, do not miss your chance to reflow.
+      this.updateViewportSize();
+    }
+
     this.updateDefaultZoomLevel();
-
-    if (!this.useFallbackWidth && this._browser.contentDocumentWidth > kDefaultBrowserWidth)
-      this.useFallbackWidth = true;
-
-    this.updateViewportSize();
   },
 
   /**
@@ -2927,7 +3082,7 @@ Tab.prototype = {
    */
   updateDefaultZoomLevel: function updateDefaultZoomLevel() {
     let browser = this._browser;
-    if (!browser)
+    if (!browser || !this._firstPaint)
       return;
 
     let isDefault = this.isDefaultZoomLevel();
@@ -2935,8 +3090,7 @@ Tab.prototype = {
     if (isDefault) {
       if (browser.scale != this._defaultZoomLevel) {
         browser.scale = this._defaultZoomLevel;
-      }
-      else {
+      } else {
         // If the scale level has not changed we want to be sure the content
         // render correctly since the page refresh process could have been
         // stalled during page load. In this case if the page has the exact
@@ -2972,17 +3126,25 @@ Tab.prototype = {
     return this.clampZoomLevel(pageZoom);
   },
 
-  getPageZoomLevel: function getPageZoomLevel() {
+  /**
+   * @param aScreenWidth (optional) The width of the browser widget, if known.
+   *   This is a performance optimization to save extra calls to getBoundingClientRect.
+   * @return The scale at which the browser will be zoomed out to fit the document width.
+   */
+  getPageZoomLevel: function getPageZoomLevel(aScreenWidth) {
     let browserW = this._browser.contentDocumentWidth;
     if (browserW == 0)
       return 1.0;
 
-    return this._browser.getBoundingClientRect().width / browserW;
+    let screenW = aScreenWidth || this._browser.getBoundingClientRect().width;
+    return screenW / browserW;
   },
 
   get allowZoom() {
     return this.metadata.allowZoom && !Util.isURLEmpty(this.browser.currentURI.spec);
   },
+
+  _thumbnailWindowId: null,
 
   updateThumbnail: function updateThumbnail(options) {
     let options = options || {};
@@ -3020,7 +3182,7 @@ Tab.prototype = {
       browser.setAttribute("type", "content-primary");
       Elements.browsers.selectedPanel = notification;
       browser.active = true;
-      document.getElementById("tabs").selectedTab = this._chromeTab;
+      Elements.tabList.selectedTab = this._chromeTab;
       browser.focus();
     } else {
       browser.messageManager.sendAsyncMessage("Browser:Blur", { });
@@ -3086,16 +3248,24 @@ function rendererFactory(aBrowser, aCanvas) {
  */
 var ViewableAreaObserver = {
   get width() {
-    return this._width || window.innerWidth;
+    let width = this._width || window.innerWidth;
+    if (!Browser._grabbedSidebar && Util.isTablet())
+      width -= this.sidebarWidth;
+    return width;
   },
 
   get height() {
     let height = (this._height || window.innerHeight);
-    if (Elements.urlbarState.getAttribute("tablet")) {
-      let toolbarHeight = Math.round(document.getElementById("toolbar-main").getBoundingClientRect().height);
-      height -= toolbarHeight;
-    }
+    if (Util.isTablet())
+      height -= BrowserUI.toolbarH;
     return height;
+  },
+
+  _sidebarWidth: null,
+  get sidebarWidth() {
+    if (!this._sidebarWidth)
+      this._sidebarWidth = Math.round(Elements.tabs.getBoundingClientRect().width);
+    return this._sidebarWidth;
   },
 
   _isKeyboardOpened: true,
@@ -3147,6 +3317,8 @@ var ViewableAreaObserver = {
   },
 
   update: function va_update() {
+    this._sidebarWidth = null;
+
     let oldHeight = parseInt(Browser.styles["viewable-height"].height);
     let oldWidth = parseInt(Browser.styles["viewable-width"].width);
 
@@ -3156,7 +3328,6 @@ var ViewableAreaObserver = {
       return;
 
     // Guess if the window has been resize to handle a virtual keyboard
-    let isDueToKeyboard = (newHeight != oldHeight && newWidth == oldWidth);
     this.isKeyboardOpened = (newHeight < oldHeight && newWidth == oldWidth);
 
     Browser.styles["viewable-height"].height = newHeight + "px";
@@ -3165,20 +3336,23 @@ var ViewableAreaObserver = {
     Browser.styles["viewable-width"].width = newWidth + "px";
     Browser.styles["viewable-width"].maxWidth = newWidth + "px";
 
-    let startup = !oldHeight && !oldWidth;
-    if (!isDueToKeyboard) {
+    // Don't update the viewport if screen height is shrinking, which typically
+    // means the keyboard appeared. This helps smooth out the experience of our
+    // form filler.
+    if (newHeight > oldHeight || newWidth != oldWidth) {
+      let startup = !oldHeight && !oldWidth;
       for (let i = Browser.tabs.length - 1; i >= 0; i--) {
         let tab = Browser.tabs[i];
         let oldContentWindowWidth = tab.browser.contentWindowWidth;
         tab.updateViewportSize(); // contentWindowWidth may change here.
-  
+
         // Don't bother updating the zoom level on startup
         if (!startup) {
           // If the viewport width is still the same, the page layout has not
           // changed, so we can keep keep the same content on-screen.
           if (tab.browser.contentWindowWidth == oldContentWindowWidth)
             tab.restoreViewportPosition(oldWidth, newWidth);
-  
+
           tab.updateDefaultZoomLevel();
         }
       }

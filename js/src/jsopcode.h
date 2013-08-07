@@ -48,10 +48,6 @@
 #include "jsutil.h"
 #include "jsarena.h"
 
-#ifdef __cplusplus
-# include "jsvalue.h"
-#endif
-
 JS_BEGIN_EXTERN_C
 
 /*
@@ -100,7 +96,6 @@ typedef enum JSOp {
 #define JOF_INT8          18      /* int8 immediate operand */
 #define JOF_ATOMOBJECT    19      /* uint16 constant index + object index */
 #define JOF_UINT16PAIR    20      /* pair of uint16 immediates */
-#define JOF_GLOBAL        21      /* uint16 global array index */
 #define JOF_TYPEMASK      0x001f  /* mask for above immediate types */
 
 #define JOF_NAME          (1U<<5) /* name operation */
@@ -142,6 +137,9 @@ typedef enum JSOp {
                                      that needs fixup when in global code (see
                                      Compiler::compileScript) */
 #define JOF_GNAME        (1U<<25) /* predicted global name */
+#define JOF_TYPESET      (1U<<26) /* has an entry in a script's type sets */
+#define JOF_DECOMPOSE    (1U<<27) /* followed by an equivalent decomposed
+                                   * version of the opcode */
 
 /* Shorthands for type from format and type from opcode. */
 #define JOF_TYPE(fmt)   ((fmt) & JOF_TYPEMASK)
@@ -499,7 +497,7 @@ static inline char *
 DecompileValueGenerator(JSContext *cx, intN spindex, const Value &v,
                         JSString *fallback)
 {
-    return js_DecompileValueGenerator(cx, spindex, Jsvalify(v), fallback);
+    return js_DecompileValueGenerator(cx, spindex, v, fallback);
 }
 
 /*
@@ -540,6 +538,17 @@ Sprint(Sprinter *sp, const char *format, ...);
 
 extern bool
 CallResultEscapes(jsbytecode *pc);
+
+static inline uintN
+GetDecomposeLength(jsbytecode *pc, size_t len)
+{
+    /*
+     * The last byte of a DECOMPOSE op stores the decomposed length. This can
+     * vary across different instances of an opcode due to INDEXBASE ops.
+     */
+    JS_ASSERT_IF(JSOp(*pc) != JSOP_TRAP, size_t(js_CodeSpec[*pc].length) == len);
+    return (uintN) pc[len - 1];
+}
 
 extern size_t
 GetBytecodeLength(JSContext *cx, JSScript *script, jsbytecode *pc);

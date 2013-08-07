@@ -334,6 +334,7 @@ protected:
 
   nsresult GetIsElementContentWhitespace(PRBool *aReturn)
   {
+    GetOwnerDoc()->WarnOnceAbout(nsIDocument::eIsElementContentWhitespace);
     *aReturn = TextIsOnlyWhitespace();
     return NS_OK;
   }
@@ -347,7 +348,8 @@ protected:
 
   nsresult SetTextInternal(PRUint32 aOffset, PRUint32 aCount,
                            const PRUnichar* aBuffer, PRUint32 aLength,
-                           PRBool aNotify);
+                           PRBool aNotify,
+                           CharacterDataChangeInfo::Details* aDetails = nsnull);
 
   /**
    * Method to clone this node. This needs to be overriden by all derived
@@ -363,8 +365,6 @@ protected:
   nsTextFragment mText;
 
 private:
-  void UpdateBidiStatus(const PRUnichar* aBuffer, PRUint32 aLength);
-
   already_AddRefed<nsIAtom> GetCurrentValueAtom();
 };
 

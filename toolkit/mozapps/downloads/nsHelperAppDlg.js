@@ -611,11 +611,12 @@ nsUnknownContentTypeDialog.prototype = {
       else
         typeString = mimeInfo.MIMEType;
     }
-    if (this.mLauncher.contentLength) {
+    // When the length is unknown, contentLength would be -1
+    if (this.mLauncher.contentLength >= 0) {
       let [size, unit] = DownloadUtils.
                          convertByteUnits(this.mLauncher.contentLength);
       type.value = this.dialogElement("strings")
-                       .getFormattedString("fileSizeWithType", 
+                       .getFormattedString("orderedFileSizeWithType", 
                                            [typeString, size, unit]);
     }
     else {

@@ -110,14 +110,14 @@ public:
   /** @see nsIFrame::DidSetStyleContext */
   virtual void DidSetStyleContext(nsStyleContext* aOldStyleContext);
   
-  NS_IMETHOD AppendFrames(nsIAtom*        aListName,
+  NS_IMETHOD AppendFrames(ChildListID     aListID,
                           nsFrameList&    aFrameList);
   
-  NS_IMETHOD InsertFrames(nsIAtom*        aListName,
+  NS_IMETHOD InsertFrames(ChildListID     aListID,
                           nsIFrame*       aPrevFrame,
                           nsFrameList&    aFrameList);
 
-  NS_IMETHOD RemoveFrame(nsIAtom*        aListName,
+  NS_IMETHOD RemoveFrame(ChildListID     aListID,
                          nsIFrame*       aOldFrame);
 
   virtual nsMargin GetUsedMargin() const;
@@ -258,10 +258,12 @@ public:
   
   /** Given a frame that's a child of the rowgroup, find which line its on.
     * @param aFrame       - frame, should be a row
+    * @param aStartLine   - minimal index to return
     * @return               row index relative to the row group if this a row
-    *                       frame. -1 if the frame cannot be found.
+    *                       frame and the index is at least aStartLine.
+    *                       -1 if the frame cannot be found.
     */
-  virtual PRInt32 FindLineContaining(nsIFrame* aFrame);
+  virtual PRInt32 FindLineContaining(nsIFrame* aFrame, PRInt32 aStartLine = 0);
 
   /** Find the orginating cell frame on a row that is the nearest to the
     * coordinate X.

@@ -27,6 +27,7 @@
  *   Patrick Walton <pcwalton@mozilla.com>
  *   Julian Viereck <jviereck@mozilla.com>
  *   Mihai Șucan <mihai.sucan@gmail.com>
+ *   Michael Ratcliffe <mratcliffe@mozilla.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -71,6 +72,12 @@ XPCOMUtils.defineLazyServiceGetter(this, "clipboardHelper",
                                    "@mozilla.org/widget/clipboardhelper;1",
                                    "nsIClipboardHelper");
 
+XPCOMUtils.defineLazyGetter(this, "StyleInspector", function () {
+  var obj = {};
+  Cu.import("resource:///modules/devtools/StyleInspector.jsm", obj);
+  return obj.StyleInspector;
+});
+
 XPCOMUtils.defineLazyGetter(this, "NetUtil", function () {
   var obj = {};
   Cu.import("resource://gre/modules/NetUtil.jsm", obj);
@@ -90,7 +97,7 @@ XPCOMUtils.defineLazyGetter(this, "PropertyPanel", function () {
 XPCOMUtils.defineLazyGetter(this, "AutocompletePopup", function () {
   var obj = {};
   try {
-    Cu.import("resource://gre/modules/AutocompletePopup.jsm", obj);
+    Cu.import("resource:///modules/AutocompletePopup.jsm", obj);
   }
   catch (err) {
     Cu.reportError(err);
@@ -158,7 +165,10 @@ const LEVELS = {
   info: SEVERITY_INFO,
   log: SEVERITY_LOG,
   trace: SEVERITY_LOG,
-  dir: SEVERITY_LOG
+  dir: SEVERITY_LOG,
+  group: SEVERITY_LOG,
+  groupCollapsed: SEVERITY_LOG,
+  groupEnd: SEVERITY_LOG
 };
 
 // The lowest HTTP response code (inclusive) that is considered an error.
@@ -244,6 +254,9 @@ const ERRORS = { LOG_MESSAGE_MISSING_ARGS:
                  MISSING_ARGS: "Missing arguments",
                  LOG_OUTPUT_FAILED: "Log Failure: Could not append messageNode to outputNode",
 };
+
+// The indent of a console group in pixels.
+const GROUP_INDENT = 12;
 
 /**
  * Implements the nsIStreamListener and nsIRequestObserver interface. Used
@@ -1776,6 +1789,10 @@ HUD_SERVICE.prototype =
     for (let i = 0; i < panels.length; i++) {
       panels[i].hidePopup();
     }
+    panels = popupset.querySelectorAll("panel[hudToolId=" + aHUDId + "]");
+    for (let i = 0; i < panels.length; i++) {
+      panels[i].hidePopup();
+    }
 
     let id = ConsoleUtils.supString(aHUDId);
     Services.obs.notifyObservers(id, "web-console-destroyed", null);
@@ -1994,6 +2011,20 @@ HUD_SERVICE.prototype =
         sourceLine = aMessage.lineNumber;
         break;
 
+      case "group":
+      case "groupCollapsed":
+        clipboardText = body = formatResult(args);
+        sourceURL = aMessage.filename;
+        sourceLine = aMessage.lineNumber;
+        hud.groupDepth++;
+        break;
+
+      case "groupEnd":
+        if (hud.groupDepth > 0) {
+          hud.groupDepth--;
+        }
+        return;
+
       default:
         Cu.reportError("Unknown Console API log level: " + level);
         return;
@@ -2003,6 +2034,7 @@ HUD_SERVICE.prototype =
                                               CATEGORY_WEBDEV,
                                               LEVELS[level],
                                               body,
+                                              aHUDId,
                                               sourceURL,
                                               sourceLine,
                                               clipboardText,
@@ -2065,7 +2097,8 @@ HUD_SERVICE.prototype =
     let chromeDocument = hud.HUDBox.ownerDocument;
     let message = stringBundle.GetStringFromName("ConsoleAPIDisabled");
     let node = ConsoleUtils.createMessageNode(chromeDocument, CATEGORY_JS,
-                                              SEVERITY_WARNING, message);
+                                              SEVERITY_WARNING, message,
+                                              aHUDId);
     ConsoleUtils.outputMessageNode(node, aHUDId);
   },
 
@@ -2105,6 +2138,7 @@ HUD_SERVICE.prototype =
                                                   aCategory,
                                                   severity,
                                                   aScriptError.errorMessage,
+                                                  hudId,
                                                   aScriptError.sourceName,
                                                   aScriptError.lineNumber);
 
@@ -2565,6 +2599,7 @@ HUD_SERVICE.prototype =
                                                      CATEGORY_NETWORK,
                                                      SEVERITY_LOG,
                                                      msgNode,
+                                                     hudId,
                                                      null,
                                                      null,
                                                      clipboardText);
@@ -2708,6 +2743,12 @@ HUD_SERVICE.prototype =
 
     let _browser = gBrowser.
       getBrowserForDocument(aContentWindow.top.document);
+
+    // ignore newly created documents that don't belong to a tab's browser
+    if (!_browser) {
+      return;
+    }
+
     let nBox = gBrowser.getNotificationBox(_browser);
     let nBoxId = nBox.getAttribute("id");
     let hudId = "hud_" + nBoxId;
@@ -3063,6 +3104,11 @@ function HeadsUpDisplay(aConfig)
 HeadsUpDisplay.prototype = {
 
   consolePanel: null,
+
+  /**
+   * The nesting depth of the currently active console group.
+   */
+  groupDepth: 0,
 
   get mainPopupSet()
   {
@@ -3598,7 +3644,9 @@ HeadsUpDisplay.prototype = {
     toolbar.setAttribute("class", "hud-console-filter-toolbar");
     toolbar.setAttribute("mode", "full");
 
+#ifdef XP_MACOSX
     this.makeCloseButton(toolbar);
+#endif
 
     for (let i = 0; i < BUTTONS.length; i++) {
       this.makeFilterButton(toolbar, BUTTONS[i]);
@@ -3611,6 +3659,10 @@ HeadsUpDisplay.prototype = {
 
     toolbar.appendChild(this.filterBox);
     this.makeClearConsoleButton(toolbar);
+
+#ifndef XP_MACOSX
+    this.makeCloseButton(toolbar);
+#endif
 
     return toolbar;
   },
@@ -4391,6 +4443,37 @@ function JSTermHelper(aJSTerm)
   };
 
   /**
+   * Inspects the passed aNode in the style inspector.
+   *
+   * @param object aNode
+   *        aNode to inspect.
+   * @returns void
+   */
+  aJSTerm.sandbox.inspectstyle = function JSTH_inspectstyle(aNode)
+  {
+    let errstr = null;
+    aJSTerm.helperEvaluated = true;
+
+    if (!Services.prefs.getBoolPref("devtools.styleinspector.enabled")) {
+      errstr = HUDService.getStr("inspectStyle.styleInspectorNotEnabled");
+    } else if (!aNode) {
+      errstr = HUDService.getStr("inspectStyle.nullObjectPassed");
+    } else if (!(aNode instanceof Ci.nsIDOMNode)) {
+      errstr = HUDService.getStr("inspectStyle.mustBeDomNode");
+    } else if (!(aNode.style instanceof Ci.nsIDOMCSSStyleDeclaration)) {
+      errstr = HUDService.getStr("inspectStyle.nodeHasNoStyleProps");
+    }
+
+    if (!errstr) {
+      let stylePanel = StyleInspector.createPanel();
+      stylePanel.setAttribute("hudToolId", aJSTerm.hudId);
+      stylePanel.showTool(aNode);
+    } else {
+      aJSTerm.writeOutput(errstr + "\n", CATEGORY_OUTPUT, SEVERITY_ERROR);
+    }
+  };
+
+  /**
    * Prints aObject to the output.
    *
    * @param object aObject
@@ -4698,7 +4781,8 @@ JSTerm.prototype = {
     let node = ConsoleUtils.createMessageNode(this.parentNode.ownerDocument,
                                               CATEGORY_OUTPUT,
                                               SEVERITY_LOG,
-                                              aOutputString);
+                                              aOutputString,
+                                              this.hudId);
 
     let linkNode = node.querySelector(".webconsole-msg-body");
 
@@ -4745,7 +4829,7 @@ JSTerm.prototype = {
   {
     let node = ConsoleUtils.createMessageNode(this.parentNode.ownerDocument,
                                               aCategory, aSeverity,
-                                              aOutputMessage);
+                                              aOutputMessage, this.hudId);
 
     ConsoleUtils.outputMessageNode(node, this.hudId);
   },
@@ -5486,6 +5570,8 @@ ConsoleUtils = {
    *        The severity of the message: one of the SEVERITY_* constants;
    * @param string|nsIDOMNode aBody
    *        The body of the message, either a simple string or a DOM node.
+   * @param number aHUDId
+   *        The HeadsUpDisplay ID.
    * @param string aSourceURL [optional]
    *        The URL of the source file that emitted the error.
    * @param number aSourceLine [optional]
@@ -5503,8 +5589,8 @@ ConsoleUtils = {
    */
   createMessageNode:
   function ConsoleUtils_createMessageNode(aDocument, aCategory, aSeverity,
-                                          aBody, aSourceURL, aSourceLine,
-                                          aClipboardText, aLevel) {
+                                          aBody, aHUDId, aSourceURL,
+                                          aSourceLine, aClipboardText, aLevel) {
     if (aBody instanceof Ci.nsIDOMNode && aClipboardText == null) {
       throw new Error("HUDService.createMessageNode(): DOM node supplied " +
                       "without any clipboard text");
@@ -5515,6 +5601,9 @@ ConsoleUtils = {
     // long multi-line messages.
     let iconContainer = aDocument.createElementNS(XUL_NS, "vbox");
     iconContainer.classList.add("webconsole-msg-icon-container");
+    // Apply the curent group by indenting appropriately.
+    let hud = HUDService.getHudReferenceById(aHUDId);
+    iconContainer.style.marginLeft = hud.groupDepth * GROUP_INDENT + "px";
 
     // Make the icon node. It's sprited and the actual region of the image is
     // determined by CSS rules.
@@ -6615,6 +6704,7 @@ ConsoleProgressListener.prototype = {
                                                      CATEGORY_NETWORK,
                                                      SEVERITY_LOG,
                                                      msgNode,
+                                                     this.hudId,
                                                      null,
                                                      null,
                                                      uri.spec);

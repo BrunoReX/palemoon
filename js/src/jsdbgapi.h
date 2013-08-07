@@ -90,9 +90,6 @@ class JS_PUBLIC_API(AutoEnterFrameCompartment) : public AutoEnterScriptCompartme
 JS_BEGIN_EXTERN_C
 #endif
 
-extern JS_PUBLIC_API(JSScript *)
-JS_GetScriptFromObject(JSObject *scriptObject);
-
 extern JS_PUBLIC_API(JSString *)
 JS_DecompileScript(JSContext *cx, JSScript *script, const char *name, uintN indent);
 
@@ -130,10 +127,6 @@ JS_SetDebugModeForCompartment(JSContext *cx, JSCompartment *comp, JSBool debug);
  */
 JS_FRIEND_API(JSBool)
 JS_SetDebugMode(JSContext *cx, JSBool debug);
-
-/* Turn on single step mode. Requires debug mode. */
-extern JS_FRIEND_API(JSBool)
-js_SetSingleStepMode(JSContext *cx, JSScript *script, JSBool singleStep);
 
 /* Turn on single step mode. */
 extern JS_PUBLIC_API(JSBool)

@@ -449,7 +449,7 @@ ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
     }
   }
 
-  layer_manager()->EndTransaction(NULL, NULL);
+  layer_manager()->EndTransaction(NULL, NULL, LayerManager::END_NO_IMMEDIATE_REDRAW);
 
   reply->SetCapacity(replyv.size());
   if (replyv.size() > 0) {
@@ -463,13 +463,6 @@ ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
 
   Frame()->ShadowLayersUpdated();
 
-  return true;
-}
-
-bool
-ShadowLayersParent::RecvGetParentType(LayersBackend* aBackend)
-{
-  *aBackend = layer_manager()->GetBackendType();
   return true;
 }
 

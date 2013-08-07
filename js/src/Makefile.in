@@ -77,38 +77,9 @@ GRE_MODULE	    = 1
 
 LIBS		= $(NSPR_LIBS) 
 
-ifdef GNU_CXX
-ifdef INTEL_CXX
-# icc gets special optimize flags
-ifdef MOZ_PROFILE_GENERATE
-MODULE_OPTIMIZE_FLAGS = -O0
-else
-MODULE_OPTIMIZE_FLAGS = -O2 -ip
-endif
-else # not INTEL_CXX
-
-MODULE_OPTIMIZE_FLAGS = -O3 -fstrict-aliasing -fno-stack-protector
-
-# We normally want -fomit-frame-pointer, but we want an explicit
-# -fno-omit-frame-pointer if we're using a sampling profiler.
-ifndef MOZ_PROFILING
-MODULE_OPTIMIZE_FLAGS += -fomit-frame-pointer
-else
-MODULE_OPTIMIZE_FLAGS += -fno-omit-frame-pointer
-endif
-
-endif
-else # not GNU_CXX
-ifeq ($(OS_ARCH),SunOS)
-MODULE_OPTIMIZE_FLAGS = -xO4
-endif
 ifeq ($(OS_ARCH),WINNT)
-MODULE_OPTIMIZE_FLAGS = -O2
-endif
-endif
-
-ifeq ($(OS_ARCH),WINNT)
-NO_PROFILE_GUIDED_OPTIMIZE = 1
+# Pale Moon: PGO the JS engine (with patches)
+# NO_PROFILE_GUIDED_OPTIMIZE = 1
 endif
 
 # JavaScript must be built shared, even for static builds, as it is used by
@@ -152,8 +123,8 @@ CPPSRCS		= \
 		jsgcstats.cpp \
 		jscrashreport.cpp \
 		jshash.cpp \
+		jsinfer.cpp \
 		jsinterp.cpp \
-		jsinvoke.cpp \
 		jsiter.cpp \
 		jslock.cpp \
 		jslog2.cpp \
@@ -185,6 +156,7 @@ CPPSRCS		= \
 		jsxml.cpp \
 		prmjtime.cpp \
 		sharkctl.cpp \
+		CallObject.cpp \
 		Debugger.cpp \
 		GlobalObject.cpp \
 		Stack.cpp \
@@ -206,6 +178,7 @@ INSTALLED_HEADERS = \
 		jsarena.h \
 		jsatom.h \
 		jsbit.h \
+		jsclass.h \
 		jsclist.h \
 		jsclone.h \
 		jscntxt.h \
@@ -221,8 +194,9 @@ INSTALLED_HEADERS = \
 		jscell.h \
 		jsgcchunk.h \
 		jsgcstats.h \
-		jscompartment.h \
 		jshash.h \
+		jsinfer.h \
+		jsinferinlines.h \
 		jsinterp.h \
 		jsinttypes.h \
 		jsiter.h \
@@ -259,7 +233,6 @@ INSTALLED_HEADERS = \
 		jswrapper.h \
 		jsxdrapi.h \
 		jsval.h \
-		jsvalue.h \
 		prmjtime.h \
 		$(NULL)
 
@@ -275,6 +248,7 @@ EXPORTS_NAMESPACES = vm
 
 EXPORTS_vm = \
 		ArgumentsObject.h \
+		CallObject.h \
 		GlobalObject.h \
 		Stack.h \
 		String.h \
@@ -333,13 +307,16 @@ CPPSRCS += \
 		Fragmento.cpp  \
 		LIR.cpp        \
 		njconfig.cpp   \
-		RegAlloc.cpp   \
 		avmplus.cpp    \
 		Native$(NANOJIT_ARCH).cpp \
 		jsbuiltins.cpp \
 		VMPI.cpp       \
 		Writer.cpp     \
 		$(NULL)
+
+ifdef MOZ_DEBUG
+CPPSRCS += RegAlloc.cpp
+endif
 
 endif # ENABLE_TRACEJIT
 ifdef ENABLE_METHODJIT
@@ -354,7 +331,9 @@ CPPSRCS += 	MethodJIT.cpp \
 		Compiler.cpp \
 		FrameState.cpp \
 		FastArithmetic.cpp \
+		FastBuiltins.cpp \
 		FastOps.cpp \
+		LoopState.cpp \
 		StubCompiler.cpp \
 		MonoIC.cpp \
 		PolyIC.cpp \
@@ -416,28 +395,29 @@ CPPSRCS += 	checks.cc \
 # END enclude sources for V8 dtoa
 #############################################
 
+# For architectures without YARR JIT, PCRE is faster than the YARR
+# interpreter (bug 684559).
+
 ifeq (,$(filter arm% sparc %86 x86_64,$(TARGET_CPU)))
 
-VPATH +=	$(srcdir)/assembler \
-		$(srcdir)/assembler/wtf \
-		$(srcdir)/yarr\
+VPATH +=        $(srcdir)/yarr/pcre \
 		$(NULL)
 
 CPPSRCS += \
-		Assertions.cpp \
-		OSAllocatorOS2.cpp \
-		OSAllocatorPosix.cpp \
-		OSAllocatorWin.cpp \
-		PageBlock.cpp \
-		YarrInterpreter.cpp \
-		YarrPattern.cpp \
-		YarrSyntaxChecker.cpp \
+                pcre_compile.cpp \
+                pcre_exec.cpp \
+                pcre_tables.cpp \
+                pcre_xclass.cpp \
+                pcre_ucp_searchfuncs.cpp \
 		$(NULL)
 else
 
 ###############################################
 # BEGIN include sources for the Nitro assembler
 #
+
+ENABLE_YARR_JIT = 1
+
 VPATH += 	$(srcdir)/assembler \
 		$(srcdir)/assembler/wtf \
 		$(srcdir)/assembler/jit \
@@ -447,23 +427,36 @@ VPATH += 	$(srcdir)/assembler \
 		$(NONE)
 
 CPPSRCS += 	Assertions.cpp \
-		ExecutableAllocatorPosix.cpp \
-		ExecutableAllocatorWin.cpp \
-		ExecutableAllocatorOS2.cpp \
 		ExecutableAllocator.cpp \
 		ARMAssembler.cpp \
-        Logging.cpp \
 		MacroAssemblerARM.cpp \
 		MacroAssemblerX86Common.cpp \
-		OSAllocatorOS2.cpp \
-		OSAllocatorPosix.cpp \
-		OSAllocatorWin.cpp \
 		PageBlock.cpp \
 		YarrInterpreter.cpp \
 		YarrJIT.cpp \
 		YarrPattern.cpp \
 		YarrSyntaxChecker.cpp \
 		$(NONE)
+
+ifdef MOZ_DEBUG
+CPPSRCS += Logging.cpp
+endif
+
+ifneq (,$(filter-out OS2 WINNT,$(OS_ARCH)))
+CPPSRCS += ExecutableAllocatorPosix.cpp \
+           OSAllocatorPosix.cpp \
+           $(NONE)
+endif
+ifeq ($(OS_ARCH),WINNT)
+CPPSRCS += ExecutableAllocatorWin.cpp \
+           OSAllocatorWin.cpp \
+           $(NONE)
+endif
+ifeq ($(OS_ARCH),OS2)
+CPPSRCS += ExecutableAllocatorOS2.cpp \
+           OSAllocatorOS2.cpp \
+           $(NONE)
+endif
 
 ifeq (86, $(findstring 86,$(TARGET_CPU)))
 ifeq (x86_64, $(TARGET_CPU))
@@ -586,7 +579,6 @@ endif
 default::
 
 ifneq (,$(CROSS_COMPILE)$(filter-out WINNT OS2,$(OS_ARCH)))
-ifneq ($(OS_ARCH),SYMBIAN)
 # nsinstall doesn't get built until we enter config/ in the exports phase,
 # so we'll have to manually ensure it gets built here if we want to use
 # $(EXPORTS)
@@ -595,7 +587,6 @@ $(PUBLIC) $(SDK_PUBLIC): config/nsinstall$(HOST_BIN_SUFFIX)
 
 config/nsinstall$(HOST_BIN_SUFFIX): $(srcdir)/config/nsinstall.c $(srcdir)/config/pathsub.c
 	$(MAKE) -C config/ nsinstall$(HOST_BIN_SUFFIX)
-endif
 endif
 
 include $(topsrcdir)/config/rules.mk
@@ -683,10 +674,10 @@ check-malloc-function-usage: $(filter-out %jsalloc.h %jscntxt.h %jsutil.h, $(ALL
 		"in Makefile.in" "{cx,rt}->{free_,delete_,array_delete}" $^
 
 ifneq ($(OS_ARCH),WINNT) # FIXME: this should be made work on Windows too.
-check:: check-malloc-function-usage
+#check:: check-malloc-function-usage FIXME: disable on JM until closer to merge time.
 endif
 
-JITFLAGS = ,m,j,mj,mjp,am,amj,amjp,amd
+JITFLAGS = ,m,j,mj,mjp,am,amj,amjp,amd,n,mn,jn,mjn,mjpn,amn,amjn,amjpn,amdn
 check-jit-test::
 	$(wildcard $(RUN_TEST_PROGRAM)) $(PYTHON) -u $(srcdir)/jit-test/jit_test.py \
 	        --valgrind --no-slow --no-progress --tinderbox --jitflags=$(JITFLAGS) $(DIST)/bin/js$(BIN_SUFFIX)
@@ -801,21 +792,19 @@ EXTRA_LIBS	+= -lm
 endif
 
 # Prevent floating point errors caused by VC++ optimizations
+# Pale Moon: add CXXFLAGS as well
 ifeq ($(OS_ARCH)_$(GNU_CC),WINNT_)
 ifeq (,$(filter-out 1200 1300 1310,$(_MSC_VER)))
 CFLAGS += -Op
+CXXFLAGS += -Op
 else
 CFLAGS += -fp:precise
+CXXFLAGS += -fp:precise
 endif
 endif # WINNT
 
 ifeq ($(OS_ARCH),FreeBSD)
 EXTRA_LIBS	+= -pthread
-endif
-ifeq ($(OS_ARCH),IRIX)
-ifdef USE_N32
-DASH_R		+= -n32
-endif
 endif
 ifeq ($(OS_ARCH),Linux)
 EXTRA_LIBS	+= -ldl
@@ -856,12 +845,6 @@ EXTRA_LIBS	+= -lposix4 -ldl -lnsl -lsocket
 endif
 endif
 
-ifdef MOZ_MEMORY
-ifeq ($(OS_ARCH),Darwin)
-LDFLAGS += -ljemalloc
-endif
-endif
-
 ifdef SOLARIS_SUNPRO_CXX
 ifeq ($(TARGET_CPU),sparc)
 # Sun Studio SPARC doesn't work well with gcc inline asm, use lock_SunOS_sparc*.il
@@ -875,16 +858,6 @@ else
 endif # sparcv9
 endif # sparc
 endif # SOLARIS_SUNPRO_CXX
-
-ifeq ($(OS_ARCH),IRIX)
-ifndef GNU_CC
-_COMPILE_CFLAGS  = $(patsubst -O%,-O1,$(COMPILE_CFLAGS))
-jsapi.o jsxdrapi.o jsarena.o jsarray.o jsatom.o jsemit.o jsfun.o jsinterp.o jsreflect.o jsregexp.o jsparse.o jsopcode.o jsscript.o: %.o: %.cpp Makefile.in
-	$(REPORT_BUILD)
-	@$(MAKE_DEPS_AUTO_CXX)
-	$(CXX) -o $@ -c $(_COMPILE_CFLAGS) $<
-endif
-endif
 
 # An AIX Optimization bug causes PR_dtoa() & JS_dtoa to produce wrong result.
 # This suppresses optimization for this single compilation unit.
@@ -1081,7 +1054,11 @@ endif
 # Needed to "configure" it correctly.  Unfortunately these
 # flags wind up being applied to all code in js/src, not just
 # the code in js/src/assembler.
-CXXFLAGS += -DUSE_SYSTEM_MALLOC=1 -DENABLE_ASSEMBLER=1 -DENABLE_JIT=1
+CXXFLAGS += -DUSE_SYSTEM_MALLOC=1 -DENABLE_ASSEMBLER=1
+
+ifneq (,$(ENABLE_YARR_JIT)$(ENABLE_TRACEJIT)$(ENABLE_METHODJIT))
+CXXFLAGS +=  -DENABLE_JIT=1
+endif
 
 INCLUDES +=	-I$(srcdir)/assembler -I$(srcdir)/yarr
 
@@ -1090,14 +1067,19 @@ ifdef ENABLE_METHODJIT
 # sources a bit.
 TESTMAIN_OBJS = \
 		Assertions.$(OBJ_SUFFIX) \
-		ExecutableAllocatorPosix.$(OBJ_SUFFIX) \
-		ExecutableAllocatorWin.$(OBJ_SUFFIX) \
 		ExecutableAllocator.$(OBJ_SUFFIX) \
 		ARMAssembler.$(OBJ_SUFFIX) \
 		MacroAssemblerARM.$(OBJ_SUFFIX) \
 		TestMain.$(OBJ_SUFFIX) \
 		jsutil.$(OBJ_SUFFIX) \
 		jslog2.$(OBJ_SUFFIX)
+
+ifeq ($(OS_ARCH),WINNT)
+TESTMAIN_OBJS += ExecutableAllocatorWin.$(OBJ_SUFFIX)
+else
+TESTMAIN_OBJS += ExecutableAllocatorPosix.$(OBJ_SUFFIX)
+endif
+
 TestMain$(HOST_BIN_SUFFIX): $(TESTMAIN_OBJS)
 	$(CXX) -o TestMain$(HOST_BIN_SUFFIX) $(TESTMAIN_OBJS)
 endif
@@ -1106,3 +1088,9 @@ endif
 # END kludges for the Nitro assembler
 ###############################################
 
+
+###############################################
+# Pale Moon: Work around for optimizer bug with MSVC PGO (Bug 595653) crash on appstart
+
+# CXXFLAGS := $(filter-out %SSE2 %SSE,$(CXXFLAGS))
+CXXFLAGS := $(CXXFLAGS:arch:SSE2=arch:SSE)

@@ -21,6 +21,7 @@
  * Contributor(s):
  *  Marina Samuel <msamuel@mozilla.com>
  *  Philipp von Weitershausen <philipp@weitershausen.de>
+ *  Chenxia Liu <liuche@mozilla.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -37,9 +38,9 @@
  * ***** END LICENSE BLOCK ***** */
 
 
-const EXPORTED_SYMBOLS = ["SyncScheduler"];
+const EXPORTED_SYMBOLS = ["SyncScheduler", "ErrorHandler"];
 
-const Cu = Components.utils;
+const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/log4moz.js");
@@ -98,6 +99,7 @@ let SyncScheduler = {
     Svc.Obs.add("weave:service:sync:start", this);
     Svc.Obs.add("weave:service:sync:finish", this);
     Svc.Obs.add("weave:engine:sync:finish", this);
+    Svc.Obs.add("weave:engine:sync:error", this);
     Svc.Obs.add("weave:service:login:error", this);
     Svc.Obs.add("weave:service:logout:finish", this);
     Svc.Obs.add("weave:service:sync:error", this);
@@ -106,7 +108,7 @@ let SyncScheduler = {
     Svc.Obs.add("weave:engine:sync:applied", this);
     Svc.Obs.add("weave:service:setup-complete", this);
     Svc.Obs.add("weave:service:start-over", this);
-				
+
     if (Status.checkSetup() == STATUS_OK) {
       Svc.Idle.addIdleObserver(this, Svc.Prefs.get("scheduler.idleTime"));
     }
@@ -115,8 +117,10 @@ let SyncScheduler = {
   observe: function observe(subject, topic, data) {
     switch(topic) {
       case "weave:engine:score:updated":
-        Utils.namedTimer(this.calculateScore, SCORE_UPDATE_DELAY, this,
-                         "_scoreTimer");
+        if (Status.login == LOGIN_SUCCEEDED) {
+          Utils.namedTimer(this.calculateScore, SCORE_UPDATE_DELAY, this,
+                           "_scoreTimer");
+        }
         break;
       case "network:offline-status-changed":
         // Whether online or offline, we'll reschedule syncs
@@ -137,9 +141,14 @@ let SyncScheduler = {
         this.nextSync = 0;
         this.adjustSyncInterval();
 
+        if (Status.service == SYNC_FAILED_PARTIAL && this.requiresBackoff) {
+          this.requiresBackoff = false;
+          this.handleSyncError();
+          return;
+        }
+
         let sync_interval;
         this._syncErrors = 0;
-
         if (Status.sync == NO_SYNC_NODE_FOUND) {
           this._log.trace("Scheduling a sync at interval NO_SYNC_NODE_FOUND.");
           sync_interval = NO_SYNC_NODE_INTERVAL;
@@ -152,9 +161,16 @@ let SyncScheduler = {
           this.updateClientMode();
         }
         break;
+      case "weave:engine:sync:error":
+        // subject is the exception thrown by an engine's sync() method
+        let exception = subject;
+        if (exception.status >= 500 && exception.status <= 504) {
+          this.requiresBackoff = true;
+        }
+        break;
       case "weave:service:login:error":
         this.clearSyncTriggers();
-        
+
         // Try again later, just as if we threw an error... only without the
         // error count.
         if (Status.login == MASTER_PASSWORD_LOCKED) {
@@ -167,7 +183,7 @@ let SyncScheduler = {
         // Start or cancel the sync timer depending on if
         // logged in or logged out
         this.checkSyncStatus();
-        break; 
+        break;
       case "weave:service:sync:error":
         // There may be multiple clients but if the sync fails, client mode
         // should still be updated so that the next sync has a correct interval.
@@ -194,7 +210,7 @@ let SyncScheduler = {
       case "weave:engine:sync:applied":
         let numItems = subject.applied;
         this._log.trace("Engine " + data + " applied " + numItems + " items.");
-        if (numItems) 
+        if (numItems)
           this.hasIncomingItems = true;
         break;
       case "weave:service:setup-complete":
@@ -257,7 +273,7 @@ let SyncScheduler = {
   },
 
   calculateScore: function calculateScore() {
-    var engines = Engines.getEnabled();
+    let engines = [Clients].concat(Engines.getEnabled());
     for (let i = 0;i < engines.length;i++) {
       this._log.trace(engines[i].name + ": score: " + engines[i].score);
       this.globalScore += engines[i].score;
@@ -273,7 +289,7 @@ let SyncScheduler = {
    */
   updateClientMode: function updateClientMode() {
     // Nothing to do if it's the same amount
-    let {numClients} = Clients.stats;	
+    let numClients = Clients.stats.numClients;
     if (this.numClients == numClients)
       return;
 
@@ -315,7 +331,7 @@ let SyncScheduler = {
 
   /**
    * Call sync() if Master Password is not locked.
-   * 
+   *
    * Otherwise, reschedule a sync for later.
    */
   syncIfMPUnlocked: function syncIfMPUnlocked() {
@@ -454,4 +470,307 @@ let SyncScheduler = {
       this.syncTimer.clear();
   }
 
+};
+
+const LOG_PREFIX_SUCCESS = "success-";
+const LOG_PREFIX_ERROR   = "error-";
+
+let ErrorHandler = {
+
+  /**
+   * Flag that turns on error reporting for all errors, incl. network errors.
+   */
+  dontIgnoreErrors: false,
+
+  init: function init() {
+    Svc.Obs.add("weave:engine:sync:applied", this);
+    Svc.Obs.add("weave:engine:sync:error", this);
+    Svc.Obs.add("weave:service:login:error", this);
+    Svc.Obs.add("weave:service:sync:error", this);
+    Svc.Obs.add("weave:service:sync:finish", this);
+
+    this.initLogs();
+  },
+
+  initLogs: function initLogs() {
+    this._log = Log4Moz.repository.getLogger("Sync.ErrorHandler");
+    this._log.level = Log4Moz.Level[Svc.Prefs.get("log.logger.service.main")];
+    this._cleaningUpFileLogs = false;
+
+    let root = Log4Moz.repository.getLogger("Sync");
+    root.level = Log4Moz.Level[Svc.Prefs.get("log.rootLogger")];
+
+    let formatter = new Log4Moz.BasicFormatter();
+    let capp = new Log4Moz.ConsoleAppender(formatter);
+    capp.level = Log4Moz.Level[Svc.Prefs.get("log.appender.console")];
+    root.addAppender(capp);
+
+    let dapp = new Log4Moz.DumpAppender(formatter);
+    dapp.level = Log4Moz.Level[Svc.Prefs.get("log.appender.dump")];
+    root.addAppender(dapp);
+
+    let fapp = this._logAppender = new Log4Moz.StorageStreamAppender(formatter);
+    fapp.level = Log4Moz.Level[Svc.Prefs.get("log.appender.file.level")];
+    root.addAppender(fapp);
+  },
+
+  observe: function observe(subject, topic, data) {
+    switch(topic) {
+      case "weave:engine:sync:applied":
+        if (subject.newFailed) {
+          // An engine isn't able to apply one or more incoming records.
+          // We don't fail hard on this, but it usually indicates a bug,
+          // so for now treat it as sync error (c.f. Service._syncEngine())
+          Status.engines = [data, ENGINE_APPLY_FAIL];
+          this._log.debug(data + " failed to apply some records.");
+        }
+        break;
+      case "weave:engine:sync:error":
+        let exception = subject;  // exception thrown by engine's sync() method
+        let engine_name = data;   // engine name that threw the exception
+
+        this.checkServerError(exception);
+
+        Status.engines = [engine_name, exception.failureCode || ENGINE_UNKNOWN_FAIL];
+        this._log.debug(engine_name + " failed: " + Utils.exceptionStr(exception));
+        break;
+      case "weave:service:login:error":
+        this.resetFileLog(Svc.Prefs.get("log.appender.file.logOnError"),
+                          LOG_PREFIX_ERROR);
+
+        if (this.shouldReportError()) {
+          this.notifyOnNextTick("weave:ui:login:error");
+        } else {
+          this.notifyOnNextTick("weave:ui:clear-error");
+        }
+
+        this.dontIgnoreErrors = false;
+        break;
+      case "weave:service:sync:error":
+        if (Status.sync == CREDENTIALS_CHANGED) {
+          Weave.Service.logout();
+        }
+
+        this.resetFileLog(Svc.Prefs.get("log.appender.file.logOnError"),
+                          LOG_PREFIX_ERROR);
+
+        if (this.shouldReportError()) {
+          this.notifyOnNextTick("weave:ui:sync:error");
+        } else {
+          this.notifyOnNextTick("weave:ui:sync:finish");
+        }
+
+        this.dontIgnoreErrors = false;
+        break;
+      case "weave:service:sync:finish":
+        if (Status.service == SYNC_FAILED_PARTIAL) {
+          this._log.debug("Some engines did not sync correctly.");
+          this.resetFileLog(Svc.Prefs.get("log.appender.file.logOnError"),
+                            LOG_PREFIX_ERROR);
+
+          if (this.shouldReportError()) {
+            this.dontIgnoreErrors = false;
+            this.notifyOnNextTick("weave:ui:sync:error");
+            break;
+          }
+        } else {
+          this.resetFileLog(Svc.Prefs.get("log.appender.file.logOnSuccess"),
+                            LOG_PREFIX_SUCCESS);
+        }
+        this.dontIgnoreErrors = false;
+        this.notifyOnNextTick("weave:ui:sync:finish");
+        break;
+    }
+  },
+
+  notifyOnNextTick: function notifyOnNextTick(topic) {
+    Utils.nextTick(function() Svc.Obs.notify(topic));
+  },
+
+  /**
+   * Trigger a sync and don't muffle any errors, particularly network errors.
+   */
+  syncAndReportErrors: function syncAndReportErrors() {
+    this._log.debug("Beginning user-triggered sync.");
+
+    this.dontIgnoreErrors = true;
+    Utils.nextTick(Weave.Service.sync, Weave.Service);
+  },
+
+  /**
+   * Finds all logs older than maxErrorAge and deletes them without tying up I/O.
+   */
+  cleanupLogs: function cleanupLogs() {
+    let direntries = FileUtils.getDir("ProfD", ["weave", "logs"]).directoryEntries;
+    let oldLogs = [];
+    let index = 0;
+    let threshold = Date.now() - 1000 * Svc.Prefs.get("log.appender.file.maxErrorAge");
+
+    while (direntries.hasMoreElements()) {
+      let logFile = direntries.getNext().QueryInterface(Ci.nsIFile);
+      if (logFile.lastModifiedTime < threshold) {
+        oldLogs.push(logFile);
+      }
+    }
+
+    // Deletes a file from oldLogs each tick until there are none left.
+    function deleteFile() {
+      if (index >= oldLogs.length) {
+        ErrorHandler._cleaningUpFileLogs = false;
+        Svc.Obs.notify("weave:service:cleanup-logs");
+        return;
+      }
+      try {
+        oldLogs[index].remove(false);
+      } catch (ex) {
+        ErrorHandler._log._debug("Encountered error trying to clean up old log file '"
+                                 + oldLogs[index].leafName + "':"
+                                 + Utils.exceptionStr(ex));
+      }
+      index++;
+      Utils.nextTick(deleteFile);
+    }
+
+    if (oldLogs.length > 0) {
+      ErrorHandler._cleaningUpFileLogs = true;
+      Utils.nextTick(deleteFile);
+    }
+  },
+
+  /**
+   * Generate a log file for the sync that just completed
+   * and refresh the input & output streams.
+   *
+   * @param flushToFile
+   *        the log file to be flushed/reset
+   *
+   * @param filenamePrefix
+   *        a value of either LOG_PREFIX_SUCCESS or LOG_PREFIX_ERROR
+   *        to be used as the log filename prefix
+   */
+  resetFileLog: function resetFileLog(flushToFile, filenamePrefix) {
+    let inStream = this._logAppender.getInputStream();
+    this._logAppender.reset();
+    if (flushToFile && inStream) {
+      try {
+        let filename = filenamePrefix + Date.now() + ".txt";
+        let file = FileUtils.getFile("ProfD", ["weave", "logs", filename]);
+        let outStream = FileUtils.openFileOutputStream(file);
+        NetUtil.asyncCopy(inStream, outStream, function () {
+          Svc.Obs.notify("weave:service:reset-file-log");
+          if (filenamePrefix == LOG_PREFIX_ERROR
+              && !ErrorHandler._cleaningUpFileLogs) {
+            Utils.nextTick(ErrorHandler.cleanupLogs, ErrorHandler);
+          }
+        });
+      } catch (ex) {
+        Svc.Obs.notify("weave:service:reset-file-log");
+      }
+    } else {
+      Svc.Obs.notify("weave:service:reset-file-log");
+    }
+  },
+
+  /**
+   * Translates server error codes to meaningful strings.
+   *
+   * @param code
+   *        server error code as an integer
+   */
+  errorStr: function errorStr(code) {
+    switch (code.toString()) {
+    case "1":
+      return "illegal-method";
+    case "2":
+      return "invalid-captcha";
+    case "3":
+      return "invalid-username";
+    case "4":
+      return "cannot-overwrite-resource";
+    case "5":
+      return "userid-mismatch";
+    case "6":
+      return "json-parse-failure";
+    case "7":
+      return "invalid-password";
+    case "8":
+      return "invalid-record";
+    case "9":
+      return "weak-password";
+    default:
+      return "generic-server-error";
+    }
+  },
+
+  shouldReportError: function shouldReportError() {
+    if (Status.login == MASTER_PASSWORD_LOCKED) {
+      return false;
+    }
+
+    if (this.dontIgnoreErrors) {
+      return true;
+    }
+
+    let lastSync = Svc.Prefs.get("lastSync");
+    if (lastSync && ((Date.now() - Date.parse(lastSync)) >
+        Svc.Prefs.get("errorhandler.networkFailureReportTimeout") * 1000)) {
+      Status.sync = PROLONGED_SYNC_FAILURE;
+      return true;
+    }
+
+    return ([Status.login, Status.sync].indexOf(SERVER_MAINTENANCE) == -1 &&
+            [Status.login, Status.sync].indexOf(LOGIN_FAILED_NETWORK_ERROR) == -1);
+  },
+
+  /**
+   * Handle HTTP response results or exceptions and set the appropriate
+   * Status.* bits.
+   */
+  checkServerError: function checkServerError(resp) {
+    switch (resp.status) {
+      case 400:
+        if (resp == RESPONSE_OVER_QUOTA) {
+          Status.sync = OVER_QUOTA;
+        }
+        break;
+
+      case 401:
+        Weave.Service.logout();
+        Status.login = LOGIN_FAILED_LOGIN_REJECTED;
+        break;
+
+      case 500:
+      case 502:
+      case 503:
+      case 504:
+        Status.enforceBackoff = true;
+        if (resp.status == 503 && resp.headers["retry-after"]) {
+          if (Weave.Service.isLoggedIn) {
+            Status.sync = SERVER_MAINTENANCE;
+          } else {
+            Status.login = SERVER_MAINTENANCE;
+          }
+          Svc.Obs.notify("weave:service:backoff:interval",
+                         parseInt(resp.headers["retry-after"], 10));
+        }
+        break;
+    }
+
+    switch (resp.result) {
+      case Cr.NS_ERROR_UNKNOWN_HOST:
+      case Cr.NS_ERROR_CONNECTION_REFUSED:
+      case Cr.NS_ERROR_NET_TIMEOUT:
+      case Cr.NS_ERROR_NET_RESET:
+      case Cr.NS_ERROR_NET_INTERRUPT:
+      case Cr.NS_ERROR_PROXY_CONNECTION_REFUSED:
+        // The constant says it's about login, but in fact it just
+        // indicates general network error.
+        if (Weave.Service.isLoggedIn) {
+          Status.sync = LOGIN_FAILED_NETWORK_ERROR;
+        } else {
+          Status.login = LOGIN_FAILED_NETWORK_ERROR;
+        }
+        break;
+    }
+  },
 };

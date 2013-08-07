@@ -106,7 +106,7 @@ nsDisplayListBuilder::nsDisplayListBuilder(nsIFrame* aReferenceFrame,
 
   if(mReferenceFrame->GetType() == nsGkAtoms::viewportFrame) {
     ViewportFrame* viewportFrame = static_cast<ViewportFrame*>(mReferenceFrame);
-    if (!viewportFrame->GetChildList(nsGkAtoms::fixedList).IsEmpty()) {
+    if (!viewportFrame->GetChildList(nsIFrame::kFixedList).IsEmpty()) {
       mHasFixedItems = PR_TRUE;
     }
   }
@@ -600,8 +600,8 @@ void nsDisplayList::PaintForFrame(nsDisplayListBuilder* aBuilder,
     return;
   // Root is being scaled up by the X/Y resolution. Scale it back down.
   gfx3DMatrix rootTransform = root->GetTransform()*
-    gfx3DMatrix::Scale(1.0f/containerParameters.mXScale,
-                       1.0f/containerParameters.mYScale, 1.0f);
+    gfx3DMatrix::ScalingMatrix(1.0f/containerParameters.mXScale,
+                               1.0f/containerParameters.mYScale, 1.0f);
   root->SetTransform(rootTransform);
 
   ViewID id = presContext->IsRootContentDocument() ? FrameMetrics::ROOT_SCROLL_ID
@@ -695,7 +695,7 @@ void nsDisplayList::HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
     aState->mItemBuffer.SetLength(i);
 
     if (aRect.Intersects(item->GetBounds(aBuilder))) {
-      nsTArray<nsIFrame*> outFrames;
+      nsAutoTArray<nsIFrame*, 16> outFrames;
       item->HitTest(aBuilder, aRect, aState, &outFrames);
 
       for (PRUint32 j = 0; j < outFrames.Length(); j++) {
@@ -762,6 +762,24 @@ static PRBool IsContentLEQ(nsDisplayItem* aItem1, nsDisplayItem* aItem2,
       static_cast<nsIContent*>(aClosure)) <= 0;
 }
 
+static PRBool IsZPositionLEQ(nsDisplayItem* aItem1, nsDisplayItem* aItem2,
+                             void* aClosure) {
+  if (!aItem1->GetUnderlyingFrame()->Preserves3D() ||
+      !aItem1->GetUnderlyingFrame()->Preserves3D()) {
+    return IsContentLEQ(aItem1, aItem2, aClosure);
+  }
+
+  nsIFrame* ancestor;
+  gfx3DMatrix matrix1 = aItem1->GetUnderlyingFrame()->GetTransformMatrix(&ancestor);
+  gfx3DMatrix matrix2 = aItem2->GetUnderlyingFrame()->GetTransformMatrix(&ancestor);
+
+  if (matrix1._43 == matrix2._43) {
+    return IsContentLEQ(aItem1, aItem2, aClosure);
+  }
+
+  return matrix1._43 < matrix2._43;
+}
+
 static PRBool IsZOrderLEQ(nsDisplayItem* aItem1, nsDisplayItem* aItem2,
                           void* aClosure) {
   // These GetUnderlyingFrame calls return non-null because we're only used
@@ -770,7 +788,7 @@ static PRBool IsZOrderLEQ(nsDisplayItem* aItem1, nsDisplayItem* aItem2,
   PRInt32 index1 = nsLayoutUtils::GetZIndex(aItem1->GetUnderlyingFrame());
   PRInt32 index2 = nsLayoutUtils::GetZIndex(aItem2->GetUnderlyingFrame());
   if (index1 == index2)
-    return IsContentLEQ(aItem1, aItem2, aClosure);
+    return IsZPositionLEQ(aItem1, aItem2, aClosure);
   return index1 < index2;
 }
 
@@ -815,6 +833,11 @@ void nsDisplayList::SortByZOrder(nsDisplayListBuilder* aBuilder,
 void nsDisplayList::SortByContentOrder(nsDisplayListBuilder* aBuilder,
                                        nsIContent* aCommonAncestor) {
   Sort(aBuilder, IsContentLEQ, aCommonAncestor);
+}
+
+void nsDisplayList::SortByZPosition(nsDisplayListBuilder* aBuilder,
+                                    nsIContent* aCommonAncestor) {
+  Sort(aBuilder, IsZPositionLEQ, aCommonAncestor);
 }
 
 void nsDisplayList::Sort(nsDisplayListBuilder* aBuilder,
@@ -2419,11 +2442,21 @@ gfx3DMatrix
 nsDisplayTransform::GetResultingTransformMatrix(const nsIFrame* aFrame,
                                                 const nsPoint &aOrigin,
                                                 float aFactor,
-                                                const nsRect* aBoundsOverride)
+                                                const nsRect* aBoundsOverride,
+                                                nsIFrame** aOutAncestor)
 {
   NS_PRECONDITION(aFrame, "Cannot get transform matrix for a null frame!");
-  NS_PRECONDITION(aFrame->GetStyleDisplay()->HasTransform(),
-                  "Cannot get transform matrix if frame isn't transformed!");
+
+  if (aOutAncestor) {
+      *aOutAncestor = nsLayoutUtils::GetCrossDocParentFrame(aFrame);
+  }
+
+  /* Preserve-3d can cause frames without a transform to get an nsDisplayTransform created, we should
+   * use our parent's transform here.
+   */
+  if (!aFrame->GetStyleDisplay()->HasTransform()) {
+    return GetResultingTransformMatrix(aFrame->GetParent(), aOrigin - aFrame->GetPosition(), aFactor, nsnull, aOutAncestor);
+  }
 
   /* Account for the -moz-transform-origin property by translating the
    * coordinate space to the new origin.
@@ -2443,11 +2476,17 @@ nsDisplayTransform::GetResultingTransformMatrix(const nsIFrame* aFrame,
 
   /* Get the matrix, then change its basis to factor in the origin. */
   PRBool dummy;
-  gfx3DMatrix result =
-    nsStyleTransformMatrix::ReadTransforms(disp->mSpecifiedTransform,
-                                           aFrame->GetStyleContext(),
-                                           aFrame->PresContext(),
-                                           dummy, bounds, aFactor);
+  gfx3DMatrix result;
+  /* Transformed frames always have a transform, or are preserving 3d (and might still have perspective!) */
+  if (disp->mSpecifiedTransform) {
+    result = nsStyleTransformMatrix::ReadTransforms(disp->mSpecifiedTransform,
+                                                    aFrame->GetStyleContext(),
+                                                    aFrame->PresContext(),
+                                                    dummy, bounds, aFactor);
+  } else {
+     NS_ASSERTION(aFrame->GetStyleDisplay()->mTransformStyle == NS_STYLE_TRANSFORM_STYLE_PRESERVE_3D,
+                  "If we don't have a transform, then we must be at least attempting to preserve the transforms of our children");
+  }
 
   const nsStyleDisplay* parentDisp = nsnull;
   if (aFrame->GetParent()) {
@@ -2462,6 +2501,18 @@ nsDisplayTransform::GetResultingTransformMatrix(const nsIFrame* aFrame,
                                      aFactor);
     result = result * nsLayoutUtils::ChangeMatrixBasis(toPerspectiveOrigin, perspective);
   }
+
+  if (aFrame->Preserves3D() && nsLayoutUtils::Are3DTransformsEnabled()) {
+      // Include the transform set on our parent
+      NS_ASSERTION(aFrame->GetParent() &&
+                   aFrame->GetParent()->IsTransformed() &&
+                   aFrame->GetParent()->Preserves3DChildren(),
+                   "Preserve3D mismatch!");
+      gfx3DMatrix parent = GetResultingTransformMatrix(aFrame->GetParent(), aOrigin - aFrame->GetPosition(),
+                                                       aFactor, nsnull, aOutAncestor);
+      return nsLayoutUtils::ChangeMatrixBasis(newOrigin + toMozOrigin, result) * parent;
+  }
+
   return nsLayoutUtils::ChangeMatrixBasis
     (newOrigin + toMozOrigin, result);
 }
@@ -2531,7 +2582,7 @@ PRBool nsDisplayTransform::ComputeVisibility(nsDisplayListBuilder *aBuilder,
                                aBuilder->ToReferenceFrame(mFrame);
   }
   nsRegion untransformedVisible = untransformedVisibleRect;
-  // Call RecomputeVisiblity instead of ComputeVisibilty since
+  // Call RecomputeVisiblity instead of ComputeVisibility since
   // nsDisplayItem::ComputeVisibility should only be called from
   // nsDisplayList::ComputeVisibility (which sets mVisibleRect on the item)
   mStoredList.RecomputeVisibility(aBuilder, &untransformedVisible);
@@ -2573,6 +2624,7 @@ void nsDisplayTransform::HitTest(nsDisplayListBuilder *aBuilder,
   /* Now, apply the transform and pass it down the channel. */
   nsRect resultingRect;
   if (aRect.width == 1 && aRect.height == 1) {
+    // Magic width/height indicating we're hit testing a point, not a rect
     gfxPoint point = matrix.Inverse().ProjectPoint(
                        gfxPoint(NSAppUnitsToFloatPixels(aRect.x, factor),
                                 NSAppUnitsToFloatPixels(aRect.y, factor)));
@@ -2739,8 +2791,6 @@ nsRect nsDisplayTransform::TransformRect(const nsRect &aUntransformedBounds,
                                          const nsRect* aBoundsOverride)
 {
   NS_PRECONDITION(aFrame, "Can't take the transform based on a null frame!");
-  NS_PRECONDITION(aFrame->GetStyleDisplay()->HasTransform(),
-                  "Cannot transform a rectangle if there's no transformation!");
 
   float factor = nsPresContext::AppUnitsPerCSSPixel();
   return nsLayoutUtils::MatrixTransformRect
@@ -2755,8 +2805,6 @@ nsRect nsDisplayTransform::TransformRectOut(const nsRect &aUntransformedBounds,
                                             const nsRect* aBoundsOverride)
 {
   NS_PRECONDITION(aFrame, "Can't take the transform based on a null frame!");
-  NS_PRECONDITION(aFrame->GetStyleDisplay()->HasTransform(),
-                  "Cannot transform a rectangle if there's no transformation!");
 
   float factor = nsPresContext::AppUnitsPerCSSPixel();
   return nsLayoutUtils::MatrixTransformRectOut
@@ -2771,9 +2819,6 @@ PRBool nsDisplayTransform::UntransformRect(const nsRect &aUntransformedBounds,
                                            nsRect* aOutRect)
 {
   NS_PRECONDITION(aFrame, "Can't take the transform based on a null frame!");
-  NS_PRECONDITION(aFrame->GetStyleDisplay()->HasTransform(),
-                  "Cannot transform a rectangle if there's no transformation!");
-
 
   /* Grab the matrix.  If the transform is degenerate, just hand back the
    * empty rect.

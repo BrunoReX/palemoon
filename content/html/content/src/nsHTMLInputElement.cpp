@@ -85,8 +85,6 @@
 #include "nsUnicharUtils.h"
 #include "nsEventDispatcher.h"
 #include "nsLayoutUtils.h"
-#include "nsWidgetsCID.h"
-#include "nsILookAndFeel.h"
 
 #include "nsIDOMMutationEvent.h"
 #include "nsIDOMEventTarget.h"
@@ -104,8 +102,6 @@
 #include "nsDOMFile.h"
 #include "nsIFilePicker.h"
 #include "nsDirectoryServiceDefs.h"
-#include "nsIPrivateBrowsingService.h"
-#include "nsIContentURIGrouper.h"
 #include "nsIContentPrefService.h"
 #include "nsIObserverService.h"
 #include "nsIPopupWindowManager.h"
@@ -120,12 +116,14 @@
 #include "nsContentUtils.h"
 #include "nsRadioVisitor.h"
 
+#include "mozilla/LookAndFeel.h"
+
+using namespace mozilla;
 using namespace mozilla::dom;
 
 // XXX align=left, hspace, vspace, border? other nav4 attrs
 
 static NS_DEFINE_CID(kXULControllersCID,  NS_XULCONTROLLERS_CID);
-static NS_DEFINE_CID(kLookAndFeelCID, NS_LOOKANDFEEL_CID);
 
 // First bits are needed for the control type.
 #define NS_OUTER_ACTIVATE_EVENT   (1 << 9)
@@ -453,7 +451,6 @@ nsHTMLInputElement::InitUploadLastDir() {
   nsCOMPtr<nsIObserverService> observerService =
     mozilla::services::GetObserverService();
   if (observerService && gUploadLastDir) {
-    observerService->AddObserver(gUploadLastDir, NS_PRIVATE_BROWSING_SWITCH_TOPIC, PR_TRUE);
     observerService->AddObserver(gUploadLastDir, "browser:purge-session-history", PR_TRUE);
   }
 }
@@ -463,38 +460,11 @@ nsHTMLInputElement::DestroyUploadLastDir() {
   NS_IF_RELEASE(gUploadLastDir);
 }
 
-UploadLastDir::UploadLastDir():
-  mInPrivateBrowsing(PR_FALSE)
-{
-  nsCOMPtr<nsIPrivateBrowsingService> pbService =
-    do_GetService(NS_PRIVATE_BROWSING_SERVICE_CONTRACTID);
-  if (pbService) {
-    pbService->GetPrivateBrowsingEnabled(&mInPrivateBrowsing);
-  }
-
-  mUploadLastDirStore.Init();
-}
-
 nsresult
 UploadLastDir::FetchLastUsedDirectory(nsIURI* aURI, nsILocalFile** aFile)
 {
   NS_PRECONDITION(aURI, "aURI is null");
   NS_PRECONDITION(aFile, "aFile is null");
-  // Retrieve the data from memory if it's present during private browsing mode,
-  // otherwise fall through to check the CPS
-  if (mInPrivateBrowsing) {
-    nsCOMPtr<nsIContentURIGrouper> hostnameGrouperService =
-      do_GetService(NS_HOSTNAME_GROUPER_SERVICE_CONTRACTID);
-    if (!hostnameGrouperService)
-      return NS_ERROR_NOT_AVAILABLE;
-    nsString group;
-    hostnameGrouperService->Group(aURI, group);
-
-    if (mUploadLastDirStore.Get(group, aFile)) {
-      return NS_OK;
-    }
-  }
-
   // Attempt to get the CPS, if it's not present we'll just return
   nsCOMPtr<nsIContentPrefService> contentPrefService =
     do_GetService(NS_CONTENT_PREF_SERVICE_CONTRACTID);
@@ -536,18 +506,6 @@ UploadLastDir::StoreLastUsedDirectory(nsIURI* aURI, nsILocalFile* aFile)
   }
   nsCOMPtr<nsILocalFile> localFile = do_QueryInterface(parentFile);
 
-  // Store the data in memory instead of the CPS during private browsing mode
-  if (mInPrivateBrowsing) {
-    nsCOMPtr<nsIContentURIGrouper> hostnameGrouperService =
-      do_GetService(NS_HOSTNAME_GROUPER_SERVICE_CONTRACTID);
-    if (!hostnameGrouperService)
-      return NS_ERROR_NOT_AVAILABLE;
-    nsString group;
-    hostnameGrouperService->Group(aURI, group);
-
-    return mUploadLastDirStore.Put(group, localFile);
-  }
-
   // Attempt to get the CPS, if it's not present we'll just return
   nsCOMPtr<nsIContentPrefService> contentPrefService =
     do_GetService(NS_CONTENT_PREF_SERVICE_CONTRACTID);
@@ -573,19 +531,7 @@ UploadLastDir::StoreLastUsedDirectory(nsIURI* aURI, nsILocalFile* aFile)
 NS_IMETHODIMP
 UploadLastDir::Observe(nsISupports *aSubject, char const *aTopic, PRUnichar const *aData)
 {
-  if (strcmp(aTopic, NS_PRIVATE_BROWSING_SWITCH_TOPIC) == 0) {
-    if (NS_LITERAL_STRING(NS_PRIVATE_BROWSING_ENTER).Equals(aData)) {
-      mInPrivateBrowsing = PR_TRUE;
-    } else if (NS_LITERAL_STRING(NS_PRIVATE_BROWSING_LEAVE).Equals(aData)) {
-      mInPrivateBrowsing = PR_FALSE;
-      if (mUploadLastDirStore.IsInitialized()) {
-        mUploadLastDirStore.Clear();
-      }
-    }
-  } else if (strcmp(aTopic, "browser:purge-session-history") == 0) {
-    if (mUploadLastDirStore.IsInitialized()) {
-      mUploadLastDirStore.Clear();
-    }
+  if (strcmp(aTopic, "browser:purge-session-history") == 0) {
     nsCOMPtr<nsIContentPrefService> contentPrefService =
       do_GetService(NS_CONTENT_PREF_SERVICE_CONTRACTID);
     if (contentPrefService)
@@ -1707,7 +1653,7 @@ nsHTMLInputElement::Focus()
     // for file inputs, focus the button instead
     nsIFrame* frame = GetPrimaryFrame();
     if (frame) {
-      nsIFrame* childFrame = frame->GetFirstChild(nsnull);
+      nsIFrame* childFrame = frame->GetFirstPrincipalChild();
       while (childFrame) {
         // see if the child is a button control
         nsCOMPtr<nsIFormControl> formCtrl =
@@ -1977,15 +1923,14 @@ static PRBool
 SelectTextFieldOnFocus()
 {
   if (!gSelectTextFieldOnFocus) {
-    nsCOMPtr<nsILookAndFeel> lookNFeel(do_GetService(kLookAndFeelCID));
-    if (lookNFeel) {
-      PRInt32 selectTextfieldsOnKeyFocus = -1;
-      lookNFeel->GetMetric(nsILookAndFeel::eMetric_SelectTextfieldsOnKeyFocus,
-                           selectTextfieldsOnKeyFocus);
-      gSelectTextFieldOnFocus = selectTextfieldsOnKeyFocus != 0 ? 1 : -1;
-    }
-    else {
+    PRInt32 selectTextfieldsOnKeyFocus = -1;
+    nsresult rv =
+      LookAndFeel::GetInt(LookAndFeel::eIntID_SelectTextfieldsOnKeyFocus,
+                          &selectTextfieldsOnKeyFocus);
+    if (NS_FAILED(rv)) {
       gSelectTextFieldOnFocus = -1;
+    } else {
+      gSelectTextFieldOnFocus = selectTextfieldsOnKeyFocus != 0 ? 1 : -1;
     }
   }
 
@@ -2179,7 +2124,7 @@ nsHTMLInputElement::PostHandleEvent(nsEventChainPostVisitor& aVisitor)
               {
                 nsMouseEvent event(NS_IS_TRUSTED_EVENT(aVisitor.mEvent),
                                    NS_MOUSE_CLICK, nsnull, nsMouseEvent::eReal);
-                event.inputSource = nsIDOMNSMouseEvent::MOZ_SOURCE_KEYBOARD;
+                event.inputSource = nsIDOMMouseEvent::MOZ_SOURCE_KEYBOARD;
                 nsEventStatus status = nsEventStatus_eIgnore;
 
                 nsEventDispatcher::Dispatch(static_cast<nsIContent*>(this),
@@ -2217,7 +2162,7 @@ nsHTMLInputElement::PostHandleEvent(nsEventChainPostVisitor& aVisitor)
                     nsMouseEvent event(NS_IS_TRUSTED_EVENT(aVisitor.mEvent),
                                        NS_MOUSE_CLICK, nsnull,
                                        nsMouseEvent::eReal);
-                    event.inputSource = nsIDOMNSMouseEvent::MOZ_SOURCE_KEYBOARD;
+                    event.inputSource = nsIDOMMouseEvent::MOZ_SOURCE_KEYBOARD;
                     rv = nsEventDispatcher::Dispatch(radioContent,
                                                      aVisitor.mPresContext,
                                                      &event, nsnull, &status);
@@ -2510,12 +2455,12 @@ nsHTMLInputElement::SanitizeValue(nsAString& aValue)
     case NS_FORM_INPUT_SEARCH:
     case NS_FORM_INPUT_TEL:
     case NS_FORM_INPUT_PASSWORD:
-    case NS_FORM_INPUT_EMAIL:
       {
         PRUnichar crlf[] = { PRUnichar('\r'), PRUnichar('\n'), 0 };
         aValue.StripChars(crlf);
       }
       break;
+    case NS_FORM_INPUT_EMAIL:
     case NS_FORM_INPUT_URL:
       {
         PRUnichar crlf[] = { PRUnichar('\r'), PRUnichar('\n'), 0 };

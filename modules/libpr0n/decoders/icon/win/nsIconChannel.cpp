@@ -452,10 +452,16 @@ static int GetColorTableSize(BITMAPINFOHEADER* aHeader)
   }
   case 16:
   case 32:
-    if (aHeader->biCompression == BI_RGB)
-      colorTableSize = 0;
-    else if (aHeader->biCompression == BI_BITFIELDS)
-      colorTableSize = 3 * sizeof(DWORD);
+    // If we have BI_BITFIELDS compression, we would normally need 3 DWORDS for
+    // the bitfields mask which would be stored in the color table; However, 
+    // we instead force the bitmap to request data of type BI_RGB so the color
+    // table should be of size 0.  
+    // Setting aHeader->biCompression = BI_RGB forces the later call to 
+    // GetDIBits to return to us BI_RGB data.
+    if (aHeader->biCompression == BI_BITFIELDS) {
+      aHeader->biCompression = BI_RGB;
+    }
+    colorTableSize = 0;
     break;
   case 24:
     colorTableSize = 0;
@@ -646,6 +652,24 @@ nsIconChannel::SetContentCharset(const nsACString &aContentCharset)
   // It doesn't make sense to set the content-charset on this type
   // of channel...
   return NS_ERROR_FAILURE;
+}
+
+NS_IMETHODIMP
+nsIconChannel::GetContentDisposition(PRUint32 *aContentDisposition)
+{
+  return NS_ERROR_NOT_AVAILABLE;
+}
+
+NS_IMETHODIMP
+nsIconChannel::GetContentDispositionFilename(nsAString &aContentDispositionFilename)
+{
+  return NS_ERROR_NOT_AVAILABLE;
+}
+
+NS_IMETHODIMP
+nsIconChannel::GetContentDispositionHeader(nsACString &aContentDispositionHeader)
+{
+  return NS_ERROR_NOT_AVAILABLE;
 }
 
 NS_IMETHODIMP nsIconChannel::GetContentLength(PRInt32 *aContentLength)

@@ -531,7 +531,7 @@ nsTextInputSelectionImpl::CompleteMove(PRBool aForward, PRBool aExtend)
 
     if (offset > 0)
     {
-      nsIContent *child = parentDIV->GetChildAt(offset - 1);
+      nsIContent *child = parentDIV->GetLastChild();
 
       if (child->Tag() == nsGkAtoms::br)
       {
@@ -1058,6 +1058,9 @@ nsTextEditorState::BindToFrame(nsTextControlFrame* aFrame)
 
   nsIContent *rootNode = GetRootNode();
 
+  nsresult rv = InitializeRootNode();
+  NS_ENSURE_SUCCESS(rv, rv);
+
   nsIPresShell *shell = mBoundFrame->PresContext()->GetPresShell();
   NS_ENSURE_TRUE(shell, NS_ERROR_FAILURE);
 
@@ -1545,6 +1548,17 @@ nsTextEditorState::CreateRootNode()
                                   NOT_FROM_PARSER);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  if (!IsSingleLineTextControl()) {
+    mMutationObserver = new nsAnonDivObserver(this);
+    mRootNode->AddMutationObserver(mMutationObserver);
+  }
+
+  return rv;
+}
+
+nsresult
+nsTextEditorState::InitializeRootNode()
+{
   // Set the necessary classes on the text control. We use class values
   // instead of a 'style' attribute so that the style comes from a user-agent
   // style sheet and is still applied even if author styles are disabled.
@@ -1564,19 +1578,12 @@ nsTextEditorState::CreateRootNode()
         disp->mOverflowX != NS_STYLE_OVERFLOW_CLIP) {
       classValue.AppendLiteral(" inherit-overflow");
     }
-
-    mMutationObserver = new nsAnonDivObserver(this);
-    NS_ENSURE_TRUE(mMutationObserver, NS_ERROR_OUT_OF_MEMORY);
-    mRootNode->AddMutationObserver(mMutationObserver);
   }
-  rv = mRootNode->SetAttr(kNameSpaceID_None, nsGkAtoms::_class,
-                          classValue, PR_FALSE);
+  nsresult rv = mRootNode->SetAttr(kNameSpaceID_None, nsGkAtoms::_class,
+                                   classValue, PR_FALSE);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = mBoundFrame->UpdateValueDisplay(PR_FALSE);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return rv;
+  return mBoundFrame->UpdateValueDisplay(PR_FALSE);
 }
 
 nsresult
@@ -1746,7 +1753,7 @@ nsTextEditorState::SetValue(const nsAString& aValue, PRBool aUserInput)
       // Grab the current value directly from the text node to make sure that we
       // deal with stale data correctly.
       NS_ASSERTION(mRootNode, "We should have a root node here");
-      nsIContent *textContent = mRootNode->GetChildAt(0);
+      nsIContent *textContent = mRootNode->GetFirstChild();
       nsCOMPtr<nsIDOMCharacterData> textNode = do_QueryInterface(textContent);
       if (textNode) {
         textNode->GetData(currentValue);
@@ -1873,7 +1880,7 @@ nsTextEditorState::SetValue(const nsAString& aValue, PRBool aUserInput)
     if (!weakFrame.IsAlive()) {
       return;
     }
-    nsIScrollableFrame* scrollableFrame = do_QueryFrame(mBoundFrame->GetFirstChild(nsnull));
+    nsIScrollableFrame* scrollableFrame = do_QueryFrame(mBoundFrame->GetFirstPrincipalChild());
     if (scrollableFrame)
     {
       // Scroll the upper left corner of the text control's
@@ -1926,7 +1933,7 @@ nsTextEditorState::InitializeKeyboardEventListeners()
                                     NS_EVENT_FLAG_SYSTEM_EVENT);
   }
 
-  mSelCon->SetScrollableFrame(do_QueryFrame(mBoundFrame->GetFirstChild(nsnull)));
+  mSelCon->SetScrollableFrame(do_QueryFrame(mBoundFrame->GetFirstPrincipalChild()));
 }
 
 /* static */ void
@@ -1971,8 +1978,8 @@ nsTextEditorState::UpdatePlaceholderText(PRBool aNotify)
   nsCOMPtr<nsIContent> content = do_QueryInterface(mTextCtrlElement);
   content->GetAttr(kNameSpaceID_None, nsGkAtoms::placeholder, placeholderValue);
   nsContentUtils::RemoveNewlines(placeholderValue);
-  NS_ASSERTION(mPlaceholderDiv->GetChildAt(0), "placeholder div has no child");
-  mPlaceholderDiv->GetChildAt(0)->SetText(placeholderValue, aNotify);
+  NS_ASSERTION(mPlaceholderDiv->GetFirstChild(), "placeholder div has no child");
+  mPlaceholderDiv->GetFirstChild()->SetText(placeholderValue, aNotify);
   ValueWasChanged(aNotify);
 }
 

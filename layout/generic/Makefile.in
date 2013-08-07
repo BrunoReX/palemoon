@@ -71,7 +71,14 @@ EXPORTS		= \
 		nsObjectFrame.h \
 		$(NULL)
 
+EXPORTS_NAMESPACES = mozilla/layout
+
+EXPORTS_mozilla/layout = \
+		FrameChildList.h \
+		$(NULL)
+
 CPPSRCS		= \
+		FrameChildList.cpp \
 		nsAbsoluteContainingBlock.cpp \
 		nsBRFrame.cpp \
 		nsBlockFrame.cpp \
@@ -158,13 +165,6 @@ endif
 ifdef MOZ_ENABLE_QT
 CXXFLAGS += $(MOZ_QT_CFLAGS)
 endif
-
-# Pale Moon: Kill opts (PGO bug)
-# CXXFLAGS := $(filter-out %SSE2 %SSE,$(CXXFLAGS))
-# CXXFLAGS := $(CXXFLAGS:O2=O1)
-# CXXFLAGS := $(CXXFLAGS:arch:SSE2=arch:SSE)
-# CXXFLAGS += -GL-
-# CXXFLAGS := -O1 -GL -nologo
 
 libs::
 	$(INSTALL) $(RESOURCES_HTML) $(DIST)/bin/res/html

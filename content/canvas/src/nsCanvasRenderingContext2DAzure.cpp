@@ -306,20 +306,23 @@ public:
   nsCanvasPatternAzure(SourceSurface* aSurface,
                        RepeatMode aRepeat,
                        nsIPrincipal* principalForSecurityCheck,
-                       PRBool forceWriteOnly)
+                       PRBool forceWriteOnly,
+                       PRBool CORSUsed)
     : mSurface(aSurface)
     , mRepeat(aRepeat)
     , mPrincipal(principalForSecurityCheck)
     , mForceWriteOnly(forceWriteOnly)
+    , mCORSUsed(CORSUsed)
   {
   }
 
   NS_DECL_ISUPPORTS
 
   RefPtr<SourceSurface> mSurface;
-  RepeatMode mRepeat;
+  const RepeatMode mRepeat;
   nsCOMPtr<nsIPrincipal> mPrincipal;
-  PRPackedBool mForceWriteOnly;
+  const PRPackedBool mForceWriteOnly;
+  const PRPackedBool mCORSUsed;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsCanvasPatternAzure, NS_CANVASPATTERNAZURE_PRIVATE_IID)
@@ -605,8 +608,7 @@ protected:
     * Gets the pres shell from either the canvas element or the doc shell
     */
   nsIPresShell *GetPresShell() {
-    nsCOMPtr<nsIContent> content =
-      do_QueryInterface(static_cast<nsIDOMHTMLCanvasElement*>(mCanvasElement));
+    nsCOMPtr<nsIContent> content = do_QueryObject(mCanvasElement);
     if (content) {
       nsIDocument* ownerDoc = content->GetOwnerDoc();
       return ownerDoc ? ownerDoc->GetShell() : nsnull;
@@ -799,7 +801,8 @@ protected:
         if (aCtx->mCanvasElement) {
           CanvasUtils::DoDrawImageSecurityCheck(aCtx->HTMLCanvasElement(),
                                                 state.patternStyles[aStyle]->mPrincipal,
-                                                state.patternStyles[aStyle]->mForceWriteOnly);
+                                                state.patternStyles[aStyle]->mForceWriteOnly,
+                                                state.patternStyles[aStyle]->mCORSUsed);
         }
 
         ExtendMode mode;
@@ -1235,8 +1238,7 @@ nsCanvasRenderingContext2DAzure::SetDimensions(PRInt32 width, PRInt32 height)
   if (size.width <= 0xFFFF && size.height <= 0xFFFF &&
       size.width >= 0 && size.height >= 0) {
     SurfaceFormat format = GetSurfaceFormat();
-    nsCOMPtr<nsIContent> content =
-      do_QueryInterface(static_cast<nsIDOMHTMLCanvasElement*>(mCanvasElement));
+    nsCOMPtr<nsIContent> content = do_QueryObject(mCanvasElement);
     nsIDocument* ownerDoc = nsnull;
     if (content) {
       ownerDoc = content->GetOwnerDoc();
@@ -1914,8 +1916,7 @@ nsCanvasRenderingContext2DAzure::CreatePattern(nsIDOMHTMLElement *image,
   }
 
   // Special case for Canvas, which could be an Azure canvas!
-  nsCOMPtr<nsINode> node = do_QueryInterface(image);
-  if (canvas && node) {
+  if (canvas) {
     if (canvas->CountContexts() == 1) {
       nsICanvasRenderingContextInternal *srcCanvas = canvas->GetContextAtIndex(0);
 
@@ -1924,7 +1925,7 @@ nsCanvasRenderingContext2DAzure::CreatePattern(nsIDOMHTMLElement *image,
         RefPtr<SourceSurface> srcSurf = srcCanvas->GetSurfaceSnapshot();
 
         nsRefPtr<nsCanvasPatternAzure> pat =
-          new nsCanvasPatternAzure(srcSurf, repeatMode, node->NodePrincipal(), canvas->IsWriteOnly());
+          new nsCanvasPatternAzure(srcSurf, repeatMode, content->NodePrincipal(), canvas->IsWriteOnly(), PR_FALSE);
 
         *_retval = pat.forget().get();
         return NS_OK;
@@ -1951,7 +1952,8 @@ nsCanvasRenderingContext2DAzure::CreatePattern(nsIDOMHTMLElement *image,
     gfxPlatform::GetPlatform()->GetSourceSurfaceForSurface(mTarget, res.mSurface);
 
   nsRefPtr<nsCanvasPatternAzure> pat =
-    new nsCanvasPatternAzure(srcSurf, repeatMode, res.mPrincipal, res.mIsWriteOnly);
+    new nsCanvasPatternAzure(srcSurf, repeatMode, res.mPrincipal,
+                             res.mIsWriteOnly, res.mCORSUsed);
 
   *_retval = pat.forget().get();
   return NS_OK;
@@ -3692,7 +3694,8 @@ nsCanvasRenderingContext2DAzure::DrawImage(nsIDOMElement *imgElt, float a1,
         if (srcSurf && mCanvasElement) {
           // Do security check here.
           CanvasUtils::DoDrawImageSecurityCheck(HTMLCanvasElement(),
-                                                content->NodePrincipal(), canvas->IsWriteOnly());
+                                                content->NodePrincipal(), canvas->IsWriteOnly(),
+                                                false);
 
           imgSize = gfxIntSize(srcSurf->GetSize().width, srcSurf->GetSize().height);
         }
@@ -3722,7 +3725,8 @@ nsCanvasRenderingContext2DAzure::DrawImage(nsIDOMElement *imgElt, float a1,
 
     if (mCanvasElement) {
       CanvasUtils::DoDrawImageSecurityCheck(HTMLCanvasElement(),
-                                            res.mPrincipal, res.mIsWriteOnly);
+                                            res.mPrincipal, res.mIsWriteOnly,
+                                            res.mCORSUsed);
     }
 
     if (res.mImageRequest) {
@@ -4330,8 +4334,8 @@ nsCanvasRenderingContext2DAzure::GetThebesSurface(gfxASurface **surface)
     mTarget->Flush();
   }
 
-  mThebesSurface->AddRef();
   *surface = mThebesSurface;
+  NS_ADDREF(*surface);
 
   return NS_OK;
 }

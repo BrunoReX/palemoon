@@ -52,7 +52,6 @@ class nsSVGMaskFrame : public nsSVGMaskFrameBase
 protected:
   nsSVGMaskFrame(nsStyleContext* aContext) :
     nsSVGMaskFrameBase(aContext),
-    mMaskParentMatrix(nsnull),
     mInUse(PR_FALSE) {}
 
 public:
@@ -63,6 +62,10 @@ public:
                                                 nsIFrame* aParent,
                                                 const gfxMatrix &aMatrix,
                                                 float aOpacity = 1.0f);
+
+  NS_IMETHOD AttributeChanged(PRInt32         aNameSpaceID,
+                              nsIAtom*        aAttribute,
+                              PRInt32         aModType);
 
 #ifdef DEBUG
   NS_IMETHOD Init(nsIContent*      aContent,
@@ -105,7 +108,7 @@ private:
   };
 
   nsIFrame *mMaskParent;
-  nsCOMPtr<nsIDOMSVGMatrix> mMaskParentMatrix;
+  nsAutoPtr<gfxMatrix> mMaskParentMatrix;
   // recursion prevention flag
   PRPackedBool mInUse;
 

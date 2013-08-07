@@ -254,7 +254,6 @@ SpecialPowers.prototype = {
     el.width = win.innerWidth;
     el.height = win.innerHeight;
     var ctx = el.getContext("2d");
-    var flags = 0;
 
     ctx.drawWindow(win, win.scrollX, win.scrollY,
                    win.innerWidth, win.innerHeight,
@@ -292,6 +291,20 @@ SpecialPowers.prototype = {
 
     this._xpcomabi = xulRuntime.XPCOMABI;
     return this._xpcomabi;
+  },
+
+  _os: null,
+
+  get OS() {
+    if (this._os != null)
+      return this._os;
+
+    var xulRuntime = Cc["@mozilla.org/xre/app-info;1"]
+                        .getService(Components.interfaces.nsIXULAppInfo)
+                        .QueryInterface(Components.interfaces.nsIXULRuntime);
+
+    this._os = xulRuntime.OS;
+    return this._os;
   },
 
   registerProcessCrashObservers: function() {
@@ -387,6 +400,30 @@ SpecialPowers.prototype = {
   closeLogFile: function() {
     this._mfl.close();
   },
+
+  addCategoryEntry: function(category, entry, value, persists, replace) {
+    Cc["@mozilla.org/categorymanager;1"].
+      getService(Components.interfaces.nsICategoryManager).
+      addCategoryEntry(category, entry, value, persists, replace);
+  },
+
+  getNodePrincipal: function(aNode) {
+      return aNode.nodePrincipal;
+  },
+
+  getNodeBaseURIObject: function(aNode) {
+      return aNode.baseURIObject;
+  },
+
+  getDocumentURIObject: function(aDocument) {
+      return aDocument.documentURIObject;
+  },
+
+  copyString: function(str) {
+    Cc["@mozilla.org/widget/clipboardhelper;1"].
+      getService(Ci.nsIClipboardHelper).
+      copyString(str);
+  },
 };
 
 // Expose everything but internal APIs (starting with underscores) to
@@ -422,13 +459,6 @@ function SpecialPowersManager() {
 SpecialPowersManager.prototype = {
   handleEvent: function handleEvent(aEvent) {
     var window = aEvent.target.defaultView;
-
-    // only add SpecialPowers to data pages, not about:*
-    var uri = window.document.documentURIObject;
-    if (uri.spec.split(":")[0] == "about") {
-      return;
-    }
-
     attachSpecialPowersToWindow(window);
   }
 };

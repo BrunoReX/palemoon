@@ -328,7 +328,7 @@ PRBool nsXBLPrototypeBinding::CompareBindingURI(nsIURI* aURI) const
   return equal;
 }
 
-static PRIntn
+static PRBool
 TraverseInsertionPoint(nsHashKey* aKey, void* aData, void* aClosure)
 {
   nsCycleCollectionTraversalCallback &cb = 
@@ -814,10 +814,9 @@ nsXBLPrototypeBinding::ImplementsInterface(REFNSIID aIID) const
 nsIContent*
 nsXBLPrototypeBinding::GetImmediateChild(nsIAtom* aTag)
 {
-  PRUint32 childCount = mBinding->GetChildCount();
-
-  for (PRUint32 i = 0; i < childCount; i++) {
-    nsIContent* child = mBinding->GetChildAt(i);
+  for (nsIContent* child = mBinding->GetFirstChild();
+       child;
+       child = child->GetNextSibling()) {
     if (child->NodeInfo()->Equals(aTag, kNameSpaceID_XBL)) {
       return child;
     }
@@ -1180,9 +1179,10 @@ nsXBLPrototypeBinding::ConstructAttributeTable(nsIContent* aElement)
   }
 
   // Recur into our children.
-  PRUint32 childCount = aElement->GetChildCount();
-  for (PRUint32 i = 0; i < childCount; i++) {
-    ConstructAttributeTable(aElement->GetChildAt(i));
+  for (nsIContent* child = aElement->GetFirstChild();
+       child;
+       child = child->GetNextSibling()) {
+    ConstructAttributeTable(child);
   }
 }
 
@@ -1213,7 +1213,7 @@ nsXBLPrototypeBinding::ConstructInsertionTable(nsIContent* aContent)
   PRInt32 i;
   for (i = 0; i < count; i++) {
     nsIContent* child = childrenElements[i];
-    nsIContent* parent = child->GetParent(); 
+    nsCOMPtr<nsIContent> parent = child->GetParent(); 
 
     // Create an XBL insertion point entry.
     nsXBLInsertionPointEntry* xblIns = nsXBLInsertionPointEntry::Create(parent);
@@ -1362,10 +1362,9 @@ nsXBLPrototypeBinding::GetNestedChildren(nsIAtom* aTag, PRInt32 aNamespace,
                                          nsIContent* aContent,
                                          nsCOMArray<nsIContent> & aList)
 {
-  PRUint32 childCount = aContent->GetChildCount();
-
-  for (PRUint32 i = 0; i < childCount; i++) {
-    nsIContent *child = aContent->GetChildAt(i);
+  for (nsIContent* child = aContent->GetFirstChild();
+       child;
+       child = child->GetNextSibling()) {
 
     if (child->NodeInfo()->Equals(aTag, aNamespace)) {
       aList.AppendObject(child);

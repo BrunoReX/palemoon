@@ -62,27 +62,27 @@ extern PRLogModuleInfo* gBuiltinDecoderLog;
 #endif
 
 // Magic values that identify RIFF chunks we're interested in.
-#define RIFF_CHUNK_MAGIC 0x52494646
-#define WAVE_CHUNK_MAGIC 0x57415645
-#define FRMT_CHUNK_MAGIC 0x666d7420
-#define DATA_CHUNK_MAGIC 0x64617461
+static const PRUint32 RIFF_CHUNK_MAGIC = 0x52494646;
+static const PRUint32 WAVE_CHUNK_MAGIC = 0x57415645;
+static const PRUint32 FRMT_CHUNK_MAGIC = 0x666d7420;
+static const PRUint32 DATA_CHUNK_MAGIC = 0x64617461;
 
 // Size of RIFF chunk header.  4 byte chunk header type and 4 byte size field.
-#define RIFF_CHUNK_HEADER_SIZE 8
+static const PRUint16 RIFF_CHUNK_HEADER_SIZE = 8;
 
 // Size of RIFF header.  RIFF chunk and 4 byte RIFF type.
-#define RIFF_INITIAL_SIZE (RIFF_CHUNK_HEADER_SIZE + 4)
+static const PRUint16 RIFF_INITIAL_SIZE = RIFF_CHUNK_HEADER_SIZE + 4;
 
 // Size of required part of format chunk.  Actual format chunks may be
 // extended (for non-PCM encodings), but we skip any extended data.
-#define WAVE_FORMAT_CHUNK_SIZE 16
+static const PRUint16 WAVE_FORMAT_CHUNK_SIZE = 16;
 
 // PCM encoding type from format chunk.  Linear PCM is the only encoding
 // supported by nsAudioStream.
-#define WAVE_FORMAT_ENCODING_PCM 1
+static const PRUint16 WAVE_FORMAT_ENCODING_PCM = 1;
 
 // Maximum number of channels supported
-#define MAX_CHANNELS 2
+static const PRUint8 MAX_CHANNELS = 2;
 
 namespace {
   PRUint32
@@ -187,9 +187,9 @@ PRBool nsWaveReader::DecodeAudioData()
   PRInt64 readSize = NS_MIN(BLOCK_SIZE, remaining);
   PRInt64 samples = readSize / mSampleSize;
 
-  PR_STATIC_ASSERT(PRUint64(BLOCK_SIZE) < UINT_MAX / sizeof(SoundDataValue) / MAX_CHANNELS);
+  PR_STATIC_ASSERT(PRUint64(BLOCK_SIZE) < UINT_MAX / sizeof(AudioDataValue) / MAX_CHANNELS);
   const size_t bufferSize = static_cast<size_t>(samples * mChannels);
-  nsAutoArrayPtr<SoundDataValue> sampleBuffer(new SoundDataValue[bufferSize]);
+  nsAutoArrayPtr<AudioDataValue> sampleBuffer(new AudioDataValue[bufferSize]);
 
   PR_STATIC_ASSERT(PRUint64(BLOCK_SIZE) < UINT_MAX / sizeof(char));
   nsAutoArrayPtr<char> dataBuffer(new char[static_cast<size_t>(readSize)]);
@@ -201,7 +201,7 @@ PRBool nsWaveReader::DecodeAudioData()
 
   // convert data to samples
   const char* d = dataBuffer.get();
-  SoundDataValue* s = sampleBuffer.get();
+  AudioDataValue* s = sampleBuffer.get();
   for (int i = 0; i < samples; ++i) {
     for (unsigned int j = 0; j < mChannels; ++j) {
       if (mSampleFormat == nsAudioStream::FORMAT_U8) {
@@ -229,7 +229,7 @@ PRBool nsWaveReader::DecodeAudioData()
   NS_ASSERTION(readSizeTime <= PR_INT64_MAX / USECS_PER_S, "readSizeTime overflow");
   NS_ASSERTION(samples < PR_INT32_MAX, "samples overflow");
 
-  mAudioQueue.Push(new SoundData(pos,
+  mAudioQueue.Push(new AudioData(pos,
                                  static_cast<PRInt64>(posTime * USECS_PER_S),
                                  static_cast<PRInt64>(readSizeTime * USECS_PER_S),
                                  static_cast<PRInt32>(samples),

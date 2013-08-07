@@ -61,13 +61,22 @@
 #include "nsNetCID.h"
 #include "nsIContent.h"
 
+#ifdef ANDROID
+#include "ANPBase.h"
+#include <android/log.h>
+#include "android_npapi.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/CondVar.h"
+#include "AndroidBridge.h"
+#endif
+
 using namespace mozilla;
 using namespace mozilla::plugins::parent;
 
 static NS_DEFINE_IID(kIOutputStreamIID, NS_IOUTPUTSTREAM_IID);
 static NS_DEFINE_IID(kIPluginStreamListenerIID, NS_IPLUGINSTREAMLISTENER_IID);
 
-NS_IMPL_ISUPPORTS0(nsNPAPIPluginInstance)
+NS_IMPL_THREADSAFE_ISUPPORTS0(nsNPAPIPluginInstance)
 
 nsNPAPIPluginInstance::nsNPAPIPluginInstance(nsNPAPIPlugin* plugin)
   :
@@ -78,10 +87,15 @@ nsNPAPIPluginInstance::nsNPAPIPluginInstance(nsNPAPIPlugin* plugin)
     mDrawingModel(NPDrawingModelQuickDraw),
 #endif
 #endif
+#ifdef ANDROID
+    mSurface(nsnull),
+    mDrawingModel(0),
+#endif
     mRunning(NOT_STARTED),
     mWindowless(PR_FALSE),
     mWindowlessLocal(PR_FALSE),
     mTransparent(PR_FALSE),
+    mCached(PR_FALSE),
     mUsesDOMForCursor(PR_FALSE),
     mInPluginInitCall(PR_FALSE),
     mPlugin(plugin),
@@ -127,6 +141,12 @@ nsNPAPIPluginInstance::Destroy()
 {
   Stop();
   mPlugin = nsnull;
+}
+
+TimeStamp
+nsNPAPIPluginInstance::StopTime()
+{
+  return mStopTime;
 }
 
 nsresult nsNPAPIPluginInstance::Initialize(nsIPluginInstanceOwner* aOwner, const char* aMIMEType)
@@ -187,6 +207,7 @@ nsresult nsNPAPIPluginInstance::Stop()
   {
     AsyncCallbackAutoLock lock;
     mRunning = DESTROYING;
+    mStopTime = TimeStamp::Now();
   }
 
   OnPluginDestroy(&mNPP);
@@ -684,7 +705,7 @@ nsNPAPIPluginInstance::UsesDOMForCursor()
   return mUsesDOMForCursor;
 }
 
-#ifdef XP_MACOSX
+#if defined(XP_MACOSX)
 void nsNPAPIPluginInstance::SetDrawingModel(NPDrawingModel aModel)
 {
   mDrawingModel = aModel;
@@ -702,12 +723,69 @@ void nsNPAPIPluginInstance::SetEventModel(NPEventModel aModel)
 
   owner->SetEventModel(aModel);
 }
+#endif
+
+#if defined(ANDROID)
+void nsNPAPIPluginInstance::SetDrawingModel(PRUint32 aModel)
+{
+  mDrawingModel = aModel;
+}
+
+class SurfaceGetter : public nsRunnable {
+public:
+  SurfaceGetter(NPPluginFuncs* aPluginFunctions, NPP_t aNPP) : 
+    mHaveSurface(PR_FALSE), mPluginFunctions(aPluginFunctions), mNPP(aNPP) {
+    mLock = new Mutex("SurfaceGetter::Lock");
+    mCondVar = new CondVar(*mLock, "SurfaceGetter::CondVar");
+    
+  }
+  ~SurfaceGetter() {
+    delete mLock;
+    delete mCondVar;
+  }
+  nsresult Run() {
+    MutexAutoLock lock(*mLock);
+    (*mPluginFunctions->getvalue)(&mNPP, kJavaSurface_ANPGetValue, &mSurface);
+    mHaveSurface = PR_TRUE;
+    mCondVar->Notify();
+    return NS_OK;
+  }
+  void* GetSurface() {
+    MutexAutoLock lock(*mLock);
+    mHaveSurface = PR_FALSE;
+    AndroidBridge::Bridge()->PostToJavaThread(this);
+    while (!mHaveSurface)
+      mCondVar->Wait();
+    return mSurface;
+  }
+private:
+  NPP_t mNPP;
+  void* mSurface;
+  Mutex* mLock;
+  CondVar* mCondVar;
+  PRBool mHaveSurface;
+  NPPluginFuncs* mPluginFunctions;
+};
+
+
+void* nsNPAPIPluginInstance::GetJavaSurface()
+{
+  if (mDrawingModel != kSurface_ANPDrawingModel)
+    return nsnull;
+  
+  if (mSurface)
+    return mSurface;
+
+  nsCOMPtr<SurfaceGetter> sg = new SurfaceGetter(mPlugin->PluginFuncs(), mNPP);
+  mSurface = sg->GetSurface();
+  return mSurface;
+}
 
 #endif
 
 nsresult nsNPAPIPluginInstance::GetDrawingModel(PRInt32* aModel)
 {
-#ifdef XP_MACOSX
+#if defined(XP_MACOSX) || defined(ANDROID)
   *aModel = (PRInt32)mDrawingModel;
   return NS_OK;
 #else
@@ -804,9 +882,27 @@ nsNPAPIPluginInstance::DefineJavaProperties()
 }
 
 nsresult
+nsNPAPIPluginInstance::SetCached(PRBool aCache)
+{
+  mCached = aCache;
+  return NS_OK;
+}
+
+PRBool
+nsNPAPIPluginInstance::ShouldCache()
+{
+  return mCached;
+}
+
+nsresult
 nsNPAPIPluginInstance::IsWindowless(PRBool* isWindowless)
 {
+#ifdef ANDROID
+  // On android, pre-honeycomb, all plugins are treated as windowless.
+  *isWindowless = PR_TRUE;
+#else
   *isWindowless = mWindowless;
+#endif
   return NS_OK;
 }
 
@@ -841,6 +937,23 @@ nsNPAPIPluginInstance::AsyncSetWindow(NPWindow* window)
 
   return library->AsyncSetWindow(&mNPP, window);
 }
+
+#if defined(MOZ_WIDGET_QT) && (MOZ_PLATFORM_MAEMO == 6)
+nsresult
+nsNPAPIPluginInstance::HandleGUIEvent(const nsGUIEvent& anEvent, bool* handled)
+{
+  if (RUNNING != mRunning) {
+    *handled = false;
+    return NS_OK;
+  }
+
+  AutoPluginLibraryCall library(this);
+  if (!library)
+    return NS_ERROR_FAILURE;
+
+  return library->HandleGUIEvent(&mNPP, anEvent, handled);
+}
+#endif
 
 nsresult
 nsNPAPIPluginInstance::GetImage(ImageContainer* aContainer, Image** aImage)
@@ -1049,6 +1162,28 @@ nsNPAPIPluginInstance::PrivateModeStateChanged()
   return NS_ERROR_FAILURE;
 }
 
+class DelayUnscheduleEvent : public nsRunnable {
+public:
+  nsRefPtr<nsNPAPIPluginInstance> mInstance;
+  uint32_t mTimerID;
+  DelayUnscheduleEvent(nsNPAPIPluginInstance* aInstance, uint32_t aTimerId)
+    : mInstance(aInstance)
+    , mTimerID(aTimerId)
+  {}
+
+  ~DelayUnscheduleEvent() {}
+
+  NS_IMETHOD Run();
+};
+
+NS_IMETHODIMP
+DelayUnscheduleEvent::Run()
+{
+  mInstance->UnscheduleTimer(mTimerID);
+  return NS_OK;
+}
+
+
 static void
 PluginTimerCallback(nsITimer *aTimer, void *aClosure)
 {
@@ -1056,7 +1191,11 @@ PluginTimerCallback(nsITimer *aTimer, void *aClosure)
   NPP npp = t->npp;
   uint32_t id = t->id;
 
+  // Some plugins (Flash on Android) calls unscheduletimer
+  // from this callback.
+  t->inCallback = PR_TRUE;
   (*(t->callback))(npp, id);
+  t->inCallback = PR_FALSE;
 
   // Make sure we still have an instance and the timer is still alive
   // after the callback.
@@ -1090,6 +1229,7 @@ nsNPAPIPluginInstance::ScheduleTimer(uint32_t interval, NPBool repeat, void (*ti
 {
   nsNPAPITimer *newTimer = new nsNPAPITimer();
 
+  newTimer->inCallback = PR_FALSE;
   newTimer->npp = &mNPP;
 
   // generate ID that is unique to this instance
@@ -1126,6 +1266,12 @@ nsNPAPIPluginInstance::UnscheduleTimer(uint32_t timerID)
   nsNPAPITimer* t = TimerWithID(timerID, &index);
   if (!t)
     return;
+
+  if (t->inCallback) {
+    nsCOMPtr<nsIRunnable> e = new DelayUnscheduleEvent(this, timerID);
+    NS_DispatchToCurrentThread(e);
+    return;
+  }
 
   // cancel the timer
   t->timer->Cancel();
@@ -1246,7 +1392,7 @@ nsNPAPIPluginInstance::GetJSContext(JSContext* *outContext)
       nsIScriptContext *context = global->GetContext();
 
       if (context) {
-        *outContext = (JSContext*) context->GetNativeContext();
+        *outContext = context->GetNativeContext();
       }
     }
   }

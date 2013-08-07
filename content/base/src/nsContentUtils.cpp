@@ -1,7 +1,6 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=2 sw=2 et tw=78:
- *
- * ***** BEGIN LICENSE BLOCK *****
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 sw=2 et tw=78: */
+/* ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *
  * The contents of this file are subject to the Mozilla Public License Version
@@ -141,7 +140,6 @@ static NS_DEFINE_CID(kXTFServiceCID, NS_XTFSERVICE_CID);
 #include "nsUnicharUtilCIID.h"
 #include "nsCompressedCharMap.h"
 #include "nsINativeKeyBindings.h"
-#include "nsIDOMNSUIEvent.h"
 #include "nsIDOMNSEvent.h"
 #include "nsIPrivateDOMEvent.h"
 #include "nsXULPopupManager.h"
@@ -177,6 +175,7 @@ static NS_DEFINE_CID(kXTFServiceCID, NS_XTFSERVICE_CID);
 #include "nsIPluginHost.h"
 #include "nsICategoryManager.h"
 #include "nsIViewManager.h"
+#include "nsEventStateManager.h"
 
 #ifdef IBMBIDI
 #include "nsIBidiKeyboard.h"
@@ -201,6 +200,7 @@ static NS_DEFINE_CID(kXTFServiceCID, NS_XTFSERVICE_CID);
 #endif
 #include "nsDOMTouchEvent.h"
 #include "nsIScriptElement.h"
+#include "prdtoa.h"
 
 #include "mozilla/Preferences.h"
 
@@ -262,6 +262,11 @@ nsString* nsContentUtils::sAltText = nsnull;
 nsString* nsContentUtils::sModifierSeparator = nsnull;
 
 PRBool nsContentUtils::sInitialized = PR_FALSE;
+PRBool nsContentUtils::sIsFullScreenApiEnabled = PR_FALSE;
+PRBool nsContentUtils::sTrustedFullScreenOnly = PR_TRUE;
+PRBool nsContentUtils::sFullScreenKeyInputRestricted = PR_TRUE;
+
+PRUint32 nsContentUtils::sHandlingInputTimeout = 1000;
 
 nsHtml5Parser* nsContentUtils::sHTMLFragmentParser = nsnull;
 nsIParser* nsContentUtils::sXMLFragmentParser = nsnull;
@@ -316,6 +321,13 @@ class nsSameOriginChecker : public nsIChannelEventSink,
   NS_DECL_NSICHANNELEVENTSINK
   NS_DECL_NSIINTERFACEREQUESTOR
 };
+
+/* static */
+TimeDuration
+nsContentUtils::HandlingUserInputTimeout()
+{
+  return TimeDuration::FromMilliseconds(sHandlingInputTimeout);
+}
 
 // static
 nsresult
@@ -385,6 +397,19 @@ nsContentUtils::Init()
 
   Preferences::AddBoolVarCache(&sAllowXULXBL_for_file,
                                "dom.allow_XUL_XBL_for_file");
+
+  Preferences::AddBoolVarCache(&sIsFullScreenApiEnabled,
+                               "full-screen-api.enabled");
+
+  Preferences::AddBoolVarCache(&sTrustedFullScreenOnly,
+                               "full-screen-api.allow-trusted-requests-only");
+
+  Preferences::AddBoolVarCache(&sFullScreenKeyInputRestricted,
+                               "full-screen-api.key-input-restricted");
+
+  Preferences::AddUintVarCache(&sHandlingInputTimeout,
+                               "dom.event.handling-user-input-time-limit",
+                               1000);
 
   sInitialized = PR_TRUE;
 
@@ -1261,11 +1286,10 @@ nsContentUtils::GetContextFromDocument(nsIDocument *aDocument)
   nsIScriptContext *scx = sgo->GetContext();
   if (!scx) {
     // No context left in the scope...
-
     return nsnull;
   }
 
-  return (JSContext *)scx->GetNativeContext();
+  return scx->GetNativeContext();
 }
 
 // static
@@ -2534,7 +2558,7 @@ nsCxPusher::Push(nsIDOMEventTarget *aCurrentTarget)
   JSContext* cx = nsnull;
 
   if (scx) {
-    cx = static_cast<JSContext*>(scx->GetNativeContext());
+    cx = scx->GetNativeContext();
     // Bad, no JSContext from script context!
     NS_ENSURE_TRUE(cx, PR_FALSE);
   }
@@ -2735,7 +2759,7 @@ nsContentUtils::ReportToConsole(PropertiesFile aFile,
                                 PRUint32 aColumnNumber,
                                 PRUint32 aErrorFlags,
                                 const char *aCategory,
-                                PRUint64 aWindowId)
+                                PRUint64 aInnerWindowId)
 {
   NS_ASSERTION((aParams && aParamsLength) || (!aParams && !aParamsLength),
                "Supply either both parameters and their number or no"
@@ -2769,7 +2793,8 @@ nsContentUtils::ReportToConsole(PropertiesFile aFile,
                                      NS_ConvertUTF8toUTF16(spec).get(), // file name
                                      aSourceLine.get(),
                                      aLineNumber, aColumnNumber,
-                                     aErrorFlags, aCategory, aWindowId);
+                                     aErrorFlags, aCategory,
+                                     aInnerWindowId);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIScriptError> logError = do_QueryInterface(errorObject);
@@ -2790,17 +2815,17 @@ nsContentUtils::ReportToConsole(PropertiesFile aFile,
                                 nsIDocument* aDocument)
 {
   nsIURI* uri = aURI;
-  PRUint64 windowID = 0;
+  PRUint64 innerWindowID = 0;
   if (aDocument) {
     if (!uri) {
       uri = aDocument->GetDocumentURI();
     }
-    windowID = aDocument->OuterWindowID();
+    innerWindowID = aDocument->InnerWindowID();
   }
 
   return ReportToConsole(aFile, aMessageName, aParams, aParamsLength, uri,
                          aSourceLine, aLineNumber, aColumnNumber, aErrorFlags,
-                         aCategory, windowID);
+                         aCategory, innerWindowID);
 }
 
 PRBool
@@ -3676,11 +3701,10 @@ nsContentUtils::CreateDocument(const nsAString& aNamespaceURI,
 {
   nsresult rv = NS_NewDOMDocument(aResult, aNamespaceURI, aQualifiedName,
                                   aDoctype, aDocumentURI, aBaseURI, aPrincipal,
-                                  PR_TRUE);
+                                  PR_TRUE, aEventObject);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIDocument> document = do_QueryInterface(*aResult);
-  document->SetScriptHandlingObject(aEventObject);
   
   // created documents are immediately "complete" (ready to use)
   document->SetReadyStateInternal(nsIDocument::READYSTATE_COMPLETE);
@@ -3773,9 +3797,9 @@ nsContentUtils::SetNodeTextContent(nsIContent* aContent,
 
 static void AppendNodeTextContentsRecurse(nsINode* aNode, nsAString& aResult)
 {
-  nsIContent* child;
-  PRUint32 i;
-  for (i = 0; (child = aNode->GetChildAt(i)); ++i) {
+  for (nsIContent* child = aNode->GetFirstChild();
+       child;
+       child = child->GetNextSibling()) {
     if (child->IsElement()) {
       AppendNodeTextContentsRecurse(child, aResult);
     }
@@ -3797,9 +3821,9 @@ nsContentUtils::AppendNodeTextContent(nsINode* aNode, PRBool aDeep,
     AppendNodeTextContentsRecurse(aNode, aResult);
   }
   else {
-    nsIContent* child;
-    PRUint32 i;
-    for (i = 0; (child = aNode->GetChildAt(i)); ++i) {
+    for (nsIContent* child = aNode->GetFirstChild();
+         child;
+         child = child->GetNextSibling()) {
       if (child->IsNodeOfType(nsINode::eTEXT)) {
         child->AppendTextTo(aResult);
       }
@@ -3810,9 +3834,9 @@ nsContentUtils::AppendNodeTextContent(nsINode* aNode, PRBool aDeep,
 PRBool
 nsContentUtils::HasNonEmptyTextContent(nsINode* aNode)
 {
-  nsIContent* child;
-  PRUint32 i;
-  for (i = 0; (child = aNode->GetChildAt(i)); ++i) {
+  for (nsIContent* child = aNode->GetFirstChild();
+       child;
+       child = child->GetNextSibling()) {
     if (child->IsNodeOfType(nsINode::eTEXT) &&
         child->TextLength() > 0) {
       return PR_TRUE;
@@ -4152,13 +4176,12 @@ nsContentUtils::DOMEventToNativeKeyEvent(nsIDOMKeyEvent* aKeyEvent,
                                          nsNativeKeyEvent* aNativeEvent,
                                          PRBool aGetCharCode)
 {
-  nsCOMPtr<nsIDOMNSUIEvent> uievent = do_QueryInterface(aKeyEvent);
+  nsCOMPtr<nsIDOMNSEvent> nsevent = do_QueryInterface(aKeyEvent);
   PRBool defaultPrevented;
-  uievent->GetPreventDefault(&defaultPrevented);
+  nsevent->GetPreventDefault(&defaultPrevented);
   if (defaultPrevented)
     return PR_FALSE;
 
-  nsCOMPtr<nsIDOMNSEvent> nsevent = do_QueryInterface(aKeyEvent);
   PRBool trusted = PR_FALSE;
   nsevent->GetIsTrusted(&trusted);
   if (!trusted)
@@ -4666,6 +4689,7 @@ nsContentUtils::URIIsLocalFile(nsIURI *aURI)
   PRBool isFile;
   nsCOMPtr<nsINetUtil> util = do_QueryInterface(sIOService);
 
+  // Important: we do NOT test the entire URI chain here!
   return util && NS_SUCCEEDED(util->ProtocolHasFlags(aURI,
                                 nsIProtocolHandler::URI_IS_LOCAL_FILE,
                                 &isFile)) &&
@@ -5711,4 +5735,86 @@ nsContentUtils::IsPatternMatching(nsAString& aValue, nsAString& aPattern,
                                   aValue.Length(), &idx, JS_TRUE, &rval);
 
   return res == JS_FALSE || rval != JSVAL_NULL;
+}
+
+// static
+nsresult
+nsContentUtils::URIInheritsSecurityContext(nsIURI *aURI, PRBool *aResult)
+{
+  // Note: about:blank URIs do NOT inherit the security context from the
+  // current document, which is what this function tests for...
+  return NS_URIChainHasFlags(aURI,
+                             nsIProtocolHandler::URI_INHERITS_SECURITY_CONTEXT,
+                             aResult);
+}
+
+// static
+bool
+nsContentUtils::SetUpChannelOwner(nsIPrincipal* aLoadingPrincipal,
+                                  nsIChannel* aChannel,
+                                  nsIURI* aURI,
+                                  PRBool aSetUpForAboutBlank)
+{
+  //
+  // Set the owner of the channel, but only for channels that can't
+  // provide their own security context.
+  //
+  // XXX: It seems wrong that the owner is ignored - even if one is
+  //      supplied) unless the URI is javascript or data or about:blank.
+  // XXX: If this is ever changed, check all callers for what owners
+  //      they're passing in.  In particular, see the code and
+  //      comments in nsDocShell::LoadURI where we fall back on
+  //      inheriting the owner if called from chrome.  That would be
+  //      very wrong if this code changed anything but channels that
+  //      can't provide their own security context!
+  //
+  //      (Currently chrome URIs set the owner when they are created!
+  //      So setting a NULL owner would be bad!)
+  //
+  PRBool inherit;
+  // We expect URIInheritsSecurityContext to return success for an
+  // about:blank URI, so don't call NS_IsAboutBlank() if this call fails.
+  // This condition needs to match the one in nsDocShell::InternalLoad where
+  // we're checking for things that will use the owner.
+  if (NS_SUCCEEDED(URIInheritsSecurityContext(aURI, &inherit)) &&
+      (inherit || (aSetUpForAboutBlank && NS_IsAboutBlank(aURI)))) {
+    aChannel->SetOwner(aLoadingPrincipal);
+    return true;
+  }
+
+  //
+  // file: uri special-casing
+  //
+  // If this is a file: load opened from another file: then it may need
+  // to inherit the owner from the referrer so they can script each other.
+  // If we don't set the owner explicitly then each file: gets an owner
+  // based on its own codebase later.
+  //
+  if (URIIsLocalFile(aURI) && aLoadingPrincipal &&
+      NS_SUCCEEDED(aLoadingPrincipal->CheckMayLoad(aURI, PR_FALSE)) &&
+      // One more check here.  CheckMayLoad will always return true for the
+      // system principal, but we do NOT want to inherit in that case.
+      !IsSystemPrincipal(aLoadingPrincipal)) {
+    aChannel->SetOwner(aLoadingPrincipal);
+    return true;
+  }
+
+  return false;
+}
+
+PRBool
+nsContentUtils::IsFullScreenApiEnabled()
+{
+  return sIsFullScreenApiEnabled;
+}
+
+PRBool nsContentUtils::IsRequestFullScreenAllowed()
+{
+  return !sTrustedFullScreenOnly || nsEventStateManager::IsHandlingUserInput();
+}
+
+PRBool
+nsContentUtils::IsFullScreenKeyInputRestricted()
+{
+  return sFullScreenKeyInputRestricted;
 }

@@ -53,7 +53,7 @@
 #include "nscore.h"
 #include "nsIServiceManager.h"
 #include "nsIWidget.h"
-#include "nsILookAndFeel.h"
+#include "mozilla/LookAndFeel.h"
 #include "nsIPresShell.h"
 #include "nsFontMetrics.h"
 #include "gfxFont.h"
@@ -91,8 +91,8 @@
 #include <alloca.h>
 #endif
 
+using namespace mozilla;
 using namespace mozilla::dom;
-namespace css = mozilla::css;
 
 #define NS_SET_IMAGE_REQUEST(method_, context_, request_)                   \
   if ((context_)->PresContext()->IsDynamic()) {                               \
@@ -765,9 +765,8 @@ static PRBool SetColor(const nsCSSValue& aValue, const nscolor aParentColor,
   else if (eCSSUnit_EnumColor == unit) {
     PRInt32 intValue = aValue.GetIntValue();
     if (0 <= intValue) {
-      nsILookAndFeel* look = aPresContext->LookAndFeel();
-      nsILookAndFeel::nsColorID colorID = (nsILookAndFeel::nsColorID) intValue;
-      if (NS_SUCCEEDED(look->GetColor(colorID, aResult))) {
+      LookAndFeel::ColorID colorID = (LookAndFeel::ColorID) intValue;
+      if (NS_SUCCEEDED(LookAndFeel::GetColor(colorID, &aResult))) {
         result = PR_TRUE;
       }
     }
@@ -3495,22 +3494,60 @@ nsRuleNode::ComputeTextResetData(void* aStartStruct,
     text->SetDecorationStyle(NS_STYLE_TEXT_DECORATION_STYLE_SOLID);
   }
 
-  // text-overflow: enum, string, inherit, initial
+  // text-overflow: enum, string, pair(enum|string), inherit, initial
   const nsCSSValue* textOverflowValue =
     aRuleData->ValueForTextOverflow();
-  if (eCSSUnit_Enumerated == textOverflowValue->GetUnit() ||
-      eCSSUnit_Initial    == textOverflowValue->GetUnit()) {
-    SetDiscrete(*textOverflowValue, text->mTextOverflow.mType,
-                canStoreInRuleTree,
-                SETDSC_ENUMERATED, parentText->mTextOverflow.mType,
-                NS_STYLE_TEXT_OVERFLOW_CLIP, 0, 0, 0, 0);
-    text->mTextOverflow.mString.Truncate();
+  if (eCSSUnit_Initial == textOverflowValue->GetUnit()) {
+    text->mTextOverflow = nsStyleTextOverflow();
   } else if (eCSSUnit_Inherit == textOverflowValue->GetUnit()) {
     canStoreInRuleTree = PR_FALSE;
     text->mTextOverflow = parentText->mTextOverflow;
+  } else if (eCSSUnit_Enumerated == textOverflowValue->GetUnit()) {
+    // A single enumerated value.
+    SetDiscrete(*textOverflowValue, text->mTextOverflow.mRight.mType,
+                canStoreInRuleTree,
+                SETDSC_ENUMERATED, parentText->mTextOverflow.mRight.mType,
+                NS_STYLE_TEXT_OVERFLOW_CLIP, 0, 0, 0, 0);
+    text->mTextOverflow.mRight.mString.Truncate();
+    text->mTextOverflow.mLeft.mType = NS_STYLE_TEXT_OVERFLOW_CLIP;
+    text->mTextOverflow.mLeft.mString.Truncate();
+    text->mTextOverflow.mLogicalDirections = true;
   } else if (eCSSUnit_String == textOverflowValue->GetUnit()) {
-    textOverflowValue->GetStringValue(text->mTextOverflow.mString);
-    text->mTextOverflow.mType = NS_STYLE_TEXT_OVERFLOW_STRING;
+    // A single string value.
+    text->mTextOverflow.mRight.mType = NS_STYLE_TEXT_OVERFLOW_STRING;
+    textOverflowValue->GetStringValue(text->mTextOverflow.mRight.mString);
+    text->mTextOverflow.mLeft.mType = NS_STYLE_TEXT_OVERFLOW_CLIP;
+    text->mTextOverflow.mLeft.mString.Truncate();
+    text->mTextOverflow.mLogicalDirections = true;
+  } else if (eCSSUnit_Pair == textOverflowValue->GetUnit()) {
+    // Two values were specified.
+    text->mTextOverflow.mLogicalDirections = false;
+    const nsCSSValuePair& textOverflowValue =
+      aRuleData->ValueForTextOverflow()->GetPairValue();
+
+    const nsCSSValue *textOverflowLeftValue = &textOverflowValue.mXValue;
+    if (eCSSUnit_Enumerated == textOverflowLeftValue->GetUnit()) {
+      SetDiscrete(*textOverflowLeftValue, text->mTextOverflow.mLeft.mType,
+                  canStoreInRuleTree,
+                  SETDSC_ENUMERATED, parentText->mTextOverflow.mLeft.mType,
+                  NS_STYLE_TEXT_OVERFLOW_CLIP, 0, 0, 0, 0);
+      text->mTextOverflow.mLeft.mString.Truncate();
+    } else if (eCSSUnit_String == textOverflowLeftValue->GetUnit()) {
+      textOverflowLeftValue->GetStringValue(text->mTextOverflow.mLeft.mString);
+      text->mTextOverflow.mLeft.mType = NS_STYLE_TEXT_OVERFLOW_STRING;
+    }
+
+    const nsCSSValue *textOverflowRightValue = &textOverflowValue.mYValue;
+    if (eCSSUnit_Enumerated == textOverflowRightValue->GetUnit()) {
+      SetDiscrete(*textOverflowRightValue, text->mTextOverflow.mRight.mType,
+                  canStoreInRuleTree,
+                  SETDSC_ENUMERATED, parentText->mTextOverflow.mRight.mType,
+                  NS_STYLE_TEXT_OVERFLOW_CLIP, 0, 0, 0, 0);
+      text->mTextOverflow.mRight.mString.Truncate();
+    } else if (eCSSUnit_String == textOverflowRightValue->GetUnit()) {
+      textOverflowRightValue->GetStringValue(text->mTextOverflow.mRight.mString);
+      text->mTextOverflow.mRight.mType = NS_STYLE_TEXT_OVERFLOW_STRING;
+    }
   }
 
   // unicode-bidi: enum, inherit, initial
@@ -4581,6 +4618,12 @@ nsRuleNode::ComputeDisplayData(void* aStartStruct,
               display->mBackfaceVisibility, canStoreInRuleTree,
               SETDSC_ENUMERATED, parentDisplay->mBackfaceVisibility,
               NS_STYLE_BACKFACE_VISIBILITY_VISIBLE, 0, 0, 0, 0);
+
+  // transform-style: enum, inherit, initial
+  SetDiscrete(*aRuleData->ValueForTransformStyle(),
+              display->mTransformStyle, canStoreInRuleTree,
+              SETDSC_ENUMERATED, parentDisplay->mTransformStyle,
+              NS_STYLE_TRANSFORM_STYLE_FLAT, 0, 0, 0, 0);
 
   // orient: enum, inherit, initial
   SetDiscrete(*aRuleData->ValueForOrient(),

@@ -94,7 +94,6 @@ public:
                 nsIRequest *aRequest,
                 nsIChannel *aChannel,
                 imgCacheEntry *aCacheEntry,
-                void *aCacheId,
                 void *aLoadId,
                 nsIPrincipal* aLoadingPrincipal,
                 PRInt32 aCORSMode);
@@ -107,11 +106,6 @@ public:
 
   void SniffMimeType(const char *buf, PRUint32 len);
 
-  // a request is "reusable" if it has already been loaded, or it is
-  // currently being loaded on the same event queue as the new request
-  // being made...
-  PRBool IsReusable(void *aCacheId);
-
   // Cancel, but also ensure that all work done in Init() is undone. Call this
   // only when the channel has failed to open, and so calling Cancel() on it
   // won't be sufficient.
@@ -123,12 +117,12 @@ public:
   nsresult UnlockImage();
   nsresult RequestDecode();
 
-  inline void SetWindowID(PRUint64 aWindowId) {
-    mWindowId = aWindowId;
+  inline void SetInnerWindowID(PRUint64 aInnerWindowId) {
+    mInnerWindowId = aInnerWindowId;
   }
 
-  inline PRUint64 WindowID() const {
-    return mWindowId;
+  inline PRUint64 InnerWindowID() const {
+    return mInnerWindowId;
   }
 
   // Set the cache validation information (expiry time, whether we must
@@ -164,7 +158,6 @@ private:
   void RemoveFromCache();
 
   nsresult GetURI(nsIURI **aURI);
-  nsresult GetKeyURI(nsIURI **aURI);
   nsresult GetSecurityInfo(nsISupports **aSecurityInfo);
 
   inline const char *GetMimeType() const {
@@ -248,8 +241,6 @@ private:
 
   nsRefPtr<imgCacheEntry> mCacheEntry; /* we hold on to this to this so long as we have observers */
 
-  void *mCacheId;
-
   void *mLoadId;
 
   imgCacheValidator *mValidator;
@@ -257,8 +248,8 @@ private:
   nsCOMPtr<nsIAsyncVerifyRedirectCallback> mRedirectCallback;
   nsCOMPtr<nsIChannel> mNewRedirectChannel;
 
-  // Originating outer window ID. Used for error reporting.
-  PRUint64 mWindowId;
+  // The ID of the inner window origin, used for error reporting.
+  PRUint64 mInnerWindowId;
 
   // The CORS mode (defined in imgIRequest) this image was loaded with. By
   // default, imgIRequest::CORS_NONE.

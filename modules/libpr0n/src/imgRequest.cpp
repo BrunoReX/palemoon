@@ -67,7 +67,6 @@
 
 #include "nsIComponentManager.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsIProxyObjectManager.h"
 #include "nsIServiceManager.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIScriptSecurityManager.h"
@@ -184,9 +183,10 @@ NS_IMPL_ISUPPORTS8(imgRequest,
                    nsIAsyncVerifyRedirectCallback)
 
 imgRequest::imgRequest() : 
-  mCacheId(0), mValidator(nsnull), mImageSniffers("image-sniffing-services"),
-  mWindowId(0), mCORSMode(imgIRequest::CORS_NONE), mDecodeRequested(PR_FALSE),
-  mIsMultiPartChannel(PR_FALSE), mGotData(PR_FALSE), mIsInCache(PR_FALSE)
+  mValidator(nsnull), mImageSniffers("image-sniffing-services"),
+  mInnerWindowId(0), mCORSMode(imgIRequest::CORS_NONE),
+  mDecodeRequested(PR_FALSE), mIsMultiPartChannel(PR_FALSE), mGotData(PR_FALSE),
+  mIsInCache(PR_FALSE)
 {}
 
 imgRequest::~imgRequest()
@@ -204,7 +204,6 @@ nsresult imgRequest::Init(nsIURI *aURI,
                           nsIRequest *aRequest,
                           nsIChannel *aChannel,
                           imgCacheEntry *aCacheEntry,
-                          void *aCacheId,
                           void *aLoadId,
                           nsIPrincipal* aLoadingPrincipal,
                           PRInt32 aCORSMode)
@@ -238,8 +237,6 @@ nsresult imgRequest::Init(nsIURI *aURI,
   mChannel->SetNotificationCallbacks(this);
 
   mCacheEntry = aCacheEntry;
-
-  mCacheId = aCacheId;
 
   SetLoadId(aLoadId);
 
@@ -362,12 +359,6 @@ nsresult imgRequest::RemoveProxy(imgRequestProxy *proxy, nsresult aStatus, PRBoo
   return NS_OK;
 }
 
-PRBool imgRequest::IsReusable(void *aCacheId)
-{
-  return (mImage && mImage->GetStatusTracker().IsLoading()) ||
-    (aCacheId == mCacheId);
-}
-
 void imgRequest::CancelAndAbort(nsresult aStatus)
 {
   LOG_SCOPE(gImgLog, "imgRequest::CancelAndAbort");
@@ -405,19 +396,6 @@ nsresult imgRequest::GetURI(nsIURI **aURI)
   if (mURI) {
     *aURI = mURI;
     NS_ADDREF(*aURI);
-    return NS_OK;
-  }
-
-  return NS_ERROR_FAILURE;
-}
-
-nsresult imgRequest::GetKeyURI(nsIURI **aKeyURI)
-{
-  LOG_FUNC(gImgLog, "imgRequest::GetKeyURI");
-
-  if (mURI) {
-    *aKeyURI = mURI;
-    NS_ADDREF(*aKeyURI);
     return NS_OK;
   }
 
@@ -1007,10 +985,9 @@ NS_IMETHODIMP imgRequest::OnDataAvailable(nsIRequest *aRequest, nsISupports *ctx
     /* NS_WARNING if the content type from the channel isn't the same if the sniffing */
 #endif
 
+    nsCOMPtr<nsIChannel> chan(do_QueryInterface(aRequest));
     if (mContentType.IsEmpty()) {
       LOG_SCOPE(gImgLog, "imgRequest::OnDataAvailable |sniffing of mimetype failed|");
-
-      nsCOMPtr<nsIChannel> chan(do_QueryInterface(aRequest));
 
       rv = NS_ERROR_FAILURE;
       if (chan) {
@@ -1036,7 +1013,7 @@ NS_IMETHODIMP imgRequest::OnDataAvailable(nsIRequest *aRequest, nsISupports *ctx
     } else {
       mImage = new RasterImage(mStatusTracker.forget());
     }
-    mImage->SetWindowID(mWindowId);
+    mImage->SetInnerWindowID(mInnerWindowId);
     imageType = mImage->GetType();
 
     // Notify any imgRequestProxys that are observing us that we have an Image.
@@ -1054,14 +1031,8 @@ NS_IMETHODIMP imgRequest::OnDataAvailable(nsIRequest *aRequest, nsISupports *ctx
 
     /* set our content disposition as a property */
     nsCAutoString disposition;
-    nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(aRequest));
-    if (httpChannel) {
-      httpChannel->GetResponseHeader(NS_LITERAL_CSTRING("content-disposition"), disposition);
-    } else {
-      nsCOMPtr<nsIMultiPartChannel> multiPartChannel(do_QueryInterface(aRequest));
-      if (multiPartChannel) {
-        multiPartChannel->GetContentDisposition(disposition);
-      }
+    if (chan) {
+      chan->GetContentDispositionHeader(disposition);
     }
     if (!disposition.IsEmpty()) {
       nsCOMPtr<nsISupportsCString> contentDisposition(do_CreateInstance("@mozilla.org/supports-cstring;1"));
@@ -1127,6 +1098,7 @@ NS_IMETHODIMP imgRequest::OnDataAvailable(nsIRequest *aRequest, nsISupports *ctx
 
     if (imageType == imgIContainer::TYPE_RASTER) {
       /* Use content-length as a size hint for http channels. */
+      nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(aRequest));
       if (httpChannel) {
         nsCAutoString contentLength;
         rv = httpChannel->GetResponseHeader(NS_LITERAL_CSTRING("content-length"),

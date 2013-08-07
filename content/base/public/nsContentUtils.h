@@ -83,6 +83,7 @@ static fp_except_t oldmask = fpsetmask(~allmask);
 #include "nsHtml5Parser.h"
 #include "nsIFragmentContentSink.h"
 #include "nsMathUtils.h"
+#include "mozilla/TimeStamp.h"
 
 struct nsNativeKeyEvent; // Don't include nsINativeKeyBindings.h here: it will force strange compilation error!
 
@@ -190,6 +191,7 @@ class nsContentUtils
   friend class nsAutoScriptBlockerSuppressNodeRemoved;
   friend class mozilla::AutoRestore<PRBool>;
   typedef mozilla::dom::Element Element;
+  typedef mozilla::TimeDuration TimeDuration;
 
 public:
   static nsresult Init();
@@ -744,8 +746,8 @@ public:
    *   @param aColumnNumber Column number within resource containing error.
    *   @param aErrorFlags See nsIScriptError.
    *   @param aCategory Name of module reporting error.
-   *   @param [aWindowId=0] (Optional) The window ID of the outer window the
-   *          message originates from.
+   *   @param [aInnerWindowId=0] (Optional) The window ID of the inner window
+   *          the message originates from.
    */
   enum PropertiesFile {
     eCSS_PROPERTIES,
@@ -770,7 +772,7 @@ public:
                                   PRUint32 aColumnNumber,
                                   PRUint32 aErrorFlags,
                                   const char *aCategory,
-                                  PRUint64 aWindowId = 0);
+                                  PRUint64 aInnerWindowId = 0);
 
   /**
    * Report a localized error message to the error console.
@@ -1705,6 +1707,33 @@ public:
    */
   static PRBool IsFocusedContent(const nsIContent *aContent);
 
+  /**
+   * Returns PR_TRUE if the DOM full-screen API is enabled.
+   */
+  static PRBool IsFullScreenApiEnabled();
+
+  /**
+   * Returns PR_TRUE if requests for full-screen are allowed in the current
+   * context. Requests are only allowed if the user initiated them (like with
+   * a mouse-click or key press), unless this check has been disabled by
+   * setting the pref "full-screen-api.allow-trusted-requests-only" to false.
+   */
+  static PRBool IsRequestFullScreenAllowed();
+
+  /**
+   * Returns PR_TRUE if key input is restricted in DOM full-screen mode
+   * to non-alpha-numeric key codes only. This mirrors the
+   * "full-screen-api.key-input-restricted" pref.
+   */
+  static PRBool IsFullScreenKeyInputRestricted();
+
+  /**
+   * Returns the time limit on handling user input before
+   * nsEventStateManager::IsHandlingUserInput() stops returning PR_TRUE.
+   * This enables us to detect long running user-generated event handlers.
+   */
+  static TimeDuration HandlingUserInputTimeout();
+
   static void GetShiftText(nsAString& text);
   static void GetControlText(nsAString& text);
   static void GetMetaText(nsAString& text);
@@ -1776,6 +1805,26 @@ public:
    * ontouch* event handler DOM attributes.
    */
   static void InitializeTouchEventTable();
+
+  /**
+   * Test whether the given URI always inherits a security context
+   * from the document it comes from.
+   */
+  static nsresult URIInheritsSecurityContext(nsIURI *aURI, PRBool *aResult);
+
+  /**
+   * Set the given principal as the owner of the given channel, if
+   * needed.  aURI must be the URI of aChannel.  aPrincipal may be
+   * null.  If aSetUpForAboutBlank is true, then about:blank will get
+   * the principal set up on it.
+   *
+   * The return value is whether the principal was set up as the owner
+   * of the channel.
+   */
+  static bool SetUpChannelOwner(nsIPrincipal* aLoadingPrincipal,
+                                nsIChannel* aChannel,
+                                nsIURI* aURI,
+                                PRBool aSetUpForAboutBlank);
 
   static nsresult Btoa(const nsAString& aBinaryData,
                        nsAString& aAsciiBase64String);
@@ -1869,6 +1918,10 @@ private:
 
   static PRBool sIsHandlingKeyBoardEvent;
   static PRBool sAllowXULXBL_for_file;
+  static PRBool sIsFullScreenApiEnabled;
+  static PRBool sTrustedFullScreenOnly;
+  static PRBool sFullScreenKeyInputRestricted;
+  static PRUint32 sHandlingInputTimeout;
 
   static nsHtml5Parser* sHTMLFragmentParser;
   static nsIParser* sXMLFragmentParser;

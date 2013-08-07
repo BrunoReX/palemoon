@@ -73,6 +73,8 @@ public:
   NS_IMETHOD SetMozPerspectiveOrigin(const nsAString_internal&);
   NS_IMETHOD GetMozBackfaceVisibility(nsAString_internal&);
   NS_IMETHOD SetMozBackfaceVisibility(const nsAString_internal&);
+  NS_IMETHOD GetMozTransformStyle(nsAString_internal&);
+  NS_IMETHOD SetMozTransformStyle(const nsAString_internal&);
 
   // Require subclasses to implement |GetParentRule|.
   //NS_DECL_NSIDOMCSSSTYLEDECLARATION

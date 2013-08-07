@@ -71,6 +71,8 @@ class GeckoSurfaceView
     extends SurfaceView
     implements SurfaceHolder.Callback, SensorEventListener, LocationListener
 {
+    private static final String LOG_FILE_NAME = "GeckoSurfaceView";
+
     public GeckoSurfaceView(Context context) {
         super(context);
 
@@ -105,26 +107,79 @@ class GeckoSurfaceView
     }
 
     void drawSplashScreen(SurfaceHolder holder, int width, int height) {
-        Canvas c = holder.lockCanvas();
-        if (c == null) {
-            Log.i("GeckoSurfaceView", "canvas is null");
+        // No splash screen for Honeycomb or greater
+        if (Build.VERSION.SDK_INT >= 11) {
+            Log.i(LOG_FILE_NAME, "skipping splash screen");
             return;
         }
+
+        Canvas c = holder.lockCanvas();
+        if (c == null) {
+            Log.i(LOG_FILE_NAME, "canvas is null");
+            return;
+        }
+
         Resources res = getResources();
-        c.drawColor(res.getColor(R.color.splash_background));
-        Drawable drawable = res.getDrawable(R.drawable.splash);
-        int w = drawable.getIntrinsicWidth();
-        int h = drawable.getIntrinsicHeight();
-        int x = (width - w)/2;
-        int y = (height - h)/2 - 16;
-        drawable.setBounds(x, y, x + w, y + h);
-        drawable.draw(c);
-        Paint p = new Paint();
-        p.setTextAlign(Paint.Align.CENTER);
-        p.setTextSize(32f);
-        p.setAntiAlias(true);
-        p.setColor(res.getColor(R.color.splash_font));
-        c.drawText(GeckoSurfaceView.mSplashStatusMsg, width/2, y + h + 16, p);
+
+        File watchDir = new File(GeckoApp.sGREDir, "components");
+        if (watchDir.exists() == false) {
+            // Just show the simple splash screen for "new profile" startup
+            c.drawColor(res.getColor(R.color.splash_background));
+            Drawable drawable = res.getDrawable(R.drawable.splash);
+            int w = drawable.getIntrinsicWidth();
+            int h = drawable.getIntrinsicHeight();
+            int x = (width - w) / 2;
+            int y = (height - h) / 2 - 16;
+            drawable.setBounds(x, y, x + w, y + h);
+            drawable.draw(c);
+
+            Paint p = new Paint();
+            p.setTextAlign(Paint.Align.CENTER);
+            p.setTextSize(32f);
+            p.setAntiAlias(true);
+            p.setColor(res.getColor(R.color.splash_msgfont));
+            c.drawText(res.getString(R.string.splash_firstrun), width / 2, y + h + 16, p);
+        } else {
+            // Show the static UI for normal startup
+            DisplayMetrics metrics = new DisplayMetrics();
+            GeckoApp.mAppContext.getWindowManager().getDefaultDisplay().getMetrics(metrics);
+    
+            // Default to DENSITY_HIGH sizes
+            int toolbarHeight = 80;
+            int faviconOffset = 25;
+            float urlHeight = 24f;
+            int urlOffsetX = 80;
+            int urlOffsetY = 48;
+            if (metrics.densityDpi == DisplayMetrics.DENSITY_MEDIUM) {
+                toolbarHeight = 53;
+                faviconOffset = 10;
+                urlHeight = 16f;
+                urlOffsetX = 53;
+                urlOffsetY = 32;
+            }
+    
+            c.drawColor(res.getColor(R.color.splash_content));
+            Drawable toolbar = res.getDrawable(Build.VERSION.SDK_INT > 8 ?
+                                               R.drawable.splash_v9 :
+                                               R.drawable.splash_v8);
+            toolbar.setBounds(0, 0, width, toolbarHeight);
+            toolbar.draw(c);
+    
+            // XUL/CSS always uses 32px width and height for favicon
+            Drawable favicon = res.getDrawable(R.drawable.favicon32);
+            favicon.setBounds(faviconOffset, faviconOffset, 32 + faviconOffset, 32 + faviconOffset);
+            favicon.draw(c);
+    
+            if (GeckoSurfaceView.mSplashURL != "") {
+                TextPaint p = new TextPaint();
+                p.setTextAlign(Paint.Align.LEFT);
+                p.setTextSize(urlHeight);
+                p.setAntiAlias(true);
+                p.setColor(res.getColor(R.color.splash_urlfont));
+                String url = TextUtils.ellipsize(GeckoSurfaceView.mSplashURL, p, width - urlOffsetX * 2, TextUtils.TruncateAt.END).toString();
+                c.drawText(url, urlOffsetX, urlOffsetY, p);
+            }
+        }
         holder.unlockCanvasAndPost(c);
     }
 
@@ -167,78 +222,98 @@ class GeckoSurfaceView
     }
 
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+
+        // Force exactly one frame to render
+        // because the surface change is only seen after we
+        // have swapped the back buffer.
+        // The buffer size only changes after the next swap buffer.
+        // We need to make sure the Gecko's view resize when Android's 
+        // buffer resizes.
+        if (mDrawMode == DRAW_GLES_2) {
+            // When we get a surfaceChange event, we have 0 to n paint events 
+            // waiting in the Gecko event queue. We will make the first
+            // succeed and the abort the others.
+            mDrawSingleFrame = true;
+            if (!mInDrawing) { 
+                // Queue at least one paint event in case none are queued.
+                GeckoAppShell.scheduleRedraw();
+            }
+            GeckoAppShell.geckoEventSync();
+            mDrawSingleFrame = false;
+            mAbortDraw = false;
+        }
+
         if (mShowingSplashScreen)
             drawSplashScreen(holder, width, height);
+
         mSurfaceLock.lock();
 
+        if (mInDrawing) {
+            Log.w(LOG_FILE_NAME, "surfaceChanged while mInDrawing is true!");
+        }
+
+        boolean invalidSize;
+
+        if (width == 0 || height == 0) {
+            mSoftwareBitmap = null;
+            mSoftwareBuffer = null;
+            mSoftwareBufferCopy = null;
+            invalidSize = true;
+        } else {
+            invalidSize = false;
+        }
+
+        boolean doSyncDraw =
+            mDrawMode == DRAW_2D &&
+            !invalidSize &&
+            GeckoApp.checkLaunchState(GeckoApp.LaunchState.GeckoRunning);
+        mSyncDraw = doSyncDraw;
+
+        mFormat = format;
+        mWidth = width;
+        mHeight = height;
+        mSurfaceValid = true;
+
+        Log.i(LOG_FILE_NAME, "surfaceChanged: fmt: " + format + " dim: " + width + " " + height);
+
         try {
-            if (mInDrawing) {
-                Log.w("GeckoAppJava", "surfaceChanged while mInDrawing is true!");
-            }
-
-            boolean invalidSize;
-
-            if (width == 0 || height == 0) {
-                mSoftwareBitmap = null;
-                mSoftwareBuffer = null;
-                mSoftwareBufferCopy = null;
-                invalidSize = true;
-            } else {
-                invalidSize = false;
-            }
-
-            boolean doSyncDraw =
-                mDrawMode == DRAW_2D &&
-                !invalidSize &&
-                GeckoApp.checkLaunchState(GeckoApp.LaunchState.GeckoRunning);
-            mSyncDraw = doSyncDraw;
-
-            mFormat = format;
-            mWidth = width;
-            mHeight = height;
-            mSurfaceValid = true;
-
-            Log.i("GeckoAppJava", "surfaceChanged: fmt: " + format + " dim: " + width + " " + height);
-
             DisplayMetrics metrics = new DisplayMetrics();
             GeckoApp.mAppContext.getWindowManager().getDefaultDisplay().getMetrics(metrics);
 
             GeckoEvent e = new GeckoEvent(GeckoEvent.SIZE_CHANGED, width, height,
                                           metrics.widthPixels, metrics.heightPixels);
             GeckoAppShell.sendEventToGecko(e);
-
-            if (!doSyncDraw) {
-                if (mDrawMode == DRAW_GLES_2 || mShowingSplashScreen)
-                    return;
-                Canvas c = holder.lockCanvas();
-                c.drawARGB(255, 255, 255, 255);
-                holder.unlockCanvasAndPost(c);
-                return;
-            } else {
-                GeckoAppShell.scheduleRedraw();
-            }
         } finally {
             mSurfaceLock.unlock();
         }
 
-        Object syncDrawObject = null;
-        try {
-            syncDrawObject = mSyncDraws.take();
-        } catch (InterruptedException ie) {
-            Log.e("GeckoAppJava", "Threw exception while getting sync draw bitmap/buffer: ", ie);
-        }
-        if (syncDrawObject != null) {
-            if (syncDrawObject instanceof Bitmap)
-                draw(holder, (Bitmap)syncDrawObject);
-            else
-                draw(holder, (ByteBuffer)syncDrawObject);
-        } else {
-            Log.e("GeckoSurfaceViewJava", "Synchronised draw object is null");
+        if (doSyncDraw) {
+            GeckoAppShell.scheduleRedraw();
+
+            Object syncDrawObject = null;
+            try {
+                syncDrawObject = mSyncDraws.take();
+            } catch (InterruptedException ie) {
+                Log.e(LOG_FILE_NAME, "Threw exception while getting sync draw bitmap/buffer: ", ie);
+            }
+            if (syncDrawObject != null) {
+                if (syncDrawObject instanceof Bitmap)
+                    draw(holder, (Bitmap)syncDrawObject);
+                else
+                    draw(holder, (ByteBuffer)syncDrawObject);
+            } else {
+                Log.e("GeckoSurfaceViewJava", "Synchronised draw object is null");
+            }
+        } else if (!mShowingSplashScreen) {
+            // Make sure a frame is drawn before we return
+            // otherwise we see artifacts or a black screen
+            GeckoAppShell.scheduleRedraw();
+            GeckoAppShell.geckoEventSync();
         }
     }
 
     public void surfaceCreated(SurfaceHolder holder) {
-        Log.i("GeckoAppJava", "surface created");
+        Log.i(LOG_FILE_NAME, "surface created");
         GeckoEvent e = new GeckoEvent(GeckoEvent.SURFACE_CREATED);
         GeckoAppShell.sendEventToGecko(e);
         if (mShowingSplashScreen)
@@ -246,13 +321,18 @@ class GeckoSurfaceView
     }
 
     public void surfaceDestroyed(SurfaceHolder holder) {
-        Log.i("GeckoAppJava", "surface destroyed");
+        Log.i(LOG_FILE_NAME, "surface destroyed");
         mSurfaceValid = false;
         mSoftwareBuffer = null;
         mSoftwareBufferCopy = null;
         mSoftwareBitmap = null;
         GeckoEvent e = new GeckoEvent(GeckoEvent.SURFACE_DESTROYED);
-        GeckoAppShell.sendEventToGecko(e);
+        if (mDrawMode == DRAW_GLES_2) {
+            // Ensure GL cleanup occurs before we return.
+            GeckoAppShell.sendEventToGeckoSync(e);
+        } else {
+            GeckoAppShell.sendEventToGecko(e);
+        }
     }
 
     public Bitmap getSoftwareDrawBitmap() {
@@ -284,6 +364,10 @@ class GeckoSurfaceView
         return mSoftwareBuffer;
     }
 
+    public Surface getSurface() {
+        return getHolder().getSurface();
+    }
+
     /*
      * Called on Gecko thread
      */
@@ -291,11 +375,21 @@ class GeckoSurfaceView
     public static final int DRAW_ERROR = 0;
     public static final int DRAW_GLES_2 = 1;
     public static final int DRAW_2D = 2;
+    // Drawing is disable when the surface buffer
+    // has changed size but we haven't yet processed the
+    // resize event.
+    public static final int DRAW_DISABLED = 3;
 
     public int beginDrawing() {
         if (mInDrawing) {
-            Log.e("GeckoAppJava", "Recursive beginDrawing call!");
+            Log.e(LOG_FILE_NAME, "Recursive beginDrawing call!");
             return DRAW_ERROR;
+        }
+
+        // Once we drawn our first frame after resize we can ignore
+        // the other draw events until we handle the resize events.
+        if (mAbortDraw) {
+            return DRAW_DISABLED;
         }
 
         /* Grab the lock, which we'll hold while we're drawing.
@@ -312,7 +406,7 @@ class GeckoSurfaceView
         mSurfaceLock.lock();
 
         if (!mSurfaceValid) {
-            Log.e("GeckoAppJava", "Surface not valid");
+            Log.e(LOG_FILE_NAME, "Surface not valid");
             mSurfaceLock.unlock();
             return DRAW_ERROR;
         }
@@ -324,20 +418,23 @@ class GeckoSurfaceView
 
     public void endDrawing() {
         if (!mInDrawing) {
-            Log.e("GeckoAppJava", "endDrawing without beginDrawing!");
+            Log.e(LOG_FILE_NAME, "endDrawing without beginDrawing!");
             return;
         }
 
+       if (mDrawSingleFrame)
+            mAbortDraw = true;
+
         try {
             if (!mSurfaceValid) {
-                Log.e("GeckoAppJava", "endDrawing with false mSurfaceValid");
+                Log.e(LOG_FILE_NAME, "endDrawing with false mSurfaceValid");
                 return;
             }
         } finally {
             mInDrawing = false;
 
             if (!mSurfaceLock.isHeldByCurrentThread())
-                Log.e("GeckoAppJava", "endDrawing while mSurfaceLock not held by current thread!");
+                Log.e(LOG_FILE_NAME, "endDrawing while mSurfaceLock not held by current thread!");
 
             mSurfaceLock.unlock();
         }
@@ -368,7 +465,7 @@ class GeckoSurfaceView
                 try {
                     mSyncDraws.put(bitmap);
                 } catch (InterruptedException ie) {
-                    Log.e("GeckoAppJava", "Threw exception while getting sync draws queue: ", ie);
+                    Log.e(LOG_FILE_NAME, "Threw exception while getting sync draws queue: ", ie);
                 }
                 return;
             }
@@ -389,7 +486,7 @@ class GeckoSurfaceView
                 try {
                     mSyncDraws.put(buffer);
                 } catch (InterruptedException ie) {
-                    Log.e("GeckoAppJava", "Threw exception while getting sync bitmaps queue: ", ie);
+                    Log.e(LOG_FILE_NAME, "Threw exception while getting sync bitmaps queue: ", ie);
                 }
                 return;
             }
@@ -492,7 +589,7 @@ class GeckoSurfaceView
                 mLastGeoAddress = addresses.get(0);
                 GeckoAppShell.sendEventToGecko(new GeckoEvent(location[0], mLastGeoAddress));
             } catch (Exception e) {
-                Log.w("GeckoSurfaceView", "GeocoderTask "+e);
+                Log.w(LOG_FILE_NAME, "GeocoderTask "+e);
             }
             return null;
         }
@@ -549,9 +646,9 @@ class GeckoSurfaceView
 
         switch (event.getAction()) {
             case KeyEvent.ACTION_DOWN:
-                return onKeyDown(keyCode, event);
+                return processKeyDown(keyCode, event, true);
             case KeyEvent.ACTION_UP:
-                return onKeyUp(keyCode, event);
+                return processKeyUp(keyCode, event, true);
             case KeyEvent.ACTION_MULTIPLE:
                 return onKeyMultiple(keyCode, event.getRepeatCount(), event);
         }
@@ -560,6 +657,10 @@ class GeckoSurfaceView
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        return processKeyDown(keyCode, event, false);
+    }
+
+    private boolean processKeyDown(int keyCode, KeyEvent event, boolean isPreIme) {
         switch (keyCode) {
             case KeyEvent.KEYCODE_BACK:
                 if (event.getRepeatCount() == 0) {
@@ -596,6 +697,12 @@ class GeckoSurfaceView
             default:
                 break;
         }
+
+        if (isPreIme && mIMEState != IME_STATE_DISABLED &&
+            (event.getMetaState() & KeyEvent.META_ALT_ON) == 0)
+            // Let active IME process pre-IME key events
+            return false;
+
         // KeyListener returns true if it handled the event for us.
         if (mIMEState == IME_STATE_DISABLED ||
             keyCode == KeyEvent.KEYCODE_ENTER ||
@@ -608,6 +715,10 @@ class GeckoSurfaceView
 
     @Override
     public boolean onKeyUp(int keyCode, KeyEvent event) {
+        return processKeyUp(keyCode, event, false);
+    }
+
+    private boolean processKeyUp(int keyCode, KeyEvent event, boolean isPreIme) {
         switch (keyCode) {
             case KeyEvent.KEYCODE_BACK:
                 if (!event.isTracking() || event.isCanceled())
@@ -616,6 +727,12 @@ class GeckoSurfaceView
             default:
                 break;
         }
+
+        if (isPreIme && mIMEState != IME_STATE_DISABLED &&
+            (event.getMetaState() & KeyEvent.META_ALT_ON) == 0)
+            // Let active IME process pre-IME key events
+            return false;
+
         if (mIMEState == IME_STATE_DISABLED ||
             keyCode == KeyEvent.KEYCODE_ENTER ||
             keyCode == KeyEvent.KEYCODE_DEL ||
@@ -655,6 +772,10 @@ class GeckoSurfaceView
     // Are we actively between beginDrawing/endDrawing?
     boolean mInDrawing;
 
+    // Used to finish the current buffer before changing the surface size
+    boolean mDrawSingleFrame = false;
+    boolean mAbortDraw = false;
+
     // Are we waiting for a buffer to draw in surfaceChanged?
     boolean mSyncDraw;
 
@@ -662,7 +783,7 @@ class GeckoSurfaceView
     int mDrawMode;
 
     static boolean mShowingSplashScreen = true;
-    static String  mSplashStatusMsg = "";
+    static String  mSplashURL = "";
 
     // let's not change stuff around while we're in the middle of
     // starting drawing, ending drawing, or changing surface

@@ -68,6 +68,7 @@ public:
   uint32_t id;
   nsCOMPtr<nsITimer> timer;
   void (*callback)(NPP npp, uint32_t timerID);
+  PRBool inCallback;
 };
 
 class nsNPAPIPluginInstance : public nsISupports
@@ -85,12 +86,16 @@ public:
   nsresult NewStreamToPlugin(nsIPluginStreamListener** listener);
   nsresult NewStreamFromPlugin(const char* type, const char* target, nsIOutputStream* *result);
   nsresult Print(NPPrint* platformPrint);
+#ifdef ANDROID
+  nsresult PostEvent(void* event) { return 0; };
+#endif
   nsresult HandleEvent(void* event, PRInt16* result);
   nsresult GetValueFromPlugin(NPPVariable variable, void* value);
   nsresult GetDrawingModel(PRInt32* aModel);
   nsresult IsRemoteDrawingCoreAnimation(PRBool* aDrawing);
   nsresult GetJSObject(JSContext *cx, JSObject** outObject);
   nsresult DefineJavaProperties();
+  PRBool ShouldCache();
   nsresult IsWindowless(PRBool* isWindowless);
   nsresult AsyncSetWindow(NPWindow* window);
   nsresult GetImage(ImageContainer* aContainer, Image** aImage);
@@ -114,6 +119,9 @@ public:
   nsresult SetOwner(nsIPluginInstanceOwner *aOwner);
   nsresult ShowStatus(const char* message);
   nsresult InvalidateOwner();
+#if defined(MOZ_WIDGET_QT) && (MOZ_PLATFORM_MAEMO == 6)
+  nsresult HandleGUIEvent(const nsGUIEvent& anEvent, bool* handled);
+#endif
 
   nsNPAPIPlugin* GetPlugin();
 
@@ -138,6 +146,11 @@ public:
   void SetEventModel(NPEventModel aModel);
 #endif
 
+#ifdef ANDROID
+  void SetDrawingModel(PRUint32 aModel);
+  void* GetJavaSurface();
+#endif
+
   nsresult NewStreamListener(const char* aURL, void* notifyData,
                              nsIPluginStreamListener** listener);
 
@@ -160,6 +173,12 @@ public:
   bool CanFireNotifications() {
     return mRunning == RUNNING || mRunning == DESTROYING;
   }
+
+  // return is only valid when the plugin is not running
+  mozilla::TimeStamp StopTime();
+
+  // cache this NPAPI plugin
+  nsresult SetCached(PRBool aCache);
 
   already_AddRefed<nsPIDOMWindow> GetDOMWindow();
 
@@ -204,6 +223,10 @@ protected:
   NPDrawingModel mDrawingModel;
 #endif
 
+#ifdef ANDROID
+  PRUint32 mDrawingModel;
+#endif
+
   enum {
     NOT_STARTED,
     RUNNING,
@@ -216,6 +239,7 @@ protected:
   PRPackedBool mWindowless;
   PRPackedBool mWindowlessLocal;
   PRPackedBool mTransparent;
+  PRPackedBool mCached;
   PRPackedBool mUsesDOMForCursor;
 
 public:
@@ -244,9 +268,16 @@ private:
   // non-null during a HandleEvent call
   void* mCurrentPluginEvent;
 
+  // Timestamp for the last time this plugin was stopped.
+  // This is only valid when the plugin is actually stopped!
+  mozilla::TimeStamp mStopTime;
+
   nsCOMPtr<nsIURI> mURI;
 
   PRPackedBool mUsePluginLayersPref;
+#ifdef ANDROID
+  void* mSurface;
+#endif
 };
 
 #endif // nsNPAPIPluginInstance_h_

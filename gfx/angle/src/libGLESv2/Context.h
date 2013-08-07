@@ -228,12 +228,24 @@ class VertexDeclarationCache
     VertexDeclarationCache();
     ~VertexDeclarationCache();
 
-    GLenum applyDeclaration(TranslatedAttribute attributes[], Program *program);
+    GLenum applyDeclaration(IDirect3DDevice9 *device, TranslatedAttribute attributes[], Program *program);
+
+    void markStateDirty();
 
   private:
     UINT mMaxLru;
 
     enum { NUM_VERTEX_DECL_CACHE_ENTRIES = 16 };
+
+    struct VBData
+    {
+        unsigned int serial;
+        unsigned int stride;
+        unsigned int offset;
+    };
+
+    VBData mAppliedVBs[MAX_VERTEX_ATTRIBS];
+    IDirect3DVertexDeclaration9 *mLastSetVDecl;
 
     struct VertexDeclCacheEntry
     {
@@ -409,8 +421,7 @@ class Context
     void clear(GLbitfield mask);
     void drawArrays(GLenum mode, GLint first, GLsizei count);
     void drawElements(GLenum mode, GLsizei count, GLenum type, const void *indices);
-    void finish();
-    void flush();
+    void sync(bool block);   // flush/finish
 
 	// Draw the last segment of a line loop
     void drawClosingLine(unsigned int first, unsigned int last);
@@ -436,8 +447,11 @@ class Context
     GLsizei getMaxSupportedSamples() const;
     int getNearestSupportedSamples(D3DFORMAT format, int requested) const;
     const char *getExtensionString() const;
+    const char *getRendererString() const;
     bool supportsEventQueries() const;
-    bool supportsCompressedTextures() const;
+    bool supportsDXT1Textures() const;
+    bool supportsDXT3Textures() const;
+    bool supportsDXT5Textures() const;
     bool supportsFloatTextures() const;
     bool supportsFloatLinearFilter() const;
     bool supportsFloatRenderableTextures() const;
@@ -478,7 +492,12 @@ class Context
     bool cullSkipsDraw(GLenum drawMode);
     bool isTriangleMode(GLenum drawMode);
 
+    void initExtensionString();
+    void initRendererString();
+
     const egl::Config *const mConfig;
+    egl::Display *mDisplay;
+    IDirect3DDevice9 *mDevice;
 
     State mState;
 
@@ -493,8 +512,8 @@ class Context
     FenceMap mFenceMap;
     HandleAllocator mFenceHandleAllocator;
 
-    void initExtensionString();
     std::string mExtensionString;
+    std::string mRendererString;
 
     VertexDataManager *mVertexDataManager;
     IndexDataManager *mIndexDataManager;
@@ -520,7 +539,15 @@ class Context
     unsigned int mAppliedRenderTargetSerial;
     unsigned int mAppliedDepthbufferSerial;
     unsigned int mAppliedStencilbufferSerial;
+    unsigned int mAppliedIBSerial;
     bool mDepthStencilInitialized;
+    bool mViewportInitialized;
+    D3DVIEWPORT9 mSetViewport;
+    bool mRenderTargetDescInitialized;
+    D3DSURFACE_DESC mRenderTargetDesc;
+    bool mDxUniformsDirty;
+    Program *mCachedCurrentProgram;
+    Framebuffer *mBoundDrawFramebuffer;
 
     bool mSupportsShaderModel3;
     bool mSupportsVertexTexture;
@@ -532,7 +559,9 @@ class Context
     std::map<D3DFORMAT, bool *> mMultiSampleSupport;
     GLsizei mMaxSupportedSamples;
     bool mSupportsEventQueries;
-    bool mSupportsCompressedTextures;
+    bool mSupportsDXT1Textures;
+    bool mSupportsDXT3Textures;
+    bool mSupportsDXT5Textures;
     bool mSupportsFloatTextures;
     bool mSupportsFloatLinearFilter;
     bool mSupportsFloatRenderableTextures;
@@ -542,6 +571,7 @@ class Context
     bool mSupportsLuminanceTextures;
     bool mSupportsLuminanceAlphaTextures;
     bool mSupports32bitIndices;
+    int mNumCompressedTextureFormats;
 
     // state caching flags
     bool mClearStateDirty;

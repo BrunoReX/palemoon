@@ -48,11 +48,14 @@
 #include "nsIProgrammingLanguage.h" // for ::JAVASCRIPT
 #include "nsDOMError.h"
 #include "nsDOMString.h"
+#include "jspubtd.h"
+#include "nsDOMMemoryReporter.h"
 
 class nsIContent;
 class nsIDocument;
 class nsIDOMEvent;
 class nsIDOMNode;
+class nsIDOMElement;
 class nsIDOMNodeList;
 class nsINodeList;
 class nsIPresShell;
@@ -280,8 +283,8 @@ private:
 
 // IID for the nsINode interface
 #define NS_INODE_IID \
-{ 0xc7abbb40, 0x2571, 0x4d12, \
- { 0x8f, 0x89, 0x0d, 0x4f, 0x55, 0xc0, 0x92, 0xf6 } }
+{ 0xb59269fe, 0x7f60, 0x4672, \
+  { 0x8e, 0x56, 0x01, 0x84, 0xb2, 0x58, 0x14, 0xb0 } }
 
 /**
  * An internal interface that abstracts some DOMNode-related parts that both
@@ -294,9 +297,7 @@ class nsINode : public nsIDOMEventTarget,
 public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_INODE_IID)
 
-  virtual PRInt64 SizeOf() const {
-    return sizeof(*this);
-  }
+  NS_DECL_DOM_MEMORY_REPORTER_SIZEOF
 
   friend class nsNodeUtils;
   friend class nsNodeWeakReference;
@@ -707,6 +708,15 @@ public:
   {
     return mParent;
   }
+  
+  /**
+   * Get the parent nsINode for this node if it is an Element.
+   * @return the parent node
+   */
+  nsINode* GetElementParent() const
+  {
+    return mParent && mParent->IsElement() ? mParent : nsnull;
+  }
 
   /**
    * See nsIDOMEventTarget
@@ -800,6 +810,9 @@ public:
     // If needed we could remove the vtable pointer this dtor causes by
     // putting a DestroySlots function on nsINode
     virtual ~nsSlots();
+
+    void Traverse(nsCycleCollectionTraversalCallback &cb);
+    void Unlink();
 
     /**
      * A list of mutation observers
@@ -931,42 +944,6 @@ public:
    * nsIDocument* to nsINode*.
    */
   nsIDocument* GetOwnerDocument() const;
-
-  /**
-   * Iterator that can be used to easily iterate over the children.  This has
-   * the same restrictions on its use as GetChildArray does.
-   */
-  class ChildIterator {
-  public:
-    ChildIterator(const nsINode* aNode) { Init(aNode); }
-    ChildIterator(const nsINode* aNode, PRUint32 aOffset) {
-      Init(aNode);
-      Advance(aOffset);
-    }
-    ~ChildIterator() {
-      NS_ASSERTION(!mGuard.Mutated(0), "Unexpected mutations happened");
-    }
-
-    PRBool IsDone() const { return mCur == mEnd; }
-    operator nsIContent*() const { return *mCur; }
-    void Next() { NS_PRECONDITION(mCur != mEnd, "Check IsDone"); ++mCur; }
-    void Advance(PRUint32 aOffset) {
-      NS_ASSERTION(mCur + aOffset <= mEnd, "Unexpected offset");
-      mCur += aOffset;
-    }
-  private:
-    void Init(const nsINode* aNode) {
-      NS_PRECONDITION(aNode, "Must have node here!");
-      PRUint32 childCount;
-      mCur = aNode->GetChildArray(&childCount);
-      mEnd = mCur + childCount;
-    }
-#ifdef DEBUG
-    nsMutationGuard mGuard;
-#endif
-    nsIContent* const * mCur;
-    nsIContent* const * mEnd;
-  };
 
   /**
    * The default script type (language) ID for this node.
@@ -1117,6 +1094,14 @@ public:
   {
     return GetNextNodeImpl(aRoot, PR_TRUE);
   }
+
+  /**
+   * Returns true if 'this' is either document or element or
+   * document fragment and aOther is a descendant in the same
+   * anonymous tree.
+   */
+  PRBool Contains(const nsINode* aOther) const;
+  nsresult Contains(nsIDOMNode* aOther, PRBool* aReturn);
 
 private:
 
@@ -1308,6 +1293,7 @@ protected:
 #endif
 
   nsresult GetParentNode(nsIDOMNode** aParentNode);
+  nsresult GetParentElement(nsIDOMElement** aParentElement);
   nsresult GetChildNodes(nsIDOMNodeList** aChildNodes);
   nsresult GetFirstChild(nsIDOMNode** aFirstChild);
   nsresult GetLastChild(nsIDOMNode** aLastChild);
@@ -1365,6 +1351,28 @@ protected:
    */
   nsresult doInsertChildAt(nsIContent* aKid, PRUint32 aIndex,
                            PRBool aNotify, nsAttrAndChildArray& aChildArray);
+
+  /* Event stuff that documents and elements share.  This needs to be
+     NS_IMETHOD because some subclasses implement DOM methods with
+     this exact name and signature and then the calling convention
+     needs to match.
+
+     Note that we include DOCUMENT_ONLY_EVENT events here so that we
+     can forward all the document stuff to this implementation.
+  */
+#define EVENT(name_, id_, type_, struct_)                         \
+  NS_IMETHOD GetOn##name_(JSContext *cx, JS::Value *vp);          \
+  NS_IMETHOD SetOn##name_(JSContext *cx, const JS::Value &v);
+#define TOUCH_EVENT EVENT
+#define DOCUMENT_ONLY_EVENT EVENT
+#include "nsEventNameList.h"
+#undef DOCUMENT_ONLY_EVENT
+#undef TOUCH_EVENT
+#undef EVENT  
+
+  static void Trace(nsINode *tmp, TraceCallback cb, void *closure);
+  static bool Traverse(nsINode *tmp, nsCycleCollectionTraversalCallback &cb);
+  static void Unlink(nsINode *tmp);
 
   nsCOMPtr<nsINodeInfo> mNodeInfo;
 

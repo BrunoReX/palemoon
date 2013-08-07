@@ -128,14 +128,27 @@ using namespace mozilla::places;
 #define PREF_FRECENCY_UNVISITED_BOOKMARK_BONUS  "frecency.unvisitedBookmarkBonus"
 #define PREF_FRECENCY_UNVISITED_TYPED_BONUS     "frecency.unvisitedTypedBonus"
 
-#define PREF_CACHE_TO_MEMORY_PERCENTAGE         "database.cache_to_memory_percentage"
-
 #define PREF_FORCE_DATABASE_REPLACEMENT         "database.replaceOnStartup"
 
-// Default integer value for PREF_CACHE_TO_MEMORY_PERCENTAGE.
-// This is 6% of machine memory, giving 15MB for a user with 256MB of memory.
-// Out of this cache, SQLite will use at most the size of the database file.
-#define DATABASE_DEFAULT_CACHE_TO_MEMORY_PERCENTAGE 6
+// To calculate the cache size we take into account the available physical
+// memory and the current database size.  This is the percentage of memory
+// we reserve for the former case.
+#define DATABASE_CACHE_TO_MEMORY_PERC 2
+// The minimum size of the cache.  We should never work without a cache, since
+// that would badly hurt WAL journaling mode.
+#define DATABASE_CACHE_MIN_BYTES (PRUint64)5242880 // 5MiB
+
+// We calculate an optimal database size, based on hardware specs.  This
+// pertains more to expiration, but the code is pretty much the same used for
+// cache_size, so it's here to reduce code duplication.
+// This percentage of disk size is used to protect against calculating a too
+// large size on disks with tiny quota or available space.
+#define DATABASE_TO_DISK_PERC 2
+// Maximum size of the optimal database.  High-end hardware has plenty of
+// memory and disk space, but performances don't grow linearly.
+#define DATABASE_MAX_SIZE (PRInt64)167772160 // 160MiB
+// Used to share the calculated optimal database size with other components.
+#define PREF_OPTIMAL_DATABASE_SIZE "history.expiration.transient_optimal_database_size"
 
 // If the physical memory size is not available, use MEMSIZE_FALLBACK_BYTES
 // instead.  Must stay in sync with the code in nsPlacesExpiration.js.
@@ -212,8 +225,7 @@ NS_IMPL_CLASSINFO(nsNavHistory, NULL, nsIClassInfo::SINGLETON,
                   NS_NAVHISTORYSERVICE_CID)
 NS_INTERFACE_MAP_BEGIN(nsNavHistory)
   NS_INTERFACE_MAP_ENTRY(nsINavHistoryService)
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsIGlobalHistory2, nsIGlobalHistory3)
-  NS_INTERFACE_MAP_ENTRY(nsIGlobalHistory3)
+  NS_INTERFACE_MAP_ENTRY(nsIGlobalHistory2)
   NS_INTERFACE_MAP_ENTRY(nsIDownloadHistory)
   NS_INTERFACE_MAP_ENTRY(nsIBrowserHistory)
   NS_INTERFACE_MAP_ENTRY(nsIObserver)
@@ -227,10 +239,9 @@ NS_INTERFACE_MAP_BEGIN(nsNavHistory)
 NS_INTERFACE_MAP_END
 
 // We don't care about flattening everything
-NS_IMPL_CI_INTERFACE_GETTER5(
+NS_IMPL_CI_INTERFACE_GETTER4(
   nsNavHistory
 , nsINavHistoryService
-, nsIGlobalHistory3
 , nsIGlobalHistory2
 , nsIDownloadHistory
 , nsIBrowserHistory
@@ -514,8 +525,6 @@ nsNavHistory::Init()
                  NS_ERROR_OUT_OF_MEMORY);
   NS_ENSURE_TRUE(mRecentBookmark.Init(RECENT_EVENTS_INITIAL_CACHE_SIZE),
                  NS_ERROR_OUT_OF_MEMORY);
-  NS_ENSURE_TRUE(mRecentRedirects.Init(RECENT_EVENTS_INITIAL_CACHE_SIZE),
-                 NS_ERROR_OUT_OF_MEMORY);
 
   // Embed visits hash table.
   NS_ENSURE_TRUE(mEmbedVisits.Init(EMBED_VISITS_INITIAL_CACHE_SIZE),
@@ -717,7 +726,7 @@ nsNavHistory::SetJournalMode(enum JournalMode aJournalMode)
   }
   else {
     NS_WARNING(nsPrintfCString(128, "Setting journal mode failed: %s",
-                               PromiseFlatCString(journalMode).get()).get());
+                               journalMode.get()).get());
     return NS_ERROR_FAILURE;
   }
 
@@ -728,16 +737,19 @@ nsNavHistory::SetJournalMode(enum JournalMode aJournalMode)
 nsresult
 nsNavHistory::InitDB()
 {
+  // WARNING: any statement executed before setting the journal mode must be
+  // finalized, since SQLite doesn't allow changing the journal mode if there
+  // is any outstanding statement.
+
   {
     // Get the page size.  This may be different than the default if the
     // database file already existed with a different page size.
     nsCOMPtr<mozIStorageStatement> statement;
-    nsresult rv = mDBConn->CreateStatement(NS_LITERAL_CSTRING("PRAGMA page_size"),
-                                  getter_AddRefs(statement));
+    nsresult rv = mDBConn->CreateStatement(NS_LITERAL_CSTRING(
+      "PRAGMA page_size"
+    ), getter_AddRefs(statement));
     NS_ENSURE_SUCCESS(rv, rv);
-
-    PRBool hasResult;
-    mozStorageStatementScoper scoper(statement);
+    PRBool hasResult = PR_FALSE;
     rv = statement->ExecuteStep(&hasResult);
     NS_ENSURE_TRUE(NS_SUCCEEDED(rv) && hasResult, NS_ERROR_FAILURE);
     rv = statement->GetInt32(0, &mDBPageSize);
@@ -750,29 +762,67 @@ nsNavHistory::InitDB()
       "PRAGMA temp_store = MEMORY"));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // Compute the size of the database cache using the device's memory size.
+  // We want to work with a cache that is at a maximum half of the database
+  // size.  We also want it to respect the available memory size.
+
+  // Calculate memory size, fallback to a meaningful value if it fails.
+  PRUint64 memSizeBytes = PR_GetPhysicalMemorySize();
+  if (memSizeBytes == 0) {
+    memSizeBytes = MEMSIZE_FALLBACK_BYTES;
+  }
+
+  PRUint64 cacheSize = memSizeBytes * DATABASE_CACHE_TO_MEMORY_PERC / 100;
+
+  // Calculate an optimal database size for expiration purposes.
+  // We usually want to work with a cache that is half the database size.
+  // Limit the size to avoid extreme values on high-end hardware.
+  PRInt64 optimalDatabaseSize = NS_MIN(static_cast<PRInt64>(cacheSize) * 2,
+                                       DATABASE_MAX_SIZE);
+
+  // Protect against a full disk or tiny quota.
+  PRInt64 diskAvailableBytes = 0;
+  nsCOMPtr<nsILocalFile> localDB = do_QueryInterface(mDBFile);
+  if (localDB &&
+      NS_SUCCEEDED(localDB->GetDiskSpaceAvailable(&diskAvailableBytes)) &&
+      diskAvailableBytes > 0) {
+    optimalDatabaseSize = NS_MIN(optimalDatabaseSize,
+                                 diskAvailableBytes * DATABASE_TO_DISK_PERC / 100);
+  }
+
+  // Share the calculated size if it's meaningful.
+  if (optimalDatabaseSize < PR_INT32_MAX) {
+    (void)mPrefBranch->SetIntPref(PREF_OPTIMAL_DATABASE_SIZE,
+                                  static_cast<PRInt32>(optimalDatabaseSize));
+  }
+
+  // Get the current database size. Due to chunked growth we have to use
+  // page_count to evaluate it.
+  PRUint64 databaseSizeBytes = 0;
+  {
+    nsCOMPtr<mozIStorageStatement> statement;
+    nsresult rv = mDBConn->CreateStatement(NS_LITERAL_CSTRING(
+      "PRAGMA page_count"
+    ), getter_AddRefs(statement));
+    NS_ENSURE_SUCCESS(rv, rv);
+    PRBool hasResult = PR_FALSE;
+    rv = statement->ExecuteStep(&hasResult);
+    NS_ENSURE_TRUE(NS_SUCCEEDED(rv) && hasResult, NS_ERROR_FAILURE);
+    PRInt32 pageCount = 0;
+    rv = statement->GetInt32(0, &pageCount);
+    NS_ENSURE_SUCCESS(rv, rv);
+    databaseSizeBytes = pageCount * mDBPageSize;
+  }
+
+  // Set cache to a maximum of half the database size.
+  cacheSize = NS_MIN(cacheSize, databaseSizeBytes / 2);
+  // Ensure we never work without a minimum cache.
+  cacheSize = NS_MAX(cacheSize, DATABASE_CACHE_MIN_BYTES);
+
+  // Set the number of cached pages.
   // We don't use PRAGMA default_cache_size, since the database could be moved
   // among different devices and the value would adapt accordingly.
-  PRInt32 cachePercentage;
-  if (NS_FAILED(mPrefBranch->GetIntPref(PREF_CACHE_TO_MEMORY_PERCENTAGE,
-                                        &cachePercentage)))
-    cachePercentage = DATABASE_DEFAULT_CACHE_TO_MEMORY_PERCENTAGE;
-  // Sanity checks, we allow values between 0 (disable cache) and 50%.
-  if (cachePercentage > 50)
-    cachePercentage = 50;
-  if (cachePercentage < 0)
-    cachePercentage = 0;
-
-  static PRUint64 physMem = PR_GetPhysicalMemorySize();
-  if (physMem == 0)
-    physMem = MEMSIZE_FALLBACK_BYTES;
-
-  PRUint64 cacheSize = physMem * cachePercentage / 100;
-
-  // Compute number of cached pages, this will be our cache size.
-  PRUint64 cachePages = cacheSize / mDBPageSize;
   nsCAutoString cacheSizePragma("PRAGMA cache_size = ");
-  cacheSizePragma.AppendInt(cachePages);
+  cacheSizePragma.AppendInt(cacheSize / mDBPageSize);
   rv = mDBConn->ExecuteSimpleSQL(cacheSizePragma);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1447,9 +1497,8 @@ nsNavHistory::MigrateV7Up(mozIStorageConnection* aDBConn)
     rv = aDBConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_PLACES_FRECENCY);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    // for place: items and unvisited livemark items, we need to set
-    // the frecency to 0 so that they don't show up in url bar autocomplete
-    rv = FixInvalidFrecenciesForExcludedPlaces();
+    // Invalidate all frecencies, since they need recalculation.
+    rv = invalidateFrecencies(EmptyCString());
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -2483,35 +2532,41 @@ nsNavHistory::GetHasHistoryEntries(PRBool* aHasEntries)
 
 
 nsresult
-nsNavHistory::FixInvalidFrecenciesForExcludedPlaces()
+nsNavHistory::invalidateFrecencies(const nsCString& aPlaceIdsQueryString)
 {
-  // for every moz_place that has an invalid frecency (< 0) and
-  // is an unvisited child of a livemark feed, or begins with "place:",
-  // set frecency to 0 so that it is excluded from url bar autocomplete.
-  nsCOMPtr<mozIStorageStatement> dbUpdateStatement;
-  nsresult rv = mDBConn->CreateStatement(NS_LITERAL_CSTRING(
-      "UPDATE moz_places "
-      "SET frecency = 0 WHERE id IN ("
-        "SELECT h.id FROM moz_places h "
-        "WHERE h.url >= 'place:' AND h.url < 'place;' "
-        "UNION ALL "
-        // Unvisited child of a livemark
-        "SELECT b.fk FROM moz_bookmarks b "
-        "JOIN moz_places h ON b.fk = h.id AND visit_count = 0 AND frecency < 0 "
-        "JOIN moz_bookmarks bp ON bp.id = b.parent "
-        "JOIN moz_items_annos a ON a.item_id = bp.id "
-        "JOIN moz_anno_attributes n ON n.id = a.anno_attribute_id "
-        "WHERE n.name = :anno_name "
-      ")"),
-    getter_AddRefs(dbUpdateStatement));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  rv = dbUpdateStatement->BindUTF8StringByName(
-    NS_LITERAL_CSTRING("anno_name"), NS_LITERAL_CSTRING(LMANNO_FEEDURI)
+  // Exclude place: queries and unvisited livemark children from autocomplete,
+  // by setting their frecency to zero.
+  nsCAutoString invalideFrecenciesSQLFragment(
+    "UPDATE moz_places SET frecency = (CASE "
+      "WHEN url BETWEEN 'place:' AND 'place;' "
+      "THEN 0 "
+      "WHEN id IN (SELECT b.fk FROM moz_bookmarks b "
+                  "JOIN moz_bookmarks bp ON bp.id = b.parent "
+                  "JOIN moz_items_annos a ON a.item_id = bp.id "
+                  "JOIN moz_anno_attributes n ON n.id = a.anno_attribute_id "
+                  "WHERE b.fk = moz_places.id AND visit_count = 0 "
+                    "AND n.name = :anno_name) "
+      "THEN 0 "
+      "ELSE -1 "
+      "END) "
   );
-  NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = dbUpdateStatement->Execute();
+  if (!aPlaceIdsQueryString.IsEmpty()) {
+    invalideFrecenciesSQLFragment.AppendLiteral("WHERE id IN(");
+    invalideFrecenciesSQLFragment.Append(aPlaceIdsQueryString);
+    invalideFrecenciesSQLFragment.AppendLiteral(")");
+  }
+
+  nsCOMPtr<mozIStorageStatement> stmt =
+    GetStatementByStoragePool(invalideFrecenciesSQLFragment);
+  NS_ENSURE_STATE(stmt);
+  nsresult rv = stmt->BindUTF8StringByName(
+     NS_LITERAL_CSTRING("anno_name"), NS_LITERAL_CSTRING(LMANNO_FEEDURI)
+   );
+   NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<mozIStoragePendingStatement> ps;
+  rv = stmt->ExecuteAsync(nsnull, getter_AddRefs(ps));
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -2671,7 +2726,7 @@ nsNavHistory::AddVisit(nsIURI* aURI, PRTime aTime, nsIURI* aReferringURI,
     rv = stmt->GetInt32(2, &oldTypedState);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    PRBool oldHiddenState = 0;
+    PRInt32 oldHiddenState = 0;
     rv = stmt->GetInt32(3, &oldHiddenState);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -2772,9 +2827,8 @@ nsNavHistory::AddVisit(nsIURI* aURI, PRTime aTime, nsIURI* aReferringURI,
 
   // Normally docshell sends the link visited observer notification for us (this
   // will tell all the documents to update their visited link coloring).
-  // However, for redirects (since we implement nsIGlobalHistory3) and downloads
-  // (since we implement nsIDownloadHistory) this will not happen and we need to
-  // send it ourselves.
+  // However, for redirects and downloads (since we implement nsIDownloadHistory)
+  // this will not happen and we need to send it ourselves.
   if (newItem && (aIsRedirect || aTransitionType == TRANSITION_DOWNLOAD)) {
     nsCOMPtr<nsIObserverService> obsService =
       do_GetService(NS_OBSERVERSERVICE_CONTRACTID);
@@ -3508,14 +3562,14 @@ PlacesSQLQueryBuilder::SelectAsSite()
     ") ",
     nsINavHistoryQueryOptions::RESULTS_AS_URI,
     mSortingMode,
-    PromiseFlatCString(timeConstraints).get(),
-    PromiseFlatCString(visitsJoin).get(),
-    PromiseFlatCString(additionalConditions).get(),
+    timeConstraints.get(),
+    visitsJoin.get(),
+    additionalConditions.get(),
     nsINavHistoryQueryOptions::RESULTS_AS_URI,
     mSortingMode,
-    PromiseFlatCString(timeConstraints).get(),
-    PromiseFlatCString(visitsJoin).get(),
-    PromiseFlatCString(additionalConditions).get()
+    timeConstraints.get(),
+    visitsJoin.get(),
+    additionalConditions.get()
   );
 
   return NS_OK;
@@ -3928,9 +3982,7 @@ nsNavHistory::GetQueryResults(nsNavHistoryQueryResultNode *aResultNode,
     PRInt32 lastError = 0;
     (void)mDBConn->GetLastError(&lastError);
     printf("Places failed to create a statement from this query:\n%s\nStorage error (%d): %s\n",
-           PromiseFlatCString(queryString).get(),
-           lastError,
-           PromiseFlatCString(lastErrorString).get());
+           queryString.get(), lastError, lastErrorString.get());
   }
 #endif
   NS_ENSURE_SUCCESS(rv, rv);
@@ -4138,11 +4190,8 @@ nsNavHistory::RemovePagesInternal(const nsCString& aPlaceIdsQueryString)
 
   mozStorageTransaction transaction(mDBConn, PR_FALSE);
 
-  nsresult rv = PreparePlacesForVisitsDelete(aPlaceIdsQueryString);
-  NS_ENSURE_SUCCESS(rv, rv);
-
   // Delete all visits for the specified place ids.
-  rv = mDBConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
+  nsresult rv = mDBConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
       "DELETE FROM moz_historyvisits WHERE place_id IN (") +
         aPlaceIdsQueryString +
         NS_LITERAL_CSTRING(")"));
@@ -4155,47 +4204,6 @@ nsNavHistory::RemovePagesInternal(const nsCString& aPlaceIdsQueryString)
   mHasHistoryEntries = -1;
 
   return transaction.Commit();
-}
-
-
-/**
- * Prepares for deletion places that are about to have all their visits removed.
- * This is an internal method used by RemovePagesInternal and
- * RemoveVisitsByTimeframe.  This method does not execute in a transaction, so
- * callers should make sure they begin one if needed.
- *
- * @param aPlaceIdsQueryString
- *        A comma-separated list of place IDs, each of which is about to have
- *        all its visits removed
- */
-nsresult
-nsNavHistory::PreparePlacesForVisitsDelete(const nsCString& aPlaceIdsQueryString)
-{
-  // Return early if there is nothing to delete.
-  if (aPlaceIdsQueryString.IsEmpty())
-    return NS_OK;
-
-  // if a moz_place is annotated or was a bookmark,
-  // we won't delete it, but we will delete the moz_visits
-  // so we need to reset the frecency.  Note, we set frecency to
-  // -visit_count, as we use that value in our "on idle" query
-  // to figure out which places to recalculate frecency first.
-  // Pay attention to not set frecency = 0 if visit_count = 0
-  nsresult rv = mDBConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
-      "UPDATE moz_places "
-      "SET frecency = -MAX(visit_count, 1) "
-      "WHERE id IN ( "
-        "SELECT h.id " 
-        "FROM moz_places h "
-        "WHERE h.id IN ( ") + aPlaceIdsQueryString + NS_LITERAL_CSTRING(") "
-          "AND ( "
-            "EXISTS (SELECT b.id FROM moz_bookmarks b WHERE b.fk =h.id) "
-            "OR EXISTS (SELECT a.id FROM moz_annos a WHERE a.place_id = h.id) "
-          ") "        
-      ")"));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return NS_OK;
 }
 
 
@@ -4276,10 +4284,8 @@ nsNavHistory::CleanupPlacesOnVisitsDelete(const nsCString& aPlaceIdsQueryString)
       ") "));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // If we have removed all visits to a livemark's child, we need to fix its
-  // frecency, or it would appear in the url bar autocomplete.
-  // XXX this might be dog slow, further degrading delete perf.
-  rv = FixInvalidFrecenciesForExcludedPlaces();
+  // Invalidate frecencies of touched places, since they need recalculation.
+  rv = invalidateFrecencies(aPlaceIdsQueryString);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Finally notify about the removed URIs.
@@ -4297,12 +4303,10 @@ nsNavHistory::CleanupPlacesOnVisitsDelete(const nsCString& aPlaceIdsQueryString)
 //
 //    Removes a bunch of uris from history.
 //    Has better performance than RemovePage when deleting a lot of history.
-//    Notice that this function does not call the onDeleteURI observers,
-//    instead, if aDoBatchNotify is true, we call OnBegin/EndUpdateBatch.
 //    We don't do duplicates removal, URIs array should be cleaned-up before.
 
 NS_IMETHODIMP
-nsNavHistory::RemovePages(nsIURI **aURIs, PRUint32 aLength, PRBool aDoBatchNotify)
+nsNavHistory::RemovePages(nsIURI **aURIs, PRUint32 aLength)
 {
   NS_ASSERTION(NS_IsMainThread(), "This can only be called on the main thread");
   NS_ENSURE_ARG(aURIs);
@@ -4322,9 +4326,7 @@ nsNavHistory::RemovePages(nsIURI **aURIs, PRUint32 aLength, PRBool aDoBatchNotif
     }
   }
 
-  // force a full refresh calling onEndUpdateBatch (will call Refresh())
-  if (aDoBatchNotify)
-    UpdateBatchScoper batch(*this); // sends Begin/EndUpdateBatch to observers
+  UpdateBatchScoper batch(*this); // sends Begin/EndUpdateBatch to observers
 
   rv = RemovePagesInternal(deletePlaceIdsQueryString);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -4347,9 +4349,22 @@ nsNavHistory::RemovePage(nsIURI *aURI)
   NS_ASSERTION(NS_IsMainThread(), "This can only be called on the main thread");
   NS_ENSURE_ARG(aURI);
 
-  nsIURI** URIs = &aURI;
-  nsresult rv = RemovePages(URIs, 1, PR_FALSE);
+  // Build a list of place ids to delete.
+  PRInt64 placeId;
+  nsCAutoString guid;
+  nsresult rv = GetIdForPage(aURI, &placeId, guid);
   NS_ENSURE_SUCCESS(rv, rv);
+  if (placeId == 0) {
+    return NS_OK;
+  }
+  nsCAutoString deletePlaceIdQueryString;
+  deletePlaceIdQueryString.AppendInt(placeId);
+
+  rv = RemovePagesInternal(deletePlaceIdQueryString);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Clear the registered embed visits.
+  clearEmbedVisits();
 
   return NS_OK;
 }
@@ -4566,9 +4581,6 @@ nsNavHistory::RemoveVisitsByTimeframe(PRTime aBeginTime, PRTime aEndTime)
 
   mozStorageTransaction transaction(mDBConn, PR_FALSE);
 
-  rv = PreparePlacesForVisitsDelete(deletePlaceIdsQueryString);
-  NS_ENSURE_SUCCESS(rv, rv);
-
   // Delete all visits within the timeframe.
   nsCOMPtr<mozIStorageStatement> deleteVisitsStmt;
   rv = mDBConn->CreateStatement(NS_LITERAL_CSTRING(
@@ -4608,31 +4620,8 @@ nsNavHistory::RemoveAllPages()
 {
   NS_ASSERTION(NS_IsMainThread(), "This can only be called on the main thread");
 
-  mozStorageTransaction transaction(mDBConn, PR_FALSE);
-
-  // reset frecency for all items that will _not_ be deleted
-  // Note, we set frecency to -visit_count since we use that value in our
-  // idle query to figure out which places to recalcuate frecency first.
-  // We must do this before deleting visits.
   nsresult rv = mDBConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
-    "UPDATE moz_places SET frecency = -MAX(visit_count, 1) "
-    "WHERE id IN(SELECT b.fk FROM moz_bookmarks b WHERE b.fk NOTNULL)"));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Expire visits, then let the paranoid functions do the cleanup for us.
-  rv = mDBConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
       "DELETE FROM moz_historyvisits"));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Some of the remaining places could be place: urls or
-  // unvisited livemark items, so setting the frecency to -1
-  // will cause them to show up in the url bar autocomplete
-  // call FixInvalidFrecenciesForExcludedPlaces to handle that scenario.
-  rv = FixInvalidFrecenciesForExcludedPlaces();
-  if (NS_FAILED(rv))
-    NS_WARNING("failed to fix invalid frecencies");
-
-  rv = transaction.Commit();
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Clear the registered embed visits.
@@ -4644,6 +4633,11 @@ nsNavHistory::RemoveAllPages()
   // Expiration will take care of orphans.
   NOTIFY_OBSERVERS(mCanNotify, mCacheObservers, mObservers,
                    nsINavHistoryObserver, OnClearHistory());
+
+  // Invalidate frecencies for the remaining places.  This must happen
+  // after the notification to ensure it runs enqueued to expiration.
+  rv = invalidateFrecencies(EmptyCString());
+  NS_WARN_IF_FALSE(NS_SUCCEEDED(rv), "failed to fix invalid frecencies");
 
   return NS_OK;
 }
@@ -4728,40 +4722,6 @@ nsNavHistory::MarkPageAsFollowedLink(nsIURI *aURI)
     ExpireNonrecentEvents(&mRecentLink);
 
   mRecentLink.Put(uriString, GetNow());
-  return NS_OK;
-}
-
-
-NS_IMETHODIMP
-nsNavHistory::RegisterOpenPage(nsIURI* aURI)
-{
-  NS_ASSERTION(NS_IsMainThread(), "This can only be called on the main thread");
-  NS_ENSURE_ARG(aURI);
-
-  nsCOMPtr<mozIPlacesAutoComplete> ac =
-    do_GetService("@mozilla.org/autocomplete/search;1?name=history");
-  NS_ENSURE_STATE(ac);
-
-  nsresult rv = ac->RegisterOpenPage(aURI);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return NS_OK;
-}
-
-
-NS_IMETHODIMP
-nsNavHistory::UnregisterOpenPage(nsIURI* aURI)
-{
-  NS_ASSERTION(NS_IsMainThread(), "This can only be called on the main thread");
-  NS_ENSURE_ARG(aURI);
-
-  nsCOMPtr<mozIPlacesAutoComplete> ac =
-    do_GetService("@mozilla.org/autocomplete/search;1?name=history");
-  NS_ENSURE_STATE(ac);
-
-  nsresult rv = ac->UnregisterOpenPage(aURI);
-  NS_ENSURE_SUCCESS(rv, rv);
-
   return NS_OK;
 }
 
@@ -4885,11 +4845,7 @@ nsNavHistory::AddURIInternal(nsIURI* aURI, PRTime aTime, PRBool aRedirect,
 //    (like referring visit ID and typed/bookmarked state).
 //
 //    This function walks up the referring chain and recursively calls itself,
-//    each time calling InternalAdd to create a new history entry. (When we
-//    get notified of redirects, we don't actually add any history entries, just
-//    save them in mRecentRedirects. This function will add all of them for a
-//    given destination page when that page is actually visited.)
-//    See GetRedirectFor for more information about how redirects work.
+//    each time calling InternalAdd to create a new history entry.
 
 nsresult
 nsNavHistory::AddVisitChain(nsIURI* aURI,
@@ -4915,52 +4871,10 @@ nsNavHistory::AddVisitChain(nsIURI* aURI,
   PRBool isEmbedVisit = !aToplevel &&
                         !CheckIsRecentEvent(&mRecentLink, spec);
 
-  // Check if this visit came from a redirect.
   PRUint32 transitionType = 0;
-  PRTime redirectTime = 0;
-  nsCAutoString redirectSourceUrl;
-  if (GetRedirectFor(spec, redirectSourceUrl, &redirectTime, &transitionType)) {
-    // redirectSourceUrl redirected to aURL, at redirectTime, with
-    // a transitionType redirect.
-    nsCOMPtr<nsIURI> redirectSourceURI;
-    rv = NS_NewURI(getter_AddRefs(redirectSourceURI), redirectSourceUrl);
-    NS_ENSURE_SUCCESS(rv, rv);
 
-    // Don't add a new visit if a page redirects to itself.
-    PRBool redirectIsSame;
-    if (NS_SUCCEEDED(aURI->Equals(redirectSourceURI, &redirectIsSame)) &&
-        redirectIsSame)
-      return NS_OK;
-
-    // Recusively call addVisitChain to walk up the chain till the first
-    // not-redirected URI.
-    // Ensure that the sources have a visit time smaller than aTime, otherwise
-    // visits would end up incorrectly ordered.
-    PRTime sourceTime = NS_MIN(redirectTime, aTime - 1);
-    PRInt64 sourceVisitId = 0;
-    rv = AddVisitChain(redirectSourceURI, sourceTime, aToplevel,
-                       PR_TRUE, // Is a redirect.
-                       aReferrerURI, // This one is the originating source.
-                       &sourceVisitId, // Get back the visit id of the source.
-                       aSessionID);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    // All the visits for preceding pages in the redirects chain have been
-    // added, now add the visit to aURI.
-    if (isEmbedVisit)
-      transitionType = nsINavHistoryService::TRANSITION_EMBED;
-    else if (!aToplevel)
-      transitionType = nsINavHistoryService::TRANSITION_FRAMED_LINK;
-
-    // This page is result of a redirect, save the source page in from_visit,
-    // to be able to walk up the chain.
-    // See bug 411966 and bug 428690 for details.
-    // TODO: Add a closure table with a chain id to easily reconstruct chains
-    // without having to recurse through the table.  See bug 468710.
-    fromVisitURI = redirectSourceURI;
-  }
-  else if (aReferrerURI) {
-    // This page does not come from a redirect and had a referrer.
+  if (aReferrerURI) {
+  // This page had a referrer.
 
     // Check if the referrer has a previous visit.
     PRTime lastVisitTime;
@@ -5128,107 +5042,6 @@ nsNavHistory::GetPageTitle(nsIURI* aURI, nsAString& aTitle)
   return NS_OK;
 }
 
-// nsNavHistory::GetURIGeckoFlags
-//
-//    FIXME: should we try to use annotations for this stuff?
-
-NS_IMETHODIMP
-nsNavHistory::GetURIGeckoFlags(nsIURI* aURI, PRUint32* aResult)
-{
-  NS_ASSERTION(NS_IsMainThread(), "This can only be called on the main thread");
-  NS_ENSURE_ARG(aURI);
-  NS_ENSURE_ARG_POINTER(aResult);
-
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-
-// nsNavHistory::SetURIGeckoFlags
-//
-//    FIXME: should we try to use annotations for this stuff?
-
-NS_IMETHODIMP
-nsNavHistory::SetURIGeckoFlags(nsIURI* aURI, PRUint32 aFlags)
-{
-  NS_ASSERTION(NS_IsMainThread(), "This can only be called on the main thread");
-  NS_ENSURE_ARG(aURI);
-
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-// nsIGlobalHistory3 ***********************************************************
-
-// nsNavHistory::AddDocumentRedirect
-//
-//    This adds a redirect mapping from the destination of the redirect to the
-//    source, time, and type. This mapping is used by GetRedirectFor when we
-//    get a page added to reconstruct the redirects that happened when a page
-//    is visited. See GetRedirectFor for more information
-
-// this is the expiration callback function that deletes stale entries
-PLDHashOperator nsNavHistory::ExpireNonrecentRedirects(
-    nsCStringHashKey::KeyType aKey, RedirectInfo& aData, void* aUserArg)
-{
-  PRInt64* threshold = reinterpret_cast<PRInt64*>(aUserArg);
-  if (aData.mTimeCreated < *threshold)
-    return PL_DHASH_REMOVE;
-  return PL_DHASH_NEXT;
-}
-
-NS_IMETHODIMP
-nsNavHistory::AddDocumentRedirect(nsIChannel *aOldChannel,
-                                  nsIChannel *aNewChannel,
-                                  PRInt32 aFlags,
-                                  PRBool aToplevel)
-{
-  NS_ASSERTION(NS_IsMainThread(), "This can only be called on the main thread");
-  NS_ENSURE_ARG(aOldChannel);
-  NS_ENSURE_ARG(aNewChannel);
-
-  // Ignore internal redirects.
-  // These redirects are not initiated by the remote server, but specific to the
-  // channel implementation, so they are ignored.
-  if (aFlags & nsIChannelEventSink::REDIRECT_INTERNAL)
-    return NS_OK;
-
-  nsresult rv;
-  nsCOMPtr<nsIURI> oldURI, newURI;
-  rv = aOldChannel->GetURI(getter_AddRefs(oldURI));
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = aNewChannel->GetURI(getter_AddRefs(newURI));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCString oldSpec, newSpec;
-  rv = oldURI->GetSpec(oldSpec);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = newURI->GetSpec(newSpec);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  if (mRecentRedirects.Count() > RECENT_EVENT_QUEUE_MAX_LENGTH) {
-    // Expire outdated cached redirects.
-    PRInt64 threshold = PR_Now() - RECENT_EVENT_THRESHOLD;
-    mRecentRedirects.Enumerate(ExpireNonrecentRedirects,
-                               reinterpret_cast<void*>(&threshold));
-  }
-
-  RedirectInfo info;
-
-  // Remove any old entries for this redirect destination, since they are going
-  // to be replaced.
-  if (mRecentRedirects.Get(newSpec, &info))
-    mRecentRedirects.Remove(newSpec);
-  // Save the new redirect info.
-  info.mSourceURI = oldSpec;
-  info.mTimeCreated = PR_Now();
-  if (aFlags & nsIChannelEventSink::REDIRECT_TEMPORARY)
-    info.mType = TRANSITION_REDIRECT_TEMPORARY;
-  else
-    info.mType = TRANSITION_REDIRECT_PERMANENT;
-  mRecentRedirects.Put(newSpec, info);
-
-  return NS_OK;
-}
-
 
 ////////////////////////////////////////////////////////////////////////////////
 //// mozIStorageVacuumParticipant
@@ -5361,23 +5174,23 @@ nsNavHistory::FinalizeInternalStatements()
   nsresult rv = FinalizeStatements();
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // nsNavBookmarks
-  nsNavBookmarks *bookmarks = nsNavBookmarks::GetBookmarksService();
-  NS_ENSURE_TRUE(bookmarks, NS_ERROR_OUT_OF_MEMORY);
-  rv = bookmarks->FinalizeStatements();
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsNavBookmarks* bookmarks = nsNavBookmarks::GetBookmarksServiceIfAvailable();
+  if (bookmarks) {
+    rv = bookmarks->FinalizeStatements();
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
-  // nsAnnotationService
-  nsAnnotationService* annosvc = nsAnnotationService::GetAnnotationService();
-  NS_ENSURE_TRUE(annosvc, NS_ERROR_OUT_OF_MEMORY);
-  rv = annosvc->FinalizeStatements();
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsAnnotationService* annosvc = nsAnnotationService::GetAnnotationServiceIfAvailable();
+  if (annosvc) {
+    rv = annosvc->FinalizeStatements();
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
-  // nsFaviconService
-  nsFaviconService* iconsvc = nsFaviconService::GetFaviconService();
-  NS_ENSURE_TRUE(iconsvc, NS_ERROR_OUT_OF_MEMORY);
-  rv = iconsvc->FinalizeStatements();
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsFaviconService* iconsvc = nsFaviconService::GetFaviconServiceIfAvailable();
+  if (iconsvc) {
+    rv = iconsvc->FinalizeStatements();
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   return NS_OK;
 }
@@ -5424,9 +5237,7 @@ nsNavHistory::AsyncExecuteLegacyQueries(nsINavHistoryQuery** aQueries,
     PRInt32 lastError = 0;
     (void)mDBConn->GetLastError(&lastError);
     printf("Places failed to create a statement from this query:\n%s\nStorage error (%d): %s\n",
-           PromiseFlatCString(queryString).get(),
-           lastError,
-           PromiseFlatCString(lastErrorString).get());
+           queryString.get(), lastError, lastErrorString.get());
   }
 #endif
   NS_ENSURE_SUCCESS(rv, rv);
@@ -5521,12 +5332,7 @@ nsNavHistory::Observe(nsISupports *aSubject, const char *aTopic,
     nsCOMPtr<nsIObserverService> os = services::GetObserverService();
     if (os) {
       (void)os->RemoveObserver(this, TOPIC_PROFILE_CHANGE);
-      // Double notification allows to correctly enqueue tasks without the need
-      // to enqueue notification events to the main-thread.  There is no
-      // guarantee that the event loop will spin before xpcom-shutdown indeed,
-      // see bug 580892.
       (void)os->NotifyObservers(nsnull, TOPIC_PLACES_WILL_CLOSE_CONNECTION, nsnull);
-      (void)os->NotifyObservers(nsnull, TOPIC_PLACES_CONNECTION_CLOSING, nsnull);
     }
 
     // Operations that are unlikely to create issues to implementers should go
@@ -6376,77 +6182,6 @@ nsNavHistory::ExpireNonrecentEvents(RecentEventHash* hashTable)
   PRInt64 threshold = GetNow() - RECENT_EVENT_THRESHOLD;
   hashTable->Enumerate(ExpireNonrecentEventsCallback,
                        reinterpret_cast<void*>(&threshold));
-}
-
-
-// nsNavHistory::GetRedirectFor
-//
-//    Given a destination URI, this finds a recent redirect that resulted in
-//    this URI. If it finds one, it will put the redirect source info into
-//    the out params and return true. If there is no matching redirect, it will
-//    return false.
-//
-//    @param aDestination The destination URI spec of the redirect to look for.
-//    @param aSource      Will be filled with the redirect source URI when a
-//                        redirect is found.
-//    @param aTime        Will be filled with the time the redirect happened
-//                         when a redirect is found.
-//    @param aRedirectType Will be filled with the redirect type when a redirect
-//                         is found. Will be either
-//                         TRANSITION_REDIRECT_PERMANENT or
-//                         TRANSITION_REDIRECT_TEMPORARY
-//    @returns True if the redirect is found.
-//
-//    HOW REDIRECT TRACKING WORKS
-//    ---------------------------
-//    When we get an AddDocumentRedirect message, we store the redirect in
-//    our mRecentRedirects which maps the destination URI to a source,time pair.
-//    When we get a new URI, we see if there were any redirects to this page
-//    in the hash table. If found, we know that the page came through the given
-//    redirect and add it.
-//
-//    Example: Page S redirects throught R1, then R2, to give page D. Page S
-//    will have been already added to history.
-//    - AddDocumentRedirect(R1, R2)
-//    - AddDocumentRedirect(R2, D)
-//    - AddURI(uri=D, referrer=S)
-//
-//    When we get the AddURI(D), we see the hash table has a value for D from R2.
-//    We have to recursively check that source since there could be more than
-//    one redirect, as in this case. Here we see there was a redirect to R2 from
-//    R1. The referrer for D is S, so we know S->R1->R2->D.
-//
-//    Alternatively, the user could have typed or followed a bookmark from S.
-//    In this case, with two redirects we'll get:
-//    - MarkPageAsTyped(S)
-//    - AddDocumentRedirect(S, R)
-//    - AddDocumentRedirect(R, D)
-//    - AddURI(uri=D, referrer=null)
-//    We need to be careful to add a visit to S in this case with an incoming
-//    transition of typed and an outgoing transition of redirect.
-//
-//    Note that this can get confused in some cases where you have a page
-//    open in more than one window loading at the same time. This should be rare,
-//    however, and should not affect much.
-
-PRBool
-nsNavHistory::GetRedirectFor(const nsACString& aDestination,
-                             nsACString& aSource,
-                             PRTime* aTime,
-                             PRUint32* aRedirectType)
-{
-  RedirectInfo info;
-  if (mRecentRedirects.Get(aDestination, &info)) {
-    // Consume the redirect entry, it's no longer useful.
-    mRecentRedirects.Remove(aDestination);
-    if (info.mTimeCreated < GetNow() - RECENT_EVENT_THRESHOLD)
-      return PR_FALSE; // too long ago, probably invalid
-    aSource = info.mSourceURI;
-    *aTime = info.mTimeCreated;
-    *aRedirectType = info.mType;
-    return PR_TRUE;
-  }
-  return PR_FALSE;
 }
 
 

@@ -58,8 +58,8 @@
 #include "jsinterp.h"
 #include "jscntxt.h"
 #include "jsdbgapi.h"
+#include "jsfriendapi.h"
 #include "jsgc.h"
-#include "jscompartment.h"
 #include "nscore.h"
 #include "nsXPCOM.h"
 #include "nsAutoPtr.h"
@@ -223,7 +223,6 @@ void DEBUG_CheckWrapperThreadSafety(const XPCWrappedNative* wrapper);
 
 /***************************************************************************/
 // data declarations...
-extern const char* XPC_ARG_FORMATTER_FORMAT_STRINGS[]; // format strings
 extern const char XPC_CONTEXT_STACK_CONTRACTID[];
 extern const char XPC_RUNTIME_CONTRACTID[];
 extern const char XPC_EXCEPTION_CONTRACTID[];
@@ -453,6 +452,14 @@ private:
 // returned as function call result values they are not addref'd. Exceptions
 // to this rule are noted explicitly.
 
+// JSTRACE_XML can recursively hold on to more JSTRACE_XML objects, adding it to
+// the cycle collector avoids stack overflow.
+inline bool
+AddToCCKind(JSGCTraceKind kind)
+{
+    return kind == JSTRACE_OBJECT || kind == JSTRACE_XML || kind == JSTRACE_SCRIPT;
+}
+
 const PRBool OBJ_IS_GLOBAL = PR_TRUE;
 const PRBool OBJ_IS_NOT_GLOBAL = PR_FALSE;
 
@@ -463,7 +470,8 @@ class nsXPConnect : public nsIXPConnect,
                     public nsCycleCollectionParticipant,
                     public nsIJSRuntimeService,
                     public nsIThreadJSContextStack,
-                    public nsIJSEngineTelemetryStats
+                    public nsIJSEngineTelemetryStats,
+                    public nsIXPConnect_MOZILLA_10_BRANCH
 {
 public:
     // all the interface method declarations...
@@ -474,6 +482,7 @@ public:
     NS_DECL_NSIJSCONTEXTSTACK
     NS_DECL_NSITHREADJSCONTEXTSTACK
     NS_DECL_NSIJSENGINETELEMETRYSTATS
+    NS_DECL_NSIXPCONNECT_MOZILLA_10_BRANCH
 
     // non-interface implementation
 public:
@@ -725,6 +734,9 @@ public:
         IDX_ITERATOR                ,
         IDX_EXPOSEDPROPS            ,
         IDX_SCRIPTONLY              ,
+        IDX_BASEURIOBJECT           ,
+        IDX_NODEPRINCIPAL           ,
+        IDX_DOCUMENTURIOBJECT       ,
         IDX_TOTAL_COUNT // just a count of the above
     };
 
@@ -1388,14 +1400,35 @@ XPC_WN_JSOp_ThisObject(JSContext *cx, JSObject *obj);
 // Macros to initialize Object or Function like XPC_WN classes
 #define XPC_WN_WithCall_ObjectOps                                             \
     {                                                                         \
+        nsnull, /* lookupGeneric */                                           \
         nsnull, /* lookupProperty */                                          \
+        nsnull, /* lookupElement */                                           \
+        nsnull, /* lookupSpecial */                                           \
+        nsnull, /* defineGeneric */                                           \
         nsnull, /* defineProperty */                                          \
+        nsnull, /* defineElement */                                           \
+        nsnull, /* defineSpecial */                                           \
+        nsnull, /* getGeneric    */                                           \
         nsnull, /* getProperty    */                                          \
+        nsnull, /* getElement    */                                           \
+        nsnull, /* getSpecial    */                                           \
+        nsnull, /* setGeneric    */                                           \
         nsnull, /* setProperty    */                                          \
+        nsnull, /* setElement    */                                           \
+        nsnull, /* setSpecial    */                                           \
+        nsnull, /* getGenericAttributes  */                                   \
         nsnull, /* getAttributes  */                                          \
+        nsnull, /* getElementAttributes  */                                   \
+        nsnull, /* getSpecialAttributes  */                                   \
+        nsnull, /* setGenericAttributes  */                                   \
         nsnull, /* setAttributes  */                                          \
+        nsnull, /* setElementAttributes  */                                   \
+        nsnull, /* setSpecialAttributes  */                                   \
+        nsnull, /* deleteGeneric */                                           \
         nsnull, /* deleteProperty */                                          \
-        js::Valueify(XPC_WN_JSOp_Enumerate),                                  \
+        nsnull, /* deleteElement */                                           \
+        nsnull, /* deleteSpecial */                                           \
+        XPC_WN_JSOp_Enumerate,                                                \
         XPC_WN_JSOp_TypeOf_Function,                                          \
         nsnull, /* fix            */                                          \
         XPC_WN_JSOp_ThisObject,                                               \
@@ -1404,14 +1437,35 @@ XPC_WN_JSOp_ThisObject(JSContext *cx, JSObject *obj);
 
 #define XPC_WN_NoCall_ObjectOps                                               \
     {                                                                         \
+        nsnull, /* lookupGeneric */                                           \
         nsnull, /* lookupProperty */                                          \
+        nsnull, /* lookupElement */                                           \
+        nsnull, /* lookupSpecial */                                           \
+        nsnull, /* defineGeneric */                                           \
         nsnull, /* defineProperty */                                          \
+        nsnull, /* defineElement */                                           \
+        nsnull, /* defineSpecial */                                           \
+        nsnull, /* getGeneric    */                                           \
         nsnull, /* getProperty    */                                          \
+        nsnull, /* getElement    */                                           \
+        nsnull, /* getSpecial    */                                           \
+        nsnull, /* setGeneric    */                                           \
         nsnull, /* setProperty    */                                          \
+        nsnull, /* setElement    */                                           \
+        nsnull, /* setSpecial    */                                           \
+        nsnull, /* getGenericAttributes  */                                   \
         nsnull, /* getAttributes  */                                          \
+        nsnull, /* getElementAttributes  */                                   \
+        nsnull, /* getSpecialAttributes  */                                   \
+        nsnull, /* setGenericAttributes  */                                   \
         nsnull, /* setAttributes  */                                          \
+        nsnull, /* setElementAttributes  */                                   \
+        nsnull, /* setSpecialAttributes  */                                   \
+        nsnull, /* deleteGeneric */                                           \
         nsnull, /* deleteProperty */                                          \
-        js::Valueify(XPC_WN_JSOp_Enumerate),                                  \
+        nsnull, /* deleteElement */                                           \
+        nsnull, /* deleteSpecial */                                           \
+        XPC_WN_JSOp_Enumerate,                                                \
         XPC_WN_JSOp_TypeOf_Object,                                            \
         nsnull, /* fix            */                                          \
         XPC_WN_JSOp_ThisObject,                                               \
@@ -1952,6 +2006,7 @@ public:
     JSBool AllowPropModsToPrototype()     GET_IT(ALLOW_PROP_MODS_TO_PROTOTYPE)
     JSBool DontSharePrototype()           GET_IT(DONT_SHARE_PROTOTYPE)
     JSBool DontReflectInterfaceNames()    GET_IT(DONT_REFLECT_INTERFACE_NAMES)
+    JSBool UseStubEqualityHook()          GET_IT(USE_STUB_EQUALITY_HOOK)
 
 #undef GET_IT
 };
@@ -1979,7 +2034,7 @@ public:
     PRUint32                        GetInterfacesBitmap() const
         {return mJSClass.interfacesBitmap;}
     JSClass*                        GetJSClass()
-        {return js::Jsvalify(&mJSClass.base);}
+        {return Jsvalify(&mJSClass.base);}
     JSClass*                        GetSlimJSClass()
         {if(mCanBeSlim) return GetJSClass(); return nsnull;}
 
@@ -3256,8 +3311,7 @@ public:
 
     static JSBool JSArray2Native(XPCCallContext& ccx, void** d, jsval s,
                                  JSUint32 count, JSUint32 capacity,
-                                 const nsXPTType& type,
-                                 JSBool useAllocator, const nsID* iid,
+                                 const nsXPTType& type, const nsID* iid,
                                  uintN* pErr);
 
     static JSBool NativeStringWithSize2JS(JSContext* cx,
@@ -3268,9 +3322,7 @@ public:
 
     static JSBool JSStringWithSize2Native(XPCCallContext& ccx, void* d, jsval s,
                                           JSUint32 count, JSUint32 capacity,
-                                          const nsXPTType& type,
-                                          JSBool useAllocator,
-                                          uintN* pErr);
+                                          const nsXPTType& type, uintN* pErr);
 
     static nsresult JSValToXPCException(XPCCallContext& ccx,
                                         jsval s,
@@ -3318,11 +3370,6 @@ public:
 private:
     XPCStringConvert();         // not implemented
 };
-
-extern JSBool
-XPC_JSArgumentFormatter(JSContext *cx, const char *format,
-                        JSBool fromJS, jsval **vpp, va_list *app);
-
 
 /***************************************************************************/
 // code for throwing exceptions into JS
@@ -3824,30 +3871,6 @@ private:
     nsXPCComponents_Utils*          mUtils;
 };
 
-/***************************************************************************/
-
-class nsXPCComponents_Interfaces :
-            public nsIScriptableInterfaces,
-            public nsIXPCScriptable,
-            public nsIClassInfo,
-            public nsISecurityCheckedComponent
-{
-public:
-    // all the interface method declarations...
-    NS_DECL_ISUPPORTS
-    NS_DECL_NSISCRIPTABLEINTERFACES
-    NS_DECL_NSIXPCSCRIPTABLE
-    NS_DECL_NSICLASSINFO
-    NS_DECL_NSISECURITYCHECKEDCOMPONENT
-
-public:
-    nsXPCComponents_Interfaces();
-    virtual ~nsXPCComponents_Interfaces();
-
-private:
-    nsCOMPtr<nsIInterfaceInfoManager> mManager;
-};
-
 
 /***************************************************************************/
 
@@ -3909,7 +3932,9 @@ private:
     PRUint32 mColumnNumber;
     PRUint32 mFlags;
     nsCString mCategory;
-    PRUint64 mWindowID;
+    PRUint64 mOuterWindowID;
+    PRUint64 mInnerWindowID;
+    PRUint64 mTimeStamp;
 };
 
 /***************************************************************************/
@@ -4339,7 +4364,7 @@ xpc_GetJSPrivate(JSObject *obj)
 // and used.
 nsresult
 xpc_CreateSandboxObject(JSContext * cx, jsval * vp, nsISupports *prinOrSop,
-                        JSObject *proto, bool preferXray);
+                        JSObject *proto, bool preferXray, const nsACString &sandboxName);
 
 // Helper for evaluating scripts in a sandbox object created with
 // xpc_CreateSandboxObject(). The caller is responsible of ensuring
@@ -4369,10 +4394,12 @@ inline jsval
 GetRTStringByIndex(JSContext *cx, uintN index);
 
 // Wrapper for JS_NewObject to mark the new object as system when parent is
-// also a system object.
+// also a system object. If uniqueType is specified then a new type object will
+// be created which is used only by the result, so that its property types
+// will be tracked precisely.
 inline JSObject*
 xpc_NewSystemInheritingJSObject(JSContext *cx, JSClass *clasp, JSObject *proto,
-                                JSObject *parent);
+                                bool uniqueType, JSObject *parent);
 
 inline JSBool
 xpc_SameScope(XPCWrappedNativeScope *objectscope,
@@ -4418,6 +4445,7 @@ struct CompartmentPrivate
     JSObject2JSObjectMap *waiverWrapperMap;
     // NB: we don't want this map to hold a strong reference to the wrapper.
     nsDataHashtable<nsPtrHashKey<XPCWrappedNative>, JSObject *> *expandoMap;
+    nsCString location;
 
     bool RegisterExpandoObject(XPCWrappedNative *wn, JSObject *expando) {
         if (!expandoMap) {

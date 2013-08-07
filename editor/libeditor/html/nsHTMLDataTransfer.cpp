@@ -90,7 +90,7 @@
 #include "nsIClipboard.h"
 #include "nsITransferable.h"
 #include "nsIDragService.h"
-#include "nsIDOMNSUIEvent.h"
+#include "nsIDOMUIEvent.h"
 #include "nsIOutputStream.h"
 #include "nsIInputStream.h"
 #include "nsDirectoryServiceDefs.h"
@@ -139,7 +139,8 @@ static NS_DEFINE_CID(kCParserCID,     NS_PARSER_CID);
 #define NS_FOUND_TARGET NS_ERROR_GENERATE_FAILURE(NS_ERROR_MODULE_EDITOR, 3)
 
 // some little helpers
-static PRInt32 FindPositiveIntegerAfterString(const char *aLeadingString, nsCString &aCStr);
+static PRBool FindIntegerAfterString(const char *aLeadingString, 
+                                     nsCString &aCStr, PRInt32 &foundNumber);
 static nsresult RemoveFragComments(nsCString &theStr);
 static void RemoveBodyAndHead(nsIDOMNode *aNode);
 static nsresult FindTargetNode(nsIDOMNode *aStart, nsCOMPtr<nsIDOMNode> &aResult);
@@ -1147,22 +1148,24 @@ NS_IMETHODIMP nsHTMLEditor::PrepareHTMLTransferable(nsITransferable **aTransfera
   return NS_OK;
 }
 
-PRInt32
-FindPositiveIntegerAfterString(const char *aLeadingString, nsCString &aCStr)
+PRBool
+FindIntegerAfterString(const char *aLeadingString, 
+                       nsCString &aCStr, PRInt32 &foundNumber)
 {
   // first obtain offsets from cfhtml str
   PRInt32 numFront = aCStr.Find(aLeadingString);
   if (numFront == -1)
-    return -1;
+    return PR_FALSE;
   numFront += strlen(aLeadingString); 
   
   PRInt32 numBack = aCStr.FindCharInSet(CRLF, numFront);
   if (numBack == -1)
-    return -1;
+    return PR_FALSE;
    
   nsCAutoString numStr(Substring(aCStr, numFront, numBack-numFront));
   PRInt32 errorCode;
-  return numStr.ToInteger(&errorCode);
+  foundNumber = numStr.ToInteger(&errorCode);
+  return PR_TRUE;
 }
 
 nsresult
@@ -1189,15 +1192,37 @@ RemoveFragComments(nsCString & aStr)
 nsresult
 nsHTMLEditor::ParseCFHTML(nsCString & aCfhtml, PRUnichar **aStuffToPaste, PRUnichar **aCfcontext)
 {
-  // first obtain offsets from cfhtml str
-  PRInt32 startHTML     = FindPositiveIntegerAfterString("StartHTML:", aCfhtml);
-  PRInt32 endHTML       = FindPositiveIntegerAfterString("EndHTML:", aCfhtml);
-  PRInt32 startFragment = FindPositiveIntegerAfterString("StartFragment:", aCfhtml);
-  PRInt32 endFragment   = FindPositiveIntegerAfterString("EndFragment:", aCfhtml);
-
-  if ((startHTML<0) || (endHTML<0) || (startFragment<0) || (endFragment<0))
+  // First obtain offsets from cfhtml str.
+  PRInt32 startHTML, endHTML, startFragment, endFragment;
+  if (!FindIntegerAfterString("StartHTML:", aCfhtml, startHTML) || 
+      startHTML < -1)
     return NS_ERROR_FAILURE;
- 
+  if (!FindIntegerAfterString("EndHTML:", aCfhtml, endHTML) || 
+      endHTML < -1) 
+    return NS_ERROR_FAILURE;
+  if (!FindIntegerAfterString("StartFragment:", aCfhtml, startFragment) || 
+      startFragment < 0) 
+    return NS_ERROR_FAILURE;
+  if (!FindIntegerAfterString("EndFragment:", aCfhtml, endFragment) || 
+      startFragment < 0)
+    return NS_ERROR_FAILURE;
+
+  // The StartHTML and EndHTML markers are allowed to be -1 to include everything.
+  //   See Reference: MSDN doc entitled "HTML Clipboard Format"
+  //   http://msdn.microsoft.com/en-us/library/aa767917(VS.85).aspx#unknown_854
+  if (startHTML == -1) {
+    startHTML = aCfhtml.Find("<!--StartFragment-->");
+    if (startHTML == -1)
+      return PR_FALSE;
+  }
+  if (endHTML == -1) {
+    const char endFragmentMarker[] = "<!--EndFragment-->";
+    endHTML = aCfhtml.Find(endFragmentMarker);
+    if (endHTML == -1)
+      return PR_FALSE;
+    endHTML += NS_ARRAY_LENGTH(endFragmentMarker) - 1;
+  }
+
   // create context string
   nsCAutoString contextUTF8(Substring(aCfhtml, startHTML, startFragment - startHTML) +
                             NS_LITERAL_CSTRING("<!--" kInsertCookie "-->") +
@@ -1551,20 +1576,20 @@ NS_IMETHODIMP nsHTMLEditor::InsertFromDrop(nsIDOMEvent* aDropEvent)
       // if we run into problems here, we'll just assume the user doesn't want a copy
       PRBool userWantsCopy = PR_FALSE;
 
-      nsCOMPtr<nsIDOMNSUIEvent> nsuiEvent(do_QueryInterface(aDropEvent));
-      NS_ENSURE_TRUE(nsuiEvent, NS_ERROR_FAILURE);
+      nsCOMPtr<nsIDOMUIEvent> uiEvent = do_QueryInterface(aDropEvent);
+      NS_ENSURE_TRUE(uiEvent, NS_ERROR_FAILURE);
 
-      nsCOMPtr<nsIDOMMouseEvent> mouseEvent(do_QueryInterface(aDropEvent));
-      if (mouseEvent)
-
+      nsCOMPtr<nsIDOMMouseEvent> mouseEvent = do_QueryInterface(aDropEvent);
+      if (mouseEvent) {
 #if defined(XP_MACOSX)
         mouseEvent->GetAltKey(&userWantsCopy);
 #else
         mouseEvent->GetCtrlKey(&userWantsCopy);
 #endif
+      }
 
       // Current doc is destination
-      nsCOMPtr<nsIDOMDocument>destdomdoc; 
+      nsCOMPtr<nsIDOMDocument> destdomdoc; 
       rv = GetDocument(getter_AddRefs(destdomdoc)); 
       NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1578,11 +1603,11 @@ NS_IMETHODIMP nsHTMLEditor::InsertFromDrop(nsIDOMEvent* aDropEvent)
       NS_ENSURE_SUCCESS(rv, rv);
       
       // Parent and offset under the mouse cursor
-      rv = nsuiEvent->GetRangeParent(getter_AddRefs(newSelectionParent));
+      rv = uiEvent->GetRangeParent(getter_AddRefs(newSelectionParent));
       NS_ENSURE_SUCCESS(rv, rv);
       NS_ENSURE_TRUE(newSelectionParent, NS_ERROR_FAILURE);
 
-      rv = nsuiEvent->GetRangeOffset(&newSelectionOffset);
+      rv = uiEvent->GetRangeOffset(&newSelectionOffset);
       NS_ENSURE_SUCCESS(rv, rv);
 
       // XXX: This userSelectNode code is a workaround for bug 195957.

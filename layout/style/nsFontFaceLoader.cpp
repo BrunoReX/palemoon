@@ -76,6 +76,7 @@
 #include "nsIConsoleService.h"
 
 #include "nsStyleSet.h"
+#include "nsPrintfCString.h"
 
 using namespace mozilla;
 
@@ -137,11 +138,10 @@ nsFontFaceLoader::LoadTimerCallback(nsITimer *aTimer, void *aClosure)
   // we allow another timeout period before showing a fallback font.
   if (pe->mLoadingState == gfxProxyFontEntry::LOADING_STARTED) {
     PRInt32 contentLength;
-    loader->mChannel->GetContentLength(&contentLength);
     PRUint32 numBytesRead;
-    loader->mStreamLoader->GetNumBytesRead(&numBytesRead);
-
-    if (contentLength > 0 &&
+    if (NS_SUCCEEDED(loader->mChannel->GetContentLength(&contentLength)) &&
+        contentLength > 0 &&
+        NS_SUCCEEDED(loader->mStreamLoader->GetNumBytesRead(&numBytesRead)) &&
         numBytesRead > 3 * (PRUint32(contentLength) >> 2))
     {
       // More than 3/4 the data has been downloaded, so allow 50% extra
@@ -221,7 +221,10 @@ nsFontFaceLoader::OnStreamComplete(nsIStreamLoader* aLoader,
     // because HTTP responses such as 404 (Not Found) will still result in
     // a success code and potentially an HTML error page from the server
     // as the resulting data. We don't want to use that as a font.
-    nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(mChannel);
+    nsCOMPtr<nsIRequest> request;
+    nsCOMPtr<nsIHttpChannel> httpChannel;
+    aLoader->GetRequest(getter_AddRefs(request));
+    httpChannel = do_QueryInterface(request);
     if (httpChannel) {
       PRBool succeeded;
       nsresult rv = httpChannel->GetRequestSucceeded(&succeeded);
@@ -798,14 +801,14 @@ nsUserFontSet::LogMessage(gfxProxyFontEntry *aProxy,
     do_CreateInstance(NS_SCRIPTERROR_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  PRUint64 windowID = GetPresContext()->Document()->OuterWindowID();
+  PRUint64 innerWindowID = GetPresContext()->Document()->InnerWindowID();
   rv = scriptError->InitWithWindowID(NS_ConvertUTF8toUTF16(msg).get(),
                                      href.get(),   // file
                                      text.get(),   // src line
                                      0, 0,         // line & column number
                                      aFlags,       // flags
                                      "CSS Loader", // category (make separate?)
-                                     windowID);
+                                     innerWindowID);
   if (NS_SUCCEEDED(rv)){
     nsCOMPtr<nsIScriptError> logError = do_QueryInterface(scriptError);
     if (logError) {

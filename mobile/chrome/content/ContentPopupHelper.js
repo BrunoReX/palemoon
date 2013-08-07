@@ -45,7 +45,27 @@ var ContentPopupHelper = {
     if (!this._popup && !aPopup)
       return;
 
-    if (aPopup) {
+    if (this._popup) {
+      this._popup.hidden = true;
+      this._anchorRect = null;
+
+      window.removeEventListener("TabSelect", this, false);
+      window.removeEventListener("TabClose", this, false);
+      window.removeEventListener("AnimatedZoomBegin", this, false);
+      window.removeEventListener("AnimatedZoomEnd", this, false);
+      window.removeEventListener("MozBeforeResize", this, true);
+      window.removeEventListener("resize", this, false);
+      Elements.browsers.removeEventListener("PanBegin", this, false);
+      Elements.browsers.removeEventListener("PanFinished", this, false);
+
+      let event = document.createEvent("Events");
+      event.initEvent("contentpopuphidden", true, false);
+      this._popup.dispatchEvent(event);
+    }
+
+    this._popup = aPopup;
+
+    if (this._popup) {
       // Keeps the new popup element hidden until it is positioned, but using
       // visibility: 'hidden' instead of display: 'none' will allow to
       // workaround some bugs with arrowscrollbox's arrows that does not
@@ -71,32 +91,14 @@ var ContentPopupHelper = {
       window.addEventListener("resize", this, false);
       Elements.browsers.addEventListener("PanBegin", this, false);
       Elements.browsers.addEventListener("PanFinished", this, false);
-    } else {
-      this._popup.hidden = true;
-      this._anchorRect = null;
-
-      window.removeEventListener("TabSelect", this, false);
-      window.removeEventListener("TabClose", this, false);
-      window.removeEventListener("AnimatedZoomBegin", this, false);
-      window.removeEventListener("AnimatedZoomEnd", this, false);
-      window.removeEventListener("MozBeforeResize", this, true);
-      window.removeEventListener("resize", this, false);
-      Elements.browsers.removeEventListener("PanBegin", this, false);
-      Elements.browsers.removeEventListener("PanFinished", this, false);
-
-      let event = document.createEvent("Events");
-      event.initEvent("contentpopuphidden", true, false);
-      this._popup.dispatchEvent(event);
     }
-
-    this._popup = aPopup;
   },
 
   /**
-   * This method positioned an arrowbox on the screen using a 'virtual'
+   * This method positions an arrowbox on the screen using a 'virtual'
    * element as referrer that match the real content element
-   * This method called element.getBoundingClientRect() many times and can be
-   * expensive, do not called it too many times.
+   * This method calls element.getBoundingClientRect() many times and can be
+   * expensive, do not call it too many times.
    */
   anchorTo: function(aAnchorRect) {
     let popup = this._popup;
@@ -210,18 +212,21 @@ var ContentPopupHelper = {
 
       case "PanBegin":
       case "AnimatedZoomBegin":
-        popup.left = 0;
         popup.style.visibility = "hidden";
         break;
 
       case "PanFinished":
       case "AnimatedZoomEnd":
-        popup.style.visibility = "visible";
         this.anchorTo();
         break;
 
       case "MozBeforeResize":
-        popup.left = 0;
+        popup.style.visibility = "hidden";
+
+        // When screen orientation changes, we have to ensure that
+        // the popup width doesn't overflow the content's visible
+        // area.
+        popup.firstChild.style.maxWidth = "0px";
         break;
 
       case "resize":

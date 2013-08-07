@@ -593,10 +593,12 @@ protected:
     class nsXULSlots : public nsGenericElement::nsDOMSlots
     {
     public:
-       nsXULSlots();
-       virtual ~nsXULSlots();
+        nsXULSlots();
+        virtual ~nsXULSlots();
 
-       nsRefPtr<nsFrameLoader> mFrameLoader;
+        void Traverse(nsCycleCollectionTraversalCallback &cb);
+
+        nsRefPtr<nsFrameLoader> mFrameLoader;
     };
 
     virtual nsINode::nsSlots* CreateSlots();
@@ -635,7 +637,7 @@ protected:
                                   nsAttrValue& aResult);
 
     virtual nsEventListenerManager*
-      GetEventListenerManagerForAttr(PRBool* aDefer);
+      GetEventListenerManagerForAttr(nsIAtom* aAttrName, PRBool* aDefer);
   
     /**
      * Return our prototype's attribute, if one exists.

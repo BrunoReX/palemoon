@@ -30,7 +30,7 @@ html,body {
 }
 
 .o {
-  text-overflow: ellipsis;
+  text-overflow: ellipsis ellipsis;
 }
 
 .rel {
@@ -49,6 +49,9 @@ html,body {
   overflow: hidden;
   white-space:nowrap;
   font-size:16px;
+}
+.auto {
+  overflow: auto;
 }
 .r {
   text-align:right;
@@ -131,6 +134,8 @@ i {
 #test9b  { top:320px; left:100px; position:absolute; border:1px solid black; }
 #test9c  { top:320px; left:200px; position:absolute; border:1px solid black; }
 #test9d  { top:320px; left:300px; position:absolute; border:1px solid black; }
+#test10a { top:360px; left:0;     position:absolute; }
+#test10b { top:360px; left:100px; position:absolute; }
 
 
     </style>
@@ -157,8 +162,10 @@ i {
 <div id="test3d"><div class="s a"><div class="p o rtl"><span class="c a"><img class="outside" src="../image/big.png"></span></div></div></div>
 
 <!-- start marker, marker partly overlaps image, nothing to align with -->
+<div id="test4a"><div class="s a"><div class="p o ltr"><span class="c a"><img class="overlap1" src="../image/big.png"></span></div></div></div>
 <div id="test4b"><div class="s a"><div class="p o rtl l"><span class="c a"><img class="overlap1" src="../image/big.png"></span></div></div></div>
 <div id="test4c"><div class="s a"><div class="p o ltr r"><span class="c a"><img class="overlap1" src="../image/big.png"></span></div></div></div>
+<div id="test4d"><div class="s a"><div class="p o rtl"><span class="c a"><img class="overlap1" src="../image/big.png"></span></div></div></div>
 
 <!-- start marker + end, marker partly overlaps image, nothing to align with -->
 <div id="test5a"><div class="s a"><div class="p o ltr"><span class="c a"><img class="overlap2" src="../image/big.png"></span></div></div></div>
@@ -167,9 +174,14 @@ i {
 <div id="test5d"><div class="s a"><div class="p o rtl"><span class="c a"><img class="overlap2" src="../image/big.png"></span></div></div></div>
 
 <!-- start marker, marker clips text, aligns to image -->
+<div id="test6a"><div class="s a"><div class="p o ltr"><span class="c a">|||<img class="overlap1" src="../image/big.png"></span></div></div></div>
 <div id="test6b"><div class="s a"><div class="p o rtl l"><span class="c a"><img class="overlap1" src="../image/big.png">|||</span></div></div></div>
 <div id="test6c"><div class="s a"><div class="p o ltr r"><span class="c a"><img class="overlap1" src="../image/big.png">|||</span></div></div></div>
+<div id="test6d"><div class="s a"><div class="p o rtl"><span class="c a">|||<img class="overlap1" src="../image/big.png"></span></div></div></div>
 
+<!-- start marker, marker aligns to image -->
+<div id="test7a"><div class="s a"><div class="p o ltr"><span class="c5 a">|<img class="ins1" src="../image/big.png"></span></div></div></div>
+<div id="test7b"><div class="s a"><div class="p o rtl"><span class="c5 a">|<img class="ins1" src="../image/big.png"></span></div></div></div>
 <!-- end marker, marker aligns to image -->
 <div id="test7c"><div class="s a"><div class="p o rtl l"><span class="c5 a"><img class="ins1" src="../image/big.png">|</span></div></div></div>
 <div id="test7d"><div class="s a"><div class="p o ltr r"><span class="c5 a"><img class="ins1" src="../image/big.png">|</span></div></div></div>
@@ -184,7 +196,10 @@ i {
 <div id="test9c"><div class="s a"><div class="p o ltr"><span class="e"></span><i>&nbsp;&nbsp;&nbsp;&nbsp;</i><span class="e"></span><span class="c5 a">|||</span></div></div></div>
 <div id="test9d"><div class="s a"><div class="p o rtl"><span class="e"></span><i>&nbsp;&nbsp;&nbsp;&nbsp;</i><span class="e"></span><span class="c5 a">|||</span></div></div></div>
 
-</div>
+<!-- no marker for overflow:auto that doesn't trigger scrollbar -->
+<div id="test10a"><div class="s a"><div class="p o ltr auto"><span style="margin-left:-5px" >||||||</span></div></div></div>
+<div id="test10b"><div class="s a"><div class="p o rtl auto"><span style="margin-right:-5px">||||||</span></div></div></div>
 
+</div>
 </body>
 </html>

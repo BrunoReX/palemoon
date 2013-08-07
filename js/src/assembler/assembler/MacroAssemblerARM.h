@@ -1124,6 +1124,7 @@ public:
 
     void loadDouble(ImplicitAddress address, FPRegisterID dest)
     {
+        // Load a double from base+offset.
         m_assembler.doubleTransfer(true, dest, address.base, address.offset);
     }
 
@@ -1137,7 +1138,7 @@ public:
     DataLabelPtr loadDouble(const void* address, FPRegisterID dest)
     {
         DataLabelPtr label = moveWithPatch(ImmPtr(address), ARMRegisters::S0);
-        m_assembler.fdtr_u(true, dest, ARMRegisters::S0, 0);
+        m_assembler.doubleTransfer(true, dest, ARMRegisters::S0, 0);
         return label;
     }
 
@@ -1171,12 +1172,13 @@ public:
  
     void storeDouble(FPRegisterID src, ImplicitAddress address)
     {
+        // Store a double at base+offset.
         m_assembler.doubleTransfer(false, src, address.base, address.offset);
     }
 
-    void storeDouble(FPRegisterID dest, BaseIndex address)
+    void storeDouble(FPRegisterID src, BaseIndex address)
     {
-        m_assembler.baseIndexFloatTransfer(false, true, dest,
+        m_assembler.baseIndexFloatTransfer(false, true, src,
                                            address.base, address.index,
                                            address.scale, address.offset);
     }
@@ -1278,6 +1280,11 @@ public:
         m_assembler.fnegd_r(dest, src);
     }
 
+    void absDouble(FPRegisterID src, FPRegisterID dest)
+    {
+        m_assembler.fabsd_r(dest, src);
+    }
+
     void sqrtDouble(FPRegisterID src, FPRegisterID dest)
     {
         m_assembler.fsqrtd_r(dest, src);
@@ -1285,14 +1292,14 @@ public:
 
     void convertInt32ToDouble(RegisterID src, FPRegisterID dest)
     {
-        m_assembler.fmsr_r(dest, src);
-        m_assembler.fsitod_r(dest, dest);
+        m_assembler.fmsr_r(floatShadow(dest), src);
+        m_assembler.fsitod_r(dest, floatShadow(dest));
     }
 
     void convertUInt32ToDouble(RegisterID src, FPRegisterID dest)
     {
-        m_assembler.fmsr_r(dest, src);
-        m_assembler.fuitod_r(dest, dest);
+        m_assembler.fmsr_r(floatShadow(dest), src);
+        m_assembler.fuitod_r(dest, floatShadow(dest));
     }
 
     void convertInt32ToDouble(Address src, FPRegisterID dest)
@@ -1330,11 +1337,11 @@ public:
     // May also branch for some values that are representable in 32 bits
     Jump branchTruncateDoubleToInt32(FPRegisterID src, RegisterID dest)
     {
-        m_assembler.ftosizd_r(ARMRegisters::SD0, src);
+        m_assembler.ftosizd_r(floatShadow(ARMRegisters::SD0), src);
         // If FTOSIZD (VCVT.S32.F64) can't fit the result into a 32-bit
         // integer, it saturates at INT_MAX or INT_MIN. Testing this is
         // probably quicker than testing FPSCR for exception.
-        m_assembler.fmrs_r(dest, ARMRegisters::SD0);
+        m_assembler.fmrs_r(dest, floatShadow(ARMRegisters::SD0));
         m_assembler.cmn_r(dest, ARMAssembler::getOp2(-0x7fffffff));
         m_assembler.cmp_r(dest, ARMAssembler::getOp2(0x80000000), ARMCondition(NonZero));
         return Jump(m_assembler.jmp(ARMCondition(Zero)));
@@ -1346,11 +1353,11 @@ public:
     // (specifically, in this case, 0).
     void branchConvertDoubleToInt32(FPRegisterID src, RegisterID dest, JumpList& failureCases, FPRegisterID fpTemp)
     {
-        m_assembler.ftosid_r(ARMRegisters::SD0, src);
-        m_assembler.fmrs_r(dest, ARMRegisters::SD0);
+        m_assembler.ftosid_r(floatShadow(ARMRegisters::SD0), src);
+        m_assembler.fmrs_r(dest, floatShadow(ARMRegisters::SD0));
 
         // Convert the integer result back to float & compare to the original value - if not equal or unordered (NaN) then jump.
-        m_assembler.fsitod_r(ARMRegisters::SD0, ARMRegisters::SD0);
+        m_assembler.fsitod_r(ARMRegisters::SD0, floatShadow(ARMRegisters::SD0));
         failureCases.append(branchDouble(DoubleNotEqualOrUnordered, src, ARMRegisters::SD0));
 
         // If the result is zero, it might have been -0.0, and 0.0 equals to -0.0
@@ -1373,12 +1380,10 @@ public:
         m_assembler.forceFlushConstantPool();
     }
 
-#ifdef DEBUG
-    void allowPoolFlush(bool allowFlush)
+    int flushCount()
     {
-        m_assembler.allowPoolFlush(allowFlush);
+        return m_assembler.flushCount();
     }
-#endif
 
 protected:
     ARMAssembler::Condition ARMCondition(Condition cond)

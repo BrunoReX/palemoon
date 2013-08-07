@@ -424,9 +424,19 @@ protected:
     void UnbindFakeBlackTextures();
 
     int WhatDoesVertexAttrib0Need();
-    void DoFakeVertexAttrib0(WebGLuint vertexCount);
+    bool DoFakeVertexAttrib0(WebGLuint vertexCount);
     void UndoFakeVertexAttrib0();
     void InvalidateFakeVertexAttrib0();
+
+    static CheckedUint32 GetImageSize(WebGLsizei height, 
+                                      WebGLsizei width, 
+                                      PRUint32 pixelSize,
+                                      PRUint32 alignment);
+
+    // Returns x rounded to the next highest multiple of y.
+    static CheckedUint32 RoundedToNextMultipleOf(CheckedUint32 x, CheckedUint32 y) {
+        return ((x + y - 1) / y) * y;
+    }
 
     nsCOMPtr<nsIDOMHTMLCanvasElement> mCanvasElement;
     nsHTMLCanvasElement *HTMLCanvasElement() {
@@ -492,7 +502,9 @@ protected:
     PRBool ValidateAttribIndex(WebGLuint index, const char *info);
     PRBool ValidateStencilParamsForDrawCall();
     
-    bool  ValidateGLSLIdentifier(const nsAString& name, const char *info);
+    bool ValidateGLSLVariableName(const nsAString& name, const char *info);
+    bool ValidateGLSLCharacter(PRUnichar c);
+    bool ValidateGLSLString(const nsAString& string, const char *info);
 
     static PRUint32 GetTexelSize(WebGLenum format, WebGLenum type);
 
@@ -574,6 +586,17 @@ protected:
 
     PRInt32 MaxTextureSizeForTarget(WebGLenum target) const {
         return target == LOCAL_GL_TEXTURE_2D ? mGLMaxTextureSize : mGLMaxCubeMapTextureSize;
+    }
+    
+    // bug 684882 comment 37. On Mac OS (confirmed on 10.7.1), Intel driver, rendering to a face of a cube map
+    // copies random video memory into it.
+    // In particular, since glGenerateMipmap does that, it must be avoided.
+    bool WorkAroundCubeMapBug684882() const {
+        #ifdef XP_MACOSX
+            return gl->Vendor() == gl::GLContext::VendorIntel;
+        #else
+            return false;
+        #endif
     }
     
     /** like glBufferData but if the call may change the buffer size, checks any GL error generated
@@ -992,9 +1015,10 @@ public:
     }
 
     PRBool HasImageInfoAt(size_t level, size_t face) const {
-        return level <= mMaxLevelWithCustomImages &&
-               face < mFacesCount &&
-               ImageInfoAt(level, 0).mIsDefined;
+        CheckedUint32 checked_index = CheckedUint32(level) * mFacesCount + face;
+        return checked_index.valid() &&
+               checked_index.value() < mImageInfos.Length() &&
+               ImageInfoAt(level, face).mIsDefined;
     }
 
     static size_t FaceForTarget(WebGLenum target) {
@@ -1037,10 +1061,6 @@ protected:
         // Without OES_texture_float_linear, only NEAREST and NEAREST_MIMPAMP_NEAREST are supported
         return (mMagFilter == LOCAL_GL_NEAREST) &&
             (mMinFilter == LOCAL_GL_NEAREST || mMinFilter == LOCAL_GL_NEAREST_MIPMAP_NEAREST);
-    }
-
-    PRBool DoesMinFilterRequireMipmap() const {
-        return !(mMinFilter == LOCAL_GL_NEAREST || mMinFilter == LOCAL_GL_LINEAR);
     }
 
     PRBool AreBothWrapModesClampToEdge() const {
@@ -1145,6 +1165,12 @@ public:
     void SetWrapT(WebGLenum aWrapT) {
         mWrapT = aWrapT;
         SetDontKnowIfNeedFakeBlack();
+    }
+    
+    WebGLenum MinFilter() const { return mMinFilter; }
+
+    PRBool DoesMinFilterRequireMipmap() const {
+        return !(mMinFilter == LOCAL_GL_NEAREST || mMinFilter == LOCAL_GL_LINEAR);
     }
 
     void SetGeneratedMipmap() {
@@ -1360,12 +1386,12 @@ public:
     void IncrementAttachCount() { mAttachCount++; }
     void DecrementAttachCount() { mAttachCount--; }
 
-    void SetSource(const nsCString& src) {
+    void SetSource(const nsAString& src) {
         // XXX do some quick gzip here maybe -- getting this will be very rare
         mSource.Assign(src);
     }
 
-    const nsCString& Source() const { return mSource; }
+    const nsString& Source() const { return mSource; }
 
     void SetNeedsTranslation() { mNeedsTranslation = true; }
     bool NeedsTranslation() const { return mNeedsTranslation; }
@@ -1376,7 +1402,7 @@ public:
     }
 
     void SetTranslationFailure(const nsCString& msg) {
-        mTranslationLog.Assign(msg);
+        mTranslationLog.Assign(msg); 
     }
 
     const nsCString& TranslationLog() const { return mTranslationLog; }
@@ -1387,7 +1413,7 @@ protected:
     WebGLuint mName;
     PRBool mDeleted;
     WebGLenum mType;
-    nsCString mSource;
+    nsString mSource;
     nsCString mTranslationLog;
     bool mNeedsTranslation;
     PRUint32 mAttachCount;

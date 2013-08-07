@@ -466,8 +466,8 @@ bool
 JSStructuredCloneWriter::writeArrayBuffer(JSObject *obj)
 {
     obj = ArrayBuffer::getArrayBuffer(obj);
-    return out.writePair(SCTAG_ARRAY_BUFFER_OBJECT, ArrayBuffer::getByteLength(obj)) &&
-           out.writeBytes(ArrayBuffer::getDataOffset(obj), ArrayBuffer::getByteLength(obj));
+    return out.writePair(SCTAG_ARRAY_BUFFER_OBJECT, obj->arrayBufferByteLength()) &&
+           out.writeBytes(obj->arrayBufferDataOffset(), obj->arrayBufferByteLength());
 }
 
 bool
@@ -583,7 +583,7 @@ JSStructuredCloneWriter::write(const Value &v)
                 if (prop) {
                     Value val;
                     if (!writeId(id) ||
-                        !obj->getProperty(context(), id, &val) ||
+                        !obj->getGeneric(context(), id, &val) ||
                         !startWrite(val))
                         return false;
                 }
@@ -605,7 +605,7 @@ JSStructuredCloneReader::checkDouble(jsdouble d)
 {
     jsval_layout l;
     l.asDouble = d;
-    if (!JSVAL_IS_DOUBLE(JSVAL_FROM_LAYOUT(l))) {
+    if (!JSVAL_IS_DOUBLE_IMPL(l)) {
         JS_ReportErrorNumber(context(), js_GetErrorMessage, NULL,
                              JSMSG_SC_BAD_SERIALIZED_DATA, "unrecognized NaN");
         return false;
@@ -691,8 +691,8 @@ JSStructuredCloneReader::readArrayBuffer(uint32_t nbytes, Value *vp)
     if (!obj)
         return false;
     vp->setObject(*obj);
-    JS_ASSERT(ArrayBuffer::getByteLength(obj) == nbytes);
-    return in.readArray(ArrayBuffer::getDataOffset(obj), nbytes);
+    JS_ASSERT(obj->arrayBufferByteLength() == nbytes);
+    return in.readArray(obj->arrayBufferDataOffset(), nbytes);
 }
 
 bool
@@ -782,7 +782,7 @@ JSStructuredCloneReader::startRead(Value *vp)
       case SCTAG_OBJECT_OBJECT: {
         JSObject *obj = (tag == SCTAG_ARRAY_OBJECT)
                         ? NewDenseEmptyArray(context())
-                        : NewBuiltinClassInstance(context(), &js_ObjectClass);
+                        : NewBuiltinClassInstance(context(), &ObjectClass);
         if (!obj || !objs.append(ObjectValue(*obj)) ||
             !allObjs.append(ObjectValue(*obj)))
             return false;

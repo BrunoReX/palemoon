@@ -33,6 +33,7 @@ let XULDocument = Ci.nsIDOMXULDocument;
 let HTMLHtmlElement = Ci.nsIDOMHTMLHtmlElement;
 let HTMLIFrameElement = Ci.nsIDOMHTMLIFrameElement;
 let HTMLFrameElement = Ci.nsIDOMHTMLFrameElement;
+let HTMLFrameSetElement = Ci.nsIDOMHTMLFrameSetElement;
 let HTMLSelectElement = Ci.nsIDOMHTMLSelectElement;
 let HTMLOptionElement = Ci.nsIDOMHTMLOptionElement;
 
@@ -253,9 +254,9 @@ function getContentClientRects(aElement) {
 
 
 let Content = {
-  get _formAssistant() {
-    delete this._formAssistant;
-    return this._formAssistant = new FormAssistant();
+  get formAssistant() {
+    delete this.formAssistant;
+    return this.formAssistant = new FormAssistant();
   },
 
   init: function init() {
@@ -489,22 +490,27 @@ let Content = {
       }
 
       case "Browser:MouseClick": {
-        this._formAssistant.focusSync = true;
+        this.formAssistant.focusSync = true;
         let element = elementFromPoint(x, y);
         if (modifiers == Ci.nsIDOMNSEvent.CONTROL_MASK) {
           let uri = Util.getHrefForElement(element);
           if (uri)
             sendAsyncMessage("Browser:OpenURI", { uri: uri,
                                                   referrer: element.ownerDocument.documentURIObject.spec });
-        } else if (!this._formAssistant.open(element) && this._highlightElement) {
+          break;
+        }
+
+        if (!this.formAssistant.open(element))
           sendAsyncMessage("FindAssist:Hide", { });
+
+        if (this._highlightElement) {
           this._sendMouseEvent("mousemove", this._highlightElement, x, y);
           this._sendMouseEvent("mousedown", this._highlightElement, x, y);
           this._sendMouseEvent("mouseup", this._highlightElement, x, y);
         }
         this._cancelTapHighlight();
         ContextHandler.reset();
-        this._formAssistant.focusSync = false;
+        this.formAssistant.focusSync = false;
         break;
       }
 
@@ -743,6 +749,11 @@ let ViewportHandler = {
     // HACK: Since we can't set the scale in local tabs (bug 597081), we force
     // them to device-width and scale=1 so they will lay out reasonably.
     if (Util.isParentProcess())
+      return { defaultZoom: 1, autoSize: true, allowZoom: false, autoScale: false };
+
+    // HACK: Since we can't set the scale correctly in frameset pages yet (bug 645756), we force
+    // them to device-width and scale=1 so they will lay out reasonably.
+    if (content.frames.length > 0 && (content.document.body instanceof HTMLFrameSetElement))
       return { defaultZoom: 1, autoSize: true, allowZoom: false, autoScale: false };
 
     // viewport details found here
@@ -1005,21 +1016,12 @@ ContextHandler.registerType("callto", function(aState, aElement) {
   return protocol == "tel" || protocol == "callto" || protocol == "sip" || protocol == "voipto";
 });
 
-ContextHandler.registerType("link-saveable", function(aState, aElement) {
-  let protocol = aState.linkProtocol;
-  return (protocol && protocol != "mailto" && protocol != "javascript" && protocol != "news" && protocol != "snews");
-});
-
 ContextHandler.registerType("link-openable", function(aState, aElement) {
   return Util.isOpenableScheme(aState.linkProtocol);
 });
 
 ContextHandler.registerType("link-shareable", function(aState, aElement) {
   return Util.isShareableScheme(aState.linkProtocol);
-});
-
-ContextHandler.registerType("input-text", function(aState, aElement) {
-    return (aElement instanceof Ci.nsIDOMHTMLInputElement && aElement.mozIsTextField(false)) || aElement instanceof Ci.nsIDOMHTMLTextAreaElement;
 });
 
 ["image", "video"].forEach(function(aType) {
@@ -1045,6 +1047,21 @@ var FormSubmitObserver = {
   init: function init(){
     addMessageListener("Browser:TabOpen", this);
     addMessageListener("Browser:TabClose", this);
+
+    addEventListener("pageshow", this, false);
+
+    Services.obs.addObserver(this, "invalidformsubmit", false);
+  },
+
+  handleEvent: function handleEvent(aEvent) {
+    let target = aEvent.originalTarget;
+    let isRootDocument = (target == content.document || target.ownerDocument == content.document);
+    if (!isRootDocument)
+      return;
+
+    // Reset invalid submit state on each pageshow
+    if (aEvent.type == "pageshow")
+      Content.formAssistant.invalidSubmit = false;
   },
 
   receiveMessage: function findHandlerReceiveMessage(aMessage) {
@@ -1064,6 +1081,22 @@ var FormSubmitObserver = {
     if (aWindow == content)
       // We don't need to send any data along
       sendAsyncMessage("Browser:FormSubmit", {});
+  },
+
+  notifyInvalidSubmit: function notifyInvalidSubmit(aFormElement, aInvalidElements) {
+    if (!aInvalidElements.length)
+      return;
+
+    let element = aInvalidElements.queryElementAt(0, Ci.nsISupports);
+    if (!(element instanceof HTMLInputElement ||
+          element instanceof HTMLTextAreaElement ||
+          element instanceof HTMLSelectElement ||
+          element instanceof HTMLButtonElement)) {
+      return;
+    }
+
+    Content.formAssistant.invalidSubmit = true;
+    Content.formAssistant.open(element);
   },
 
   QueryInterface : function(aIID) {
@@ -1275,6 +1308,7 @@ var TouchEventHandler = {
 
     if (!content.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils).mayHaveTouchEventListeners) {
       sendAsyncMessage("Browser:CaptureEvents", {
+        type: null,
         messageId: json.messageId,
         click: false, panning: false,
         contentMightCaptureMouse: false
@@ -1326,8 +1360,9 @@ var TouchEventHandler = {
       return true;
 
     let evt = content.document.createEvent("touchevent");
+    let scrollOffset = ContentScroll.getScrollOffset(aElement.ownerDocument.defaultView);
     let point = content.document.createTouch(content, aElement, 0,
-                                             aData.x, aData.y, aData.x, aData.y, aData.x, aData.y,
+                                             aData.x, aData.y, aData.x, aData.y, aData.x - scrollOffset.x, aData.y - scrollOffset.y,
                                              1, 1, 0, 0);
     let touches = content.document.createTouchList(point);
     if (aName == "touchend") {
@@ -1353,6 +1388,27 @@ var SelectionHandler = {
     addMessageListener("Browser:SelectionMove", this);
   },
 
+  getCurrentWindowAndOffset: function(x, y, offset) {
+    let utils = Util.getWindowUtils(content);
+    let elem = utils.elementFromPoint(x, y, true, false);
+    while (elem && (elem instanceof HTMLIFrameElement || elem instanceof HTMLFrameElement)) {
+      // adjust client coordinates' origin to be top left of iframe viewport
+      let rect = elem.getBoundingClientRect();
+      scrollOffset = ContentScroll.getScrollOffset(elem.ownerDocument.defaultView);
+      offset.x += rect.left;
+      x -= rect.left;
+      
+      offset.y += rect.top + scrollOffset.y;
+      y -= rect.top + scrollOffset.y;
+      utils = elem.contentDocument.defaultView.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
+      elem = utils.elementFromPoint(x, y, true, false);
+    }
+    if (!elem)
+      return {};
+    
+    return { contentWindow: elem.ownerDocument.defaultView, offset: offset };
+  },
+
   receiveMessage: function sh_receiveMessage(aMessage) {
     let scrollOffset = ContentScroll.getScrollOffset(content);
     let utils = Util.getWindowUtils(content);
@@ -1366,24 +1422,10 @@ var SelectionHandler = {
         // if this is an iframe, dig down to find the document that was clicked
         let x = json.x - scrollOffset.x;
         let y = json.y - scrollOffset.y;
-        let offset = scrollOffset;
-        let elem = utils.elementFromPoint(x, y, true, false);
-        while (elem && (elem instanceof HTMLIFrameElement || elem instanceof HTMLFrameElement)) {
-          // adjust client coordinates' origin to be top left of iframe viewport
-          let rect = elem.getBoundingClientRect();
-          scrollOffset = ContentScroll.getScrollOffset(elem.ownerDocument.defaultView);
-          offset.x += rect.left;
-          x -= rect.left;
-
-          offset.y += rect.top + scrollOffset.y;
-          y -= rect.top + scrollOffset.y;
-          utils = elem.contentDocument.defaultView.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
-          elem = utils.elementFromPoint(x, y, true, false);
-        }
-        if (!elem)
+        let { contentWindow: contentWindow, offset: offset } = this.getCurrentWindowAndOffset(x, y, scrollOffset);
+        if (!contentWindow)
           return;
 
-        let contentWindow = elem.ownerDocument.defaultView;
         let currentDocShell = contentWindow.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIWebNavigation).QueryInterface(Ci.nsIDocShell);
 
         // Remove any previous selected or created ranges. Tapping anywhere on a
@@ -1391,13 +1433,14 @@ var SelectionHandler = {
         let selection = contentWindow.getSelection();
         selection.removeAllRanges();
 
-        // Position the caret using a fake mouse click
-        utils.sendMouseEventToWindow("mousedown", x, y, 0, 1, 0, true);
-        utils.sendMouseEventToWindow("mouseup", x, y, 0, 1, 0, true);
+          // Position the caret using a fake mouse click
+          utils.sendMouseEventToWindow("mousedown", x, y, 0, 1, 0, true);
+          utils.sendMouseEventToWindow("mouseup", x, y, 0, 1, 0, true);
 
-        // Select the word nearest the caret
         try {
           let selcon = currentDocShell.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsISelectionDisplay).QueryInterface(Ci.nsISelectionController);
+
+          // Select the word nearest the caret
           selcon.wordMove(false, false);
           selcon.wordMove(true, true);
         } catch(e) {
@@ -1438,7 +1481,9 @@ var SelectionHandler = {
           if (this.contentWindow)
             this.contentWindow.getSelection().removeAllRanges();
           this.contentWindow = null;
-        } catch(e) {}
+        } catch(e) {
+          Cu.reportError(e);
+        }
 
         if (pointInSelection && this.selectedText.length) {
           let clipboard = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper);
@@ -1450,19 +1495,18 @@ var SelectionHandler = {
         break;
       }
 
-      case "Browser:SelectionMove":
+      case "Browser:SelectionMove": {
         if (!this.contentWindow)
           return;
 
         // Hack to avoid setting focus in a textbox [Bugs 654352 & 667243]
         let elemUnder = elementFromPoint(json.x - scrollOffset.x, json.y - scrollOffset.y);
         if (elemUnder && elemUnder instanceof Ci.nsIDOMHTMLInputElement || elemUnder instanceof Ci.nsIDOMHTMLTextAreaElement)
-          return;
 
         // Limit the selection to the initial content window (don't leave or enter iframes)
         if (elemUnder && elemUnder.ownerDocument.defaultView != this.contentWindow)
           return;
-
+        
         // Use fake mouse events to update the selection
         if (json.type == "end") {
           // Keep the cache in "client" coordinates, but translate for the mouse event
@@ -1475,10 +1519,10 @@ var SelectionHandler = {
           this.cache.start = { x: json.x, y: json.y };
           let start = { x: this.cache.start.x - scrollOffset.x, y: this.cache.start.y - scrollOffset.y };
           let end = { x: this.cache.end.x - scrollOffset.x, y: this.cache.end.y - scrollOffset.y };
-
+        
           utils.sendMouseEventToWindow("mousedown", start.x, start.y, 0, 0, 0, true);
           utils.sendMouseEventToWindow("mouseup", start.x, start.y, 0, 0, 0, true);
-
+        
           utils.sendMouseEventToWindow("mousedown", end.x, end.y, 0, 1, Ci.nsIDOMNSEvent.SHIFT_MASK, true);
           utils.sendMouseEventToWindow("mouseup", end.x, end.y, 0, 1, Ci.nsIDOMNSEvent.SHIFT_MASK, true);
         }
@@ -1491,6 +1535,7 @@ var SelectionHandler = {
         let range = selection.getRangeAt(0).QueryInterface(Ci.nsIDOMNSRange);
         this.cache.rect = this._extractFromRange(range, this.cache.offset).rect;
         break;
+      }
     }
   },
 

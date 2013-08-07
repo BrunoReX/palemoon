@@ -71,7 +71,6 @@
 #include "nsIServiceManager.h"
 #include "nsIURL.h"
 #include "nsXULContentUtils.h"
-#include "nsIXULPrototypeCache.h"
 #include "nsLayoutCID.h"
 #include "nsNetUtil.h"
 #include "nsRDFCID.h"
@@ -202,13 +201,12 @@ nsXULContentUtils::FindChildByTag(nsIContent* aElement,
                                   nsIAtom* aTag,
                                   nsIContent** aResult)
 {
-    PRUint32 count = aElement->GetChildCount();
+    for (nsIContent* child = aElement->GetFirstChild();
+         child;
+         child = child->GetNextSibling()) {
 
-    for (PRUint32 i = 0; i < count; ++i) {
-        nsIContent *kid = aElement->GetChildAt(i);
-
-        if (kid->NodeInfo()->Equals(aTag, aNameSpaceID)) {
-            NS_ADDREF(*aResult = kid);
+        if (child->NodeInfo()->Equals(aTag, aNameSpaceID)) {
+            NS_ADDREF(*aResult = child);
 
             return NS_OK;
         }

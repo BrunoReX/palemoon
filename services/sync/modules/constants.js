@@ -151,10 +151,10 @@ ENGINE_SUCCEEDED:                      "success.engine",
 // login failure status codes:
 LOGIN_FAILED_NO_USERNAME:              "error.login.reason.no_username",
 LOGIN_FAILED_NO_PASSWORD:              "error.login.reason.no_password2",
-LOGIN_FAILED_NO_PASSPHRASE:            "error.login.reason.no_synckey",
+LOGIN_FAILED_NO_PASSPHRASE:            "error.login.reason.no_recoverykey",
 LOGIN_FAILED_NETWORK_ERROR:            "error.login.reason.network",
 LOGIN_FAILED_SERVER_ERROR:             "error.login.reason.server",
-LOGIN_FAILED_INVALID_PASSPHRASE:       "error.login.reason.synckey",
+LOGIN_FAILED_INVALID_PASSPHRASE:       "error.login.reason.recoverykey",
 LOGIN_FAILED_LOGIN_REJECTED:           "error.login.reason.account",
 
 // sync failure status codes
@@ -166,6 +166,8 @@ CREDENTIALS_CHANGED:                   "error.sync.reason.credentials_changed",
 ABORT_SYNC_COMMAND:                    "aborting sync, process commands said so",
 NO_SYNC_NODE_FOUND:                    "error.sync.reason.no_node_found",
 OVER_QUOTA:                            "error.sync.reason.over_quota",
+PROLONGED_SYNC_FAILURE:                "error.sync.prolonged_failure",
+SERVER_MAINTENANCE:                    "error.sync.reason.server_maintenance",
 
 RESPONSE_OVER_QUOTA:                   "14",
 

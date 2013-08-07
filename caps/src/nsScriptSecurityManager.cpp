@@ -1737,7 +1737,8 @@ nsScriptSecurityManager::CheckFunctionAccess(JSContext *aCx, void *aFunObj,
     {
 #ifdef DEBUG
         {
-            JSFunction *fun = GET_FUNCTION_PRIVATE(cx, (JSObject *)aFunObj);
+            JS_ASSERT(JS_ObjectIsFunction(aCx, (JSObject *)aFunObj));
+            JSFunction *fun = (JSFunction *)JS_GetPrivate(aCx, (JSObject *)aFunObj);
             JSScript *script = JS_GetFunctionScript(aCx, fun);
 
             NS_ASSERTION(!script, "Null principal for non-native function!");
@@ -2218,7 +2219,7 @@ nsScriptSecurityManager::GetFunctionObjectPrincipal(JSContext *cx,
         return result;
     }
 
-    JSFunction *fun = GET_FUNCTION_PRIVATE(cx, obj);
+    JSFunction *fun = (JSFunction *)JS_GetPrivate(cx, obj);
     JSScript *script = JS_GetFunctionScript(cx, fun);
 
     if (!script)
@@ -2284,7 +2285,7 @@ nsScriptSecurityManager::GetFramePrincipal(JSContext *cx,
 #ifdef DEBUG
     if (NS_SUCCEEDED(*rv) && !result)
     {
-        JSFunction *fun = GET_FUNCTION_PRIVATE(cx, obj);
+        JSFunction *fun = (JSFunction *)JS_GetPrivate(cx, obj);
         JSScript *script = JS_GetFunctionScript(cx, fun);
 
         NS_ASSERTION(!script, "Null principal for non-native function!");
@@ -2422,7 +2423,7 @@ nsScriptSecurityManager::doGetObjectPrincipal(JSObject *aObj
     // avoid wasting time checking properties of their classes etc in
     // the loop.
 
-    if (jsClass == &js_FunctionClass) {
+    if (jsClass == &js::FunctionClass) {
         aObj = aObj->getParent();
 
         if (!aObj)
@@ -2430,7 +2431,7 @@ nsScriptSecurityManager::doGetObjectPrincipal(JSObject *aObj
 
         jsClass = aObj->getClass();
 
-        if (jsClass == &js_CallClass) {
+        if (jsClass == &js::CallClass) {
             aObj = aObj->getParent();
 
             if (!aObj)

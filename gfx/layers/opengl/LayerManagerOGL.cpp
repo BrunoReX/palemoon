@@ -46,6 +46,7 @@
 #include "ColorLayerOGL.h"
 #include "CanvasLayerOGL.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/Preferences.h"
 
 #include "LayerManagerOGLShaders.h"
 
@@ -79,7 +80,6 @@ LayerManagerOGL::LayerManagerOGL(nsIWidget *aWidget)
   , mBackBufferTexture(0)
   , mBackBufferSize(-1, -1)
   , mHasBGRA(0)
-  , mRenderFPS(false)
 {
 }
 
@@ -334,7 +334,7 @@ LayerManagerOGL::Initialize(nsRefPtr<GLContext> aContext)
   };
   mGLContext->fBufferData(LOCAL_GL_ARRAY_BUFFER, sizeof(vertices), vertices, LOCAL_GL_STATIC_DRAW);
 
-  nsCOMPtr<nsIConsoleService> 
+  nsCOMPtr<nsIConsoleService>
     console(do_GetService(NS_CONSOLESERVICE_CONTRACTID));
 
   if (console) {
@@ -356,6 +356,8 @@ LayerManagerOGL::Initialize(nsRefPtr<GLContext> aContext)
       msg += NS_LITERAL_STRING("TEXTURE_RECTANGLE");
     console->LogStringMessage(msg.get());
   }
+
+  Preferences::AddBoolVarCache(&sDrawFPS, "layers.acceleration.draw-fps");
 
   reporter.SetSuccessful();
   return true;
@@ -400,7 +402,8 @@ LayerManagerOGL::EndEmptyTransaction()
 
 void
 LayerManagerOGL::EndTransaction(DrawThebesLayerCallback aCallback,
-                                void* aCallbackData)
+                                void* aCallbackData,
+                                EndTransactionFlags aFlags)
 {
 #ifdef MOZ_LAYERS_HAVE_LOG
   MOZ_LAYERS_LOG(("  ----- (beginning paint)"));
@@ -412,7 +415,7 @@ LayerManagerOGL::EndTransaction(DrawThebesLayerCallback aCallback,
     return;
   }
 
-  if (mRoot) {
+  if (mRoot && !(aFlags & END_NO_IMMEDIATE_REDRAW)) {
     // The results of our drawing always go directly into a pixel buffer,
     // so we don't need to pass any global transform here.
     mRoot->ComputeEffectiveTransforms(gfx3DMatrix());
@@ -537,6 +540,8 @@ LayerManagerOGL::RootLayer() const
 
   return static_cast<LayerOGL*>(mRoot->ImplData());
 }
+
+PRBool LayerManagerOGL::sDrawFPS = PR_FALSE;
 
 /* This function tries to stick to portable C89 as much as possible
  * so that it can be easily copied into other applications */
@@ -802,7 +807,7 @@ LayerManagerOGL::Render()
     return;
   }
 
-  if (mRenderFPS) {
+  if (sDrawFPS) {
     mFPS.DrawFPS(mGLContext, GetCopy2DProgram());
   }
 
@@ -1014,13 +1019,13 @@ LayerManagerOGL::CopyToTarget()
   mGLContext->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER,
                                mGLContext->IsDoubleBuffered() ? 0 : mBackBufferFBO);
 
+#ifndef USE_GLES2
+  // GLES2 promises that binding to any custom FBO will attach
+  // to GL_COLOR_ATTACHMENT0 attachment point.
   if (mGLContext->IsDoubleBuffered()) {
     mGLContext->fReadBuffer(LOCAL_GL_BACK);
   }
-#ifndef USE_GLES2
   else {
-  // GLES2 promises that binding to any custom FBO will attach
-  // to GL_COLOR_ATTACHMENT0 attachment point.
     mGLContext->fReadBuffer(LOCAL_GL_COLOR_ATTACHMENT0);
   }
 #endif

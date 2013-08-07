@@ -51,9 +51,9 @@
 // For HTTP seeking, if number of bytes needing to be
 // seeked forward is less than this value then a read is
 // done rather than a byte range request.
-#define SEEK_VS_READ_THRESHOLD (32*1024)
+static const PRInt64 SEEK_VS_READ_THRESHOLD = 32*1024;
 
-#define HTTP_REQUESTED_RANGE_NOT_SATISFIABLE_CODE 416
+static const PRUint32 HTTP_REQUESTED_RANGE_NOT_SATISFIABLE_CODE = 416;
 
 class nsMediaDecoder;
 
@@ -168,8 +168,6 @@ public:
   }
 
   // The following can be called on the main thread only:
-  // Get the decoder
-  nsMediaDecoder* Decoder() { return mDecoder; }
   // Get the URI
   nsIURI* URI() { return mURI; }
   // Close the stream, stop any listeners, channels, etc.

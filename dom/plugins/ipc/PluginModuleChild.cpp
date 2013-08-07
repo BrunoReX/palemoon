@@ -44,6 +44,7 @@
 #endif
 
 #include "mozilla/plugins/PluginModuleChild.h"
+#include "mozilla/ipc/SyncChannel.h"
 
 #ifdef MOZ_WIDGET_GTK2
 #include <gtk/gtk.h>
@@ -128,6 +129,7 @@ PluginModuleChild::PluginModuleChild()
     memset(&mFunctions, 0, sizeof(mFunctions));
     memset(&mSavedData, 0, sizeof(mSavedData));
     gInstance = this;
+    mUserAgent.SetIsVoid(PR_TRUE);
 #ifdef XP_MACOSX
     mac_plugin_interposing::child::SetUpCocoaInterposing();
 #endif
@@ -197,13 +199,11 @@ PluginModuleChild::Init(const std::string& aPluginFilename,
 
     nsPluginFile pluginFile(localFile);
 
-    nsresult rv;
     // Maemo flash can render with any provided rectangle and so does not
     // require this quirk.
 #if defined(MOZ_X11) && !defined(MOZ_PLATFORM_MAEMO)
     nsPluginInfo info = nsPluginInfo();
-    rv = pluginFile.GetPluginInfo(info, &mLibrary);
-    if (NS_FAILED(rv))
+    if (NS_FAILED(pluginFile.GetPluginInfo(info, &mLibrary)))
         return false;
 
     NS_NAMED_LITERAL_CSTRING(flash10Head, "Shockwave Flash 10.");
@@ -214,7 +214,7 @@ PluginModuleChild::Init(const std::string& aPluginFilename,
     if (!mLibrary)
 #endif
     {
-        rv = pluginFile.LoadPlugin(&mLibrary);
+        DebugOnly<nsresult> rv = pluginFile.LoadPlugin(&mLibrary);
         NS_ASSERTION(NS_OK == rv, "trouble with mPluginFile");
     }
     NS_ASSERTION(mLibrary, "couldn't open shared object");
@@ -257,8 +257,7 @@ PluginModuleChild::Init(const std::string& aPluginFilename,
 
 #ifdef XP_MACOSX
     nsPluginInfo info = nsPluginInfo();
-    rv = pluginFile.GetPluginInfo(info, &mLibrary);
-    if (rv == NS_OK) {
+    if (pluginFile.GetPluginInfo(info, &mLibrary) == NS_OK) {
         mozilla::plugins::PluginUtilsOSX::SetProcessName(info.fName);
     }
 #endif
@@ -514,6 +513,24 @@ PluginModuleChild::ExitedCxxStack()
 #endif
 
 bool
+PluginModuleChild::RecvSetParentHangTimeout(const uint32_t& aSeconds)
+{
+#ifdef XP_WIN
+    SetReplyTimeoutMs(((aSeconds > 0) ? (1000 * aSeconds) : 0));
+#endif
+    return true;
+}
+
+bool
+PluginModuleChild::ShouldContinueFromReplyTimeout()
+{
+#ifdef XP_WIN
+    NS_RUNTIMEABORT("terminating child process");
+#endif
+    return true;
+}
+
+bool
 PluginModuleChild::InitGraphics()
 {
 #if defined(MOZ_WIDGET_GTK2)
@@ -668,12 +685,11 @@ PluginModuleChild::RecvSetAudioSessionData(const nsID& aId,
                                            const nsString& aDisplayName,
                                            const nsString& aIconPath)
 {
-    nsresult rv;
 #if !defined XP_WIN || MOZ_WINSDK_TARGETVER < MOZ_NTDDI_LONGHORN
     NS_RUNTIMEABORT("Not Reached!");
     return false;
 #else
-    rv = mozilla::widget::RecvAudioSessionData(aId, aDisplayName, aIconPath);
+    nsresult rv = mozilla::widget::RecvAudioSessionData(aId, aDisplayName, aIconPath);
     NS_ENSURE_SUCCESS(rv, true); // Bail early if this fails
 
     // Ignore failures here; we can't really do anything about them
@@ -710,7 +726,7 @@ PluginModuleChild::CleanUp()
 const char*
 PluginModuleChild::GetUserAgent()
 {
-    if (!CallNPN_UserAgent(&mUserAgent))
+    if (mUserAgent.IsVoid() && !CallNPN_UserAgent(&mUserAgent))
         return NULL;
 
     return NullableStringGet(mUserAgent);
@@ -1893,7 +1909,8 @@ PluginModuleChild::AllocPPluginInstance(const nsCString& aMimeType,
     InitQuirksModes(aMimeType);
 
 #ifdef XP_WIN
-    if (mQuirks & QUIRK_FLASH_HOOK_GETWINDOWINFO) {
+    if ((mQuirks & QUIRK_FLASH_HOOK_GETWINDOWINFO) &&
+        !sGetWindowInfoPtrStub) {
         sUser32Intercept.Init("user32.dll");
         sUser32Intercept.AddHook("GetWindowInfo", reinterpret_cast<intptr_t>(PMCGetWindowInfoHook),
                                  (void**) &sGetWindowInfoPtrStub);
@@ -2059,7 +2076,10 @@ PluginModuleChild::NPN_RetainObject(NPObject* aNPObj)
 {
     AssertPluginThread();
 
-    int32_t refCnt = PR_ATOMIC_INCREMENT((int32_t*)&aNPObj->referenceCount);
+#ifdef NS_BUILD_REFCNT_LOGGING
+    int32_t refCnt =
+#endif
+    PR_ATOMIC_INCREMENT((int32_t*)&aNPObj->referenceCount);
     NS_LOG_ADDREF(aNPObj, refCnt, "NPObject", sizeof(NPObject));
 
     return aNPObj;

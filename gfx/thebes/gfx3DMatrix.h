@@ -41,6 +41,7 @@
 
 #include <gfxTypes.h>
 #include <gfxPoint3D.h>
+#include <gfxPointH3D.h>
 #include <gfxMatrix.h>
 
 /**
@@ -72,6 +73,17 @@ public:
   gfx3DMatrix operator*(const gfx3DMatrix &aMatrix) const;
   gfx3DMatrix& operator*=(const gfx3DMatrix &aMatrix);
 
+  gfxPointH3D& operator[](int aIndex)
+  {
+      NS_ABORT_IF_FALSE(aIndex >= 0 && aIndex <= 3, "Invalid matrix array index");
+      return *reinterpret_cast<gfxPointH3D*>((&_11)+4*aIndex);
+  }
+  const gfxPointH3D& operator[](int aIndex) const
+  {
+      NS_ABORT_IF_FALSE(aIndex >= 0 && aIndex <= 3, "Invalid matrix array index");
+      return *reinterpret_cast<const gfxPointH3D*>((&_11)+4*aIndex);
+  }
+
   /**
    * Return true if this matrix and |aMatrix| are the same matrix.
    */
@@ -94,13 +106,136 @@ public:
    * (i.e. as obtained by From2D). If it is, optionally returns the 2D
    * matrix in aMatrix.
    */
-  PRBool Is2D(gfxMatrix* aMatrix = nsnull) const;
+  PRBool Is2D(gfxMatrix* aMatrix) const;
+  PRBool Is2D() const;
+
+  /**
+   * Returns true if the matrix can be reduced to a 2D affine transformation
+   * (i.e. as obtained by From2D). If it is, optionally returns the 2D
+   * matrix in aMatrix. This should only be used on matrices required for
+   * rendering, not for intermediate calculations.
+   *
+   * Since drawing is to a 2d plane, any 3d transform without perspective
+   * can be reduced by dropping the z row and column.
+   */
+  PRBool CanDraw2D(gfxMatrix* aMatrix = nsnull) const;
 
   /**
    * Returns true if the matrix is the identity matrix. The most important
    * property we require is that gfx3DMatrix().IsIdentity() returns true.
    */
   PRBool IsIdentity() const;
+
+  /**
+   * Pre-multiplication transformation functions:
+   *
+   * These functions construct a temporary matrix containing
+   * a single transformation and pre-multiply it onto the current
+   * matrix.
+   */
+
+  /**
+   * Add a translation by aPoint to the matrix.
+   *
+   * This creates this temporary matrix:
+   * |  1        0        0         0 |
+   * |  0        1        0         0 |
+   * |  0        0        1         0 |
+   * |  aPoint.x aPoint.y aPoint.z  1 |
+   */
+  void Translate(const gfxPoint3D& aPoint);
+
+  /** 
+   * Skew the matrix.
+   *
+   * This creates this temporary matrix:
+   * | 1           tan(aYSkew) 0 0 |
+   * | tan(aXSkew) 1           0 0 |
+   * | 0           0           1 0 |
+   * | 0           0           0 1 |
+   */
+  void SkewXY(double aXSkew, double aYSkew);
+  
+  void SkewXY(double aSkew);
+  void SkewXZ(double aSkew);
+  void SkewYZ(double aSkew);
+
+  /**
+   * Scale the matrix
+   *
+   * This creates this temporary matrix:
+   * | aX 0  0  0 |
+   * | 0  aY 0  0 |
+   * | 0  0  aZ 0 |
+   * | 0  0  0  1 |
+   */
+  void Scale(float aX, float aY, float aZ);
+
+  /**
+   * Rotate around the X axis..
+   *
+   * This creates this temporary matrix:
+   * | 1 0            0           0 |
+   * | 0 cos(aTheta)  sin(aTheta) 0 |
+   * | 0 -sin(aTheta) cos(aTheta) 0 |
+   * | 0 0            0           1 |
+   */
+  void RotateX(double aTheta);
+  
+  /**
+   * Rotate around the Y axis..
+   *
+   * This creates this temporary matrix:
+   * | cos(aTheta) 0 -sin(aTheta) 0 |
+   * | 0           1 0            0 |
+   * | sin(aTheta) 0 cos(aTheta)  0 |
+   * | 0           0 0            1 |
+   */
+  void RotateY(double aTheta);
+  
+  /**
+   * Rotate around the Z axis..
+   *
+   * This creates this temporary matrix:
+   * | cos(aTheta)  sin(aTheta)  0 0 |
+   * | -sin(aTheta) cos(aTheta)  0 0 |
+   * | 0            0            1 0 |
+   * | 0            0            0 1 |
+   */
+  void RotateZ(double aTheta);
+
+  /**
+   * Apply perspective to the matrix.
+   *
+   * This creates this temporary matrix:
+   * | 1 0 0 0         |
+   * | 0 1 0 0         |
+   * | 0 0 1 -1/aDepth |
+   * | 0 0 0 1         |
+   */
+  void Perspective(float aDepth);
+
+  /**
+   * Pre multiply an existing matrix onto the current
+   * matrix
+   */
+  void PreMultiply(const gfx3DMatrix& aOther);
+  void PreMultiply(const gfxMatrix& aOther);
+
+  /**
+   * Post-multiplication transformation functions:
+   *
+   * These functions construct a temporary matrix containing
+   * a single transformation and post-multiply it onto the current
+   * matrix.
+   */
+  
+  /**
+   * Add a translation by aPoint after the matrix.
+   * This is functionally equivalent to:
+   * matrix * gfx3DMatrix::Translation(aPoint)
+   */
+  void TranslatePost(const gfxPoint3D& aPoint);
 
   /**
    * Transforms a point according to this matrix.
@@ -116,6 +251,8 @@ public:
    * Transforms a 3D vector according to this matrix.
    */
   gfxPoint3D Transform3D(const gfxPoint3D& point) const;
+  gfxPointH3D Transform4D(const gfxPointH3D& aPoint) const;
+  gfxPointH3D TransposeTransform4D(const gfxPointH3D& aPoint) const;
 
   gfxPoint ProjectPoint(const gfxPoint& aPoint) const;
   gfxRect ProjectRectBounds(const gfxRect& aRect) const;
@@ -125,14 +262,33 @@ public:
    * Inverts this matrix, if possible. Otherwise, the matrix is left
    * unchanged.
    */
-  gfx3DMatrix& Invert();
+  gfx3DMatrix Inverse() const;
 
-  inline gfx3DMatrix Inverse() const
+  gfx3DMatrix& Invert()
   {
-    gfx3DMatrix temp = *this;
-    temp.Invert();
-    return temp;
+      *this = Inverse();
+      return *this;
   }
+
+  gfx3DMatrix& Normalize();
+
+  gfxPointH3D TransposedVector(int aIndex) const
+  {
+      NS_ABORT_IF_FALSE(aIndex >= 0 && aIndex <= 3, "Invalid matrix array index");
+      return gfxPointH3D(*((&_11)+aIndex), *((&_21)+aIndex), *((&_31)+aIndex), *((&_41)+aIndex));
+  }
+
+  void SetTransposedVector(int aIndex, gfxPointH3D &aVector)
+  {
+      NS_ABORT_IF_FALSE(aIndex >= 0 && aIndex <= 3, "Invalid matrix array index");
+      *((&_11)+aIndex) = aVector.x;
+      *((&_21)+aIndex) = aVector.y;
+      *((&_31)+aIndex) = aVector.z;
+      *((&_41)+aIndex) = aVector.w;
+  }
+
+  gfx3DMatrix& Transpose();
+  gfx3DMatrix Transposed() const;
 
   /**
    * Returns a unit vector that is perpendicular to the plane formed
@@ -160,16 +316,21 @@ public:
    *
    * \param aScale Scale factor
    */
-  static gfx3DMatrix Scale(float aFactor);
+  static gfx3DMatrix ScalingMatrix(float aFactor);
 
   /**
    * Create a scale matrix.
    */
-  static gfx3DMatrix Scale(float aX, float aY, float aZ);
+  static gfx3DMatrix ScalingMatrix(float aX, float aY, float aZ);
+
+  gfxFloat Determinant() const;
 
 private:
 
-  gfxFloat Determinant() const;
+  gfxFloat Determinant3x3() const;
+  gfx3DMatrix Inverse3x3() const;
+
+  gfx3DMatrix Multiply2D(const gfx3DMatrix &aMatrix) const;
 
 public:
 

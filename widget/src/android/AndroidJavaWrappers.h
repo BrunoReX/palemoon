@@ -163,7 +163,9 @@ public:
 
     enum {
         DRAW_ERROR = 0,
-        DRAW_GLES_2 = 1
+        DRAW_GLES_2 = 1,
+        DRAW_2D = 2,
+        DRAW_DISABLED = 3
     };
 
     int BeginDrawing();
@@ -172,6 +174,8 @@ public:
     void EndDrawing();
     void Draw2D(jobject bitmap, int width, int height);
     void Draw2D(jobject buffer, int stride);
+
+    jobject GetSurface();
 
     // must have a JNI local frame when calling this,
     // and you'd better know what you're doing
@@ -185,6 +189,7 @@ protected:
     static jmethodID jDraw2DBufferMethod;
     static jmethodID jGetSoftwareDrawBitmapMethod;
     static jmethodID jGetSoftwareDrawBufferMethod;
+    static jmethodID jGetSurfaceMethod;
     static jmethodID jGetHolderMethod;
 };
 
@@ -386,10 +391,14 @@ public:
     AndroidGeckoEvent(JNIEnv *jenv, jobject jobj) {
         Init(jenv, jobj);
     }
+    AndroidGeckoEvent(AndroidGeckoEvent *aResizeEvent) {
+        Init(aResizeEvent);
+    }
 
     void Init(JNIEnv *jenv, jobject jobj);
     void Init(int aType);
     void Init(int x1, int y1, int x2, int y2);
+    void Init(AndroidGeckoEvent *aResizeEvent);
 
     int Action() { return mAction; }
     int Type() { return mType; }
@@ -487,6 +496,8 @@ public:
         SURFACE_CREATED = 13,
         SURFACE_DESTROYED = 14,
         GECKO_EVENT_SYNC = 15,
+        FORCED_RESIZE = 16,
+        ACTIVITY_START = 17,
         dummy_java_enum_list_end
     };
 

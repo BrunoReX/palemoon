@@ -195,7 +195,8 @@ print_array(const char *aName,
 
         if (strcmp(p->propName, "-moz-perspective") == 0 ||
             strcmp(p->propName, "-moz-perspective-origin") == 0 ||
-            strcmp(p->propName, "-moz-backface-visibility") == 0) {
+            strcmp(p->propName, "-moz-backface-visibility") == 0 ||
+            strcmp(p->propName, "-moz-transform-style") == 0) {
             ++j;
             continue;
         }

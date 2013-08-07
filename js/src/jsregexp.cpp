@@ -56,9 +56,9 @@
 #include "jsscan.h"
 #include "jsstr.h"
 #include "jsvector.h"
-
 #include "vm/GlobalObject.h"
 
+#include "jsinferinlines.h"
 #include "jsobjinlines.h"
 #include "jsregexpinlines.h"
 
@@ -69,6 +69,7 @@ using namespace nanojit;
 
 using namespace js;
 using namespace js::gc;
+using namespace js::types;
 
 /*
  * RegExpStatics allocates memory -- in order to keep the statics stored
@@ -96,20 +97,20 @@ resc_trace(JSTracer *trc, JSObject *obj)
 Class js::regexp_statics_class = {
     "RegExpStatics",
     JSCLASS_HAS_PRIVATE,
-    PropertyStub,         /* addProperty */
-    PropertyStub,         /* delProperty */
-    PropertyStub,         /* getProperty */
-    StrictPropertyStub,   /* setProperty */
-    EnumerateStub,
-    ResolveStub,
-    ConvertStub,
+    JS_PropertyStub,         /* addProperty */
+    JS_PropertyStub,         /* delProperty */
+    JS_PropertyStub,         /* getProperty */
+    JS_StrictPropertyStub,   /* setProperty */
+    JS_EnumerateStub,
+    JS_ResolveStub,
+    JS_ConvertStub,
     resc_finalize,
-    NULL,                 /* reserved0   */
-    NULL,                 /* checkAccess */
-    NULL,                 /* call        */
-    NULL,                 /* construct   */
-    NULL,                 /* xdrObject   */
-    NULL,                 /* hasInstance */
+    NULL,                    /* reserved0   */
+    NULL,                    /* checkAccess */
+    NULL,                    /* call        */
+    NULL,                    /* construct   */
+    NULL,                    /* xdrObject   */
+    NULL,                    /* hasInstance */
     resc_trace
 };
 
@@ -140,11 +141,10 @@ SwapObjectRegExp(JSContext *cx, JSObject *obj, AlreadyIncRefed<RegExp> newRegExp
 JSObject * JS_FASTCALL
 js_CloneRegExpObject(JSContext *cx, JSObject *obj, JSObject *proto)
 {
-    JS_ASSERT(obj->getClass() == &js_RegExpClass);
-    JS_ASSERT(proto);
-    JS_ASSERT(proto->getClass() == &js_RegExpClass);
+    JS_ASSERT(obj->isRegExp());
+    JS_ASSERT(proto->isRegExp());
 
-    JSObject *clone = NewNativeClassInstance(cx, &js_RegExpClass, proto, proto->getParent());
+    JSObject *clone = NewNativeClassInstance(cx, &RegExpClass, proto, proto->getParent());
     if (!clone)
         return NULL;
 
@@ -193,6 +193,40 @@ js_ObjectIsRegExp(JSObject *obj)
 /*
  * js::RegExp
  */
+
+#if !ENABLE_YARR_JIT
+void
+RegExp::reportPCREError(JSContext *cx, int error)
+{
+#define REPORT(msg_) \
+    JS_ReportErrorFlagsAndNumberUC(cx, JSREPORT_ERROR, js_GetErrorMessage, NULL, msg_); \
+    return
+    switch (error) {
+      case -2: REPORT(JSMSG_REGEXP_TOO_COMPLEX);
+      case 0: JS_NOT_REACHED("Precondition violation: an error must have occurred."); 
+      case 1: REPORT(JSMSG_TRAILING_SLASH);
+      case 2: REPORT(JSMSG_TRAILING_SLASH); 
+      case 3: REPORT(JSMSG_REGEXP_TOO_COMPLEX);
+      case 4: REPORT(JSMSG_BAD_QUANTIFIER);
+      case 5: REPORT(JSMSG_BAD_QUANTIFIER);
+      case 6: REPORT(JSMSG_BAD_CLASS_RANGE);
+      case 7: REPORT(JSMSG_REGEXP_TOO_COMPLEX);
+      case 8: REPORT(JSMSG_BAD_CLASS_RANGE);
+      case 9: REPORT(JSMSG_BAD_QUANTIFIER);
+      case 10: REPORT(JSMSG_UNMATCHED_RIGHT_PAREN);
+      case 11: REPORT(JSMSG_REGEXP_TOO_COMPLEX);
+      case 12: REPORT(JSMSG_UNMATCHED_RIGHT_PAREN);
+      case 13: REPORT(JSMSG_REGEXP_TOO_COMPLEX);
+      case 14: REPORT(JSMSG_MISSING_PAREN);
+      case 15: REPORT(JSMSG_BAD_BACKREF);
+      case 16: REPORT(JSMSG_REGEXP_TOO_COMPLEX);
+      case 17: REPORT(JSMSG_REGEXP_TOO_COMPLEX);
+      default:
+        JS_NOT_REACHED("Precondition violation: unknown PCRE error code.");
+    }
+#undef REPORT
+}
+#endif
 
 void
 RegExp::reportYarrError(JSContext *cx, TokenStream *ts, JSC::Yarr::ErrorCode error)
@@ -332,23 +366,23 @@ JSObject::assignInitialRegExpShape(JSContext *cx)
         code;                                                                   \
     }
 
-DEFINE_STATIC_GETTER(static_input_getter,        return res->createPendingInput(cx, Valueify(vp)))
+DEFINE_STATIC_GETTER(static_input_getter,        return res->createPendingInput(cx, vp))
 DEFINE_STATIC_GETTER(static_multiline_getter,    *vp = BOOLEAN_TO_JSVAL(res->multiline());
                                                  return true)
-DEFINE_STATIC_GETTER(static_lastMatch_getter,    return res->createLastMatch(cx, Valueify(vp)))
-DEFINE_STATIC_GETTER(static_lastParen_getter,    return res->createLastParen(cx, Valueify(vp)))
-DEFINE_STATIC_GETTER(static_leftContext_getter,  return res->createLeftContext(cx, Valueify(vp)))
-DEFINE_STATIC_GETTER(static_rightContext_getter, return res->createRightContext(cx, Valueify(vp)))
+DEFINE_STATIC_GETTER(static_lastMatch_getter,    return res->createLastMatch(cx, vp))
+DEFINE_STATIC_GETTER(static_lastParen_getter,    return res->createLastParen(cx, vp))
+DEFINE_STATIC_GETTER(static_leftContext_getter,  return res->createLeftContext(cx, vp))
+DEFINE_STATIC_GETTER(static_rightContext_getter, return res->createRightContext(cx, vp))
 
-DEFINE_STATIC_GETTER(static_paren1_getter,       return res->createParen(cx, 1, Valueify(vp)))
-DEFINE_STATIC_GETTER(static_paren2_getter,       return res->createParen(cx, 2, Valueify(vp)))
-DEFINE_STATIC_GETTER(static_paren3_getter,       return res->createParen(cx, 3, Valueify(vp)))
-DEFINE_STATIC_GETTER(static_paren4_getter,       return res->createParen(cx, 4, Valueify(vp)))
-DEFINE_STATIC_GETTER(static_paren5_getter,       return res->createParen(cx, 5, Valueify(vp)))
-DEFINE_STATIC_GETTER(static_paren6_getter,       return res->createParen(cx, 6, Valueify(vp)))
-DEFINE_STATIC_GETTER(static_paren7_getter,       return res->createParen(cx, 7, Valueify(vp)))
-DEFINE_STATIC_GETTER(static_paren8_getter,       return res->createParen(cx, 8, Valueify(vp)))
-DEFINE_STATIC_GETTER(static_paren9_getter,       return res->createParen(cx, 9, Valueify(vp)))
+DEFINE_STATIC_GETTER(static_paren1_getter,       return res->createParen(cx, 1, vp))
+DEFINE_STATIC_GETTER(static_paren2_getter,       return res->createParen(cx, 2, vp))
+DEFINE_STATIC_GETTER(static_paren3_getter,       return res->createParen(cx, 3, vp))
+DEFINE_STATIC_GETTER(static_paren4_getter,       return res->createParen(cx, 4, vp))
+DEFINE_STATIC_GETTER(static_paren5_getter,       return res->createParen(cx, 5, vp))
+DEFINE_STATIC_GETTER(static_paren6_getter,       return res->createParen(cx, 6, vp))
+DEFINE_STATIC_GETTER(static_paren7_getter,       return res->createParen(cx, 7, vp))
+DEFINE_STATIC_GETTER(static_paren8_getter,       return res->createParen(cx, 8, vp))
+DEFINE_STATIC_GETTER(static_paren9_getter,       return res->createParen(cx, 9, vp))
 
 #define DEFINE_STATIC_SETTER(name, code)                                        \
     static JSBool                                                               \
@@ -431,11 +465,11 @@ js_XDRRegExpObject(JSXDRState *xdr, JSObject **objp)
     if (!JS_XDRString(xdr, &source) || !JS_XDRUint32(xdr, &flagsword))
         return false;
     if (xdr->mode == JSXDR_DECODE) {
-        JSObject *obj = NewBuiltinClassInstance(xdr->cx, &js_RegExpClass);
+        JSObject *obj = NewBuiltinClassInstance(xdr->cx, &RegExpClass);
         if (!obj)
             return false;
         obj->clearParent();
-        obj->clearProto();
+        obj->clearType();
 
         /*
          * initRegExp can GC before storing re in the private field of the
@@ -459,26 +493,26 @@ js_XDRRegExpObject(JSXDRState *xdr, JSObject **objp)
 
 #endif /* !JS_HAS_XDR */
 
-js::Class js_RegExpClass = {
+Class js::RegExpClass = {
     js_RegExp_str,
     JSCLASS_HAS_PRIVATE |
     JSCLASS_HAS_RESERVED_SLOTS(JSObject::REGEXP_CLASS_RESERVED_SLOTS) |
     JSCLASS_HAS_CACHED_PROTO(JSProto_RegExp),
-    PropertyStub,         /* addProperty */
-    PropertyStub,         /* delProperty */
-    PropertyStub,         /* getProperty */
-    StrictPropertyStub,   /* setProperty */
-    EnumerateStub,        /* enumerate */
-    ResolveStub,
-    ConvertStub,
+    JS_PropertyStub,         /* addProperty */
+    JS_PropertyStub,         /* delProperty */
+    JS_PropertyStub,         /* getProperty */
+    JS_StrictPropertyStub,   /* setProperty */
+    JS_EnumerateStub,        /* enumerate */
+    JS_ResolveStub,
+    JS_ConvertStub,
     regexp_finalize,
-    NULL,                 /* reserved0 */
-    NULL,                 /* checkAccess */
-    NULL,                 /* call */
-    NULL,                 /* construct */
+    NULL,                    /* reserved0 */
+    NULL,                    /* checkAccess */
+    NULL,                    /* call */
+    NULL,                    /* construct */
     js_XDRRegExpObject,
-    NULL,                 /* hasInstance */
-    NULL                  /* trace */
+    NULL,                    /* hasInstance */
+    NULL                     /* trace */
 };
 
 /*
@@ -489,7 +523,7 @@ JSBool
 js_regexp_toString(JSContext *cx, JSObject *obj, Value *vp)
 {
     if (!obj->isRegExp()) {
-        ReportIncompatibleMethod(cx, vp, &js_RegExpClass);
+        ReportIncompatibleMethod(cx, vp, &RegExpClass);
         return false;
     }
 
@@ -608,7 +642,7 @@ ExecuteRegExp(JSContext *cx, ExecType execType, uintN argc, Value *vp)
     if (!obj)
         return false;
     if (!obj->isRegExp()) {
-        ReportIncompatibleMethod(cx, vp, &js_RegExpClass);
+        ReportIncompatibleMethod(cx, vp, &RegExpClass);
         return false;
     }
 
@@ -702,7 +736,7 @@ CompileRegExpAndSwap(JSContext *cx, JSObject *obj, uintN argc, Value *argv, Valu
         return SwapRegExpInternals(cx, obj, rval, cx->runtime->emptyString);
 
     Value sourceValue = argv[0];
-    if (sourceValue.isObject() && sourceValue.toObject().getClass() == &js_RegExpClass) {
+    if (sourceValue.isObject() && sourceValue.toObject().isRegExp()) {
         /*
          * If we get passed in a RegExp object we return a new object with the
          * same RegExp (internal matcher program) guts.
@@ -758,7 +792,7 @@ regexp_compile(JSContext *cx, uintN argc, Value *vp)
     if (!obj)
         return false;
     if (!obj->isRegExp()) {
-        ReportIncompatibleMethod(cx, vp, &js_RegExpClass);
+        ReportIncompatibleMethod(cx, vp, &RegExpClass);
         return false;
     }
 
@@ -783,7 +817,7 @@ regexp_construct(JSContext *cx, uintN argc, Value *vp)
         }
     }
 
-    JSObject *obj = NewBuiltinClassInstance(cx, &js_RegExpClass);
+    JSObject *obj = NewBuiltinClassInstance(cx, &RegExpClass);
     if (!obj)
         return false;
 
@@ -808,7 +842,7 @@ js_InitRegExpClass(JSContext *cx, JSObject *obj)
 
     GlobalObject *global = obj->asGlobal();
 
-    JSObject *proto = global->createBlankPrototype(cx, &js_RegExpClass);
+    JSObject *proto = global->createBlankPrototype(cx, &RegExpClass);
     if (!proto)
         return NULL;
 
@@ -830,7 +864,7 @@ js_InitRegExpClass(JSContext *cx, JSObject *obj)
     if (!DefinePropertiesAndBrand(cx, proto, NULL, regexp_methods))
         return NULL;
 
-    JSFunction *ctor = global->createConstructor(cx, regexp_construct, &js_RegExpClass,
+    JSFunction *ctor = global->createConstructor(cx, regexp_construct, &RegExpClass,
                                                  CLASS_ATOM(cx, RegExp), 2);
     if (!ctor)
         return NULL;
@@ -841,6 +875,17 @@ js_InitRegExpClass(JSContext *cx, JSObject *obj)
     /* Add static properties to the RegExp constructor. */
     if (!JS_DefineProperties(cx, ctor, regexp_static_props))
         return NULL;
+
+    /* Capture normal data properties pregenerated for RegExp objects. */
+    TypeObject *type = proto->getNewType(cx);
+    if (!type)
+        return NULL;
+    AddTypeProperty(cx, type, "source", Type::StringType());
+    AddTypeProperty(cx, type, "global", Type::BooleanType());
+    AddTypeProperty(cx, type, "ignoreCase", Type::BooleanType());
+    AddTypeProperty(cx, type, "multiline", Type::BooleanType());
+    AddTypeProperty(cx, type, "sticky", Type::BooleanType());
+    AddTypeProperty(cx, type, "lastIndex", Type::Int32Type());
 
     if (!DefineConstructorAndPrototype(cx, global, JSProto_RegExp, ctor, proto))
         return NULL;

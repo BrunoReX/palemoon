@@ -102,10 +102,10 @@ public:
   static bool GetDisplayPort(nsIContent* aContent, nsRect *aResult);
 
   /**
-   * Use heuristics to figure out the name of the child list that
+   * Use heuristics to figure out the child list that
    * aChildFrame is currently in.
    */
-  static nsIAtom* GetChildListNameFor(nsIFrame* aChildFrame);
+  static nsIFrame::ChildListID GetChildListNameFor(nsIFrame* aChildFrame);
 
   /**
    * GetBeforeFrame returns the outermost :before frame of the given frame, if
@@ -1349,13 +1349,16 @@ public:
   };
 
   struct SurfaceFromElementResult {
-    SurfaceFromElementResult() : mIsWriteOnly(PR_TRUE), mIsStillLoading(PR_FALSE) {}
+    SurfaceFromElementResult() :
+      // Use safe default values here
+      mIsWriteOnly(PR_TRUE), mIsStillLoading(PR_FALSE), mCORSUsed(PR_FALSE) {}
 
     /* mSurface will contain the resulting surface, or will be NULL on error */
     nsRefPtr<gfxASurface> mSurface;
     /* The size of the surface */
     gfxIntSize mSize;
-    /* The principal associated with the element whose surface was returned */
+    /* The principal associated with the element whose surface was returned.
+       If there is a surface, this will never be null. */
     nsCOMPtr<nsIPrincipal> mPrincipal;
     /* The image request, if the element is an nsIImageLoadingContent */
     nsCOMPtr<imgIRequest> mImageRequest;
@@ -1364,6 +1367,8 @@ public:
     /* Whether the element was still loading.  Some consumers need to handle
        this case specially. */
     PRPackedBool mIsStillLoading;
+    /* Whether the element used CORS when loading. */
+    PRPackedBool mCORSUsed;
   };
 
   static SurfaceFromElementResult SurfaceFromElement(nsIDOMElement *aElement,

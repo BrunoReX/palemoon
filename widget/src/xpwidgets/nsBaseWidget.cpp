@@ -115,7 +115,6 @@ nsBaseWidget::nsBaseWidget()
 , mZIndex(0)
 , mSizeMode(nsSizeMode_Normal)
 , mPopupLevel(ePopupLevelTop)
-, mDrawFPS(PR_FALSE)
 {
 #ifdef NOISY_WIDGET_LEAKS
   gNumWidgets++;
@@ -816,11 +815,9 @@ nsBaseWidget::GetShouldAccelerate()
     Preferences::GetBool("layers.acceleration.disabled", PR_FALSE);
   PRBool forceAcceleration =
     Preferences::GetBool("layers.acceleration.force-enabled", PR_FALSE);
-  mDrawFPS =
-    Preferences::GetBool("layers.acceleration.draw-fps", PR_FALSE);
 
   const char *acceleratedEnv = PR_GetEnv("MOZ_ACCELERATED");
-  accelerateByDefault = accelerateByDefault || 
+  accelerateByDefault = accelerateByDefault ||
                         (acceleratedEnv && (*acceleratedEnv != '0'));
 
   nsCOMPtr<nsIXULRuntime> xr = do_GetService("@mozilla.org/xre/runtime;1");
@@ -828,21 +825,33 @@ nsBaseWidget::GetShouldAccelerate()
   if (xr)
     xr->GetInSafeMode(&safeMode);
 
+  bool whitelisted = false;
+
+  nsCOMPtr<nsIGfxInfo> gfxInfo = do_GetService("@mozilla.org/gfx/info;1");
+  if (gfxInfo) {
+    // bug 655578: on X11 at least, we must always call GetData (even if we don't need that information)
+    // as that's what causes GfxInfo initialization which kills the zombie 'glxtest' process.
+    // initially we relied on the fact that GetFeatureStatus calls GetData for us, but bug 681026 showed
+    // that assumption to be unsafe.
+    gfxInfo->GetData();
+
+    PRInt32 status;
+    if (NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_OPENGL_LAYERS, &status))) {
+      if (status == nsIGfxInfo::FEATURE_NO_INFO) {
+        whitelisted = true;
+      }
+    }
+  }
+
   if (disableAcceleration || safeMode)
     return PR_FALSE;
 
   if (forceAcceleration)
     return PR_TRUE;
-
-  nsCOMPtr<nsIGfxInfo> gfxInfo = do_GetService("@mozilla.org/gfx/info;1");
-  if (gfxInfo) {
-    PRInt32 status;
-    if (NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_OPENGL_LAYERS, &status))) {
-      if (status != nsIGfxInfo::FEATURE_NO_INFO) {
-        NS_WARNING("OpenGL-accelerated layers are not supported on this system.");
-        return PR_FALSE;
-      }
-    }
+  
+  if (!whitelisted) {
+    NS_WARNING("OpenGL-accelerated layers are not supported on this system.");
+    return PR_FALSE;
   }
 
   if (accelerateByDefault)
@@ -871,7 +880,6 @@ LayerManager* nsBaseWidget::GetLayerManager(PLayersChild* aShadowManager,
        * deal with it though!
        */
       if (layerManager->Initialize()) {
-        layerManager->SetRenderFPS(mDrawFPS);
         mLayerManager = layerManager;
       }
     }

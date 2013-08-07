@@ -204,13 +204,13 @@ js::Class XPC_WN_NoHelper_Proto_JSClass = {
     WRAPPER_SLOTS,                  // flags;
 
     /* Mandatory non-null function pointer members. */
-    js::PropertyStub,               // addProperty;
-    js::PropertyStub,               // delProperty;
-    js::PropertyStub,               // getProperty;
-    js::StrictPropertyStub,         // setProperty;
-    js::EnumerateStub,              // enumerate;
+    JS_PropertyStub,                // addProperty;
+    JS_PropertyStub,                // delProperty;
+    JS_PropertyStub,                // getProperty;
+    JS_StrictPropertyStub,          // setProperty;
+    JS_EnumerateStub,               // enumerate;
     JS_ResolveStub,                 // resolve;
-    js::ConvertStub,                // convert;
+    JS_ConvertStub,                 // convert;
     nsnull,                         // finalize;
 
     /* Optionally non-null members start here. */
@@ -342,7 +342,7 @@ XPCWrappedNativeScope::GetPrototypeNoHelper(XPCCallContext& ccx)
             xpc_NewSystemInheritingJSObject(ccx,
                                             js::Jsvalify(&XPC_WN_NoHelper_Proto_JSClass),
                                             mPrototypeJSObject,
-                                            mGlobalJSObject);
+                                            false, mGlobalJSObject);
 
         NS_ASSERTION(mPrototypeNoHelper,
                      "Failed to create prototype for wrappers w/o a helper");
@@ -442,7 +442,7 @@ XPCWrappedNativeScope::FinishedMarkPhaseOfGC(JSContext* cx, XPCJSRuntime* rt)
     {
         XPCWrappedNativeScope* next = cur->mNext;
 
-        js::SwitchToCompartment sc(cx, cur->mGlobalJSObject);
+        JS::AutoSwitchCompartment sc(cx, cur->mGlobalJSObject);
 
         if(cur->mGlobalJSObject &&
            JS_IsAboutToBeFinalized(cx, cur->mGlobalJSObject))

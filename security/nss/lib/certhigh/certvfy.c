@@ -388,6 +388,15 @@ cert_VerifyCertChainOld(CERTCertDBHandle *handle, CERTCertificate *cert,
 					   &trustType) != SECSuccess ) {
 	    PORT_Assert(0);
 	    EXIT_IF_NOT_LOGGING(log);
+	    /* XXX continuing with requiredFlags = 0 seems wrong.  It'll
+	     * cause the following test to be true incorrectly:
+	     *   flags = SEC_GET_TRUST_FLAGS(issuerCert->trust, trustType);
+	     *   if (( flags & requiredFlags ) == requiredFlags) {
+	     *       rv = rvFinal;
+	     *       goto done;
+	     *   }
+	     * There are three other instances of this problem.
+	     */
 	    requiredFlags = 0;
 	    trustType = trustSSL;
 	}
@@ -579,6 +588,14 @@ cert_VerifyCertChainOld(CERTCertDBHandle *handle, CERTCertificate *cert,
 	        if (flags & CERTDB_VALID_CA) {
 	            validCAOverride = PR_TRUE;
 	        }
+		/* is it explicitly distrusted? */
+		if ((flags & CERTDB_TERMINAL_RECORD) && 
+			((flags & (CERTDB_TRUSTED|CERTDB_TRUSTED_CA)) == 0)) {
+		    /* untrusted -- the cert is explicitly untrusted, not
+		     * just that it doesn't chain to a trusted cert */
+		    PORT_SetError(SEC_ERROR_UNTRUSTED_ISSUER);
+		    LOG_ERROR_OR_EXIT(log,issuerCert,count+1,flags);
+		}
 	    } else {
                 /* Check if we have any valid trust when cheching for
                  * certUsageAnyCA or certUsageStatusResponder. */
@@ -591,6 +608,22 @@ cert_VerifyCertChainOld(CERTCertDBHandle *handle, CERTCertificate *cert,
                     }
                     if (flags & CERTDB_VALID_CA)
                         validCAOverride = PR_TRUE;
+                }
+		/* We have 2 separate loops because we want any single trust
+		 * bit to allow this usage to return trusted. Only if none of
+		 * the trust bits are on do we check to see if the cert is 
+		 * untrusted */
+                for (trustType = trustSSL; trustType < trustTypeNone;
+                     trustType++) {
+                    flags = SEC_GET_TRUST_FLAGS(issuerCert->trust, trustType);
+		    /* is it explicitly distrusted? */
+		    if ((flags & CERTDB_TERMINAL_RECORD) && 
+			((flags & (CERTDB_TRUSTED|CERTDB_TRUSTED_CA)) == 0)) {
+			/* untrusted -- the cert is explicitly untrusted, not
+			 * just that it doesn't chain to a trusted cert */
+			PORT_SetError(SEC_ERROR_UNTRUSTED_ISSUER);
+			LOG_ERROR_OR_EXIT(log,issuerCert,count+1,flags);
+		    }
                 }
             }
         }
@@ -718,7 +751,7 @@ CERT_VerifyCACertForUsage(CERTCertDBHandle *handle, CERTCertificate *cert,
     PRBool validCAOverride = PR_FALSE;
     SECStatus rv;
     SECStatus rvFinal = SECSuccess;
-    int flags;
+    unsigned int flags;
     unsigned int caCertType;
     unsigned int requiredCAKeyUsage;
     unsigned int requiredFlags;
@@ -815,7 +848,7 @@ CERT_VerifyCACertForUsage(CERTCertDBHandle *handle, CERTCertificate *cert,
         }
 
 	/*
-	 * check the trust parms of the issuer
+	 * check the trust params of the issuer
 	 */
 	flags = SEC_GET_TRUST_FLAGS(cert->trust, trustType);
 	if ( ( flags & requiredFlags ) == requiredFlags) {
@@ -825,6 +858,14 @@ CERT_VerifyCACertForUsage(CERTCertDBHandle *handle, CERTCertificate *cert,
 	}
 	if (flags & CERTDB_VALID_CA) {
 	    validCAOverride = PR_TRUE;
+	}
+	/* is it explicitly distrusted? */
+	if ((flags & CERTDB_TERMINAL_RECORD) && 
+		((flags & (CERTDB_TRUSTED|CERTDB_TRUSTED_CA)) == 0)) {
+	    /* untrusted -- the cert is explicitly untrusted, not
+	     * just that it doesn't chain to a trusted cert */
+	    PORT_SetError(SEC_ERROR_UNTRUSTED_CERT);
+	    LOG_ERROR_OR_EXIT(log,cert,0,flags);
 	}
     }
     if (!validCAOverride) {
@@ -890,6 +931,153 @@ done:
 }
 
 /*
+ * check the leaf cert against trust and usage. 
+ *   returns success if the cert is not distrusted. If the cert is
+ *       trusted, then the trusted bool will be true.
+ *   returns failure if the cert is distrusted. If failure, flags
+ *       will return the flag bits that indicated distrust.
+ */
+SECStatus
+cert_CheckLeafTrust(CERTCertificate *cert, SECCertUsage certUsage,
+	            unsigned int *failedFlags, PRBool *trusted)
+{
+    unsigned int flags;
+
+    *failedFlags = 0;
+    *trusted = PR_FALSE;
+			
+    /* check trust flags to see if this cert is directly trusted */
+    if ( cert->trust ) { 
+	switch ( certUsage ) {
+	  case certUsageSSLClient:
+	  case certUsageSSLServer:
+	    flags = cert->trust->sslFlags;
+	    
+	    /* is the cert directly trusted or not trusted ? */
+	    if ( flags & CERTDB_TERMINAL_RECORD) { /* the trust record is 
+						    * authoritative */
+		if ( flags & CERTDB_TRUSTED ) {	/* trust this cert */
+		    *trusted = PR_TRUE;
+		    return SECSuccess;
+		} else { /* don't trust this cert */
+		    *failedFlags = flags;
+		    return SECFailure;
+		}
+	    }
+	    break;
+	  case certUsageSSLServerWithStepUp:
+	    /* XXX - step up certs can't be directly trusted, only distrust */
+	    flags = cert->trust->sslFlags;
+	    if ( flags & CERTDB_TERMINAL_RECORD) { /* the trust record is 
+						    * authoritative */
+		if (( flags & CERTDB_TRUSTED ) == 0) {	
+		    /* don't trust this cert */
+		    *failedFlags = flags;
+		    return SECFailure;
+		}
+	    }
+	    break;
+	  case certUsageSSLCA:
+	    flags = cert->trust->sslFlags;
+	    if ( flags & CERTDB_TERMINAL_RECORD) { /* the trust record is 
+						    * authoritative */
+		if (( flags & (CERTDB_TRUSTED|CERTDB_TRUSTED_CA) ) == 0) {	
+		    /* don't trust this cert */
+		    *failedFlags = flags;
+		    return SECFailure;
+		}
+	    }
+	    break;
+	  case certUsageEmailSigner:
+	  case certUsageEmailRecipient:
+	    flags = cert->trust->emailFlags;
+	    if ( flags & CERTDB_TERMINAL_RECORD) { /* the trust record is 
+						    * authoritative */
+		if ( flags & CERTDB_TRUSTED ) {	/* trust this cert */
+		    *trusted = PR_TRUE;
+		    return SECSuccess;
+		} 
+		else { /* don't trust this cert */
+		    *failedFlags = flags;
+		    return SECFailure;
+		}
+	    }
+	    
+	    break;
+	  case certUsageObjectSigner:
+	    flags = cert->trust->objectSigningFlags;
+
+	    if ( flags & CERTDB_TERMINAL_RECORD) { /* the trust record is 
+						    * authoritative */
+		if ( flags & CERTDB_TRUSTED ) {	/* trust this cert */
+		    *trusted = PR_TRUE;
+		    return SECSuccess;
+		} else { /* don't trust this cert */
+		    *failedFlags = flags;
+		    return SECFailure;
+		}
+	    }
+	    break;
+	  case certUsageVerifyCA:
+	  case certUsageStatusResponder:
+	    flags = cert->trust->sslFlags;
+	    /* is the cert directly trusted or not trusted ? */
+	    if ( ( flags & ( CERTDB_VALID_CA | CERTDB_TRUSTED_CA ) ) ==
+		( CERTDB_VALID_CA | CERTDB_TRUSTED_CA ) ) {
+		*trusted = PR_TRUE;
+		return SECSuccess;
+	    }
+	    flags = cert->trust->emailFlags;
+	    /* is the cert directly trusted or not trusted ? */
+	    if ( ( flags & ( CERTDB_VALID_CA | CERTDB_TRUSTED_CA ) ) ==
+		( CERTDB_VALID_CA | CERTDB_TRUSTED_CA ) ) {
+		*trusted = PR_TRUE;
+		return SECSuccess;
+	    }
+	    flags = cert->trust->objectSigningFlags;
+	    /* is the cert directly trusted or not trusted ? */
+	    if ( ( flags & ( CERTDB_VALID_CA | CERTDB_TRUSTED_CA ) ) ==
+		( CERTDB_VALID_CA | CERTDB_TRUSTED_CA ) ) {
+		*trusted = PR_TRUE;
+		return SECSuccess;
+	    }
+	    /* fall through to test distrust */
+	  case certUsageAnyCA:
+	  case certUsageUserCertImport:
+	    /* do we distrust these certs explicitly */
+	    flags = cert->trust->sslFlags;
+	    if ( flags & CERTDB_TERMINAL_RECORD) { /* the trust record is 
+						    * authoritative */
+		if ((flags & (CERTDB_TRUSTED|CERTDB_TRUSTED_CA)) == 0) {
+		    *failedFlags = flags;
+		    return SECFailure;
+		}
+	    }
+	    flags = cert->trust->emailFlags;
+	    if ( flags & CERTDB_TERMINAL_RECORD) { /* the trust record is 
+						    * authoritative */
+		if ((flags & (CERTDB_TRUSTED|CERTDB_TRUSTED_CA)) == 0) {
+		    *failedFlags = flags;
+		    return SECFailure;
+		}
+	    }
+	    /* fall through */
+	  case certUsageProtectedObjectSigner:
+	    flags = cert->trust->objectSigningFlags;
+	    if ( flags & CERTDB_TERMINAL_RECORD) { /* the trust record is 
+						    * authoritative */
+		if ((flags & (CERTDB_TRUSTED|CERTDB_TRUSTED_CA)) == 0) {
+		    *failedFlags = flags;
+		    return SECFailure;
+		}
+	    }
+	    break;
+	}
+    }
+    return SECSuccess;
+}
+
+/*
  * verify a certificate by checking if it's valid and that we
  * trust the issuer.
  *
@@ -921,6 +1109,7 @@ CERT_VerifyCertificate(CERTCertDBHandle *handle, CERTCertificate *cert,
     PRBool checkAllUsages = PR_FALSE;
     PRBool revoked = PR_FALSE;
     PRBool sigerror = PR_FALSE;
+    PRBool trusted = PR_FALSE;
 
     if (!requiredUsages) {
         /* there are no required usages, so the user probably wants to
@@ -1008,91 +1197,20 @@ CERT_VerifyCertificate(CERTCertDBHandle *handle, CERTCertificate *cert,
             INVALID_USAGE();
         }
 
-        /* check trust flags to see if this cert is directly trusted */
-        if ( cert->trust ) { /* the cert is in the DB */
-            switch ( certUsage ) {
-              case certUsageSSLClient:
-              case certUsageSSLServer:
-                flags = cert->trust->sslFlags;
+	rv = cert_CheckLeafTrust(cert, certUsage, &flags, &trusted);
+	if (rv == SECFailure) {
+	    if (PR_TRUE == requiredUsage) {
+		PORT_SetError(SEC_ERROR_UNTRUSTED_CERT);
+	    }
+	    LOG_ERROR(log, cert, 0, flags);
+	    INVALID_USAGE();
+	} else if (trusted) {
+	    VALID_USAGE();
+	}
 
-                /* is the cert directly trusted or not trusted ? */
-                if ( flags & CERTDB_VALID_PEER ) {/*the trust record is valid*/
-                    if ( flags & CERTDB_TRUSTED ) {	/* trust this cert */
-                        VALID_USAGE();
-                    } else { /* don't trust this cert */
-                        if (PR_TRUE == requiredUsage) {
-                            PORT_SetError(SEC_ERROR_UNTRUSTED_CERT);
-                        }
-                        LOG_ERROR(log,cert,0,flags);
-                        INVALID_USAGE();
-                    }
-                }
-                break;
-              case certUsageSSLServerWithStepUp:
-                /* XXX - step up certs can't be directly trusted */
-                break;
-              case certUsageSSLCA:
-                break;
-              case certUsageEmailSigner:
-              case certUsageEmailRecipient:
-                flags = cert->trust->emailFlags;
-
-                /* is the cert directly trusted or not trusted ? */
-                if ( ( flags & ( CERTDB_VALID_PEER | CERTDB_TRUSTED ) ) ==
-                    ( CERTDB_VALID_PEER | CERTDB_TRUSTED ) ) {
-                    VALID_USAGE();
-                }
-                break;
-              case certUsageObjectSigner:
-                flags = cert->trust->objectSigningFlags;
-
-                /* is the cert directly trusted or not trusted ? */
-                if ( flags & CERTDB_VALID_PEER ) {/*the trust record is valid*/
-                    if ( flags & CERTDB_TRUSTED ) {	/* trust this cert */
-                        VALID_USAGE();
-                    } else { /* don't trust this cert */
-                        if (PR_TRUE == requiredUsage) {
-                            PORT_SetError(SEC_ERROR_UNTRUSTED_CERT);
-                        }
-                        LOG_ERROR(log,cert,0,flags);
-                        INVALID_USAGE();
-                    }
-                }
-                break;
-              case certUsageVerifyCA:
-              case certUsageStatusResponder:
-                flags = cert->trust->sslFlags;
-                /* is the cert directly trusted or not trusted ? */
-                if ( ( flags & ( CERTDB_VALID_CA | CERTDB_TRUSTED_CA ) ) ==
-                    ( CERTDB_VALID_CA | CERTDB_TRUSTED_CA ) ) {
-                    VALID_USAGE();
-                }
-                flags = cert->trust->emailFlags;
-                /* is the cert directly trusted or not trusted ? */
-                if ( ( flags & ( CERTDB_VALID_CA | CERTDB_TRUSTED_CA ) ) ==
-                    ( CERTDB_VALID_CA | CERTDB_TRUSTED_CA ) ) {
-                    VALID_USAGE();
-                }
-                flags = cert->trust->objectSigningFlags;
-                /* is the cert directly trusted or not trusted ? */
-                if ( ( flags & ( CERTDB_VALID_CA | CERTDB_TRUSTED_CA ) ) ==
-                    ( CERTDB_VALID_CA | CERTDB_TRUSTED_CA ) ) {
-                    VALID_USAGE();
-                }
-                break;
-              case certUsageAnyCA:
-              case certUsageProtectedObjectSigner:
-              case certUsageUserCertImport:
-                /* XXX to make the compiler happy.  Should these be
-                 * explicitly handled?
-                 */
-                break;
-            }
-        }
-
-        if (PR_TRUE == revoked || PR_TRUE == sigerror) {
-            INVALID_USAGE();
-        }
+	if (PR_TRUE == revoked || PR_TRUE == sigerror) {
+	    INVALID_USAGE();
+	}
 
         rv = cert_VerifyCertChain(handle, cert,
             checkSig, &sigerror,
@@ -1146,6 +1264,7 @@ CERT_VerifyCert(CERTCertDBHandle *handle, CERTCertificate *cert,
     unsigned int requiredCertType;
     unsigned int flags;
     unsigned int certType;
+    PRBool       trusted;
     PRBool       allowOverride;
     SECCertTimeValidity validity;
     CERTStatusConfig *statusConfig;
@@ -1212,81 +1331,14 @@ CERT_VerifyCert(CERTCertDBHandle *handle, CERTCertificate *cert,
 	LOG_ERROR_OR_EXIT(log,cert,0,requiredCertType);
     }
 
-    /* check trust flags to see if this cert is directly trusted */
-    if ( cert->trust ) { /* the cert is in the DB */
-	switch ( certUsage ) {
-	  case certUsageSSLClient:
-	  case certUsageSSLServer:
-	    flags = cert->trust->sslFlags;
-	    
-	    /* is the cert directly trusted or not trusted ? */
-	    if ( flags & CERTDB_VALID_PEER ) {/*the trust record is valid*/
-		if ( flags & CERTDB_TRUSTED ) {	/* trust this cert */
-		    goto winner;
-		} else { /* don't trust this cert */
-		    PORT_SetError(SEC_ERROR_UNTRUSTED_CERT);
-		    LOG_ERROR_OR_EXIT(log,cert,0,flags);
-		}
-	    }
-	    break;
-	  case certUsageSSLServerWithStepUp:
-	    /* XXX - step up certs can't be directly trusted */
-	    break;
-	  case certUsageSSLCA:
-	    break;
-	  case certUsageEmailSigner:
-	  case certUsageEmailRecipient:
-	    flags = cert->trust->emailFlags;
-	    
-	    /* is the cert directly trusted or not trusted ? */
-	    if ( ( flags & ( CERTDB_VALID_PEER | CERTDB_TRUSTED ) ) ==
-		( CERTDB_VALID_PEER | CERTDB_TRUSTED ) ) {
-		goto winner;
-	    }
-	    break;
-	  case certUsageObjectSigner:
-	    flags = cert->trust->objectSigningFlags;
-
-	    /* is the cert directly trusted or not trusted ? */
-	    if ( flags & CERTDB_VALID_PEER ) {/*the trust record is valid*/
-		if ( flags & CERTDB_TRUSTED ) {	/* trust this cert */
-		    goto winner;
-		} else { /* don't trust this cert */
-		    PORT_SetError(SEC_ERROR_UNTRUSTED_CERT);
-		    LOG_ERROR_OR_EXIT(log,cert,0,flags);
-		}
-	    }
-	    break;
-	  case certUsageVerifyCA:
-	  case certUsageStatusResponder:
-	    flags = cert->trust->sslFlags;
-	    /* is the cert directly trusted or not trusted ? */
-	    if ( ( flags & ( CERTDB_VALID_CA | CERTDB_TRUSTED_CA ) ) ==
-		( CERTDB_VALID_CA | CERTDB_TRUSTED_CA ) ) {
-		goto winner;
-	    }
-	    flags = cert->trust->emailFlags;
-	    /* is the cert directly trusted or not trusted ? */
-	    if ( ( flags & ( CERTDB_VALID_CA | CERTDB_TRUSTED_CA ) ) ==
-		( CERTDB_VALID_CA | CERTDB_TRUSTED_CA ) ) {
-		goto winner;
-	    }
-	    flags = cert->trust->objectSigningFlags;
-	    /* is the cert directly trusted or not trusted ? */
-	    if ( ( flags & ( CERTDB_VALID_CA | CERTDB_TRUSTED_CA ) ) ==
-		( CERTDB_VALID_CA | CERTDB_TRUSTED_CA ) ) {
-		goto winner;
-	    }
-	    break;
-	  case certUsageAnyCA:
-	  case certUsageProtectedObjectSigner:
-	  case certUsageUserCertImport:
-	    /* XXX to make the compiler happy.  Should these be
-	     * explicitly handled?
-	     */
-	    break;
-	}
+    rv = cert_CheckLeafTrust(cert,certUsage, &flags, &trusted);
+    if (rv  == SECFailure) {
+	PORT_SetError(SEC_ERROR_UNTRUSTED_CERT);
+	LOG_ERROR_OR_EXIT(log,cert,0,flags);
+    } else if (trusted) {
+	goto winner;
     }
+
 
     rv = CERT_VerifyCertChain(handle, cert, checkSig, certUsage,
 			      t, wincx, log);

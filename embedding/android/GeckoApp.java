@@ -45,6 +45,7 @@ import java.util.zip.*;
 import java.nio.*;
 import java.nio.channels.FileChannel;
 import java.util.concurrent.*;
+import java.lang.reflect.*;
 
 import android.os.*;
 import android.app.*;
@@ -61,18 +62,24 @@ import android.util.*;
 import android.net.*;
 import android.database.*;
 import android.provider.*;
+import android.content.pm.*;
+import android.content.pm.PackageManager.*;
+import dalvik.system.*;
 
 abstract public class GeckoApp
     extends Activity
 {
+    private static final String LOG_FILE_NAME     = "GeckoApp";
+
     public static final String ACTION_ALERT_CLICK = "org.mozilla.gecko.ACTION_ALERT_CLICK";
     public static final String ACTION_ALERT_CLEAR = "org.mozilla.gecko.ACTION_ALERT_CLEAR";
     public static final String ACTION_WEBAPP      = "org.mozilla.gecko.WEBAPP";
     public static final String ACTION_DEBUG       = "org.mozilla.gecko.DEBUG";
     public static final String ACTION_BOOKMARK    = "org.mozilla.gecko.BOOKMARK";
 
-    public static FrameLayout mainLayout;
+    public static AbsoluteLayout mainLayout;
     public static GeckoSurfaceView surfaceView;
+    public static SurfaceView cameraView;
     public static GeckoApp mAppContext;
     public static boolean mFullscreen = false;
     public static File sGREDir = null;
@@ -126,6 +133,151 @@ abstract public class GeckoApp
                                }).show();
     }
 
+    public static final String PLUGIN_ACTION = "android.webkit.PLUGIN";
+
+    /**
+     * A plugin that wish to be loaded in the WebView must provide this permission
+     * in their AndroidManifest.xml.
+     */
+    public static final String PLUGIN_PERMISSION = "android.webkit.permission.PLUGIN";
+
+    private static final String LOGTAG = "PluginManager";
+
+    private static final String PLUGIN_SYSTEM_LIB = "/system/lib/plugins/";
+
+    private static final String PLUGIN_TYPE = "type";
+    private static final String TYPE_NATIVE = "native";
+    public ArrayList<PackageInfo> mPackageInfoCache = new ArrayList<PackageInfo>();
+
+    String[] getPluginDirectories() {
+
+        ArrayList<String> directories = new ArrayList<String>();
+        PackageManager pm = this.mAppContext.getPackageManager();
+        List<ResolveInfo> plugins = pm.queryIntentServices(new Intent(PLUGIN_ACTION),
+                PackageManager.GET_SERVICES | PackageManager.GET_META_DATA);
+
+        synchronized(mPackageInfoCache) {
+
+            // clear the list of existing packageInfo objects
+            mPackageInfoCache.clear();
+
+
+            for (ResolveInfo info : plugins) {
+
+                // retrieve the plugin's service information
+                ServiceInfo serviceInfo = info.serviceInfo;
+                if (serviceInfo == null) {
+                    Log.w(LOGTAG, "Ignore bad plugin");
+                    continue;
+                }
+
+                Log.w(LOGTAG, "Loading plugin: " + serviceInfo.packageName);
+
+
+                // retrieve information from the plugin's manifest
+                PackageInfo pkgInfo;
+                try {
+                    pkgInfo = pm.getPackageInfo(serviceInfo.packageName,
+                                    PackageManager.GET_PERMISSIONS
+                                    | PackageManager.GET_SIGNATURES);
+                } catch (Exception e) {
+                    Log.w(LOGTAG, "Can't find plugin: " + serviceInfo.packageName);
+                    continue;
+                }
+                if (pkgInfo == null) {
+                    Log.w(LOGTAG, "Loading plugin: " + serviceInfo.packageName + ". Could not load package information.");
+                    continue;
+                }
+
+                /*
+                 * find the location of the plugin's shared library. The default
+                 * is to assume the app is either a user installed app or an
+                 * updated system app. In both of these cases the library is
+                 * stored in the app's data directory.
+                 */
+                String directory = pkgInfo.applicationInfo.dataDir + "/lib";
+                final int appFlags = pkgInfo.applicationInfo.flags;
+                final int updatedSystemFlags = ApplicationInfo.FLAG_SYSTEM |
+                                               ApplicationInfo.FLAG_UPDATED_SYSTEM_APP;
+                // preloaded system app with no user updates
+                if ((appFlags & updatedSystemFlags) == ApplicationInfo.FLAG_SYSTEM) {
+                    directory = PLUGIN_SYSTEM_LIB + pkgInfo.packageName;
+                }
+
+                // check if the plugin has the required permissions
+                String permissions[] = pkgInfo.requestedPermissions;
+                if (permissions == null) {
+                    Log.w(LOGTAG, "Loading plugin: " + serviceInfo.packageName + ". Does not have required permission.");
+                    continue;
+                }
+                boolean permissionOk = false;
+                for (String permit : permissions) {
+                    if (PLUGIN_PERMISSION.equals(permit)) {
+                        permissionOk = true;
+                        break;
+                    }
+                }
+                if (!permissionOk) {
+                    Log.w(LOGTAG, "Loading plugin: " + serviceInfo.packageName + ". Does not have required permission (2).");
+                    continue;
+                }
+
+                // check to ensure the plugin is properly signed
+                Signature signatures[] = pkgInfo.signatures;
+                if (signatures == null) {
+                    Log.w(LOGTAG, "Loading plugin: " + serviceInfo.packageName + ". Not signed.");
+                    continue;
+                }
+
+                // determine the type of plugin from the manifest
+                if (serviceInfo.metaData == null) {
+                    Log.e(LOGTAG, "The plugin '" + serviceInfo.name + "' has no type defined");
+                    continue;
+                }
+
+                String pluginType = serviceInfo.metaData.getString(PLUGIN_TYPE);
+                if (!TYPE_NATIVE.equals(pluginType)) {
+                    Log.e(LOGTAG, "Unrecognized plugin type: " + pluginType);
+                    continue;
+                }
+
+                try {
+                    Class<?> cls = getPluginClass(serviceInfo.packageName, serviceInfo.name);
+
+                    //TODO implement any requirements of the plugin class here!
+                    boolean classFound = true;
+
+                    if (!classFound) {
+                        Log.e(LOGTAG, "The plugin's class' " + serviceInfo.name + "' does not extend the appropriate class.");
+                        continue;
+                    }
+
+                } catch (NameNotFoundException e) {
+                    Log.e(LOGTAG, "Can't find plugin: " + serviceInfo.packageName);
+                    continue;
+                } catch (ClassNotFoundException e) {
+                    Log.e(LOGTAG, "Can't find plugin's class: " + serviceInfo.name);
+                    continue;
+                }
+
+                // if all checks have passed then make the plugin available
+                mPackageInfoCache.add(pkgInfo);
+                directories.add(directory);
+            }
+        }
+
+        return directories.toArray(new String[directories.size()]);
+    }
+
+    Class<?> getPluginClass(String packageName, String className)
+            throws NameNotFoundException, ClassNotFoundException {
+        Context pluginContext = this.mAppContext.createPackageContext(packageName,
+                Context.CONTEXT_INCLUDE_CODE |
+                Context.CONTEXT_IGNORE_SECURITY);
+        ClassLoader pluginCL = pluginContext.getClassLoader();
+        return pluginCL.loadClass(className);
+    }
+
     // Returns true when the intent is going to be handled by gecko launch
     boolean launch(Intent intent)
     {
@@ -141,20 +293,24 @@ abstract public class GeckoApp
                     if (mLibLoadThread != null)
                         mLibLoadThread.join();
                 } catch (InterruptedException ie) {}
-                surfaceView.mSplashStatusMsg =
-                    getResources().getString(R.string.splash_screen_loading);
+
+                // Show the URL we are about to load, if the intent has one
+                if (Intent.ACTION_VIEW.equals(i.getAction())) {
+                    surfaceView.mSplashURL = i.getDataString();
+                }
                 surfaceView.drawSplashScreen();
+
                 // unpack files in the components directory
                 try {
                     unpackComponents();
                 } catch (FileNotFoundException fnfe) {
-                    Log.e("GeckoApp", "error unpacking components", fnfe);
+                    Log.e(LOG_FILE_NAME, "error unpacking components", fnfe);
                     Looper.prepare();
                     showErrorDialog(getString(R.string.error_loading_file));
                     Looper.loop();
                     return;
                 } catch (IOException ie) {
-                    Log.e("GeckoApp", "error unpacking components", ie);
+                    Log.e(LOG_FILE_NAME, "error unpacking components", ie);
                     String msg = ie.getMessage();
                     Looper.prepare();
                     if (msg != null && msg.equalsIgnoreCase("No space left on device"))
@@ -172,7 +328,7 @@ abstract public class GeckoApp
                                            i.getStringExtra("args"),
                                            i.getDataString());
                 } catch (Exception e) {
-                    Log.e("GeckoApp", "top level exception", e);
+                    Log.e(LOG_FILE_NAME, "top level exception", e);
                     StringWriter sw = new StringWriter();
                     e.printStackTrace(new PrintWriter(sw));
                     GeckoAppShell.reportJavaCrash(sw.toString());
@@ -196,7 +352,7 @@ abstract public class GeckoApp
                     try {
                         Looper.loop();
                     } catch (Exception e) {
-                        Log.e("GeckoApp", "top level exception", e);
+                        Log.e(LOG_FILE_NAME, "top level exception", e);
                         StringWriter sw = new StringWriter();
                         e.printStackTrace(new PrintWriter(sw));
                         GeckoAppShell.reportJavaCrash(sw.toString());
@@ -212,7 +368,7 @@ abstract public class GeckoApp
         if (localeCode != null && localeCode.length() > 0)
             GeckoAppShell.setSelectedLocale(localeCode);
 
-        Log.i("GeckoApp", "create");
+        Log.i(LOG_FILE_NAME, "create");
         super.onCreate(savedInstanceState);
 
         if (sGREDir == null)
@@ -222,15 +378,22 @@ abstract public class GeckoApp
                              WindowManager.LayoutParams.FLAG_FULLSCREEN : 0,
                              WindowManager.LayoutParams.FLAG_FULLSCREEN);
 
+        if (cameraView == null) {
+            cameraView = new SurfaceView(this);
+            cameraView.getHolder().setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+        }
+
         if (surfaceView == null)
             surfaceView = new GeckoSurfaceView(this);
         else
-            mainLayout.removeView(surfaceView);
+            mainLayout.removeAllViews();
 
-        mainLayout = new FrameLayout(this);
+        mainLayout = new AbsoluteLayout(this);
         mainLayout.addView(surfaceView,
-                           new FrameLayout.LayoutParams(FrameLayout.LayoutParams.FILL_PARENT,
-                                                        FrameLayout.LayoutParams.FILL_PARENT));
+                           new AbsoluteLayout.LayoutParams(AbsoluteLayout.LayoutParams.MATCH_PARENT, // level 8
+                                                           AbsoluteLayout.LayoutParams.MATCH_PARENT,
+                                                           0,
+                                                           0));
 
         setContentView(mainLayout,
                        new ViewGroup.LayoutParams(ViewGroup.LayoutParams.FILL_PARENT,
@@ -257,33 +420,17 @@ abstract public class GeckoApp
                 Configuration config = res.getConfiguration();
                 config.locale = locale;
                 res.updateConfiguration(config, res.getDisplayMetrics());
-
-
             }});
-        File cacheFile = GeckoAppShell.getCacheDir();
-        File libxulFile = new File(cacheFile, "libxul.so");
-
-        if (GeckoAppShell.getFreeSpace() > GeckoAppShell.kFreeSpaceThreshold &&
-            (!libxulFile.exists() ||
-             new File(getApplication().getPackageResourcePath()).lastModified()
-             >= libxulFile.lastModified())) {
-            surfaceView.mSplashStatusMsg =
-                getResources().getString(R.string.splash_screen_installing_libs);
-            File[] libs = cacheFile.listFiles(new FilenameFilter() {
-                public boolean accept(File dir, String name) {
-                    return name.endsWith(".so");
-                }
-            });
-            if (libs != null) {
-                for (int i = 0; i < libs.length; i++) {
-                    libs[i].delete();
-                }
-            }
-        } else {
-            surfaceView.mSplashStatusMsg =
-                getResources().getString(R.string.splash_screen_loading);
-        }
         mLibLoadThread.start();
+    }
+
+    public void enableCameraView() {
+        // Some phones (eg. nexus S) need at least a 8x16 preview size
+        mainLayout.addView(cameraView, new AbsoluteLayout.LayoutParams(8, 16, 0, 0));
+    }
+
+    public void disableCameraView() {
+        mainLayout.removeView(cameraView);
     }
 
     @Override
@@ -314,30 +461,30 @@ abstract public class GeckoApp
             return;
 
         if (Intent.ACTION_MAIN.equals(action)) {
-            Log.i("GeckoApp", "Intent : ACTION_MAIN");
+            Log.i(LOG_FILE_NAME, "Intent : ACTION_MAIN");
             GeckoAppShell.sendEventToGecko(new GeckoEvent(""));
         }
         else if (Intent.ACTION_VIEW.equals(action)) {
             String uri = intent.getDataString();
             GeckoAppShell.sendEventToGecko(new GeckoEvent(uri));
-            Log.i("GeckoApp","onNewIntent: "+uri);
+            Log.i(LOG_FILE_NAME,"onNewIntent: "+uri);
         }
         else if (ACTION_WEBAPP.equals(action)) {
             String uri = intent.getStringExtra("args");
             GeckoAppShell.sendEventToGecko(new GeckoEvent(uri));
-            Log.i("GeckoApp","Intent : WEBAPP - " + uri);
+            Log.i(LOG_FILE_NAME,"Intent : WEBAPP - " + uri);
         }
         else if (ACTION_BOOKMARK.equals(action)) {
             String args = intent.getStringExtra("args");
             GeckoAppShell.sendEventToGecko(new GeckoEvent(args));
-            Log.i("GeckoApp","Intent : BOOKMARK - " + args);
+            Log.i(LOG_FILE_NAME,"Intent : BOOKMARK - " + args);
         }
     }
 
     @Override
     public void onPause()
     {
-        Log.i("GeckoApp", "pause");
+        Log.i(LOG_FILE_NAME, "pause");
         GeckoAppShell.sendEventToGecko(new GeckoEvent(GeckoEvent.ACTIVITY_PAUSING));
         // The user is navigating away from this activity, but nothing
         // has come to the foreground yet; for Gecko, we may want to
@@ -355,7 +502,7 @@ abstract public class GeckoApp
     @Override
     public void onResume()
     {
-        Log.i("GeckoApp", "resume");
+        Log.i(LOG_FILE_NAME, "resume");
         if (checkLaunchState(LaunchState.GeckoRunning))
             GeckoAppShell.onResume();
         // After an onPause, the activity is back in the foreground.
@@ -373,7 +520,7 @@ abstract public class GeckoApp
     @Override
     public void onStop()
     {
-        Log.i("GeckoApp", "stop");
+        Log.i(LOG_FILE_NAME, "stop");
         // We're about to be stopped, potentially in preparation for
         // being destroyed.  We're killable after this point -- as I
         // understand it, in extreme cases the process can be terminated
@@ -394,7 +541,7 @@ abstract public class GeckoApp
     @Override
     public void onRestart()
     {
-        Log.i("GeckoApp", "restart");
+        Log.i(LOG_FILE_NAME, "restart");
         GeckoAppShell.putChildInForeground();
         super.onRestart();
     }
@@ -402,14 +549,15 @@ abstract public class GeckoApp
     @Override
     public void onStart()
     {
-        Log.i("GeckoApp", "start");
+        Log.i(LOG_FILE_NAME, "start");
+        GeckoAppShell.sendEventToGecko(new GeckoEvent(GeckoEvent.ACTIVITY_START));
         super.onStart();
     }
 
     @Override
     public void onDestroy()
     {
-        Log.i("GeckoApp", "destroy");
+        Log.i(LOG_FILE_NAME, "destroy");
         // Tell Gecko to shutting down; we'll end up calling System.exit()
         // in onXreExit.
         if (isFinishing())
@@ -421,7 +569,7 @@ abstract public class GeckoApp
     @Override
     public void onConfigurationChanged(android.content.res.Configuration newConfig)
     {
-        Log.i("GeckoApp", "configuration changed");
+        Log.i(LOG_FILE_NAME, "configuration changed");
         // nothing, just ignore
         super.onConfigurationChanged(newConfig);
     }
@@ -429,7 +577,7 @@ abstract public class GeckoApp
     @Override
     public void onLowMemory()
     {
-        Log.e("GeckoApp", "low memory");
+        Log.e(LOG_FILE_NAME, "low memory");
         if (checkLaunchState(LaunchState.GeckoRunning))
             GeckoAppShell.onLowMemory();
         super.onLowMemory();
@@ -449,15 +597,17 @@ abstract public class GeckoApp
         componentsDir.mkdir();
         componentsDir.setLastModified(applicationPackage.lastModified());
 
+        GeckoAppShell.killAnyZombies();
+
         ZipFile zip = new ZipFile(applicationPackage);
 
-        byte[] buf = new byte[8192];
+        byte[] buf = new byte[32768];
         try {
             if (unpackFile(zip, buf, null, "removed-files"))
                 removeFiles();
         } catch (Exception ex) {
             // This file may not be there, so just log any errors and move on
-            Log.w("GeckoApp", "error removing files", ex);
+            Log.w(LOG_FILE_NAME, "error removing files", ex);
         }
         unpackFile(zip, buf, null, "application.ini");
         unpackFile(zip, buf, null, getContentProcessName());
@@ -502,8 +652,6 @@ abstract public class GeckoApp
         
     }
 
-    boolean haveKilledZombies = false;
-
     private boolean unpackFile(ZipFile zip, byte[] buf, ZipEntry fileEntry,
                             String name)
         throws IOException, FileNotFoundException
@@ -515,22 +663,12 @@ abstract public class GeckoApp
                                             zip.getName());
 
         File outFile = new File(sGREDir, name);
-        if (outFile.exists() &&
-            outFile.lastModified() == fileEntry.getTime() &&
+        if (outFile.lastModified() == fileEntry.getTime() &&
             outFile.length() == fileEntry.getSize())
             return false;
 
-        surfaceView.mSplashStatusMsg =
-                    getResources().getString(R.string.splash_firstrun);
-        surfaceView.drawSplashScreen();
-
-        if (!haveKilledZombies) {
-            haveKilledZombies = true;
-            GeckoAppShell.killAnyZombies();
-        }
-
         File dir = outFile.getParentFile();
-        if (!outFile.exists())
+        if (!dir.exists())
             dir.mkdirs();
 
         InputStream fileStream;
@@ -572,11 +710,11 @@ abstract public class GeckoApp
             addEnvToIntent(intent);
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK |
                             Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
-            Log.i("GeckoAppJava", intent.toString());
+            Log.i(LOG_FILE_NAME, intent.toString());
             GeckoAppShell.killAnyZombies();
             startActivity(intent);
         } catch (Exception e) {
-            Log.i("GeckoAppJava", "error doing restart", e);
+            Log.i(LOG_FILE_NAME, "error doing restart", e);
         }
         finish();
         // Give the restart process time to start before we die
@@ -588,7 +726,7 @@ abstract public class GeckoApp
     }
 
     private void checkAndLaunchUpdate() {
-        Log.i("GeckoAppJava", "Checking for an update");
+        Log.i(LOG_FILE_NAME, "Checking for an update");
 
         int statusCode = 8; // UNEXPECTED_ERROR
         File baseUpdateDir = null;
@@ -608,7 +746,7 @@ abstract public class GeckoApp
         if (!updateFile.exists())
             return;
 
-        Log.i("GeckoAppJava", "Update is available!");
+        Log.i(LOG_FILE_NAME, "Update is available!");
 
         // Launch APK
         File updateFileToRun = new File(updateDir, getPackageName() + "-update.apk");
@@ -617,15 +755,15 @@ abstract public class GeckoApp
                 String amCmd = "/system/bin/am start -a android.intent.action.VIEW " +
                                "-n com.android.packageinstaller/.PackageInstallerActivity -d file://" +
                                updateFileToRun.getPath();
-                Log.i("GeckoAppJava", amCmd);
+                Log.i(LOG_FILE_NAME, amCmd);
                 Runtime.getRuntime().exec(amCmd);
                 statusCode = 0; // OK
             } else {
-                Log.i("GeckoAppJava", "Cannot rename the update file!");
+                Log.i(LOG_FILE_NAME, "Cannot rename the update file!");
                 statusCode = 7; // WRITE_ERROR
             }
         } catch (Exception e) {
-            Log.i("GeckoAppJava", "error launching installer to update", e);
+            Log.i(LOG_FILE_NAME, "error launching installer to update", e);
         }
 
         // Update the status file
@@ -638,7 +776,7 @@ abstract public class GeckoApp
             outStream.write(buf, 0, buf.length);
             outStream.close();
         } catch (Exception e) {
-            Log.i("GeckoAppJava", "error writing status file", e);
+            Log.i(LOG_FILE_NAME, "error writing status file", e);
         }
 
         if (statusCode == 0)
@@ -652,7 +790,7 @@ abstract public class GeckoApp
             status = reader.readLine();
             reader.close();
         } catch (Exception e) {
-            Log.i("GeckoAppJava", "error reading update status", e);
+            Log.i(LOG_FILE_NAME, "error reading update status", e);
         }
         return status;
     }
@@ -669,10 +807,14 @@ abstract public class GeckoApp
                 Intent.createChooser(intent, getString(R.string.choose_file)),
                 FILE_PICKER_REQUEST);
         String filePickerResult = "";
+
         try {
-            filePickerResult = mFilePickerResult.take();
+            while (null == (filePickerResult = mFilePickerResult.poll(1, TimeUnit.MILLISECONDS))) {
+                Log.i("GeckoApp", "processing events from showFilePicker ");
+                GeckoAppShell.processNextNativeEvent();
+            }
         } catch (InterruptedException e) {
-            Log.i("GeckoApp", "showing file picker ",  e);
+            Log.i(LOG_FILE_NAME, "showing file picker ",  e);
         }
 
         return filePickerResult;
@@ -725,13 +867,13 @@ abstract public class GeckoApp
                 fos.close();
                 filePickerResult =  file.getAbsolutePath();
             }catch (Exception e) {
-                Log.e("GeckoApp", "showing file picker", e);
+                Log.e(LOG_FILE_NAME, "showing file picker", e);
             }
         }
         try {
             mFilePickerResult.put(filePickerResult);
         } catch (InterruptedException e) {
-            Log.i("GeckoApp", "error returning file picker result", e);
+            Log.i(LOG_FILE_NAME, "error returning file picker result", e);
         }
     }
 }

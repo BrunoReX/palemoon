@@ -178,7 +178,8 @@ var Scratchpad = {
         this._previousLocation != this.gBrowser.contentWindow.location.href) {
       let contentWindow = this.gBrowser.selectedBrowser.contentWindow;
       this._contentSandbox = new Cu.Sandbox(contentWindow,
-        { sandboxPrototype: contentWindow, wantXrays: false });
+        { sandboxPrototype: contentWindow, wantXrays: false, 
+          sandboxName: 'scratchpad-content'});
 
       this._previousBrowserWindow = this.browserWindow;
       this._previousBrowser = this.gBrowser.selectedBrowser;
@@ -211,7 +212,8 @@ var Scratchpad = {
     if (!this._chromeSandbox ||
         this.browserWindow != this._previousBrowserWindow) {
       this._chromeSandbox = new Cu.Sandbox(this.browserWindow,
-        { sandboxPrototype: this.browserWindow, wantXrays: false });
+        { sandboxPrototype: this.browserWindow, wantXrays: false, 
+          sandboxName: 'scratchpad-chrome'});
 
       this._previousBrowserWindow = this.browserWindow;
     }
@@ -278,7 +280,7 @@ var Scratchpad = {
       scriptError.initWithWindowID(ex.message + "\n" + ex.stack, ex.fileName,
                                    "", ex.lineNumber, 0, scriptError.errorFlag,
                                    "content javascript",
-                                   this.getWindowId(contentWindow));
+                                   this.getInnerWindowId(contentWindow));
 
       Services.console.logMessage(scriptError);
     }
@@ -631,16 +633,16 @@ var Scratchpad = {
   },
 
   /**
-   * Gets the ID of the outer window of the given DOM window object.
+   * Gets the ID of the inner window of the given DOM window object.
    *
    * @param nsIDOMWindow aWindow
    * @return integer
-   *         the outer window ID
+   *         the inner window ID
    */
-  getWindowId: function SP_getWindowId(aWindow)
+  getInnerWindowId: function SP_getInnerWindowId(aWindow)
   {
     return aWindow.QueryInterface(Ci.nsIInterfaceRequestor).
-           getInterface(Ci.nsIDOMWindowUtils).outerWindowID;
+           getInterface(Ci.nsIDOMWindowUtils).currentInnerWindowID;
   },
 
   /**

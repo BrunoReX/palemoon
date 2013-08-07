@@ -67,14 +67,15 @@
 
 #include "xpcquickstubs.h"
 
-NS_IMPL_THREADSAFE_ISUPPORTS7(nsXPConnect,
+NS_IMPL_THREADSAFE_ISUPPORTS8(nsXPConnect,
                               nsIXPConnect,
                               nsISupportsWeakReference,
                               nsIThreadObserver,
                               nsIJSRuntimeService,
                               nsIJSContextStack,
                               nsIThreadJSContextStack,
-                              nsIJSEngineTelemetryStats)
+                              nsIJSEngineTelemetryStats,
+                              nsIXPConnect_MOZILLA_10_BRANCH)
 
 nsXPConnect* nsXPConnect::gSelf = nsnull;
 JSBool       nsXPConnect::gOnceAliveNowDead = JS_FALSE;
@@ -223,7 +224,7 @@ nsXPConnect::ReleaseXPConnectSingleton()
                                      : fopen(dumpName, "w");
                     if(dumpFile)
                     {
-                        JS_DumpHeap(ccx, dumpFile, nsnull, 0, nsnull,
+                        JS_DumpHeap(ccx, dumpFile, nsnull, JSTRACE_OBJECT, nsnull,
                                     static_cast<size_t>(-1), nsnull);
                         if(dumpFile != stdout)
                             fclose(dumpFile);
@@ -423,14 +424,6 @@ nsXPConnect::GarbageCollect()
     return NS_OK;
 }
 
-// JSTRACE_XML can recursively hold on to more JSTRACE_XML objects, adding it to
-// the cycle collector avoids stack overflow.
-inline bool
-AddToCCKind(uint32 kind)
-{
-    return kind == JSTRACE_OBJECT || kind == JSTRACE_XML;
-}
-
 #ifdef DEBUG_CC
 struct NoteJSRootTracer : public JSTracer
 {
@@ -445,7 +438,7 @@ struct NoteJSRootTracer : public JSTracer
 };
 
 static void
-NoteJSRoot(JSTracer *trc, void *thing, uint32 kind)
+NoteJSRoot(JSTracer *trc, void *thing, JSGCTraceKind kind)
 {
     if(AddToCCKind(kind))
     {
@@ -619,7 +612,7 @@ xpc_GCThingIsGrayCCThing(void *thing)
  * re-coloring.
  */
 static void
-UnmarkGrayChildren(JSTracer *trc, void *thing, uint32 kind)
+UnmarkGrayChildren(JSTracer *trc, void *thing, JSGCTraceKind kind)
 {
     int stackDummy;
     if (!JS_CHECK_STACK_SIZE(trc->context->stackLimit, &stackDummy)) {
@@ -675,7 +668,7 @@ struct TraversalTracer : public JSTracer
 };
 
 static void
-NoteJSChild(JSTracer *trc, void *thing, uint32 kind)
+NoteJSChild(JSTracer *trc, void *thing, JSGCTraceKind kind)
 {
     if(AddToCCKind(kind))
     {
@@ -732,9 +725,9 @@ nsXPConnect::Traverse(void *p, nsCycleCollectionTraversalCallback &cb)
 {
     JSContext *cx = mCycleCollectionContext->GetJSContext();
 
-    uint32 traceKind = js_GetGCThingTraceKind(p);
-    JSObject *obj;
-    js::Class *clazz;
+    JSGCTraceKind traceKind = js_GetGCThingTraceKind(p);
+    JSObject *obj = nsnull;
+    js::Class *clazz = nsnull;
 
     // We do not want to add wrappers to the cycle collector if they're not
     // explicitly marked as main thread only, because the cycle collector isn't
@@ -794,8 +787,6 @@ nsXPConnect::Traverse(void *p, nsCycleCollectionTraversalCallback &cb)
         char name[72];
         if(traceKind == JSTRACE_OBJECT)
         {
-            JSObject *obj = static_cast<JSObject*>(p);
-            js::Class *clazz = obj->getClass();
             XPCNativeScriptableInfo* si = nsnull;
             if(IS_PROTO_CLASS(clazz))
             {
@@ -808,7 +799,7 @@ nsXPConnect::Traverse(void *p, nsCycleCollectionTraversalCallback &cb)
                 JS_snprintf(name, sizeof(name), "JS Object (%s - %s)",
                             clazz->name, si->GetJSClass()->name);
             }
-            else if(clazz == &js_ScriptClass)
+            else if(clazz == &js::ScriptClass)
             {
                 JSScript* script = (JSScript*) xpc_GetJSPrivate(obj);
                 if(script->filename)
@@ -822,7 +813,7 @@ nsXPConnect::Traverse(void *p, nsCycleCollectionTraversalCallback &cb)
                     JS_snprintf(name, sizeof(name), "JS Object (Script)");
                 }
             }
-            else if(clazz == &js_FunctionClass)
+            else if(clazz == &js::FunctionClass)
             {
                 JSFunction* fun = (JSFunction*) xpc_GetJSPrivate(obj);
                 JSString* str = JS_GetFunctionId(fun);
@@ -845,11 +836,15 @@ nsXPConnect::Traverse(void *p, nsCycleCollectionTraversalCallback &cb)
         }
         else
         {
-            static const char trace_types[JSTRACE_LIMIT][7] = {
+            static const char trace_types[][11] = {
                 "Object",
                 "String",
-                "Xml"
+                "Script",
+                "Xml",
+                "Shape",
+                "TypeObject",
             };
+            JS_STATIC_ASSERT(JS_ARRAY_LENGTH(trace_types) == JSTRACE_LAST + 1);
             JS_snprintf(name, sizeof(name), "JS %s", trace_types[traceKind]);
         }
 
@@ -878,6 +873,10 @@ nsXPConnect::Traverse(void *p, nsCycleCollectionTraversalCallback &cb)
     TraversalTracer trc(cb);
 
     JS_TRACER_INIT(&trc, cx, NoteJSChild);
+    // When WeakMaps are properly integrated with the cycle
+    // collector in Bug 668855, don't eagerly trace weak maps when
+    // building the cycle collector graph.
+    // trc.eagerlyTraceWeakMaps = JS_FALSE;
     JS_TraceChildren(&trc, p, traceKind);
 
     if(traceKind != JSTRACE_OBJECT || dontTraverse)
@@ -1059,7 +1058,7 @@ CreateNewCompartment(JSContext *cx, JSClass *clasp, nsIPrincipal *principal,
     *global = tempGlobal;
     *compartment = tempGlobal->compartment();
 
-    js::SwitchToCompartment sc(cx, *compartment);
+    JS::AutoSwitchCompartment sc(cx, *compartment);
     JS_SetCompartmentPrivate(cx, *compartment, priv_holder.forget());
     return true;
 }
@@ -1091,7 +1090,7 @@ xpc_CreateGlobalObject(JSContext *cx, JSClass *clasp,
     }
     else
     {
-        js::SwitchToCompartment sc(cx, *compartment);
+        JS::AutoSwitchCompartment sc(cx, *compartment);
 
         JSObject *tempGlobal = JS_NewGlobalObject(cx, clasp);
         if(!tempGlobal)
@@ -1128,7 +1127,7 @@ xpc_CreateMTGlobalObject(JSContext *cx, JSClass *clasp,
     }
     else
     {
-        js::SwitchToCompartment sc(cx, *compartment);
+        JS::AutoSwitchCompartment sc(cx, *compartment);
 
         JSObject *tempGlobal = JS_NewGlobalObject(cx, clasp);
         if(!tempGlobal)
@@ -1245,7 +1244,8 @@ nsXPConnect::InitClassesWithNewWrappedGlobal(JSContext * aJSContext,
     {
         if(protoJSObject != globalJSObj)
             JS_SetParent(aJSContext, protoJSObject, globalJSObj);
-        JS_SetPrototype(aJSContext, protoJSObject, scope->GetPrototypeJSObject());
+        if (!JS_SplicePrototype(aJSContext, protoJSObject, scope->GetPrototypeJSObject()))
+            return UnexpectedFailure(NS_ERROR_FAILURE);
     }
 
     if(!(aFlags & nsIXPConnect::OMIT_COMPONENTS_OBJECT)) {
@@ -2073,7 +2073,8 @@ nsXPConnect::CreateSandbox(JSContext *cx, nsIPrincipal *principal,
     jsval rval = JSVAL_VOID;
     AUTO_MARK_JSVAL(ccx, &rval);
 
-    nsresult rv = xpc_CreateSandboxObject(cx, &rval, principal, NULL, false);
+    nsresult rv = xpc_CreateSandboxObject(cx, &rval, principal, NULL, false, 
+                                          EmptyCString());
     NS_ASSERTION(NS_FAILED(rv) || !JSVAL_IS_PRIMITIVE(rval),
                  "Bad return value from xpc_CreateSandboxObject()!");
 
@@ -2102,18 +2103,6 @@ nsXPConnect::EvalInSandboxObject(const nsAString& source, JSContext *cx,
     return xpc_EvalInSandbox(cx, obj, source,
                              NS_ConvertUTF16toUTF8(source).get(), 1,
                              JSVERSION_DEFAULT, returnStringOnly, rval);
-}
-
-/* void GetXPCWrappedNativeJSClassInfo(out JSEqualityOp equality); */
-NS_IMETHODIMP
-nsXPConnect::GetXPCWrappedNativeJSClassInfo(JSEqualityOp *equality)
-{
-    // Expose the equality pointer used by IS_WRAPPER_CLASS(). If that macro
-    // ever changes, this function needs to stay in sync.
-
-    *equality = &XPC_WN_Equality;
-
-    return NS_OK;
 }
 
 /* nsIXPConnectJSObjectHolder getWrappedNativePrototype (in JSContextPtr aJSContext, in JSObjectPtr aScope, in nsIClassInfo aClassInfo); */
@@ -2559,7 +2548,7 @@ nsXPConnect::CheckForDebugMode(JSRuntime *rt) {
         js::CompartmentVector &vector = rt->compartments;
         for (JSCompartment **p = vector.begin(); p != vector.end(); ++p) {
             JSCompartment *comp = *p;
-            if (!comp->principals) {
+            if (!JS_GetCompartmentPrincipals(comp)) {
                 /* Ignore special compartments (atoms, JSD compartments) */
                 continue;
             }
@@ -2889,8 +2878,14 @@ nsXPConnect::Base64Decode(JSContext *cx, jsval val, jsval *out)
 NS_IMETHODIMP
 nsXPConnect::SetDebugModeWhenPossible(PRBool mode)
 {
+    return SetDebugModeWhenPossible(mode, PR_FALSE);
+}
+
+NS_IMETHODIMP
+nsXPConnect::SetDebugModeWhenPossible(PRBool mode, PRBool allowSyncDisable)
+{
     gDesiredDebugMode = mode;
-    if (!mode)
+    if (!mode && allowSyncDisable)
         CheckForDebugMode(mRuntime->GetJSRuntime());
     return NS_OK;
 }
@@ -2961,7 +2956,7 @@ JS_EXPORT_API(void) DumpJSObject(JSObject* obj)
 
 JS_EXPORT_API(void) DumpJSValue(jsval val)
 {
-    printf("Dumping 0x%llu.\n", (long long) JSVAL_BITS(val));
+    printf("Dumping 0x%llu.\n", (long long) val.asRawBits());
     if(JSVAL_IS_NULL(val)) {
         printf("Value is null\n");
     }

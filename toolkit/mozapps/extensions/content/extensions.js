@@ -115,7 +115,12 @@ window.addEventListener("unload", shutdown, false);
 var gPendingInitializations = 1;
 __defineGetter__("gIsInitializing", function() gPendingInitializations > 0);
 
-function initialize() {
+function initialize(event) {
+  // XXXbz this listener gets _all_ load events for all nodes in the
+  // document... but relies on not being called "too early".
+  if (event.target instanceof XMLStylesheetProcessingInstruction) {
+    return;
+  }
   document.removeEventListener("load", initialize, true);
   gViewController.initialize();
   gCategories.initialize();
@@ -282,7 +287,7 @@ var FakeHistory = {
 
   pushState: function(aState) {
     this.pos++;
-    this.states.splice(this.pos);
+    this.states.splice(this.pos, this.states.length);
     this.states.push(aState);
   },
 
@@ -294,7 +299,7 @@ var FakeHistory = {
     if (this.pos == 0)
       throw new Error("Cannot popState from this view");
 
-    this.states.splice(this.pos);
+    this.states.splice(this.pos, this.states.length);
     this.pos--;
 
     gViewController.updateState(this.states[this.pos]);
@@ -2546,10 +2551,16 @@ var gDetailView = {
 
     var screenshot = document.getElementById("detail-screenshot");
     if (aAddon.screenshots && aAddon.screenshots.length > 0) {
-      if (aAddon.screenshots[0].thumbnailURL)
+      if (aAddon.screenshots[0].thumbnailURL) {
         screenshot.src = aAddon.screenshots[0].thumbnailURL;
-      else
+        screenshot.width = aAddon.screenshots[0].thumbnailWidth;
+        screenshot.height = aAddon.screenshots[0].thumbnailHeight;
+      } else {
         screenshot.src = aAddon.screenshots[0].url;
+        screenshot.width = aAddon.screenshots[0].width;
+        screenshot.height = aAddon.screenshots[0].height;
+      }
+      screenshot.setAttribute("loading", "true");
       screenshot.hidden = false;
     } else {
       screenshot.hidden = true;

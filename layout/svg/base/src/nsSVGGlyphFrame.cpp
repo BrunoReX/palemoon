@@ -37,7 +37,7 @@
  * ***** END LICENSE BLOCK ***** */
 
 #include "nsSVGTextFrame.h"
-#include "nsILookAndFeel.h"
+#include "mozilla/LookAndFeel.h"
 #include "nsTextFragment.h"
 #include "nsBidiPresUtils.h"
 #include "nsSVGUtils.h"
@@ -143,16 +143,16 @@ public:
   }
 
   /**
-   * Returns the index of the next cluster in the string that should be
-   * drawn, or -1 if there is no such cluster.
+   * Returns the index of the next cluster in the string that should be drawn,
+   * or InvalidCluster() (i.e. PRUint32(-1)) if there is no such cluster.
    */
-  PRInt32 NextCluster();
+  PRUint32 NextCluster();
 
   /**
    * Returns the length of the current cluster (usually 1, unless there
    * are combining marks)
    */
-  PRInt32 ClusterLength();
+  PRUint32 ClusterLength();
 
   /**
    * Repeated calls NextCluster until it returns aIndex (i.e. aIndex is the
@@ -160,7 +160,7 @@ public:
    * (because aIndex is before or equal to the current character, or
    * out of bounds, or not drawable).
    */
-  PRBool AdvanceToCharacter(PRInt32 aIndex);
+  PRBool AdvanceToCharacter(PRUint32 aIndex);
 
   /**
    * Resets the iterator to the beginning of the string.
@@ -170,8 +170,8 @@ public:
     // a) If there was a problem creating the iterator (mCurrentChar == -1)
     // b) If we ran off the end of the string (mCurrentChar != -1)
     // We can only reset the mInError flag in case b)
-    if (mCurrentChar != -1) {
-      mCurrentChar = -1;
+    if (mCurrentChar != InvalidCluster()) {
+      mCurrentChar = InvalidCluster();
       mInError = PR_FALSE;
     }
   }
@@ -198,6 +198,13 @@ public:
    */
   CharacterPosition GetPositionData();
 
+  /**
+   * "Invalid" cluster index returned to indicate error state
+   */
+  PRUint32 InvalidCluster() {
+    return PRUint32(-1);
+  }
+
 private:
   PRBool SetupForDirectTextRun(gfxContext *aContext, float aScale);
   void SetupFor(gfxContext *aContext, float aScale);
@@ -207,7 +214,7 @@ private:
   gfxMatrix mInitialMatrix;
   // Textrun advance width from start to mCurrentChar, in appunits
   gfxFloat mCurrentAdvance;
-  PRInt32 mCurrentChar;
+  PRUint32 mCurrentChar;
   float mDrawScale;
   float mMetricsScale;
   PRPackedBool mInError;
@@ -434,8 +441,8 @@ nsSVGGlyphFrame::GetFrameForPoint(const nsPoint &aPoint)
   // Currently we just test the character cells if GetHitTestFlags says we're
   // supposed to be testing either the fill OR the stroke:
 
-  PRInt32 i;
-  while ((i = iter.NextCluster()) >= 0) {
+  PRUint32 i;
+  while ((i = iter.NextCluster()) != iter.InvalidCluster()) {
     gfxTextRun::Metrics metrics =
     mTextRun->MeasureText(i, iter.ClusterLength(),
                           gfxFont::LOOSE_INK_EXTENTS, nsnull, nsnull);
@@ -581,8 +588,8 @@ nsSVGGlyphFrame::AddCharactersToPath(CharacterIterator *aIter,
     return;
   }
 
-  PRInt32 i;
-  while ((i = aIter->NextCluster()) >= 0) {
+  PRUint32 i;
+  while ((i = aIter->NextCluster()) != aIter->InvalidCluster()) {
     aIter->SetupForDrawing(aContext);
     mTextRun->DrawToPath(aContext, gfxPoint(0, 0), i, aIter->ClusterLength(),
                          nsnull, nsnull);
@@ -601,8 +608,8 @@ nsSVGGlyphFrame::AddBoundingBoxesToPath(CharacterIterator *aIter,
     return;
   }
 
-  PRInt32 i;
-  while ((i = aIter->NextCluster()) >= 0) {
+  PRUint32 i;
+  while ((i = aIter->NextCluster()) != aIter->InvalidCluster()) {
     aIter->SetupForMetrics(aContext);
     gfxTextRun::Metrics metrics =
       mTextRun->MeasureText(i, aIter->ClusterLength(),
@@ -621,8 +628,8 @@ nsSVGGlyphFrame::FillCharacters(CharacterIterator *aIter,
     return;
   }
 
-  PRInt32 i;
-  while ((i = aIter->NextCluster()) >= 0) {
+  PRUint32 i;
+  while ((i = aIter->NextCluster()) != aIter->InvalidCluster()) {
     aIter->SetupForDrawing(aContext);
     mTextRun->Draw(aContext, gfxPoint(0, 0), i, aIter->ClusterLength(),
                    nsnull, nsnull);
@@ -632,7 +639,11 @@ nsSVGGlyphFrame::FillCharacters(CharacterIterator *aIter,
 gfxRect
 nsSVGGlyphFrame::GetBBoxContribution(const gfxMatrix &aToBBoxUserspace)
 {
-  mOverrideCanvasTM = NS_NewSVGMatrix(aToBBoxUserspace);
+  if (mOverrideCanvasTM) {
+    *mOverrideCanvasTM = aToBBoxUserspace;
+  } else {
+    mOverrideCanvasTM = new gfxMatrix(aToBBoxUserspace);
+  }
 
   nsRefPtr<gfxContext> tmpCtx = MakeTmpCtx();
   SetupGlobalTransform(tmpCtx);
@@ -653,7 +664,7 @@ gfxMatrix
 nsSVGGlyphFrame::GetCanvasTM()
 {
   if (mOverrideCanvasTM) {
-    return nsSVGUtils::ConvertSVGMatrixToThebes(mOverrideCanvasTM);
+    return *mOverrideCanvasTM;
   }
   NS_ASSERTION(mParent, "null parent");
   return static_cast<nsSVGContainerFrame*>(mParent)->GetCanvasTM();
@@ -1000,11 +1011,11 @@ nsSVGGlyphFrame::GetHighlight(PRUint32 *charnum, PRUint32 *nchars,
 
     *charnum=CompressIndex(details->mStart, fragment);
     *nchars=CompressIndex(details->mEnd, fragment)-*charnum;  
-    
-    nsILookAndFeel *look = presContext->LookAndFeel();
 
-    look->GetColor(nsILookAndFeel::eColor_TextSelectBackground, *background);
-    look->GetColor(nsILookAndFeel::eColor_TextSelectForeground, *foreground);
+    LookAndFeel::GetColor(LookAndFeel::eColorID_TextSelectBackground,
+                          background);
+    LookAndFeel::GetColor(LookAndFeel::eColorID_TextSelectForeground,
+                          foreground);
 
     SelectionDetails *dp = details;
     while ((dp=details->mNext) != nsnull) {
@@ -1029,7 +1040,7 @@ nsSVGGlyphFrame::SetGlyphPosition(gfxPoint *aPosition, PRBool aForceGlobalTransf
   nsSVGTextPathFrame *textPath = FindTextPathParent();
   // In a textPath, the 'y' attribute has no effect, so we reset 'y' here
   // to use aPosition.y for dy only
-  if (textPath && textPath->GetFirstChild(nsnull) == this) {
+  if (textPath && textPath->GetFirstPrincipalChild() == this) {
     aPosition->y = 0.0;
   }
 
@@ -1300,7 +1311,7 @@ nsSVGGlyphFrame::IsAbsolutelyPositioned()
     }
     if ((frame->GetType() == nsGkAtoms::svgTextFrame ||
          frame->GetType() == nsGkAtoms::svgTextPathFrame) &&
-        frame->GetFirstChild(nsnull) == this) {
+        frame->GetFirstPrincipalChild() == this) {
         return PR_TRUE;
     }
 
@@ -1358,11 +1369,11 @@ nsSVGGlyphFrame::GetCharNumAtPosition(nsIDOMSVGPoint *point)
   nsRefPtr<gfxContext> tmpCtx = MakeTmpCtx();
   CharacterIterator iter(this, PR_FALSE);
 
-  PRInt32 i;
+  PRUint32 i;
   PRInt32 last = -1;
   gfxPoint pt(xPos, yPos);
-  while ((i = iter.NextCluster()) >= 0) {
-    PRInt32 limit = i + iter.ClusterLength();
+  while ((i = iter.NextCluster()) != iter.InvalidCluster()) {
+    PRUint32 limit = i + iter.ClusterLength();
     gfxTextRun::Metrics metrics =
       mTextRun->MeasureText(i, limit - i, gfxFont::LOOSE_INK_EXTENTS,
                             nsnull, nsnull);
@@ -1631,8 +1642,10 @@ nsSVGGlyphFrame::EnsureTextRun(float *aDrawScale, float *aMetricsScale,
 
 CharacterIterator::CharacterIterator(nsSVGGlyphFrame *aSource,
         PRBool aForceGlobalTransform)
-  : mSource(aSource), mCurrentAdvance(0), mCurrentChar(-1),
-    mInError(PR_FALSE)
+  : mSource(aSource)
+  , mCurrentAdvance(0)
+  , mCurrentChar(PRUint32(-1))
+  , mInError(PR_FALSE)
 {
   if (!aSource->EnsureTextRun(&mDrawScale, &mMetricsScale,
                               aForceGlobalTransform) ||
@@ -1652,30 +1665,30 @@ CharacterIterator::SetupForDirectTextRun(gfxContext *aContext, float aScale)
   return PR_TRUE;
 }
 
-PRInt32
+PRUint32
 CharacterIterator::NextCluster()
 {
   if (mInError) {
 #ifdef DEBUG
-    if (mCurrentChar != -1) {
-      PRBool pastEnd = (mCurrentChar >= PRInt32(mSource->mTextRun->GetLength()));
+    if (mCurrentChar != InvalidCluster()) {
+      PRBool pastEnd = (mCurrentChar >= mSource->mTextRun->GetLength());
       NS_ABORT_IF_FALSE(pastEnd, "Past the end of CharacterIterator. Missing Reset?");
     }
 #endif
-    return -1;
+    return InvalidCluster();
   }
 
   while (PR_TRUE) {
-    if (mCurrentChar >= 0 &&
+    if (mCurrentChar != InvalidCluster() &&
         (mPositions.IsEmpty() || mPositions[mCurrentChar].draw)) {
       mCurrentAdvance +=
         mSource->mTextRun->GetAdvanceWidth(mCurrentChar, 1, nsnull);
     }
     ++mCurrentChar;
 
-    if (mCurrentChar >= PRInt32(mSource->mTextRun->GetLength())) {
+    if (mCurrentChar >= mSource->mTextRun->GetLength()) {
       mInError = PR_TRUE;
-      return -1;
+      return InvalidCluster();
     }
 
     if (mSource->mTextRun->IsClusterStart(mCurrentChar) &&
@@ -1685,14 +1698,14 @@ CharacterIterator::NextCluster()
   }
 }
 
-PRInt32
+PRUint32
 CharacterIterator::ClusterLength()
 {
   if (mInError) {
     return 0;
   }
 
-  PRInt32 i = mCurrentChar;
+  PRUint32 i = mCurrentChar;
   while (++i < mSource->mTextRun->GetLength()) {
     if (mSource->mTextRun->IsClusterStart(i)) {
       break;
@@ -1702,9 +1715,9 @@ CharacterIterator::ClusterLength()
 }
 
 PRBool
-CharacterIterator::AdvanceToCharacter(PRInt32 aIndex)
+CharacterIterator::AdvanceToCharacter(PRUint32 aIndex)
 {
-  while (NextCluster() != -1) {
+  while (NextCluster() != InvalidCluster()) {
     if (mCurrentChar == aIndex)
       return PR_TRUE;
   }

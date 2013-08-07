@@ -50,16 +50,11 @@
 #include "nsIDOMDocument.h"
 #include "nsDOMError.h"
 #include "nsNodeInfoManager.h"
-#include "plbase64.h"
-#include "nsNetUtil.h"
-#include "prmem.h"
 #include "nsNetUtil.h"
 #include "nsXPCOMStrings.h"
-#include "prlock.h"
 #include "nsThreadUtils.h"
 #include "nsIThreadInternal.h"
 #include "nsContentUtils.h"
-
 #include "nsFrameManager.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIXPConnect.h"
@@ -91,6 +86,7 @@
 
 #include "nsIPrivateDOMEvent.h"
 #include "nsIDOMNotifyAudioAvailableEvent.h"
+#include "nsMediaFragmentURIParser.h"
 
 #ifdef MOZ_OGG
 #include "nsOggDecoder.h"
@@ -429,18 +425,8 @@ NS_IMETHODIMP nsHTMLMediaElement::GetEnded(PRBool *aEnded)
 NS_IMETHODIMP nsHTMLMediaElement::GetCurrentSrc(nsAString & aCurrentSrc)
 {
   nsCAutoString src;
-
-  if (mDecoder) {
-    nsMediaStream* stream = mDecoder->GetCurrentStream();
-    if (stream) {
-      stream->URI()->GetSpec(src);
-    }
-  } else if (mLoadingSrc) {
-    mLoadingSrc->GetSpec(src);
-  }
-
+  GetCurrentSpec(src);
   aCurrentSrc = NS_ConvertUTF8toUTF16(src);
-
   return NS_OK;
 }
 
@@ -617,13 +603,10 @@ NS_IMETHODIMP nsHTMLMediaElement::Load()
 
 static PRBool HasSourceChildren(nsIContent *aElement)
 {
-  PRUint32 count = aElement->GetChildCount();
-  for (PRUint32 i = 0; i < count; ++i) {
-    nsIContent* child = aElement->GetChildAt(i);
-    NS_ASSERTION(child, "GetChildCount lied!");
-    if (child &&
-        child->Tag() == nsGkAtoms::source &&
-        child->IsHTML())
+  for (nsIContent* child = aElement->GetFirstChild();
+       child;
+       child = child->GetNextSibling()) {
+    if (child->IsHTML(nsGkAtoms::source))
     {
       return PR_TRUE;
     }
@@ -1279,8 +1262,7 @@ NS_IMETHODIMP nsHTMLMediaElement::SetMuted(PRBool aMuted)
   return NS_OK;
 }
 
-nsHTMLMediaElement::nsHTMLMediaElement(already_AddRefed<nsINodeInfo> aNodeInfo,
-                                       FromParser aFromParser)
+nsHTMLMediaElement::nsHTMLMediaElement(already_AddRefed<nsINodeInfo> aNodeInfo)
   : nsGenericHTMLElement(aNodeInfo),
     mCurrentLoadID(0),
     mNetworkState(nsIDOMHTMLMediaElement::NETWORK_EMPTY),
@@ -1292,6 +1274,8 @@ nsHTMLMediaElement::nsHTMLMediaElement(already_AddRefed<nsINodeInfo> aNodeInfo,
     mPreloadAction(PRELOAD_UNDEFINED),
     mMediaSize(-1,-1),
     mLastCurrentTime(0.0),
+    mFragmentStart(-1.0),
+    mFragmentEnd(-1.0),
     mAllowAudioData(PR_FALSE),
     mBegun(PR_FALSE),
     mLoadedFirstFrame(PR_FALSE),
@@ -1952,6 +1936,29 @@ nsresult nsHTMLMediaElement::NewURIFromString(const nsAutoString& aURISpec, nsIU
   return NS_OK;
 }
 
+void nsHTMLMediaElement::ProcessMediaFragmentURI()
+{
+  nsCAutoString ref;
+  GetCurrentSpec(ref);
+  nsMediaFragmentURIParser parser(ref);
+  parser.Parse();
+  double start = parser.GetStartTime();
+  if (mDecoder) {
+    double end = parser.GetEndTime();
+    if (end < 0.0 || end > start) {
+      mFragmentEnd = end;
+    }
+    else {
+      start = -1.0;
+      end = -1.0;
+    }
+  }
+  if (start > 0.0) {
+    SetCurrentTime(start);
+    mFragmentStart = start;
+  }
+}
+
 void nsHTMLMediaElement::MetadataLoaded(PRUint32 aChannels, PRUint32 aRate)
 {
   mChannels = aChannels;
@@ -1959,6 +1966,10 @@ void nsHTMLMediaElement::MetadataLoaded(PRUint32 aChannels, PRUint32 aRate)
   ChangeReadyState(nsIDOMHTMLMediaElement::HAVE_METADATA);
   DispatchAsyncEvent(NS_LITERAL_STRING("durationchange"));
   DispatchAsyncEvent(NS_LITERAL_STRING("loadedmetadata"));
+  if (mDecoder && mDecoder->IsSeekable()) {
+    ProcessMediaFragmentURI();
+    mDecoder->SetEndTime(mFragmentEnd);
+  }
 }
 
 void nsHTMLMediaElement::FirstFrameLoaded(PRBool aResourceFullyLoaded)
@@ -2236,8 +2247,7 @@ ImageContainer* nsHTMLMediaElement::GetImageContainer()
     return nsnull;
 
   // Only video frames need an image container.
-  nsCOMPtr<nsIDOMHTMLVideoElement> video =
-    do_QueryInterface(static_cast<nsIContent*>(this));
+  nsCOMPtr<nsIDOMHTMLVideoElement> video = do_QueryObject(this);
   if (!video)
     return nsnull;
 
@@ -2264,7 +2274,7 @@ nsresult nsHTMLMediaElement::DispatchAudioAvailableEvent(float* aFrameBuffer,
   nsAutoArrayPtr<float> frameBuffer(aFrameBuffer);
 
   nsCOMPtr<nsIDOMDocument> domDoc = do_QueryInterface(GetOwnerDoc());
-  nsCOMPtr<nsIDOMEventTarget> target(do_QueryInterface(static_cast<nsIContent*>(this)));
+  nsCOMPtr<nsIDOMEventTarget> target(do_QueryObject(this));
   NS_ENSURE_TRUE(domDoc && target, NS_ERROR_INVALID_ARG);
 
   nsCOMPtr<nsIDOMEvent> event;
@@ -2477,8 +2487,7 @@ void nsHTMLMediaElement::NotifyAddedSource()
 nsIContent* nsHTMLMediaElement::GetNextSource()
 {
   nsresult rv = NS_OK;
-  nsCOMPtr<nsIDOMNode> thisDomNode =
-    do_QueryInterface(static_cast<nsGenericElement*>(this));
+  nsCOMPtr<nsIDOMNode> thisDomNode = do_QueryObject(this);
 
   mSourceLoadCandidate = nsnull;
 
@@ -2516,9 +2525,7 @@ nsIContent* nsHTMLMediaElement::GetNextSource()
     nsIContent* child = GetChildAt(startOffset);
 
     // If child is a <source> element, it is the next candidate.
-    if (child &&
-        child->Tag() == nsGkAtoms::source &&
-        child->IsHTML())
+    if (child && child->IsHTML(nsGkAtoms::source))
     {
       mSourceLoadCandidate = child;
       return child;
@@ -2644,4 +2651,51 @@ void nsHTMLMediaElement::FireTimeUpdate(PRBool aPeriodic)
     mTimeUpdateTime = now;
     mLastCurrentTime = time;
   }
+  if (mFragmentEnd >= 0.0 && time >= mFragmentEnd) {
+    Pause();
+    mFragmentEnd = -1.0;
+    mFragmentStart = -1.0;
+    mDecoder->SetEndTime(mFragmentEnd);
+  }
+}
+
+void nsHTMLMediaElement::GetCurrentSpec(nsCString& aString)
+{
+  if (mDecoder) {
+    nsMediaStream* stream = mDecoder->GetCurrentStream();
+    if (stream) {
+      stream->URI()->GetSpec(aString);
+    }
+  } else if (mLoadingSrc) {
+    mLoadingSrc->GetSpec(aString);
+  }
+}
+
+/* attribute double initialTime; */
+NS_IMETHODIMP nsHTMLMediaElement::GetInitialTime(double *aTime)
+{
+  // If there is no start fragment then the initalTime is zero.
+  // Clamp to duration if it is greater than duration.
+  double duration = 0.0;
+  nsresult rv = GetDuration(&duration);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  *aTime = mFragmentStart < 0.0 ? 0.0 : mFragmentStart;
+  if (*aTime > duration) {
+    *aTime = duration;
+  }
+  return NS_OK;
+}
+
+/* attribute double mozFragmentEnd; */
+NS_IMETHODIMP nsHTMLMediaElement::GetMozFragmentEnd(double *aTime)
+{
+  double duration = 0.0;
+  nsresult rv = GetDuration(&duration);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // If there is no end fragment, or the fragment end is greater than the
+  // duration, return the duration.
+  *aTime = (mFragmentEnd < 0.0 || mFragmentEnd > duration) ? duration : mFragmentEnd;
+  return NS_OK;
 }

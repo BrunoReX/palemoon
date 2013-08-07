@@ -1791,7 +1791,7 @@ nsFrameLoader::TryRemoteBrowser()
     return false;
   }
 
-  ContentParent* parent = ContentParent::GetSingleton();
+  ContentParent* parent = ContentParent::GetNewOrUsed();
   NS_ASSERTION(parent->IsAlive(), "Process parent should be alive; something is very wrong!");
   mRemoteBrowser = parent->CreateTab(chromeFlags);
   if (mRemoteBrowser) {
@@ -2070,7 +2070,7 @@ nsFrameLoader::EnsureMessageManager()
   nsIScriptContext* sctx = mOwnerContent->GetContextForEventHandlers(&rv);
   NS_ENSURE_SUCCESS(rv, rv);
   NS_ENSURE_STATE(sctx);
-  JSContext* cx = static_cast<JSContext*>(sctx->GetNativeContext());
+  JSContext* cx = sctx->GetNativeContext();
   NS_ENSURE_STATE(cx);
 
   nsCOMPtr<nsIDOMChromeWindow> chromeWindow =

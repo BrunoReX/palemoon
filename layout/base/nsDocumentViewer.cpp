@@ -23,7 +23,7 @@
  * Contributor(s):
  *   Dan Rosen <dr@netscape.com>
  *   Roland Mainz <roland.mainz@informatik.med.uni-giessen.de>
- *   Mats Palmgren <mats.palmgren@bredband.net>
+ *   Mats Palmgren <matspal@gmail.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either of the GNU General Public License Version 2 or later (the "GPL"),
@@ -2383,6 +2383,9 @@ DocumentViewerImpl::FindContainerView()
     nsCOMPtr<nsPIDOMWindow> pwin(do_GetInterface(docShellItem));
     if (pwin) {
       nsCOMPtr<nsIContent> containerElement = do_QueryInterface(pwin->GetFrameElementInternal());
+      if (!containerElement) {
+        return nsnull;
+      }
       nsCOMPtr<nsIPresShell> parentPresShell;
       if (docShellItem) {
         nsCOMPtr<nsIDocShellTreeItem> parentDocShellItem;
@@ -2392,15 +2395,13 @@ DocumentViewerImpl::FindContainerView()
           parentDocShell->GetPresShell(getter_AddRefs(parentPresShell));
         }
       }
-      if (!parentPresShell && containerElement) {
+      if (!parentPresShell) {
         nsCOMPtr<nsIDocument> parentDoc = containerElement->GetCurrentDoc();
         if (parentDoc) {
           parentPresShell = parentDoc->GetShell();
         }
       }
-      if (!containerElement) {
-        NS_WARNING("Subdocument container has no content");
-      } else if (!parentPresShell) {
+      if (!parentPresShell) {
         NS_WARNING("Subdocument container has no presshell");
       } else {
         nsIFrame* f = parentPresShell->GetRealPrimaryFrameFor(containerElement);
@@ -3531,7 +3532,7 @@ nsDocViewerFocusListener::HandleEvent(nsIDOMEvent* aEvent)
   NS_ENSURE_STATE(mDocViewer);
 
   nsCOMPtr<nsIPresShell> shell;
-  nsresult rv = mDocViewer->GetPresShell(getter_AddRefs(shell));
+  mDocViewer->GetPresShell(getter_AddRefs(shell));
   NS_ENSURE_TRUE(shell, NS_ERROR_FAILURE);
 
   nsCOMPtr<nsISelectionController> selCon = do_QueryInterface(shell);
@@ -3783,7 +3784,7 @@ DocumentViewerImpl::PrintPreviewNavigate(PRInt16 aType, PRInt32 aPageNum)
   // Now, locate the current page we are on and
   // and the page of the page number
   nscoord gap = 0;
-  nsIFrame* pageFrame = seqFrame->GetFirstChild(nsnull);
+  nsIFrame* pageFrame = seqFrame->GetFirstPrincipalChild();
   while (pageFrame != nsnull) {
     nsRect pageRect = pageFrame->GetRect();
     if (pageNum == 1) {

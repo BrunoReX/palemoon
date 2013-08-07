@@ -68,6 +68,7 @@
 #include "prenv.h"
 
 #include "mozilla/Preferences.h"
+#include "mozilla/Telemetry.h"
 
 using namespace mozilla;
 using namespace mozilla::gl;
@@ -206,6 +207,7 @@ nsresult NS_NewCanvasRenderingContextWebGL(nsIDOMWebGLRenderingContext** aResult
 nsresult
 NS_NewCanvasRenderingContextWebGL(nsIDOMWebGLRenderingContext** aResult)
 {
+    Telemetry::Accumulate(Telemetry::CANVAS_WEBGL_USED, 1);
     nsIDOMWebGLRenderingContext* ctx = new WebGLContext();
     if (!ctx)
         return NS_ERROR_OUT_OF_MEMORY;
@@ -1206,6 +1208,22 @@ NS_INTERFACE_MAP_BEGIN(WebGLExtension)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(WebGLExtension)
 NS_INTERFACE_MAP_END
+
+/* readonly attribute WebGLsizei drawingBufferWidth; */
+NS_IMETHODIMP
+WebGLContext::GetDrawingBufferWidth(WebGLsizei *aWidth)
+{
+    *aWidth = mWidth;
+    return NS_OK;
+}
+
+/* readonly attribute WebGLsizei drawingBufferHeight; */
+NS_IMETHODIMP
+WebGLContext::GetDrawingBufferHeight(WebGLsizei *aHeight)
+{
+    *aHeight = mHeight;
+    return NS_OK;
+}
 
 /* [noscript] attribute WebGLint location; */
 NS_IMETHODIMP

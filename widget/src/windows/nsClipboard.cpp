@@ -70,6 +70,9 @@
 #include "nsNetUtil.h"
 #include "nsEscape.h"
 
+#ifdef PR_LOGGING
+PRLogModuleInfo* gWin32ClipboardLog = nsnull;
+#endif
 
 // oddly, this isn't in the MSVC headers anywhere.
 UINT nsClipboard::CF_HTML = ::RegisterClipboardFormatW(L"HTML Format");
@@ -82,6 +85,12 @@ UINT nsClipboard::CF_HTML = ::RegisterClipboardFormatW(L"HTML Format");
 //-------------------------------------------------------------------------
 nsClipboard::nsClipboard() : nsBaseClipboard()
 {
+#ifdef PR_LOGGING
+  if (!gWin32ClipboardLog) {
+    gWin32ClipboardLog = PR_NewLogModule("nsClipboard");
+  }
+#endif
+
   mIgnoreEmptyNotification = PR_FALSE;
   mWindow         = nsnull;
 }
@@ -341,39 +350,40 @@ static void DisplayErrCode(HRESULT hres)
 {
 #if defined(DEBUG_rods) || defined(DEBUG_pinkerton)
   if (hres == E_INVALIDARG) {
-    printf("E_INVALIDARG\n");
+    PR_LOG(gWin32ClipboardLog, PR_LOG_ALWAYS, ("E_INVALIDARG\n"));
   } else
   if (hres == E_UNEXPECTED) {
-    printf("E_UNEXPECTED\n");
+    PR_LOG(gWin32ClipboardLog, PR_LOG_ALWAYS, ("E_UNEXPECTED\n"));
   } else
   if (hres == E_OUTOFMEMORY) {
-    printf("E_OUTOFMEMORY\n");
+    PR_LOG(gWin32ClipboardLog, PR_LOG_ALWAYS, ("E_OUTOFMEMORY\n"));
   } else
   if (hres == DV_E_LINDEX ) {
-    printf("DV_E_LINDEX\n");
+    PR_LOG(gWin32ClipboardLog, PR_LOG_ALWAYS, ("DV_E_LINDEX\n"));
   } else
   if (hres == DV_E_FORMATETC) {
-    printf("DV_E_FORMATETC\n");
+    PR_LOG(gWin32ClipboardLog, PR_LOG_ALWAYS, ("DV_E_FORMATETC\n"));
   }  else
   if (hres == DV_E_TYMED) {
-    printf("DV_E_TYMED\n");
+    PR_LOG(gWin32ClipboardLog, PR_LOG_ALWAYS, ("DV_E_TYMED\n"));
   }  else
   if (hres == DV_E_DVASPECT) {
-    printf("DV_E_DVASPECT\n");
+    PR_LOG(gWin32ClipboardLog, PR_LOG_ALWAYS, ("DV_E_DVASPECT\n"));
   }  else
   if (hres == OLE_E_NOTRUNNING) {
-    printf("OLE_E_NOTRUNNING\n");
+    PR_LOG(gWin32ClipboardLog, PR_LOG_ALWAYS, ("OLE_E_NOTRUNNING\n"));
   }  else
   if (hres == STG_E_MEDIUMFULL) {
-    printf("STG_E_MEDIUMFULL\n");
+    PR_LOG(gWin32ClipboardLog, PR_LOG_ALWAYS, ("STG_E_MEDIUMFULL\n"));
   }  else
   if (hres == DV_E_CLIPFORMAT) {
-    printf("DV_E_CLIPFORMAT\n");
+    PR_LOG(gWin32ClipboardLog, PR_LOG_ALWAYS, ("DV_E_CLIPFORMAT\n"));
   }  else
   if (hres == S_OK) {
-    printf("S_OK\n");
+    PR_LOG(gWin32ClipboardLog, PR_LOG_ALWAYS, ("S_OK\n"));
   } else {
-    printf("****** DisplayErrCode 0x%X\n", hres);
+    PR_LOG(gWin32ClipboardLog, PR_LOG_ALWAYS, 
+           ("****** DisplayErrCode 0x%X\n", hres));
   }
 #endif
 }
@@ -540,7 +550,8 @@ nsresult nsClipboard::GetNativeDataOffClipboard(IDataObject * aDataObject, UINT 
       case TYMED_GDI: 
         {
 #ifdef DEBUG
-          printf("*********************** TYMED_GDI\n");
+          PR_LOG(gWin32ClipboardLog, PR_LOG_ALWAYS, 
+                 ("*********************** TYMED_GDI\n"));
 #endif
         } break;
 
@@ -682,23 +693,47 @@ nsresult nsClipboard::GetDataFromDataObject(IDataObject     * aDataObject,
 PRBool
 nsClipboard :: FindPlatformHTML ( IDataObject* inDataObject, UINT inIndex, void** outData, PRUint32* outDataLen )
 {
-  PRBool dataFound = PR_FALSE;
+  // Reference: MSDN doc entitled "HTML Clipboard Format"
+  // http://msdn.microsoft.com/en-us/library/aa767917(VS.85).aspx#unknown_854
+  // CF_HTML is UTF8, not unicode. We also can't rely on it being null-terminated
+  // so we have to check the CF_HTML header for the correct length. 
+  // The length we return is the bytecount from the beginning of the selected data to the end
+  // of the selected data, without the null termination. Because it's UTF8, we're guaranteed 
+  // the header is ASCII.
 
-  if ( outData && *outData ) {
-    // CF_HTML is UTF8, not unicode. We also can't rely on it being null-terminated
-    // so we have to check the CF_HTML header for the correct length. The length we return
-    // is the bytecount from the beginning of the data to the end, without
-    // the null termination. Because it's UTF8, we're guaranteed the header is ascii (yay!).
-    float vers = 0.0;
-    PRUint32 startOfData = 0;
-    sscanf((char*)*outData, "Version:%f\nStartHTML:%u\nEndHTML:%u", &vers, &startOfData, outDataLen);
-    NS_ASSERTION(startOfData && *outDataLen, "Couldn't parse CF_HTML description header");
- 
-    if ( *outDataLen )
-      dataFound = PR_TRUE;
+  if (!outData || !*outData) {
+    return PR_FALSE;
   }
 
-  return dataFound;
+  float vers = 0.0;
+  PRInt32 startOfData = 0;
+  PRInt32 endOfData = 0;
+  int numFound = sscanf((char*)*outData, "Version:%f\nStartHTML:%d\nEndHTML:%d", 
+                        &vers, &startOfData, &endOfData);
+
+  if (numFound != 3 || startOfData < -1 || endOfData < -1) {
+    return PR_FALSE;
+  }
+
+  // Fixup the start and end markers if they have no context (set to -1)
+  if (startOfData == -1) {
+    startOfData = 0;
+  }
+  if (endOfData == -1) {
+    endOfData = *outDataLen;
+  }
+
+  // Make sure we were passed sane values within our buffer size.
+  if (!endOfData || startOfData >= endOfData || 
+      endOfData > *outDataLen) {
+    return PR_FALSE;
+  }
+  
+  // We want to return the buffer not offset by startOfData because it will be 
+  // parsed out later (probably by nsHTMLEditor::ParseCFHTML) when it is still
+  // in CF_HTML format.
+  *outDataLen = endOfData;
+  return PR_TRUE;
 }
 
 

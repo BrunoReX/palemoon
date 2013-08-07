@@ -186,7 +186,7 @@ extern JS_PUBLIC_API(JSBool)
 JS_XDRValue(JSXDRState *xdr, jsval *vp);
 
 extern JS_PUBLIC_API(JSBool)
-JS_XDRScriptObject(JSXDRState *xdr, JSObject **scriptObjp);
+JS_XDRScript(JSXDRState *xdr, JSScript **scriptp);
 
 extern JS_PUBLIC_API(JSBool)
 JS_XDRRegisterClass(JSXDRState *xdr, JSClass *clasp, uint32 *lp);
@@ -222,7 +222,7 @@ JS_XDRFindClassById(JSXDRState *xdr, uint32 id);
  * before deserialization of bytecode.  If the saved version does not match
  * the current version, abort deserialization and invalidate the file.
  */
-#define JSXDR_BYTECODE_VERSION      (0xb973c0de - 93)
+#define JSXDR_BYTECODE_VERSION      (0xb973c0de - 95)
 
 /*
  * Library-private functions.

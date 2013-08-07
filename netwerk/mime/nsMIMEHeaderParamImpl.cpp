@@ -57,6 +57,7 @@
 #include "nsMIMEHeaderParamImpl.h"
 #include "nsReadableUtils.h"
 #include "nsNativeCharsetUtils.h"
+#include "nsNetError.h"
 
 // static functions declared below are moved from mailnews/mime/src/comi18n.cpp
   
@@ -181,7 +182,8 @@ nsMIMEHeaderParamImpl::GetParameterInternal(const char *aHeaderValue,
       for (; *str && *str != ';' && !nsCRT::IsAsciiSpace(*str); ++str)
         ;
       if (str == start)
-        return NS_ERROR_UNEXPECTED;
+        return NS_ERROR_FIRST_HEADER_FIELD_COMPONENT_EMPTY;
+
       *aResult = (char *) nsMemory::Clone(start, (str - start) + 1);
       NS_ENSURE_TRUE(*aResult, NS_ERROR_OUT_OF_MEMORY);
       (*aResult)[str - start] = '\0';  // null-terminate
@@ -298,9 +300,7 @@ nsMIMEHeaderParamImpl::GetParameterInternal(const char *aHeaderValue,
       PRBool needUnescape = *(tokenEnd - 1) == '*';
       // the 1st line of a multi-line parameter or a single line  that needs 
       // unescaping. ( title*0*=  or  title*= )
-      // only allowed for token form, not for quoted-string
-      if (!needUnquote &&
-          ((*cp == '0' && needUnescape) || (tokenEnd - tokenStart == paramLen + 1)))
+      if ((*cp == '0' && needUnescape) || (tokenEnd - tokenStart == paramLen + 1))
       {
         // look for single quotation mark(')
         const char *sQuote1 = PL_strchr(valueStart, 0x27);

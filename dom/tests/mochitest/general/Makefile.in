@@ -55,6 +55,7 @@ _TEST_FILES = \
 		file_bug628069.html \
 		test_bug631440.html \
 		test_bug653364.html \
+		test_bug629535.html \
 		test_consoleAPI.html \
 		test_domWindowUtils.html \
 		test_domWindowUtils_scrollXY.html \
@@ -68,6 +69,7 @@ _TEST_FILES = \
 		test_framedhistoryframes.html \
 		test_windowedhistoryframes.html \
 		test_focusrings.xul \
+		file_moving_xhr.html \
 		$(NULL)
 
 _CHROME_FILES = \

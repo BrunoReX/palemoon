@@ -104,11 +104,13 @@ _TEST_FILES = \
 		test_bug656379-1.html \
 		test_bug656379-2.html \
 		test_bug656954.html \
+		test_bug659350.html \
 		test_bug662678.html \
 		test_bug667919-1.html \
 		test_bug667919-2.html \
 		test_bug667612.html \
 		empty.js \
+		test_bug689564.html \
 		$(NULL)
 
 #bug 585630
@@ -137,6 +139,8 @@ _CHROME_FILES = \
 		test_bug602962.xul \
 		test_bug617528.xul \
 		window_bug617528.xul \
+		test_bug679494.xul \
+		file_bug679494.html \
 		$(NULL)
 
 libs:: $(_TEST_FILES)

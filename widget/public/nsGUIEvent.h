@@ -50,7 +50,7 @@
 #include "nsCOMPtr.h"
 #include "nsIAtom.h"
 #include "nsIDOMKeyEvent.h"
-#include "nsIDOMNSMouseEvent.h"
+#include "nsIDOMMouseEvent.h"
 #include "nsIDOMDataTransfer.h"
 #include "nsIDOMEventTarget.h"
 #include "nsWeakPtr.h"
@@ -65,6 +65,9 @@ namespace mozilla {
 namespace dom {
   class PBrowserParent;
   class PBrowserChild;
+}
+namespace plugins {
+  class PPluginInstanceChild;
 }
 }
 
@@ -341,6 +344,7 @@ class nsHashKey;
 #define NS_COMPOSITION_EVENT_START    2200
 #define NS_COMPOSITION_START          (NS_COMPOSITION_EVENT_START)
 #define NS_COMPOSITION_END            (NS_COMPOSITION_EVENT_START + 1)
+#define NS_COMPOSITION_UPDATE         (NS_COMPOSITION_EVENT_START + 2)
 
 // text events
 #define NS_TEXT_START                 2400
@@ -537,6 +541,10 @@ class nsHashKey;
 #define NS_DEVICE_MOTION             (NS_DEVICE_ORIENTATION_START+1)
 
 #define NS_SHOW_EVENT                5000
+
+// Fullscreen DOM API
+#define NS_FULL_SCREEN_START         5100
+#define NS_FULLSCREENCHANGE          (NS_FULL_SCREEN_START)
 
 /**
  * Return status for event processors, nsEventStatus, is defined in
@@ -832,8 +840,8 @@ public:
   }
 
   nsMouseEvent_base(PRBool isTrusted, PRUint32 msg, nsIWidget *w, PRUint8 type)
-  : nsInputEvent(isTrusted, msg, w, type), button(0), pressure(0),
-    inputSource(nsIDOMNSMouseEvent::MOZ_SOURCE_MOUSE) {}
+    : nsInputEvent(isTrusted, msg, w, type), button(0), pressure(0)
+    , inputSource(nsIDOMMouseEvent::MOZ_SOURCE_MOUSE) {}
 
   /// The possible related target
   nsCOMPtr<nsISupports> relatedTarget;
@@ -844,7 +852,7 @@ public:
   // ranges between 0.0 and 1.0
   float                 pressure;
 
-  // Possible values at nsIDOMNSMouseEvent
+  // Possible values at nsIDOMMouseEvent
   PRUint16              inputSource;
 };
 
@@ -1122,6 +1130,7 @@ class nsTextEvent : public nsInputEvent
 private:
   friend class mozilla::dom::PBrowserParent;
   friend class mozilla::dom::PBrowserChild;
+  friend class mozilla::plugins::PPluginInstanceChild;
 
   nsTextEvent()
   {
@@ -1146,7 +1155,7 @@ public:
   PRBool            isChar;
 };
 
-class nsCompositionEvent : public nsInputEvent
+class nsCompositionEvent : public nsGUIEvent
 {
 private:
   friend class mozilla::dom::PBrowserParent;
@@ -1161,9 +1170,15 @@ public:
 
 public:
   nsCompositionEvent(PRBool isTrusted, PRUint32 msg, nsIWidget *w)
-    : nsInputEvent(isTrusted, msg, w, NS_COMPOSITION_EVENT)
+    : nsGUIEvent(isTrusted, msg, w, NS_COMPOSITION_EVENT)
   {
+    // XXX compositionstart is cancelable in draft of DOM3 Events.
+    //     However, it doesn't make sense for us, we cannot cancel composition
+    //     when we send compositionstart event.
+    flags |= NS_EVENT_FLAG_CANT_CANCEL;
   }
+
+  nsString data;
 };
 
 /* Mouse Scroll Events: Line Scrolling, Pixel Scrolling and Common Event Flows
@@ -1560,6 +1575,13 @@ public:
   {
   }
 
+  nsSimpleGestureEvent(const nsSimpleGestureEvent& other)
+    : nsMouseEvent_base((other.flags & NS_EVENT_FLAG_TRUSTED) != 0,
+                        other.message, other.widget, NS_SIMPLE_GESTURE_EVENT),
+      direction(other.direction), delta(other.delta)
+  {
+  }
+
   PRUint32 direction;   // See nsIDOMSimpleGestureEvent for values
   PRFloat64 delta;      // Delta for magnify and rotate events
 };
@@ -1685,7 +1707,8 @@ enum nsDragDropEventStatus {
 #define NS_IS_IME_EVENT(evnt) \
        (((evnt)->message == NS_TEXT_TEXT) ||  \
         ((evnt)->message == NS_COMPOSITION_START) ||  \
-        ((evnt)->message == NS_COMPOSITION_END))
+        ((evnt)->message == NS_COMPOSITION_END) || \
+        ((evnt)->message == NS_COMPOSITION_UPDATE))
 
 #define NS_IS_ACTIVATION_EVENT(evnt) \
        (((evnt)->message == NS_ACTIVATE) || \

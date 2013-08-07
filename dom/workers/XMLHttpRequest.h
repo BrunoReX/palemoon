@@ -41,7 +41,7 @@
 
 #include "Workers.h"
 
-#include "jspubtd.h"
+#include "jsapi.h"
 
 BEGIN_WORKERS_NAMESPACE
 
@@ -63,7 +63,8 @@ struct StateData
 };
 
 bool
-UpdateXHRState(JSContext* aCx, JSObject* aObj, const StateData& aNewState);
+UpdateXHRState(JSContext* aCx, JSObject* aObj, bool aIsUpload,
+               const StateData& aNewState);
 
 } // namespace xhr
 

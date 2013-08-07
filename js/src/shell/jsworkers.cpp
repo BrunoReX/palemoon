@@ -894,12 +894,12 @@ class InitEvent : public Event
         if (!filename)
             return fail;
 
-        JSObject *scriptObj = JS_CompileFile(cx, child->getGlobal(), filename.ptr());
-        if (!scriptObj)
+        JSScript *script = JS_CompileFile(cx, child->getGlobal(), filename.ptr());
+        if (!script)
             return fail;
 
         AutoValueRooter rval(cx);
-        JSBool ok = JS_ExecuteScript(cx, child->getGlobal(), scriptObj, Jsvalify(rval.addr()));
+        JSBool ok = JS_ExecuteScript(cx, child->getGlobal(), script, rval.addr());
         return Result(ok);
     }
 };
@@ -935,7 +935,7 @@ class ErrorEvent : public Event
         JSString *data = NULL;
         jsval exc;
         if (JS_GetPendingException(cx, &exc)) {
-            AutoValueRooter tvr(cx, Valueify(exc));
+            AutoValueRooter tvr(cx, exc);
             JS_ClearPendingException(cx);
 
             // Determine what error message to put in the error event.

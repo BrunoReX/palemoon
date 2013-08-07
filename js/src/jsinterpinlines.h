@@ -71,91 +71,6 @@ class AutoPreserveEnumerators {
     }
 };
 
-class InvokeSessionGuard
-{
-    InvokeArgsGuard args_;
-    InvokeFrameGuard ifg_;
-    Value savedCallee_, savedThis_;
-    Value *formals_, *actuals_;
-    unsigned nformals_;
-    JSScript *script_;
-    Value *stackLimit_;
-    jsbytecode *stop_;
-
-    bool optimized() const { return ifg_.pushed(); }
-
-  public:
-    InvokeSessionGuard() : args_(), ifg_() {}
-    ~InvokeSessionGuard() {}
-
-    bool start(JSContext *cx, const Value &callee, const Value &thisv, uintN argc);
-    bool invoke(JSContext *cx);
-
-    bool started() const {
-        return args_.pushed();
-    }
-
-    Value &operator[](unsigned i) const {
-        JS_ASSERT(i < argc());
-        Value &arg = i < nformals_ ? formals_[i] : actuals_[i];
-        JS_ASSERT_IF(optimized(), &arg == &ifg_.fp()->canonicalActualArg(i));
-        JS_ASSERT_IF(!optimized(), &arg == &args_[i]);
-        return arg;
-    }
-
-    uintN argc() const {
-        return args_.argc();
-    }
-
-    const Value &rval() const {
-        return optimized() ? ifg_.fp()->returnValue() : args_.rval();
-    }
-};
-
-inline bool
-InvokeSessionGuard::invoke(JSContext *cx)
-{
-    /* N.B. Must be kept in sync with Invoke */
-
-    /* Refer to canonical (callee, this) for optimized() sessions. */
-    formals_[-2] = savedCallee_;
-    formals_[-1] = savedThis_;
-
-    /* Prevent spurious accessing-callee-after-rval assert. */
-    args_.calleeHasBeenReset();
-
-#ifdef JS_METHODJIT
-    void *code;
-    if (!optimized() || !(code = script_->getJIT(false /* !constructing */)->invokeEntry))
-#else
-    if (!optimized())
-#endif
-        return Invoke(cx, args_);
-
-    /* Clear any garbage left from the last Invoke. */
-    StackFrame *fp = ifg_.fp();
-    fp->resetCallFrame(script_);
-
-    JSBool ok;
-    {
-        AutoPreserveEnumerators preserve(cx);
-        args_.setActive();  /* From js::Invoke(InvokeArgsGuard) overload. */
-        Probes::enterJSFun(cx, fp->fun(), script_);
-#ifdef JS_METHODJIT
-        ok = mjit::EnterMethodJIT(cx, fp, code, stackLimit_);
-        cx->regs().pc = stop_;
-#else
-        cx->regs().pc = script_->code;
-        ok = Interpret(cx, cx->fp());
-#endif
-        Probes::exitJSFun(cx, fp->fun(), script_);
-        args_.setInactive();
-    }
-
-    /* Don't clobber callee with rval; rval gets read from fp->rval. */
-    return ok;
-}
-
 namespace detail {
 
 template<typename T> class PrimitiveBehavior { };
@@ -165,7 +80,7 @@ class PrimitiveBehavior<JSString *> {
   public:
     static inline bool isType(const Value &v) { return v.isString(); }
     static inline JSString *extract(const Value &v) { return v.toString(); }
-    static inline Class *getClass() { return &js_StringClass; }
+    static inline Class *getClass() { return &StringClass; }
 };
 
 template<>
@@ -173,7 +88,7 @@ class PrimitiveBehavior<bool> {
   public:
     static inline bool isType(const Value &v) { return v.isBoolean(); }
     static inline bool extract(const Value &v) { return v.toBoolean(); }
-    static inline Class *getClass() { return &js_BooleanClass; }
+    static inline Class *getClass() { return &BooleanClass; }
 };
 
 template<>
@@ -181,7 +96,7 @@ class PrimitiveBehavior<double> {
   public:
     static inline bool isType(const Value &v) { return v.isNumber(); }
     static inline double extract(const Value &v) { return v.toNumber(); }
-    static inline Class *getClass() { return &js_NumberClass; }
+    static inline Class *getClass() { return &NumberClass; }
 };
 
 } // namespace detail
@@ -315,12 +230,26 @@ ValuePropertyBearer(JSContext *cx, const Value &v, int spindex)
 }
 
 inline bool
-ScriptPrologue(JSContext *cx, StackFrame *fp)
+FunctionNeedsPrologue(JSContext *cx, JSFunction *fun)
+{
+    /* Heavyweight functions need call objects created. */
+    if (fun->isHeavyweight())
+        return true;
+
+    /* Outer and inner functions need to preserve nesting invariants. */
+    if (cx->typeInferenceEnabled() && fun->script()->nesting())
+        return true;
+
+    return false;
+}
+
+inline bool
+ScriptPrologue(JSContext *cx, StackFrame *fp, bool newType)
 {
     JS_ASSERT_IF(fp->isNonEvalFunctionFrame() && fp->fun()->isHeavyweight(), fp->hasCallObj());
 
     if (fp->isConstructing()) {
-        JSObject *obj = js_CreateThisForFunction(cx, &fp->callee());
+        JSObject *obj = js_CreateThisForFunction(cx, &fp->callee(), newType);
         if (!obj)
             return false;
         fp->functionThis().setObject(*obj);
@@ -353,10 +282,10 @@ ScriptEpilogue(JSContext *cx, StackFrame *fp, bool ok)
 }
 
 inline bool
-ScriptPrologueOrGeneratorResume(JSContext *cx, StackFrame *fp)
+ScriptPrologueOrGeneratorResume(JSContext *cx, StackFrame *fp, bool newType)
 {
     if (!fp->isGeneratorFrame())
-        return ScriptPrologue(cx, fp);
+        return ScriptPrologue(cx, fp, newType);
     if (cx->compartment->debugMode())
         ScriptDebugPrologue(cx, fp);
     return true;

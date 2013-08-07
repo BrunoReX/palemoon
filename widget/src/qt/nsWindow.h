@@ -347,9 +347,10 @@ private:
     void               InitButtonEvent(nsMouseEvent &event, QGraphicsSceneMouseEvent *aEvent, int aClickCount = 1);
     nsEventStatus      DispatchCommandEvent(nsIAtom* aCommand);
     nsEventStatus      DispatchContentCommandEvent(PRInt32 aMsg);
-    MozQWidget*        createQWidget(MozQWidget *parent, nsWidgetInitData *aInitData);
-
-    PRBool             IsAcceleratedQView(QGraphicsView* aView);
+    MozQWidget*        createQWidget(MozQWidget* parent,
+                                     nsNativeWidget nativeParent,
+                                     nsWidgetInitData* aInitData);
+    void               SetSoftwareKeyboardState(PRBool aOpen);
 
     MozQWidget*        mWidget;
 

@@ -66,6 +66,8 @@
 #include "nsChannelClassifier.h"
 #include "nsIRedirectResultListener.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/Telemetry.h"
+#include "nsDOMError.h"
 
 // True if the local cache should be bypassed when processing a request.
 #define BYPASS_LOCAL_CACHE(loadFlags) \
@@ -128,6 +130,7 @@ nsHttpChannel::nsHttpChannel()
     , mFallingBack(PR_FALSE)
     , mWaitingForRedirectCallback(PR_FALSE)
     , mRequestTimeInitialized(PR_FALSE)
+    , mDidReval(false)
 {
     LOG(("Creating nsHttpChannel [this=%p]\n", this));
     mChannelCreationTime = PR_Now();
@@ -267,6 +270,8 @@ nsHttpChannel::Connect(PRBool firstTime)
             if (NS_FAILED(rv) && event) {
                 event->Revoke();
             }
+            mozilla::Telemetry::Accumulate(
+                    mozilla::Telemetry::HTTP_CACHE_DISPOSITION, kCacheHit);
             return rv;
         }
         else if (mLoadFlags & LOAD_ONLY_FROM_CACHE) {
@@ -974,6 +979,8 @@ nsHttpChannel::ProcessResponse()
         LOG(("  continuation state has been reset"));
     }
 
+    bool successfulReval = false;
+
     // handle different server response categories.  Note that we handle
     // caching or not caching of error pages in
     // nsHttpResponseHead::MustValidate; if you change this switch, update that
@@ -1025,6 +1032,9 @@ nsHttpChannel::ProcessResponse()
             LOG(("ProcessNotModified failed [rv=%x]\n", rv));
             rv = ProcessNormal();
         }
+        else {
+            successfulReval = true;
+        }
         break;
     case 401:
     case 407:
@@ -1060,12 +1070,42 @@ nsHttpChannel::ProcessResponse()
         break;
     }
 
+    if (!mDidReval)
+        mozilla::Telemetry::Accumulate(
+                mozilla::Telemetry::HTTP_CACHE_DISPOSITION, kCacheMissed);
+    else if (successfulReval)
+        mozilla::Telemetry::Accumulate(
+                mozilla::Telemetry::HTTP_CACHE_DISPOSITION, kCacheHitViaReval);
+    else
+        mozilla::Telemetry::Accumulate(
+                mozilla::Telemetry::HTTP_CACHE_DISPOSITION,
+                kCacheMissedViaReval);
+
     return rv;
 }
 
 nsresult
 nsHttpChannel::ContinueProcessResponse(nsresult rv)
 {
+    if (rv == NS_ERROR_DOM_BAD_URI && mRedirectURI) {
+
+        PRBool isHTTP = PR_FALSE;
+        if (NS_FAILED(mRedirectURI->SchemeIs("http", &isHTTP)))
+            isHTTP = PR_FALSE;
+        if (!isHTTP && NS_FAILED(mRedirectURI->SchemeIs("https", &isHTTP)))
+            isHTTP = PR_FALSE;
+        
+        if (!isHTTP) {
+            // This was a blocked attempt to redirect and subvert the system by
+            // redirecting to another protocol (perhaps javascript:)
+            // In that case we want to throw an error instead of displaying the
+            // non-redirected response body.
+
+            LOG(("ContinueProcessResponse detected rejected Non-HTTP Redirection"));
+            return NS_ERROR_CORRUPTED_CONTENT;
+        }
+    }
+
     if (NS_SUCCEEDED(rv)) {
         InitCacheEntry();
         CloseCacheEntry(PR_FALSE);
@@ -2664,6 +2704,7 @@ nsHttpChannel::CheckCache()
             if (val)
                 mRequestHead.SetHeader(nsHttp::If_None_Match,
                                        nsDependentCString(val));
+            mDidReval = true;
         }
     }
 

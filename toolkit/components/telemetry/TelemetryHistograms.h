@@ -37,11 +37,16 @@
  * ***** END LICENSE BLOCK ***** */
 
 /**
- * This file lists Telemetry histograms collected by Firefox.  The format is
+ * This file lists Telemetry histograms collected by Mozilla. The format is
  *
  *    HISTOGRAM(id, minimum, maximum, bucket count, histogram kind,
  *              human-readable description for about:telemetry)
  *
+ * This file is the master list of telemetry histograms reported to Mozilla servers.
+ * The other data reported by telemetry is listed on https://wiki.mozilla.org/Privacy/Reviews/Telemetry/Measurements
+ *
+ * Please note that only BOOLEAN histograms are allowed to have a minimum value
+ * of zero, and that bucket counts should be >= 3.
  */
 
 /**
@@ -59,7 +64,7 @@ HISTOGRAM(MEMORY_JS_COMPARTMENTS_SYSTEM, 1, 1000, 10, EXPONENTIAL, "Total JavaSc
 HISTOGRAM(MEMORY_JS_COMPARTMENTS_USER, 1, 1000, 10, EXPONENTIAL, "Total JavaScript compartments used for web pages")
 HISTOGRAM(MEMORY_JS_GC_HEAP, 1024, 512 * 1024, 10, EXPONENTIAL, "Memory used by the garbage-collected JavaScript heap (KB)")
 HISTOGRAM(MEMORY_RESIDENT, 32 * 1024, 1024 * 1024, 10, EXPONENTIAL, "Resident memory size (KB)")
-HISTOGRAM(MEMORY_LAYOUT_ALL, 1024, 64 * 1024, 10, EXPONENTIAL, "Memory used by layout (KB)")
+HISTOGRAM(MEMORY_STORAGE_SQLITE, 1024, 512 * 1024, 10, EXPONENTIAL, "Memory used by SQLite (KB)")
 HISTOGRAM(MEMORY_IMAGES_CONTENT_USED_UNCOMPRESSED, 1024, 1024 * 1024, 10, EXPONENTIAL, "Memory used for uncompressed, in-use content images (KB)")
 HISTOGRAM(MEMORY_HEAP_ALLOCATED, 1024, 1024 * 1024, 10, EXPONENTIAL, "Heap memory allocated (KB)")
 HISTOGRAM(MEMORY_EXPLICIT, 1024, 1024 * 1024, 10, EXPONENTIAL, "Explicit memory allocations (KB)")
@@ -94,18 +99,25 @@ HISTOGRAM(IMAGE_DECODE_LATENCY, 50,  5000000, 100, EXPONENTIAL, "Time spent deco
 HISTOGRAM(IMAGE_DECODE_TIME,    50, 50000000, 100, EXPONENTIAL, "Time spent decoding an image (us)")
 HISTOGRAM(IMAGE_DECODE_ON_DRAW_LATENCY,  50, 50000000, 100, EXPONENTIAL, "Time from starting a decode to it showing up on the screen (us)")
 HISTOGRAM(IMAGE_DECODE_CHUNKS, 1,  500, 50, EXPONENTIAL, "Number of chunks per decode attempt")
+HISTOGRAM(IMAGE_DECODE_COUNT, 1,  500, 50, EXPONENTIAL, "Decode count")
+HISTOGRAM(IMAGE_DECODE_SPEED_JPEG, 500, 50000000,  50, EXPONENTIAL, "JPEG image decode speed (Kbytes/sec)")
+HISTOGRAM(IMAGE_DECODE_SPEED_GIF,  500, 50000000,  50, EXPONENTIAL, "GIF image decode speed (Kbytes/sec)")
+HISTOGRAM(IMAGE_DECODE_SPEED_PNG,  500, 50000000,  50, EXPONENTIAL, "PNG image decode speed (Kbytes/sec)")
+
+HISTOGRAM(CANVAS_2D_USED, 0, 1, 2, BOOLEAN, "2D canvas used")
+HISTOGRAM(CANVAS_WEBGL_USED, 0, 1, 2, BOOLEAN, "WebGL canvas used")
 
 /**
  * Networking telemetry
  */
-HISTOGRAM(TOTAL_CONTENT_PAGE_LOAD_TIME, 100, 10000, 100, EXPONENTIAL, "HTTP: Total page load time (ms)")
+HISTOGRAM(TOTAL_CONTENT_PAGE_LOAD_TIME, 100, 30000, 100, EXPONENTIAL, "HTTP: Total page load time (ms)")
 HISTOGRAM(HTTP_SUBITEM_OPEN_LATENCY_TIME, 1, 30000, 50, EXPONENTIAL, "HTTP subitem: Page start -> subitem open() (ms)")
 HISTOGRAM(HTTP_SUBITEM_FIRST_BYTE_LATENCY_TIME, 1, 30000, 50, EXPONENTIAL, "HTTP subitem: Page start -> first byte received for subitem reply (ms)")
 HISTOGRAM(HTTP_REQUEST_PER_PAGE, 1, 1000, 50, EXPONENTIAL, "HTTP: Requests per page (count)")
 HISTOGRAM(HTTP_REQUEST_PER_PAGE_FROM_CACHE, 1, 101, 102, LINEAR, "HTTP: Requests serviced from cache (%)")
 
 #define _HTTP_HIST(name, label) \
-  HISTOGRAM(name, 1, 10000, 50, EXPONENTIAL, "HTTP " label) \
+  HISTOGRAM(name, 1, 30000, 50, EXPONENTIAL, "HTTP " label) \
 
 #define HTTP_HISTOGRAMS(prefix, labelprefix) \
   _HTTP_HIST(HTTP_##prefix##_DNS_ISSUE_TIME, labelprefix "open() -> DNS request issued (ms)") \
@@ -126,6 +138,9 @@ HTTP_HISTOGRAMS(SUB, "subitem: ")
 
 #undef _HTTP_HIST
 #undef HTTP_HISTOGRAMS
+
+HISTOGRAM(HTTP_CACHE_DISPOSITION, 1, 5, 5, LINEAR, "HTTP Cache Hit, Reval, Failed-Reval, Miss")
+
 HISTOGRAM(FIND_PLUGINS, 1, 3000, 10, EXPONENTIAL, "Time spent scanning filesystem for plugins (ms)")
 HISTOGRAM(CHECK_JAVA_ENABLED, 1, 3000, 10, EXPONENTIAL, "Time spent checking if Java is enabled (ms)")
 
@@ -159,10 +174,19 @@ HISTOGRAM(MOZ_SQLITE_PLACES_WRITE_B, 1, 32768, 3, LINEAR, "SQLite write (bytes)"
 HISTOGRAM(MOZ_SQLITE_COOKIES_WRITE_B, 1, 32768, 3, LINEAR, "SQLite write (bytes)")
 HISTOGRAM(MOZ_SQLITE_URLCLASSIFIER_WRITE_B, 1, 32768, 3, LINEAR, "SQLite write (bytes)")
 HISTOGRAM(MOZ_SQLITE_OTHER_WRITE_B, 1, 32768, 3, LINEAR, "SQLite write (bytes)")
-HISTOGRAM(STARTUP_MEASUREMENT_ERRORS, 1, 3, 4, LINEAR, "Flags errors in startup calculation()")
+HISTOGRAM(STARTUP_MEASUREMENT_ERRORS, 1, 4, 5, LINEAR, "Flags errors in startup calculation()")
 HISTOGRAM(NETWORK_DISK_CACHE_OPEN, 1, 10000, 10, EXPONENTIAL, "Time spent opening disk cache (ms)")
 HISTOGRAM(NETWORK_DISK_CACHE_TRASHRENAME, 1, 10000, 10, EXPONENTIAL, "Time spent renaming bad Cache to Cache.Trash (ms)")
 HISTOGRAM(NETWORK_DISK_CACHE_DELETEDIR, 1, 10000, 10, EXPONENTIAL, "Time spent deleting disk cache (ms)")
+
+/**
+ * Url-Classifier telemetry
+ */
+#ifdef MOZ_URL_CLASSIFIER
+HISTOGRAM(URLCLASSIFIER_PS_FILELOAD_TIME, 1, 1000, 10, EXPONENTIAL, "Time spent loading PrefixSet from file (ms)")
+HISTOGRAM(URLCLASSIFIER_PS_CONSTRUCT_TIME, 1, 5000, 15, EXPONENTIAL, "Time spent constructing PrefixSet from DB (ms)")
+HISTOGRAM(URLCLASSIFIER_PS_LOOKUP_TIME, 1, 500, 10, EXPONENTIAL, "Time spent per PrefixSet lookup (ms)")
+#endif
 
 /**
  * Places telemetry.
@@ -180,3 +204,12 @@ HISTOGRAM(PLACES_DATABASE_PAGESIZE_B, 1024, 32768, 10, EXPONENTIAL, "PLACES: Dat
 HISTOGRAM(PLACES_DATABASE_SIZE_PER_PAGE_B, 500, 10240, 20, EXPONENTIAL, "PLACES: Average size of a place in the database (bytes)")
 HISTOGRAM(PLACES_EXPIRATION_STEPS_TO_CLEAN, 1, 10, 10, LINEAR, "PLACES: Expiration steps to cleanup the database")
 HISTOGRAM(PLACES_AUTOCOMPLETE_1ST_RESULT_TIME_MS, 50, 500, 10, EXPONENTIAL, "PLACES: Time for first autocomplete result if > 50ms (ms)")
+
+/**
+ * Thunderbird-specific telemetry.
+ */
+#ifdef MOZ_THUNDERBIRD
+HISTOGRAM(THUNDERBIRD_GLODA_SIZE_MB, 1, 1000, 40, LINEAR, "Gloda: size of global-messages-db.sqlite (MB)")
+HISTOGRAM(THUNDERBIRD_CONVERSATIONS_TIME_TO_2ND_GLODA_QUERY_MS, 1, 10000, 30, EXPONENTIAL, "Conversations: time between the moment we click and the second gloda query returns (ms)")
+HISTOGRAM(THUNDERBIRD_INDEXING_RATE_MSG_PER_S, 1, 100, 20, LINEAR, "Gloda: indexing rate (message/s)")
+#endif

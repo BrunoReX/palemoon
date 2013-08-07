@@ -281,16 +281,16 @@ static void
 MapAllAttributesIntoCSS(nsIFrame* aTableFrame)
 {
   // mtable is simple and only has one (pseudo) row-group
-  nsIFrame* rgFrame = aTableFrame->GetFirstChild(nsnull);
+  nsIFrame* rgFrame = aTableFrame->GetFirstPrincipalChild();
   if (!rgFrame || rgFrame->GetType() != nsGkAtoms::tableRowGroupFrame)
     return;
 
-  nsIFrame* rowFrame = rgFrame->GetFirstChild(nsnull);
+  nsIFrame* rowFrame = rgFrame->GetFirstPrincipalChild();
   for ( ; rowFrame; rowFrame = rowFrame->GetNextSibling()) {
     DEBUG_VERIFY_THAT_FRAME_IS(rowFrame, TABLE_ROW);
     if (rowFrame->GetType() == nsGkAtoms::tableRowFrame) {
       MapRowAttributesIntoCSS(aTableFrame, rowFrame);
-      nsIFrame* cellFrame = rowFrame->GetFirstChild(nsnull);
+      nsIFrame* cellFrame = rowFrame->GetFirstPrincipalChild();
       for ( ; cellFrame; cellFrame = cellFrame->GetNextSibling()) {
         DEBUG_VERIFY_THAT_FRAME_IS(cellFrame, TABLE_CELL);
         if (IS_TABLE_CELL(cellFrame->GetType())) {
@@ -458,9 +458,9 @@ nsMathMLmtableOuterFrame::AttributeChanged(PRInt32  aNameSpaceID,
 
   // mtable is simple and only has one (pseudo) row-group inside our inner-table
   nsIFrame* tableFrame = mFrames.FirstChild();
-  if (!tableFrame || tableFrame->GetType() != nsGkAtoms::tableFrame)
-    return NS_OK;
-  nsIFrame* rgFrame = tableFrame->GetFirstChild(nsnull);
+  NS_ASSERTION(tableFrame && tableFrame->GetType() == nsGkAtoms::tableFrame,
+               "should always have an inner table frame");
+  nsIFrame* rgFrame = tableFrame->GetFirstPrincipalChild();
   if (!rgFrame || rgFrame->GetType() != nsGkAtoms::tableRowGroupFrame)
     return NS_OK;
 
@@ -504,14 +504,14 @@ nsMathMLmtableOuterFrame::AttributeChanged(PRInt32  aNameSpaceID,
     Delete(tableFrame, AttributeToProperty(aAttribute));
 
   // unset any _moz attribute that we may have set earlier, and re-sync
-  nsIFrame* rowFrame = rgFrame->GetFirstChild(nsnull);
+  nsIFrame* rowFrame = rgFrame->GetFirstPrincipalChild();
   for ( ; rowFrame; rowFrame = rowFrame->GetNextSibling()) {
     if (rowFrame->GetType() == nsGkAtoms::tableRowFrame) {
       if (MOZrowAtom) { // let rows do the work
         rowFrame->GetContent()->UnsetAttr(kNameSpaceID_None, MOZrowAtom, PR_FALSE);
         MapRowAttributesIntoCSS(tableFrame, rowFrame);    
       } else { // let cells do the work
-        nsIFrame* cellFrame = rowFrame->GetFirstChild(nsnull);
+        nsIFrame* cellFrame = rowFrame->GetFirstPrincipalChild();
         for ( ; cellFrame; cellFrame = cellFrame->GetNextSibling()) {
           if (IS_TABLE_CELL(cellFrame->GetType())) {
             cellFrame->GetContent()->UnsetAttr(kNameSpaceID_None, MOZcolAtom, PR_FALSE);
@@ -548,9 +548,9 @@ nsMathMLmtableOuterFrame::GetRowFrameAt(nsPresContext* aPresContext,
   // if our inner table says that the index is valid, find the row now
   if (0 <= aRowIndex && aRowIndex <= rowCount) {
     nsIFrame* tableFrame = mFrames.FirstChild();
-    if (!tableFrame || tableFrame->GetType() != nsGkAtoms::tableFrame)
-      return nsnull;
-    nsIFrame* rgFrame = tableFrame->GetFirstChild(nsnull);
+    NS_ASSERTION(tableFrame && tableFrame->GetType() == nsGkAtoms::tableFrame,
+                 "should always have an inner table frame");
+    nsIFrame* rgFrame = tableFrame->GetFirstPrincipalChild();
     if (!rgFrame || rgFrame->GetType() != nsGkAtoms::tableRowGroupFrame)
       return nsnull;
     nsTableIterator rowIter(*rgFrame);
@@ -689,10 +689,10 @@ nsMathMLmtableFrame::~nsMathMLmtableFrame()
 }
 
 NS_IMETHODIMP
-nsMathMLmtableFrame::SetInitialChildList(nsIAtom*  aListName,
+nsMathMLmtableFrame::SetInitialChildList(ChildListID  aListID,
                                          nsFrameList& aChildList)
 {
-  nsresult rv = nsTableFrame::SetInitialChildList(aListName, aChildList);
+  nsresult rv = nsTableFrame::SetInitialChildList(aListID, aChildList);
   if (NS_FAILED(rv)) return rv;
   MapAllAttributesIntoCSS(this);
   return rv;
@@ -755,7 +755,7 @@ nsMathMLmtrFrame::AttributeChanged(PRInt32  aNameSpaceID,
   // Clear any internal _moz attribute that we may have set earlier
   // in our cells and re-sync their columnalign attribute
   nsTableFrame* tableFrame = nsTableFrame::GetTableFrame(this);
-  nsIFrame* cellFrame = GetFirstChild(nsnull);
+  nsIFrame* cellFrame = GetFirstPrincipalChild();
   for ( ; cellFrame; cellFrame = cellFrame->GetNextSibling()) {
     if (IS_TABLE_CELL(cellFrame->GetType())) {
       cellFrame->GetContent()->

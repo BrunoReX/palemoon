@@ -353,12 +353,11 @@ nsresult nsBuiltinDecoder::Seek(double aTime)
   // above will result in the new seek occurring when the current seek
   // completes.
   if (mPlayState != PLAY_STATE_SEEKING) {
-    if (mPlayState == PLAY_STATE_ENDED) {
-      mNextState = PLAY_STATE_PLAYING;
+    PRBool paused = PR_FALSE;
+    if (mElement) {
+      mElement->GetPaused(&paused);
     }
-    else {
-      mNextState = mPlayState;
-    }
+    mNextState = paused ? PLAY_STATE_PAUSED : PLAY_STATE_PLAYING;
     PinForSeek();
     ChangeState(PLAY_STATE_SEEKING);
   }
@@ -402,7 +401,7 @@ void nsBuiltinDecoder::AudioAvailable(float* aFrameBuffer,
     return;
   }
 
-  if (!mElement->MayHaveAudioAvailableEventListener()) {
+  if (!mElement || !mElement->MayHaveAudioAvailableEventListener()) {
     return;
   }
 
@@ -442,8 +441,7 @@ void nsBuiltinDecoder::MetadataLoaded(PRUint32 aChannels,
 
   if (!mResourceLoaded) {
     StartProgress();
-  }
-  else if (mElement) {
+  } else if (mElement) {
     // Resource was loaded during metadata loading, when progress
     // events are being ignored. Fire the final progress event.
     mElement->DispatchAsyncEvent(NS_LITERAL_STRING("progress"));
@@ -664,7 +662,9 @@ void nsBuiltinDecoder::NotifyDownloadEnded(nsresult aStatus)
 
   if (aStatus == NS_BINDING_ABORTED) {
     // Download has been cancelled by user.
-    mElement->LoadAborted();
+    if (mElement) {
+      mElement->LoadAborted();
+    }
     return;
   }
 
@@ -780,8 +780,8 @@ void nsBuiltinDecoder::SeekingStoppedAtEnd()
       seekWasAborted = PR_TRUE;
     } else {
       UnpinForSeek();
-      fireEnded = mNextState != PLAY_STATE_PLAYING;
-      ChangeState(fireEnded ? PLAY_STATE_ENDED : mNextState);
+      fireEnded = PR_TRUE;
+      ChangeState(PLAY_STATE_ENDED);
     }
   }
 
@@ -937,6 +937,15 @@ nsresult nsBuiltinDecoder::GetSeekable(nsTimeRanges* aSeekable)
   }
 
   return GetBuffered(aSeekable);
+}
+
+void nsBuiltinDecoder::SetEndTime(double aTime)
+{
+  NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
+  if (mDecoderStateMachine) {
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
+    mDecoderStateMachine->SetFragmentEndTime(static_cast<PRInt64>(aTime * USECS_PER_S));
+  }
 }
 
 void nsBuiltinDecoder::Suspend()

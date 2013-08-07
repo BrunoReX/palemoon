@@ -129,7 +129,7 @@ endif
 # but save the version to allow multiple versions of the same base
 # platform to be built in the same tree.
 #
-ifneq (,$(filter FreeBSD HP-UX IRIX Linux NetBSD OpenBSD OSF1 SunOS,$(OS_ARCH)))
+ifneq (,$(filter FreeBSD HP-UX Linux NetBSD OpenBSD OSF1 SunOS,$(OS_ARCH)))
 OS_RELEASE	:= $(basename $(OS_RELEASE))
 
 # Allow the user to ignore the OS_VERSION, which is usually irrelevant.
@@ -148,17 +148,6 @@ FINAL_LINK_COMP_NAMES = $(DEPTH)/config/final-link-comp-names
 
 MOZ_UNICHARUTIL_LIBS = $(LIBXUL_DIST)/lib/$(LIB_PREFIX)unicharutil_s.$(LIB_SUFFIX)
 MOZ_WIDGET_SUPPORT_LIBS    = $(DIST)/lib/$(LIB_PREFIX)widgetsupport_s.$(LIB_SUFFIX)
-
-ifdef MOZ_MEMORY
-ifneq ($(OS_ARCH),WINNT)
-JEMALLOC_LIBS = $(MKSHLIB_FORCE_ALL) $(call EXPAND_MOZLIBNAME,jemalloc) $(MKSHLIB_UNFORCE_ALL)
-# If we are linking jemalloc into a program, we want the jemalloc symbols
-# to be exported
-ifneq (,$(SIMPLE_PROGRAMS)$(PROGRAM))
-JEMALLOC_LIBS += $(MOZ_JEMALLOC_STANDALONE_GLUE_LDOPTS)
-endif
-endif
-endif
 
 CC := $(CC_WRAPPER) $(CC)
 CXX := $(CXX_WRAPPER) $(CXX)
@@ -247,19 +236,23 @@ endif # MOZ_DEBUG
 # We don't build a static CRT when building a custom CRT,
 # it appears to be broken. So don't link to jemalloc if
 # the Makefile wants static CRT linking.
-ifeq ($(MOZ_MEMORY)_$(USE_STATIC_LIBS),1_)
+ifeq ($(MOZ_MEMORY)_$(USE_STATIC_LIBS),1_1)
 # Disable default CRT libs and add the right lib path for the linker
-OS_LDFLAGS += $(MOZ_MEMORY_LDFLAGS)
+MOZ_UTILS_LDFLAGS=
 endif
 
 endif # WINNT && !GNU_CC
+
+ifndef MOZ_UTILS_PROGRAM_LDFLAGS
+MOZ_UTILS_PROGRAM_LDFLAGS=$(MOZ_UTILS_LDFLAGS)
+endif
 
 #
 # Build using PIC by default
 #
 _ENABLE_PIC=1
 
-# Determine if module being compiled is destined 
+# Determine if module being compiled is destined
 # to be merged into libxul
 
 ifdef LIBXUL_LIBRARY
@@ -415,7 +408,7 @@ INCLUDES = \
   -I$(DIST)/include -I$(DIST)/include/nsprpub \
   $(if $(LIBXUL_SDK),-I$(LIBXUL_SDK)/include -I$(LIBXUL_SDK)/include/nsprpub) \
   $(OS_INCLUDES) \
-  $(NULL) 
+  $(NULL)
 
 include $(topsrcdir)/config/static-checking-config.mk
 
@@ -462,6 +455,9 @@ HOST_CFLAGS	+= $(MOZ_OPTIMIZE_FLAGS)
 endif # MOZ_OPTIMIZE == 1
 endif # MOZ_OPTIMIZE
 endif # CROSS_COMPILE
+
+CFLAGS += $(MOZ_FRAMEPTR_FLAGS)
+CXXFLAGS += $(MOZ_FRAMEPTR_FLAGS)
 
 # Check for FAIL_ON_WARNINGS & FAIL_ON_WARNINGS_DEBUG (Shorthand for Makefiles
 # to request that we use the 'warnings as errors' compile flags)
@@ -513,17 +509,22 @@ RTL_FLAGS=-MD          # Dynamically linked, multithreaded RTL
 ifneq (,$(MOZ_DEBUG)$(NS_TRACE_MALLOC))
 ifndef MOZ_NO_DEBUG_RTL
 RTL_FLAGS=-MDd         # Dynamically linked, multithreaded MSVC4.0 debug RTL
-endif 
+endif
 endif # MOZ_DEBUG || NS_TRACE_MALLOC
 endif # USE_STATIC_LIBS
 endif # WINNT && !GNU_CC
 
 ifeq ($(OS_ARCH),Darwin)
-# Darwin doesn't cross-compile, so just set both types of flags here.
+# Compiling ObjC requires an Apple compiler anyway, so it's ok to set
+# host CMFLAGS here.
 HOST_CMFLAGS += -fobjc-exceptions
 HOST_CMMFLAGS += -fobjc-exceptions
 OS_COMPILE_CMFLAGS += -fobjc-exceptions
 OS_COMPILE_CMMFLAGS += -fobjc-exceptions
+ifeq ($(MOZ_WIDGET_TOOLKIT),uikit)
+OS_COMPILE_CMFLAGS += -fobjc-abi-version=2 -fobjc-legacy-dispatch
+OS_COMPILE_CMMFLAGS += -fobjc-abi-version=2 -fobjc-legacy-dispatch
+endif
 endif
 
 COMPILE_CFLAGS	= $(VISIBILITY_FLAGS) $(DEFINES) $(INCLUDES) $(DSO_CFLAGS) $(DSO_PIC_CFLAGS) $(CFLAGS) $(RTL_FLAGS) $(OS_COMPILE_CFLAGS)
@@ -784,4 +785,22 @@ EXPAND_MKSHLIB = $(EXPAND_LIBS_EXEC) --uselist -- $(MKSHLIB)
 
 ifdef STDCXX_COMPAT
 CHECK_STDCXX = objdump -p $(1) | grep -e 'GLIBCXX_3\.4\.\(9\|[1-9][0-9]\)' > /dev/null && echo "TEST-UNEXPECTED-FAIL | | We don't want these libstdc++ symbols to be used:" && objdump -T $(1) | grep -e 'GLIBCXX_3\.4\.\(9\|[1-9][0-9]\)' && exit 1 || exit 0
+endif
+
+# autoconf.mk sets OBJ_SUFFIX to an error to avoid use before including
+# this file
+OBJ_SUFFIX := $(_OBJ_SUFFIX)
+
+# PGO builds with GCC build objects with instrumentation in a first pass,
+# then objects optimized, without instrumentation, in a second pass. If
+# we overwrite the ojects from the first pass with those from the second,
+# we end up not getting instrumentation data for better optimization on
+# incremental builds. As a consequence, we use a different object suffix
+# for the first pass.
+ifndef NO_PROFILE_GUIDED_OPTIMIZE
+ifdef MOZ_PROFILE_GENERATE
+ifdef GNU_CC
+OBJ_SUFFIX := i_o
+endif
+endif
 endif

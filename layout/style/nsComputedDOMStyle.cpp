@@ -491,7 +491,7 @@ nsComputedDOMStyle::GetPropertyCSSValue(const nsAString& aPropertyName,
       if (type == nsGkAtoms::tableOuterFrame) {
         // If the frame is an outer table frame then we should get the style
         // from the inner table frame.
-        mInnerFrame = mOuterFrame->GetFirstChild(nsnull);
+        mInnerFrame = mOuterFrame->GetFirstPrincipalChild();
         NS_ASSERTION(mInnerFrame, "Outer table must have an inner");
         NS_ASSERTION(!mInnerFrame->GetNextSibling(),
                      "Outer table frames should have just one child, "
@@ -1001,6 +1001,16 @@ nsComputedDOMStyle::DoGetMozBackfaceVisibility()
     return val;
 }
 
+nsIDOMCSSValue*
+nsComputedDOMStyle::DoGetMozTransformStyle()
+{
+    nsROCSSPrimitiveValue *val = GetROCSSPrimitiveValue();
+    val->SetIdent(
+        nsCSSProps::ValueToKeywordEnum(GetStyleDisplay()->mTransformStyle,
+                                       nsCSSProps::kTransformStyleKTable));
+    return val;
+}
+
 /* If the property is "none", hand back "none" wrapped in a value.
  * Otherwise, compute the aggregate transform matrix and hands it back in a
  * "matrix" wrapper.
@@ -1048,27 +1058,53 @@ nsComputedDOMStyle::DoGetMozTransform()
                                             bounds,
                                             float(nsDeviceContext::AppUnitsPerCSSPixel()));
 
-  if (!matrix.Is2D()) {
-    nsROCSSPrimitiveValue* val = GetROCSSPrimitiveValue();
+  PRBool is3D = !matrix.Is2D();
 
-    /* Set it to "none." */
-    val->SetIdent(eCSSKeyword_none);
-    return val;
+  nsAutoString resultString(NS_LITERAL_STRING("matrix"));
+  if (is3D) {
+    resultString.Append(NS_LITERAL_STRING("3d"));
   }
 
-  nsAutoString resultString(NS_LITERAL_STRING("matrix("));
+  resultString.Append(NS_LITERAL_STRING("("));
   resultString.AppendFloat(matrix._11);
   resultString.Append(NS_LITERAL_STRING(", "));
   resultString.AppendFloat(matrix._12);
   resultString.Append(NS_LITERAL_STRING(", "));
+  if (is3D) {
+    resultString.AppendFloat(matrix._13);
+    resultString.Append(NS_LITERAL_STRING(", "));
+    resultString.AppendFloat(matrix._14);
+    resultString.Append(NS_LITERAL_STRING(", "));
+  }
   resultString.AppendFloat(matrix._21);
   resultString.Append(NS_LITERAL_STRING(", "));
   resultString.AppendFloat(matrix._22);
   resultString.Append(NS_LITERAL_STRING(", "));
+  if (is3D) {
+    resultString.AppendFloat(matrix._23);
+    resultString.Append(NS_LITERAL_STRING(", "));
+    resultString.AppendFloat(matrix._24);
+    resultString.Append(NS_LITERAL_STRING(", "));
+    resultString.AppendFloat(matrix._31);
+    resultString.Append(NS_LITERAL_STRING(", "));
+    resultString.AppendFloat(matrix._32);
+    resultString.Append(NS_LITERAL_STRING(", "));
+    resultString.AppendFloat(matrix._33);
+    resultString.Append(NS_LITERAL_STRING(", "));
+    resultString.AppendFloat(matrix._34);
+    resultString.Append(NS_LITERAL_STRING(", "));
+  }
   resultString.AppendFloat(matrix._41);
   resultString.Append(NS_LITERAL_STRING("px, "));
   resultString.AppendFloat(matrix._42);
-  resultString.Append(NS_LITERAL_STRING("px)"));
+  resultString.Append(NS_LITERAL_STRING("px"));
+  if (is3D) {
+    resultString.Append(NS_LITERAL_STRING(", "));
+    resultString.AppendFloat(matrix._43);
+    resultString.Append(NS_LITERAL_STRING("px, "));
+    resultString.AppendFloat(matrix._44);
+  }
+  resultString.Append(NS_LITERAL_STRING(")"));
 
   /* Create a value to hold our result. */
   nsROCSSPrimitiveValue* val = GetROCSSPrimitiveValue();
@@ -2449,19 +2485,37 @@ nsComputedDOMStyle::DoGetTextIndent()
 nsIDOMCSSValue*
 nsComputedDOMStyle::DoGetTextOverflow()
 {
-  nsROCSSPrimitiveValue *val = GetROCSSPrimitiveValue();
   const nsStyleTextReset *style = GetStyleTextReset();
-
-  if (style->mTextOverflow.mType == NS_STYLE_TEXT_OVERFLOW_STRING) {
+  nsROCSSPrimitiveValue *first = GetROCSSPrimitiveValue();
+  const nsStyleTextOverflowSide *side = style->mTextOverflow.GetFirstValue();
+  if (side->mType == NS_STYLE_TEXT_OVERFLOW_STRING) {
     nsString str;
-    nsStyleUtil::AppendEscapedCSSString(style->mTextOverflow.mString, str);
-    val->SetString(str);
+    nsStyleUtil::AppendEscapedCSSString(side->mString, str);
+    first->SetString(str);
   } else {
-    val->SetIdent(
-      nsCSSProps::ValueToKeywordEnum(style->mTextOverflow.mType,
+    first->SetIdent(
+      nsCSSProps::ValueToKeywordEnum(side->mType,
                                      nsCSSProps::kTextOverflowKTable));
   }
-  return val;
+  side = style->mTextOverflow.GetSecondValue();
+  if (!side) {
+    return first;
+  }
+  nsROCSSPrimitiveValue *second = GetROCSSPrimitiveValue();
+  if (side->mType == NS_STYLE_TEXT_OVERFLOW_STRING) {
+    nsString str;
+    nsStyleUtil::AppendEscapedCSSString(side->mString, str);
+    second->SetString(str);
+  } else {
+    second->SetIdent(
+      nsCSSProps::ValueToKeywordEnum(side->mType,
+                                     nsCSSProps::kTextOverflowKTable));
+  }
+
+  nsDOMCSSValueList *valueList = GetROCSSValueList(PR_FALSE);
+  valueList->AppendCSSValue(first);
+  valueList->AppendCSSValue(second);
+  return valueList;
 }
 
 nsIDOMCSSValue*
@@ -3172,7 +3226,7 @@ nsComputedDOMStyle::GetAbsoluteOffset(mozilla::css::Side aSide)
       // the containing block is the viewport, which _does_ include
       // scrollbars.  We have to do some extra work.
       // the first child in the default frame list is what we want
-      nsIFrame* scrollingChild = container->GetFirstChild(nsnull);
+      nsIFrame* scrollingChild = container->GetFirstPrincipalChild();
       nsIScrollableFrame *scrollFrame = do_QueryFrame(scrollingChild);
       if (scrollFrame) {
         scrollbarSizes = scrollFrame->GetActualScrollbarSizes();
@@ -4468,6 +4522,7 @@ nsComputedDOMStyle::GetQueryablePropertyMap(PRUint32* aLength)
     COMPUTED_STYLE_MAP_ENTRY(text_decoration_style,         MozTextDecorationStyle),
     COMPUTED_STYLE_MAP_ENTRY_LAYOUT(_moz_transform,         MozTransform),
     COMPUTED_STYLE_MAP_ENTRY_LAYOUT(_moz_transform_origin,  MozTransformOrigin),
+    COMPUTED_STYLE_MAP_ENTRY(transform_style,               MozTransformStyle),
     COMPUTED_STYLE_MAP_ENTRY(transition_delay,              TransitionDelay),
     COMPUTED_STYLE_MAP_ENTRY(transition_duration,           TransitionDuration),
     COMPUTED_STYLE_MAP_ENTRY(transition_property,           TransitionProperty),

@@ -271,24 +271,95 @@ nsRange::CharacterDataChanged(nsIDocument* aDocument,
 {
   NS_ASSERTION(mIsPositioned, "shouldn't be notified if not positioned");
 
+  nsINode* newRoot = nsnull;
+  nsINode* newStartNode = nsnull;
+  nsINode* newEndNode = nsnull;
+  PRUint32 newStartOffset = 0;
+  PRUint32 newEndOffset = 0;
+
   // If the changed node contains our start boundary and the change starts
   // before the boundary we'll need to adjust the offset.
   if (aContent == mStartParent &&
-      aInfo->mChangeStart < (PRUint32)mStartOffset) {
-    // If boundary is inside changed text, position it before change
-    // else adjust start offset for the change in length
-    mStartOffset = (PRUint32)mStartOffset <= aInfo->mChangeEnd ?
-       aInfo->mChangeStart :
-       mStartOffset + aInfo->mChangeStart - aInfo->mChangeEnd +
-         aInfo->mReplaceLength;
+      aInfo->mChangeStart < static_cast<PRUint32>(mStartOffset)) {
+    if (aInfo->mDetails) {
+      // splitText(), aInfo->mDetails->mNextSibling is the new text node
+      NS_ASSERTION(aInfo->mDetails->mType ==
+                   CharacterDataChangeInfo::Details::eSplit,
+                   "only a split can start before the end");
+      NS_ASSERTION(static_cast<PRUint32>(mStartOffset) <= aInfo->mChangeEnd,
+                   "mStartOffset is beyond the end of this node");
+      newStartOffset = static_cast<PRUint32>(mStartOffset) - aInfo->mChangeStart;
+      newStartNode = aInfo->mDetails->mNextSibling;
+      if (NS_UNLIKELY(aContent == mRoot)) {
+        newRoot = IsValidBoundary(newStartNode);
+      }
+    } else {
+      // If boundary is inside changed text, position it before change
+      // else adjust start offset for the change in length.
+      mStartOffset = static_cast<PRUint32>(mStartOffset) <= aInfo->mChangeEnd ?
+        aInfo->mChangeStart :
+        mStartOffset + aInfo->mChangeStart - aInfo->mChangeEnd +
+          aInfo->mReplaceLength;
+    }
   }
 
-  // Do the same thing for the end boundary.
-  if (aContent == mEndParent && aInfo->mChangeStart < (PRUint32)mEndOffset) {
-    mEndOffset = (PRUint32)mEndOffset <= aInfo->mChangeEnd ?
-       aInfo->mChangeStart :
-       mEndOffset + aInfo->mChangeStart - aInfo->mChangeEnd +
-         aInfo->mReplaceLength;
+  // Do the same thing for the end boundary, except for splitText of a node
+  // with no parent then only switch to the new node if the start boundary
+  // did so too (otherwise the range would end up with disconnected nodes).
+  if (aContent == mEndParent &&
+      aInfo->mChangeStart < static_cast<PRUint32>(mEndOffset)) {
+    if (aInfo->mDetails && (aContent->GetParent() || newStartNode)) {
+      // splitText(), aInfo->mDetails->mNextSibling is the new text node
+      NS_ASSERTION(aInfo->mDetails->mType ==
+                   CharacterDataChangeInfo::Details::eSplit,
+                   "only a split can start before the end");
+      NS_ASSERTION(static_cast<PRUint32>(mEndOffset) <= aInfo->mChangeEnd,
+                   "mEndOffset is beyond the end of this node");
+      newEndOffset = static_cast<PRUint32>(mEndOffset) - aInfo->mChangeStart;
+      newEndNode = aInfo->mDetails->mNextSibling;
+    } else {
+      mEndOffset = static_cast<PRUint32>(mEndOffset) <= aInfo->mChangeEnd ?
+        aInfo->mChangeStart :
+        mEndOffset + aInfo->mChangeStart - aInfo->mChangeEnd +
+          aInfo->mReplaceLength;
+    }
+  }
+
+  if (aInfo->mDetails &&
+      aInfo->mDetails->mType == CharacterDataChangeInfo::Details::eMerge) {
+    // normalize(), aInfo->mDetails->mNextSibling is the merged text node
+    // that will be removed
+    nsIContent* removed = aInfo->mDetails->mNextSibling;
+    if (removed == mStartParent) {
+      newStartOffset = static_cast<PRUint32>(mStartOffset) + aInfo->mChangeStart;
+      newStartNode = aContent;
+      if (NS_UNLIKELY(removed == mRoot)) {
+        newRoot = IsValidBoundary(newStartNode);
+      }
+    }
+    if (removed == mEndParent) {
+      newEndOffset = static_cast<PRUint32>(mEndOffset) + aInfo->mChangeStart;
+      newEndNode = aContent;
+      if (NS_UNLIKELY(removed == mRoot)) {
+        newRoot = IsValidBoundary(newEndNode);
+      }
+    }
+  }
+  if (newStartNode || newEndNode) {
+    if (!newStartNode) {
+      newStartNode = mStartParent;
+      newStartOffset = mStartOffset;
+    }
+    if (!newEndNode) {
+      newEndNode = mEndParent;
+      newEndOffset = mEndOffset;
+    }
+    DoSetRange(newStartNode, newStartOffset, newEndNode, newEndOffset,
+               newRoot ? newRoot : mRoot.get()
+#ifdef DEBUG
+               , !newEndNode->GetParent()
+#endif
+               );
   }
 }
 
@@ -436,12 +507,16 @@ static PRUint32 GetNodeLength(nsINode *aNode)
 void
 nsRange::DoSetRange(nsINode* aStartN, PRInt32 aStartOffset,
                     nsINode* aEndN, PRInt32 aEndOffset,
-                    nsINode* aRoot)
+                    nsINode* aRoot
+#ifdef DEBUG
+                    , bool aNotInsertedYet
+#endif
+                    )
 {
   NS_PRECONDITION((aStartN && aEndN && aRoot) ||
                   (!aStartN && !aEndN && !aRoot),
                   "Set all or none");
-  NS_PRECONDITION(!aRoot ||
+  NS_PRECONDITION(!aRoot || aNotInsertedYet ||
                   (nsContentUtils::ContentIsDescendantOf(aStartN, aRoot) &&
                    nsContentUtils::ContentIsDescendantOf(aEndN, aRoot) &&
                    aRoot == IsValidBoundary(aStartN) &&

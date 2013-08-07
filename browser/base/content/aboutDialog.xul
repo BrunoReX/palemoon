@@ -76,7 +76,7 @@
     <hbox id="clientBox">
       <vbox id="leftBox" flex="1"/>
       <vbox id="rightBox" flex="1">
-#expand <label id="version">Version __MOZ_APP_VERSION__</label>
+#expand <label id="version">__MOZ_APP_VERSION__</label>
         <label id="distribution" class="text-blurb"/>
         <label id="distributionId" class="text-blurb"/>
 
@@ -125,7 +125,7 @@
         </description>
         <description class="text-blurb">
           If you wish to contribute, please consider becoming part of the Mozilla Firefox development team: <label class="text-link" href="http://www.mozilla.org/contribute/">&contribute.getInvolvedLink;</label>
-        </description>   
+        </description>
         </vbox>
       </vbox>
     </hbox>
@@ -138,7 +138,7 @@
       <description id="trademark">
         <label class="trademark-label">&trademarkInfo.part1;</label>
 #ifdef MOZ_OFFICIAL_BRANDING
-        <!-- DO NOT REMOVE Breaks updater button in non en/en-US -->
+        <!-- DO NOT REMOVE Breaks updater button in non en/en-US --> 
         <label id="extra-trademark" class="trademark-label"></label>
 #endif
       </description>

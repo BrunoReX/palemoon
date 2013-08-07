@@ -1416,6 +1416,8 @@ static int reloc_library(soinfo *si, Elf32_Rel *rel, unsigned count)
     /* crappy hack part 1: find the read only region */
     int cnt;
     void * ro_region_end = si->base;
+    unsigned lowest_text_rel = 0xffffffff;
+
     Elf32_Ehdr *ehdr = (Elf32_Ehdr *)si->base;
     Elf32_Phdr *phdr = (Elf32_Phdr *)((unsigned char *)si->base + ehdr->e_phoff);
     for (cnt = 0; cnt < ehdr->e_phnum; ++cnt, ++phdr) {
@@ -1536,6 +1538,8 @@ static int reloc_library(soinfo *si, Elf32_Rel *rel, unsigned count)
             memcpy(reloc_page, copy_page, PAGE_SIZE);
             remapped_page = reloc_page;
         }
+        if ((reloc < ro_region_end) && (reloc < lowest_text_rel))
+            lowest_text_rel = reloc & ~PAGE_MASK;
 
 /* TODO: This is ugly. Split up the relocations by arch into
  * different files.
@@ -1642,8 +1646,15 @@ static int reloc_library(soinfo *si, Elf32_Rel *rel, unsigned count)
         }
         rel++;
     }
-    if (copy_page)
+    if (copy_page) {
         munmap(copy_page, PAGE_SIZE);
+#if defined(ANDROID_ARM_LINKER)
+        /* If we have a copy_page, it means we applied text relocations,
+         * which, in turn, means we need to maintain Instruction and Data
+         * caches coherent */
+        cacheflush(lowest_text_rel, (unsigned) ro_region_end, 0);
+#endif
+    }
     return 0;
 }
 
@@ -1954,9 +1965,13 @@ __asm__ (
     /* Jump to the resolved function. */
     "bx ip\n"
 );
+#else
+#define ANDROID_NO_RUNTIME_RELOC
 #endif
 
+#ifndef ANDROID_NO_RUNTIME_RELOC
 static void runtime_reloc() __attribute__((used));
+#endif
 
 static int link_image(soinfo *si, unsigned wr_offset)
 {
@@ -2201,16 +2216,23 @@ static int link_image(soinfo *si, unsigned wr_offset)
         }
     }
 
+#ifndef ANDROID_NO_RUNTIME_RELOC
     /* Initialize GOT[1] and GOT[2], which are used by the PLT trampoline */
     Elf32_Addr *got = (Elf32_Addr *)si->plt_got;
     got[1] = (Elf32_Addr) si;
     got[2] = (Elf32_Addr) runtime_reloc;
+#endif
 
     if(si->plt_rel) {
         DEBUG("[ %5d relocating %s plt ]\n", pid, si->name );
+#ifdef ANDROID_NO_RUNTIME_RELOC
+        if(reloc_library(si, si->plt_rel, si->plt_rel_count))
+            goto fail;
+#else
         /* Relocate PLT GOT */
         for (d = got + 3; d < got + 3 + si->plt_rel_count; d++)
             *d += si->base;
+#endif
     }
     if(si->rel) {
         DEBUG("[ %5d relocating %s ]\n", pid, si->name );
@@ -2221,9 +2243,14 @@ static int link_image(soinfo *si, unsigned wr_offset)
 #ifdef ANDROID_SH_LINKER
     if(si->plt_rela) {
         DEBUG("[ %5d relocating %s plt ]\n", pid, si->name );
+#ifdef ANDROID_NO_RUNTIME_RELOC
+        if(reloc_library_a(si, si->plt_rela, si->plt_rela_count))
+            goto fail;
+#else
         /* Relocate PLT GOT */
         for (d = got + 3; d < got + 3 + si->plt_rela_count; d++)
             *d += si->base;
+#endif
     }
     if(si->rela) {
         DEBUG("[ %5d relocating %s ]\n", pid, si->name );

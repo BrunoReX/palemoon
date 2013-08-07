@@ -67,7 +67,8 @@ static const char* const sEventNames[] = {
   "afterscriptexecute", "beforeunload", "unload",
   "hashchange", "readystatechange", "abort", "error",
   "submit", "reset", "change", "select", "input", "invalid", "text",
-  "compositionstart", "compositionend", "popupshowing", "popupshown",
+  "compositionstart", "compositionend", "compositionupdate",
+  "popupshowing", "popupshown",
   "popuphiding", "popuphidden", "close", "command", "broadcast", "commandupdate",
   "dragenter", "dragover", "dragexit", "dragdrop", "draggesture",
   "drag", "dragend", "dragstart", "dragleave", "drop", "resize",
@@ -92,6 +93,7 @@ static const char* const sEventNames[] = {
   "MozAfterPaint",
   "MozBeforePaint",
   "MozBeforeResize",
+  "mozfullscreenchange",
   "MozSwipeGesture",
   "MozMagnifyGestureStart",
   "MozMagnifyGestureUpdate",
@@ -673,8 +675,12 @@ NS_METHOD nsDOMEvent::DuplicatePrivateData()
     }
     case NS_COMPOSITION_EVENT:
     {
-      newEvent = new nsCompositionEvent(PR_FALSE, msg, nsnull);
-      isInputEvent = PR_TRUE;
+      nsCompositionEvent* compositionEvent =
+        new nsCompositionEvent(PR_FALSE, msg, nsnull);
+      nsCompositionEvent* oldCompositionEvent =
+        static_cast<nsCompositionEvent*>(mEvent);
+      compositionEvent->data = oldCompositionEvent->data;
+      newEvent = compositionEvent;
       break;
     }
     case NS_MOUSE_SCROLL_EVENT:
@@ -1127,6 +1133,8 @@ const char* nsDOMEvent::GetEventName(PRUint32 aEventType)
     return sEventNames[eDOMEvents_keypress];
   case NS_COMPOSITION_START:
     return sEventNames[eDOMEvents_compositionstart];
+  case NS_COMPOSITION_UPDATE:
+    return sEventNames[eDOMEvents_compositionupdate];
   case NS_COMPOSITION_END:
     return sEventNames[eDOMEvents_compositionend];
   case NS_FOCUS_CONTENT:
@@ -1369,6 +1377,8 @@ const char* nsDOMEvent::GetEventName(PRUint32 aEventType)
     return sEventNames[eDOMEvents_devicemotion];
   case NS_DEVICE_ORIENTATION:
     return sEventNames[eDOMEvents_deviceorientation];
+  case NS_FULLSCREENCHANGE:
+    return sEventNames[eDOMEvents_mozfullscreenchange];
   default:
     break;
   }

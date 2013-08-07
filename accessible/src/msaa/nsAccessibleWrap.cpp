@@ -38,7 +38,6 @@
 
 #include "nsAccessibleWrap.h"
 
-#include "nsAccessibilityAtoms.h"
 #include "nsAccUtils.h"
 #include "nsCoreUtils.h"
 #include "nsWinUtils.h"
@@ -408,7 +407,7 @@ __try {
   if (content->IsElement()) {
     nsAutoString roleString;
     if (msaaRole != ROLE_SYSTEM_CLIENT &&
-        !content->GetAttr(kNameSpaceID_None, nsAccessibilityAtoms::role, roleString)) {
+        !content->GetAttr(kNameSpaceID_None, nsGkAtoms::role, roleString)) {
       nsIDocument * document = content->GetCurrentDoc();
       if (!document)
         return E_FAIL;
@@ -810,42 +809,35 @@ __try {
   if (!pvarEndUpAt)
     return E_INVALIDARG;
 
-  nsAccessible *xpAccessibleStart = GetXPAccessibleFor(varStart);
-  if (!xpAccessibleStart || IsDefunct())
+  nsAccessible* accessible = GetXPAccessibleFor(varStart);
+  if (!accessible || accessible->IsDefunct())
     return E_FAIL;
 
   VariantInit(pvarEndUpAt);
 
-  nsCOMPtr<nsIAccessible> xpAccessibleResult;
+  nsAccessible* navAccessible = nsnull;
   PRUint32 xpRelation = 0;
 
   switch(navDir) {
-    case NAVDIR_DOWN:
-      xpAccessibleStart->GetAccessibleBelow(getter_AddRefs(xpAccessibleResult));
-      break;
     case NAVDIR_FIRSTCHILD:
-      if (!nsAccUtils::MustPrune(xpAccessibleStart))
-        xpAccessibleStart->GetFirstChild(getter_AddRefs(xpAccessibleResult));
+      if (!nsAccUtils::MustPrune(accessible))
+        navAccessible = accessible->FirstChild();
       break;
     case NAVDIR_LASTCHILD:
-      if (!nsAccUtils::MustPrune(xpAccessibleStart))
-        xpAccessibleStart->GetLastChild(getter_AddRefs(xpAccessibleResult));
-      break;
-    case NAVDIR_LEFT:
-      xpAccessibleStart->GetAccessibleToLeft(getter_AddRefs(xpAccessibleResult));
+      if (!nsAccUtils::MustPrune(accessible))
+        navAccessible = accessible->LastChild();
       break;
     case NAVDIR_NEXT:
-      xpAccessibleStart->GetNextSibling(getter_AddRefs(xpAccessibleResult));
+      navAccessible = accessible->NextSibling();
       break;
     case NAVDIR_PREVIOUS:
-      xpAccessibleStart->GetPreviousSibling(getter_AddRefs(xpAccessibleResult));
+      navAccessible = accessible->PrevSibling();
       break;
+    case NAVDIR_DOWN:
+    case NAVDIR_LEFT:
     case NAVDIR_RIGHT:
-      xpAccessibleStart->GetAccessibleToRight(getter_AddRefs(xpAccessibleResult));
-      break;
     case NAVDIR_UP:
-      xpAccessibleStart->GetAccessibleAbove(getter_AddRefs(xpAccessibleResult));
-      break;
+      return E_NOTIMPL;
 
     // MSAA relationship extensions to accNavigate
     case NAVRELATION_CONTROLLED_BY:
@@ -896,17 +888,20 @@ __try {
     case NAVRELATION_DESCRIPTION_FOR:
       xpRelation = nsIAccessibleRelation::RELATION_DESCRIPTION_FOR;
       break;
+
+    default:
+      return E_INVALIDARG;
   }
 
   pvarEndUpAt->vt = VT_EMPTY;
 
   if (xpRelation) {
     Relation rel = RelationByType(xpRelation);
-    xpAccessibleResult = rel.Next();
+    navAccessible = rel.Next();
   }
 
-  if (xpAccessibleResult) {
-    pvarEndUpAt->pdispVal = NativeAccessible(xpAccessibleResult);
+  if (navAccessible) {
+    pvarEndUpAt->pdispVal = NativeAccessible(navAccessible);
     pvarEndUpAt->vt = VT_DISPATCH;
     return S_OK;
   }

@@ -72,6 +72,8 @@
 #include "nsIPresShell.h"
 #include "nsStyleAnimation.h"
 #include "nsCSSProps.h"
+#include "nsDOMFile.h"
+#include "BasicLayers.h"
 
 #if defined(MOZ_X11) && defined(MOZ_WIDGET_GTK2)
 #include <gdk/gdk.h>
@@ -340,6 +342,21 @@ nsDOMWindowUtils::SetDisplayPortForElement(float aXPx, float aYPx,
       rootFrame->InvalidateWithFlags(
         usingDisplayport ? rootDisplayport : rootFrame->GetVisualOverflowRect(),
         nsIFrame::INVALIDATE_NO_THEBES_LAYERS);
+
+      // Send empty paint transaction in order to release retained layers
+      if (displayport.IsEmpty()) {
+        nsCOMPtr<nsIWidget> widget = GetWidget();
+        if (widget) {
+          bool isRetainingManager;
+          LayerManager* manager = widget->GetLayerManager(&isRetainingManager);
+          if (isRetainingManager) {
+            manager->BeginTransaction();
+            nsLayoutUtils::PaintFrame(nsnull, rootFrame, nsRegion(), NS_RGB(255, 255, 255),
+                                      nsLayoutUtils::PAINT_WIDGET_LAYERS |
+                                      nsLayoutUtils::PAINT_EXISTING_TRANSACTION);
+          }
+        }
+      }
     }
   }
 
@@ -1142,7 +1159,9 @@ InitEvent(nsGUIEvent &aEvent, nsIntPoint *aPt = nsnull)
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::SendCompositionEvent(const nsAString& aType)
+nsDOMWindowUtils::SendCompositionEvent(const nsAString& aType,
+                                       const nsAString& aData,
+                                       const nsAString& aLocale)
 {
   if (!IsUniversalXPConnectCapable()) {
     return NS_ERROR_DOM_SECURITY_ERR;
@@ -1159,12 +1178,17 @@ nsDOMWindowUtils::SendCompositionEvent(const nsAString& aType)
     msg = NS_COMPOSITION_START;
   } else if (aType.EqualsLiteral("compositionend")) {
     msg = NS_COMPOSITION_END;
+  } else if (aType.EqualsLiteral("compositionupdate")) {
+    msg = NS_COMPOSITION_UPDATE;
   } else {
     return NS_ERROR_FAILURE;
   }
 
   nsCompositionEvent compositionEvent(PR_TRUE, msg, widget);
   InitEvent(compositionEvent);
+  if (msg != NS_COMPOSITION_START) {
+    compositionEvent.data = aData;
+  }
 
   nsEventStatus status;
   nsresult rv = widget->DispatchEvent(&compositionEvent, status);
@@ -1831,6 +1855,13 @@ nsDOMWindowUtils::GetOuterWindowWithId(PRUint64 aWindowID,
 
   *aWindow = nsGlobalWindow::GetOuterWindowWithId(aWindowID);
   NS_IF_ADDREF(*aWindow);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::WrapDOMFile(nsIFile *aFile,
+                              nsIDOMFile **aDOMFile) {
+  NS_ADDREF(*aDOMFile = new nsDOMFileFile(aFile));
   return NS_OK;
 }
 

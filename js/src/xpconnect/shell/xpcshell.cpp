@@ -49,6 +49,7 @@
 #include "jsapi.h"
 #include "jscntxt.h"
 #include "jsdbgapi.h"
+#include "jsfriendapi.h"
 #include "jsprf.h"
 #include "nsXULAppAPI.h"
 #include "nsServiceManagerUtils.h"
@@ -84,9 +85,6 @@
 #endif
 #ifdef XP_WIN
 #include <windows.h>
-#endif
-#ifdef __SYMBIAN32__
-#include <unistd.h>
 #endif
 
 #include "nsIScriptSecurityManager.h"
@@ -479,14 +477,14 @@ Load(JSContext *cx, uintN argc, jsval *vp)
                            filename.ptr());
             return false;
         }
-        JSObject *scriptObj = JS_CompileFileHandleForPrincipals(cx, obj, filename.ptr(),
-                                                                file, gJSPrincipals);
+        JSScript *script = JS_CompileFileHandleForPrincipals(cx, obj, filename.ptr(),
+                                                             file, gJSPrincipals);
         fclose(file);
-        if (!scriptObj)
+        if (!script)
             return false;
 
         jsval result;
-        if (!compileOnly && !JS_ExecuteScript(cx, obj, scriptObj, &result))
+        if (!compileOnly && !JS_ExecuteScript(cx, obj, script, &result))
             return false;
     }
     JS_SET_RVAL(cx, vp, JSVAL_VOID);
@@ -575,7 +573,7 @@ static JSBool
 DumpHeap(JSContext *cx, uintN argc, jsval *vp)
 {
     void* startThing = NULL;
-    uint32 startTraceKind = 0;
+    JSGCTraceKind startTraceKind = JSTRACE_OBJECT;
     void *thingToFind = NULL;
     size_t maxDepth = (size_t)-1;
     void *thingToIgnore = NULL;
@@ -878,8 +876,7 @@ env_setProperty(JSContext *cx, JSObject *obj, jsid id, JSBool strict, jsval *vp)
     JSAutoByteString value(cx, valstr);
     if (!value)
         return JS_FALSE;
-#if defined XP_WIN || defined HPUX || defined OSF1 || defined IRIX \
-    || defined SCO
+#if defined XP_WIN || defined HPUX || defined OSF1 || defined SCO
     {
         char *waste = JS_smprintf("%s=%s", name.ptr(), value.ptr());
         if (!waste) {
@@ -1014,7 +1011,7 @@ static void
 ProcessFile(JSContext *cx, JSObject *obj, const char *filename, FILE *file,
             JSBool forceTTY)
 {
-    JSObject *scriptObj;
+    JSScript *script;
     jsval result;
     int lineno, startline;
     JSBool ok, hitEOF;
@@ -1047,11 +1044,11 @@ ProcessFile(JSContext *cx, JSObject *obj, const char *filename, FILE *file,
         ungetc(ch, file);
         DoBeginRequest(cx);
 
-        scriptObj = JS_CompileFileHandleForPrincipals(cx, obj, filename, file,
-                                                      gJSPrincipals);
+        script = JS_CompileFileHandleForPrincipals(cx, obj, filename, file,
+                                                   gJSPrincipals);
 
-        if (scriptObj && !compileOnly)
-            (void)JS_ExecuteScript(cx, obj, scriptObj, &result);
+        if (script && !compileOnly)
+            (void)JS_ExecuteScript(cx, obj, script, &result);
         DoEndRequest(cx);
 
         return;
@@ -1083,13 +1080,13 @@ ProcessFile(JSContext *cx, JSObject *obj, const char *filename, FILE *file,
         DoBeginRequest(cx);
         /* Clear any pending exception from previous failed compiles.  */
         JS_ClearPendingException(cx);
-        scriptObj = JS_CompileScriptForPrincipals(cx, obj, gJSPrincipals, buffer,
-                                                  strlen(buffer), "typein", startline);
-        if (scriptObj) {
+        script = JS_CompileScriptForPrincipals(cx, obj, gJSPrincipals, buffer,
+                                               strlen(buffer), "typein", startline);
+        if (script) {
             JSErrorReporter older;
 
             if (!compileOnly) {
-                ok = JS_ExecuteScript(cx, obj, scriptObj, &result);
+                ok = JS_ExecuteScript(cx, obj, script, &result);
                 if (ok && result != JSVAL_VOID) {
                     /* Suppress error reports from JS_ValueToString(). */
                     older = JS_SetErrorReporter(cx, NULL);
@@ -1237,9 +1234,7 @@ ProcessArgs(JSContext *cx, JSObject *obj, char **argv, int argc)
                 if (!JS_DeepFreezeObject(cx, obj))
                     return JS_FALSE;
                 gobj = JS_NewGlobalObject(cx, &global_class);
-                if (!gobj)
-                    return JS_FALSE;
-                if (!JS_SetPrototype(cx, gobj, obj))
+                if (!gobj || !JS_SplicePrototype(cx, gobj, obj))
                     return JS_FALSE;
                 JS_SetParent(cx, gobj, NULL);
                 JS_SetGlobalObject(cx, gobj);
@@ -1287,6 +1282,9 @@ ProcessArgs(JSContext *cx, JSObject *obj, char **argv, int argc)
             break;
         case 'p':
             JS_ToggleOptions(cx, JSOPTION_PROFILING);
+            break;
+        case 'n':
+            JS_ToggleOptions(cx, JSOPTION_TYPE_INFERENCE);
             break;
         default:
             return usage();
@@ -1837,7 +1835,9 @@ main(int argc, char **argv, char **envp)
                 XRE_GetFileFromPath(argv[4], getter_AddRefs(appOmni));
                 argc-=2;
                 argv+=2;
-            } 
+            } else {
+                appOmni = greOmni;
+            }
             
             XRE_InitOmnijar(greOmni, appOmni);
             argc-=2;
@@ -1961,6 +1961,11 @@ main(int argc, char **argv, char **envp)
         {
             JSAutoEnterCompartment ac;
             if (!ac.enter(cx, glob)) {
+                JS_EndRequest(cx);
+                return 1;
+            }
+
+            if (!JS_InitReflect(cx, glob)) {
                 JS_EndRequest(cx);
                 return 1;
             }

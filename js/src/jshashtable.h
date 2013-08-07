@@ -298,7 +298,8 @@ class HashTable : private AllocPolicy
 
     static const unsigned sMinSizeLog2  = 4;
     static const unsigned sMinSize      = 1 << sMinSizeLog2;
-    static const unsigned sSizeLimit    = JS_BIT(24);
+    static const unsigned sMaxInit      = JS_BIT(23);
+    static const unsigned sMaxCapacity  = JS_BIT(24);
     static const unsigned sHashBits     = tl::BitSize<HashNumber>::result;
     static const uint8    sMinAlphaFrac = 64;  /* (0x100 * .25) taken from jsdhash.h */
     static const uint8    sMaxAlphaFrac = 192; /* (0x100 * .75) taken from jsdhash.h */
@@ -307,6 +308,14 @@ class HashTable : private AllocPolicy
     static const HashNumber sFreeKey = Entry::sFreeKey;
     static const HashNumber sRemovedKey = Entry::sRemovedKey;
     static const HashNumber sCollisionBit = Entry::sCollisionBit;
+
+    static void staticAsserts()
+    {
+        /* Rely on compiler "constant overflow warnings". */
+        JS_STATIC_ASSERT(((sMaxInit * sInvMaxAlpha) >> 7) < sMaxCapacity);
+        JS_STATIC_ASSERT((sMaxCapacity * sInvMaxAlpha) <= UINT32_MAX);
+        JS_STATIC_ASSERT((sMaxCapacity * sizeof(Entry)) <= UINT32_MAX);
+    }
 
     static bool isLiveHash(HashNumber hash)
     {
@@ -365,7 +374,10 @@ class HashTable : private AllocPolicy
          * Correct for sMaxAlphaFrac such that the table will not resize
          * when adding 'length' entries.
          */
-        JS_ASSERT(length < (uint32(1) << 23));
+        if (length > sMaxInit) {
+            this->reportAllocOverflow();
+            return false;
+        }
         uint32 capacity = (length * sInvMaxAlpha) >> 7;
 
         if (capacity < sMinSize)
@@ -379,10 +391,7 @@ class HashTable : private AllocPolicy
         }
 
         capacity = roundUp;
-        if (capacity >= sSizeLimit) {
-            this->reportAllocOverflow();
-            return false;
-        }
+        JS_ASSERT(capacity <= sMaxCapacity);
 
         table = createTable(*this, capacity);
         if (!table)
@@ -402,6 +411,11 @@ class HashTable : private AllocPolicy
     {
         if (table)
             destroyTable(*this, table, tableCapacity);
+    }
+
+    size_t allocatedSize() const
+    {
+        return sizeof(Entry) * tableCapacity;
     }
 
   private:
@@ -536,7 +550,7 @@ class HashTable : private AllocPolicy
         uint32 oldCap = tableCapacity;
         uint32 newLog2 = sHashBits - hashShift + deltaLog2;
         uint32 newCapacity = JS_BIT(newLog2);
-        if (newCapacity >= sSizeLimit) {
+        if (newCapacity > sMaxCapacity) {
             this->reportAllocOverflow();
             return false;
         }
@@ -594,7 +608,7 @@ class HashTable : private AllocPolicy
             memset(table, 0, sizeof(*table) * tableCapacity);
         } else {
             for (Entry *e = table, *end = table + tableCapacity; e != end; ++e)
-                *e = Entry();
+                *e = Move(Entry());
         }
         removedCount = 0;
         entryCount = 0;
@@ -636,8 +650,14 @@ class HashTable : private AllocPolicy
         return gen;
     }
 
-    size_t tableSize() const {
-        return tableCapacity * sizeof(Entry);
+    /*
+     * This counts the HashTable's |table| array.  If |countMe| is true is also
+     * counts the HashTable object itself.
+     */
+    size_t sizeOf(JSUsableSizeFun usf, bool countMe) const {
+        size_t usable = usf(table) + (countMe ? usf((void*)this) : 0);
+        return usable ? usable
+                      : (tableCapacity * sizeof(Entry)) + (countMe ? sizeof(HashTable) : 0);
     }
 
     Ptr lookup(const Lookup &l) const {
@@ -1068,7 +1088,7 @@ class HashMap
     typedef typename Impl::Range Range;
     Range all() const                                 { return impl.all(); }
     size_t count() const                              { return impl.count(); }
-    size_t tableSize() const                          { return impl.tableSize(); }
+    size_t sizeOf(JSUsableSizeFun usf, bool cm) const { return impl.sizeOf(usf, cm); }
 
     /*
      * Typedef for the enumeration class. An Enum may be used to examine and
@@ -1105,6 +1125,9 @@ class HashMap
      * pointers into the table remain valid.
      */
     unsigned generation() const                       { return impl.generation(); }
+
+    /* Number of bytes of heap data allocated by this table. */
+    size_t allocatedSize() const                      { return impl.allocatedSize(); }
 
     /* Shorthand operations: */
 
@@ -1267,7 +1290,7 @@ class HashSet
     typedef typename Impl::Range Range;
     Range all() const                                 { return impl.all(); }
     size_t count() const                              { return impl.count(); }
-    size_t tableSize() const                          { return impl.tableSize(); }
+    size_t sizeOf(JSUsableSizeFun usf, bool cm) const { return impl.sizeOf(usf, cm); }
 
     /*
      * Typedef for the enumeration class. An Enum may be used to examine and
@@ -1304,6 +1327,9 @@ class HashSet
      * pointers into the table remain valid.
      */
     unsigned generation() const                       { return impl.generation(); }
+
+    /* Number of bytes of heap data allocated by this table. */
+    size_t allocatedSize() const                      { return impl.allocatedSize(); }
 
     /* Shorthand operations: */
 

@@ -58,7 +58,7 @@ struct nsCSSValuePair;
 struct nsCSSValueTriplet;
 struct nsCSSValuePairList;
 struct nsCSSRect;
-struct gfxMatrix;
+class gfx3DMatrix;
 
 namespace mozilla {
 namespace dom {
@@ -175,13 +175,22 @@ public:
    * @param aUseSVGMode     A flag to indicate whether we should parse
    *                        |aSpecifiedValue| in SVG mode.
    * @param [out] aComputedValue The resulting computed value.
+   * @param [out] aIsContextSensitive
+   *                        Set to PR_TRUE if |aSpecifiedValue| may produce
+   *                        a different |aComputedValue| depending on other CSS
+   *                        properties on |aTargetElement| or its ancestors.
+   *                        PR_FALSE otherwise.
+   *                        Note that the operation of this method is
+   *                        significantly faster when |aIsContextSensitive| is
+   *                        nsnull.
    * @return PR_TRUE on success, PR_FALSE on failure.
    */
   static PRBool ComputeValue(nsCSSProperty aProperty,
-                             mozilla::dom::Element* aElement,
+                             mozilla::dom::Element* aTargetElement,
                              const nsAString& aSpecifiedValue,
                              PRBool aUseSVGMode,
-                             Value& aComputedValue);
+                             Value& aComputedValue,
+                             PRBool* aIsContextSensitive = nsnull);
 
   /**
    * Creates a specified value for the given computed value.
@@ -224,12 +233,12 @@ public:
     * Interpolates between 2 matrices by decomposing them.
     *
     * @param aMatrix1   First matrix, using CSS pixel units.
-    * @param aCoeff1    Interpolation value in the range [0.0, 1.0]
     * @param aMatrix2   Second matrix, using CSS pixel units.
-    * @param aCoeff2    Interpolation value in the range [0.0, 1.0]
+    * @param aProgress  Interpolation value in the range [0.0, 1.0]
     */
-   static gfxMatrix InterpolateTransformMatrix(const gfxMatrix &aMatrix1, double aCoeff1,
-                                               const gfxMatrix &aMatrix2, double aCoeff2);
+   static gfx3DMatrix InterpolateTransformMatrix(const gfx3DMatrix &aMatrix1,
+                                                 const gfx3DMatrix &aMatrix2, 
+                                                 double aProgress);
 
   /**
    * The types and values for the values that we extract and animate.

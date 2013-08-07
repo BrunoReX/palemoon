@@ -336,6 +336,7 @@ user_pref("browser.console.showInPanel", true);
 user_pref("browser.dom.window.dump.enabled", true);
 user_pref("browser.firstrun.show.localepicker", false);
 user_pref("browser.firstrun.show.uidiscovery", false);
+user_pref("browser.ui.layout.tablet", 0); // force tablet UI off
 user_pref("dom.allow_scripts_to_close_windows", true);
 user_pref("dom.disable_open_during_load", false);
 user_pref("dom.max_script_run_time", 0); // no slow script dialogs
@@ -367,7 +368,7 @@ user_pref("security.warn_viewing_mixed", false);
 user_pref("app.update.enabled", false);
 user_pref("browser.panorama.experienced_first_run", true); // Assume experienced
 user_pref("dom.w3c_touch_events.enabled", true);
-user_pref("toolkit.telemetry.prompted", true);
+user_pref("toolkit.telemetry.prompted", 2);
 
 // Only load extensions from the application and user profile
 // AddonManager.SCOPE_PROFILE + AddonManager.SCOPE_APPLICATION
@@ -791,10 +792,11 @@ user_pref("camino.use_system_proxy_settings", false); // Camino-only, harmless t
   def buildCommandLine(self, app, debuggerInfo, profileDir, testURL, extraArgs):
     """ build the application command line """
 
-    cmd = app
-    if self.IS_MAC and not self.IS_CAMINO and not cmd.endswith("-bin"):
+    cmd = os.path.abspath(app)
+    if self.IS_MAC and not self.IS_CAMINO and os.path.exists(cmd + "-bin"):
+      # Prefer 'app-bin' in case 'app' is a shell script.
+      # We can remove this hack once bug 673899 etc are fixed.
       cmd += "-bin"
-    cmd = os.path.abspath(cmd)
 
     args = []
 
@@ -841,6 +843,9 @@ user_pref("camino.use_system_proxy_settings", false); // Camino-only, harmless t
         if self.isPidAlive(processPID):
           self.log.info("TEST-UNEXPECTED-FAIL | automation.py | child process %d still alive after shutdown", processPID)
           self.killPid(processPID)
+
+  def checkForCrashes(self, profileDir, symbolsPath):
+    automationutils.checkForCrashes(os.path.join(profileDir, "minidumps"), symbolsPath, self.lastTestSeen)
 
   def runApp(self, testURL, env, app, profileDir, extraArgs,
              runSSLTunnel = False, utilityPath = None,
@@ -908,7 +913,7 @@ user_pref("camino.use_system_proxy_settings", false); // Camino-only, harmless t
 
     # Do a final check for zombie child processes.
     self.checkForZombies(processLog)
-    automationutils.checkForCrashes(os.path.join(profileDir, "minidumps"), symbolsPath, self.lastTestSeen)
+    self.checkForCrashes(profileDir, symbolsPath)
 
     if os.path.exists(processLog):
       os.unlink(processLog)

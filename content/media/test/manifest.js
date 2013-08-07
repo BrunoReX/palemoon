@@ -266,6 +266,12 @@ var gDecodeErrorTests = [
   { name:"bogus.duh", type:"bogus/duh" }
 ];
 
+// These are files that are used for media fragments tests
+var gFragmentTests = [
+  { name:"big.wav", type:"audio/x-wav", duration:9.28, size:102444 }
+];
+
+
 function checkMetadata(msg, e, test) {
   if (test.width) {
     is(e.videoWidth, test.width, msg + " video width");
@@ -324,10 +330,13 @@ function MediaTestManager() {
   // to start every test, but if you call started() you *must* call finish()
   // else you'll timeout. 
   this.runTests = function(tests, startTest) {
+    this.startTime = new Date();
+    SimpleTest.info("Started " + this.startTime + " (" + this.startTime.getTime()/1000 + "s)");
     this.testNum = 0;
     this.tests = tests;
     this.startTest = startTest;
     this.tokens = [];
+    this.isShutdown = false;
     // Always wait for explicit finish.
     SimpleTest.waitForExplicitFinish();
     this.nextTest();
@@ -349,7 +358,7 @@ function MediaTestManager() {
       // Remove the element from the list of running tests.
       this.tokens.splice(i, 1);
     }
-    if (this.tokens.length == 0) {
+    if (this.tokens.length < PARALLEL_TESTS) {
       this.nextTest();
     }
   }
@@ -362,14 +371,7 @@ function MediaTestManager() {
     // thread stacks' address space.
     netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
     Components.utils.forceGC();
-    if (this.testNum == this.tests.length && !DEBUG_TEST_LOOP_FOREVER) {
-      if (this.onFinished) {
-        this.onFinished();
-      }
-      mediaTestCleanup();
-      SimpleTest.finish();
-      return;
-    }
+    
     while (this.testNum < this.tests.length && this.tokens.length < PARALLEL_TESTS) {
       var test = this.tests[this.testNum];
       var token = (test.name ? (test.name + "-"): "") + this.testNum;
@@ -385,11 +387,23 @@ function MediaTestManager() {
       
       // Do the init. This should start the test.
       this.startTest(test, token);
-      
     }
-    if (this.tokens.length == 0) {
-      // No tests were added, we must have tried everything, exit.
+
+    if (this.testNum == this.tests.length &&
+        !DEBUG_TEST_LOOP_FOREVER &&
+        this.tokens.length == 0 &&
+        !this.isShutdown)
+    {
+      this.isShutdown = true;
+      if (this.onFinished) {
+        this.onFinished();
+      }
+      mediaTestCleanup();
+      var end = new Date();
+      SimpleTest.info("Finished at " + end + " (" + (end.getTime() / 1000) + "s)");
+      SimpleTest.info("Running time: " + (end.getTime() - this.startTime.getTime())/1000 + "s");
       SimpleTest.finish();
+      return;
     }
   }
 }

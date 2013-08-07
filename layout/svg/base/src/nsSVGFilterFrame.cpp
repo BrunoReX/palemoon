@@ -143,6 +143,10 @@ nsAutoFilterInstance::nsAutoFilterInstance(nsIFrame *aTarget,
   }
 
   gfxMatrix userToDeviceSpace = nsSVGUtils::GetCanvasTM(aTarget);
+  if (userToDeviceSpace.IsSingular()) {
+    // nothing to draw
+    return;
+  }
   
   // Calculate filterRes (the width and height of the pixel buffer of the
   // temporary offscreen surface that we'll paint into):
@@ -202,11 +206,19 @@ nsAutoFilterInstance::nsAutoFilterInstance(nsIFrame *aTarget,
     MapDeviceRectToFilterSpace(deviceToFilterSpace, filterRes, aDirtyOutputRect);
   nsIntRect dirtyInputRect =
     MapDeviceRectToFilterSpace(deviceToFilterSpace, filterRes, aDirtyInputRect);
+  nsIntRect targetBoundsDeviceSpace;
+  nsISVGChildFrame* svgTarget = do_QueryFrame(aTarget);
+  if (svgTarget) {
+    targetBoundsDeviceSpace.UnionRect(targetBoundsDeviceSpace,
+      svgTarget->GetCoveredRegion().ToOutsidePixels(aTarget->PresContext()->AppUnitsPerDevPixel()));
+  }
+  nsIntRect targetBoundsFilterSpace =
+    MapDeviceRectToFilterSpace(deviceToFilterSpace, filterRes, &targetBoundsDeviceSpace);
 
   // Setup instance data
   mInstance = new nsSVGFilterInstance(aTarget, aPaint, filter, bbox, filterRegion,
                                       nsIntSize(filterRes.width, filterRes.height),
-                                      filterToDeviceSpace,
+                                      filterToDeviceSpace, targetBoundsFilterSpace,
                                       dirtyOutputRect, dirtyInputRect,
                                       primitiveUnits);
 }

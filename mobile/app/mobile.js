@@ -72,7 +72,17 @@ pref("toolkit.zoomManager.zoomValues", ".2,.3,.5,.67,.8,.9,1,1.1,1.2,1.33,1.5,1.
 
 // Device pixel to CSS px ratio, in percent. Set to -1 to calculate based on display density.
 pref("browser.viewport.scaleRatio", -1);
+pref("browser.viewport.desktopWidth", 980);
 
+#ifndef ANDROID
+#ifndef MOZ_PLATFORM_MAEMO
+// On desktop builds, simulate an MDPI tablet by default.
+pref("layout.css.dpi", 160);
+#else
+// Maemo X11 lies about its dpi
+pref("layout.css.dpi", 240);
+#endif
+#endif
 /* allow scrollbars to float above chrome ui */
 pref("ui.scrollbarsCanOverlapContent", 1);
 
@@ -163,6 +173,9 @@ pref("alerts.slideIncrementTime", 10);
 pref("alerts.totalOpenTime", 6000);
 pref("alerts.height", 50);
 
+/* download helper */
+pref("browser.helperApps.deleteTempFileOnExit", false);
+
 /* password manager */
 pref("signon.rememberSignons", true);
 pref("signon.expireMasterPassword", false);
@@ -213,6 +226,7 @@ pref("extensions.getAddons.get.url", "https://services.addons.mozilla.org/%LOCAL
 
 /* preference for the locale picker */
 pref("extensions.getLocales.get.url", "");
+pref("extensions.compatability.locales.buildid", "0");
 
 /* blocklist preferences */
 pref("extensions.blocklist.enabled", true);
@@ -368,9 +382,6 @@ pref("plugins.force.wmode", "opaque");
 // URL to the Learn More link XXX this is the firefox one.  Bug 495578 fixes this.
 pref("browser.geolocation.warning.infoURL", "http://www.mozilla.com/%LOCALE%/firefox/geolocation/");
 
-// base url for the wifi geolocation network provider
-pref("geo.wifi.uri", "https://www.google.com/loc/json");
-
 // enable geo
 pref("geo.enabled", true);
 
@@ -396,7 +407,7 @@ pref("dom.max_script_run_time", 20);
 // JS error console
 pref("devtools.errorconsole.enabled", false);
 
-pref("browser.ui.layout.tablet", 0); // on: 1, off: 0, auto: -1
+pref("browser.ui.layout.tablet", -1); // on: 1, off: 0, auto: -1
 
 // kinetic tweakables
 pref("browser.ui.kinetic.updateInterval", 16);
@@ -539,8 +550,6 @@ pref("font.default.x-western", "SwissA");
 #endif
 
 #ifdef MOZ_SERVICES_SYNC
-pref("browser.sync.enabled", true);
-
 // sync service
 pref("services.sync.client.type", "mobile");
 pref("services.sync.registerEngines", "Tab,Bookmarks,Form,History,Password,Prefs");
@@ -557,6 +566,7 @@ pref("services.sync.prefs.sync.lightweightThemes.isThemeSelected", true);
 pref("services.sync.prefs.sync.lightweightThemes.usedThemes", true);
 pref("services.sync.prefs.sync.network.cookie.cookieBehavior", true);
 pref("services.sync.prefs.sync.permissions.default.image", true);
+pref("services.sync.prefs.sync.privacy.donottrackheader.enabled", true);
 pref("services.sync.prefs.sync.signon.rememberSignons", true);
 #endif
 
@@ -566,6 +576,8 @@ pref("ui.dragThresholdX", 25);
 pref("ui.dragThresholdY", 25);
 
 #if MOZ_PLATFORM_MAEMO == 6
+pref("layers.acceleration.disabled", false);
+#elifdef ANDROID
 pref("layers.acceleration.disabled", false);
 #else
 pref("layers.acceleration.disabled", true);
@@ -651,7 +663,7 @@ pref("browser.safebrowsing.malware.reportURL", "http://safebrowsing.clients.goog
 
 // True if this is the first time we are showing about:firstrun
 pref("browser.firstrun.show.uidiscovery", true);
-pref("browser.firstrun.show.localepicker", true);
+pref("browser.firstrun.show.localepicker", false);
 
 // True if you always want dump() to work
 //
@@ -662,3 +674,7 @@ pref("browser.firstrun.show.localepicker", true);
 // $ adb shell setprop log.redirect-stdio true
 // $ adb shell start
 pref("browser.dom.window.dump.enabled", false);
+
+// controls if we want camera support
+pref("device.camera.enabled", true);
+pref("media.realtime_decoder.enabled", true);

@@ -41,6 +41,7 @@
 #include "GlobalObject.h"
 
 #include "jscntxt.h"
+#include "jsemit.h"
 #include "jsexn.h"
 #include "jsmath.h"
 #include "json.h"
@@ -51,55 +52,202 @@
 using namespace js;
 
 JSObject *
-js_InitFunctionAndObjectClasses(JSContext *cx, JSObject *obj)
+js_InitObjectClass(JSContext *cx, JSObject *obj)
 {
-    JS_THREADSAFE_ASSERT(cx->compartment != cx->runtime->atomsCompartment);
+    JS_ASSERT(obj->isNative());
 
-    /* If cx has no global object, use obj so prototypes can be found. */
-    if (!cx->globalObject)
-        JS_SetGlobalObject(cx, obj);
-
-    /* Record Function and Object in cx->resolvingList. */
-    JSAtom **classAtoms = cx->runtime->atomState.classAtoms;
-    AutoResolving resolving1(cx, obj, ATOM_TO_JSID(classAtoms[JSProto_Function]));
-    AutoResolving resolving2(cx, obj, ATOM_TO_JSID(classAtoms[JSProto_Object]));
-
-    /* Initialize the function class first so constructors can be made. */
-    JSObject *fun_proto;
-    if (!js_GetClassPrototype(cx, obj, JSProto_Function, &fun_proto))
-        return NULL;
-    if (!fun_proto) {
-        fun_proto = js_InitFunctionClass(cx, obj);
-        if (!fun_proto)
+    GlobalObject *global = obj->asGlobal();
+    if (!global->functionObjectClassesInitialized()) {
+        if (!global->initFunctionAndObjectClasses(cx))
             return NULL;
-    } else {
-        JSObject *ctor = JS_GetConstructor(cx, fun_proto);
-        if (!ctor)
-            return NULL;
-        if (!obj->defineProperty(cx, ATOM_TO_JSID(CLASS_ATOM(cx, Function)),
-                                 ObjectValue(*ctor), 0, 0, 0)) {
-            return NULL;
-        }
     }
 
-    /* Initialize the object class next so Object.prototype works. */
-    JSObject *obj_proto;
-    if (!js_GetClassPrototype(cx, obj, JSProto_Object, &obj_proto))
-        return NULL;
-    if (!obj_proto)
-        obj_proto = js_InitObjectClass(cx, obj);
-    if (!obj_proto)
-        return NULL;
+    return global->getObjectPrototype();
+}
 
-    /* Function.prototype and the global object delegate to Object.prototype. */
-    fun_proto->setProto(obj_proto);
-    if (!obj->getProto())
-        obj->setProto(obj_proto);
+JSObject *
+js_InitFunctionClass(JSContext *cx, JSObject *obj)
+{
+    JS_ASSERT(obj->isNative());
 
-    return fun_proto;
+    GlobalObject *global = obj->asGlobal();
+    return global->functionObjectClassesInitialized()
+           ? global->getFunctionPrototype()
+           : global->initFunctionAndObjectClasses(cx);
+}
+
+static JSBool
+ThrowTypeError(JSContext *cx, uintN argc, Value *vp)
+{
+    JS_ReportErrorFlagsAndNumber(cx, JSREPORT_ERROR, js_GetErrorMessage, NULL,
+                                 JSMSG_THROW_TYPE_ERROR);
+    return false;
 }
 
 namespace js {
+
+JSObject *
+GlobalObject::initFunctionAndObjectClasses(JSContext *cx)
+{
+    JS_THREADSAFE_ASSERT(cx->compartment != cx->runtime->atomsCompartment);
+    JS_ASSERT(isNative());
+
+    /*
+     * Calling a function from a cleared global triggers this (yeah, I know).
+     * Uncomment this once bug 470510 is fixed (if that bug doesn't remove
+     * isCleared entirely).
+     */
+    // JS_ASSERT(!isCleared());
+
+    /* If cx has no global object, make this the global object. */
+    if (!cx->globalObject)
+        JS_SetGlobalObject(cx, this);
+
+    /*
+     * Create |Object.prototype| first, mirroring CreateBlankProto but for the
+     * prototype of the created object.
+     */
+    JSObject *objectProto = NewNonFunction<WithProto::Given>(cx, &ObjectClass, NULL, this);
+    if (!objectProto || !objectProto->setSingletonType(cx))
+        return NULL;
+    types::TypeObject *objectType = objectProto->getNewType(cx, NULL, /* markUnknown = */ true);
+    if (!objectType || !objectType->getEmptyShape(cx, &ObjectClass, gc::FINALIZE_OBJECT0))
+        return NULL;
+
+    /* Create |Function.prototype| next so we can create other functions. */
+    JSFunction *functionProto;
+    {
+        JSObject *proto = NewObject<WithProto::Given>(cx, &FunctionClass, objectProto, this);
+        if (!proto || !proto->setSingletonType(cx))
+            return NULL;
+        types::TypeObject *functionType = proto->getNewType(cx, NULL, /* markUnknown = */ true);
+        if (!functionType || !functionType->getEmptyShape(cx, &FunctionClass, gc::FINALIZE_OBJECT0))
+            return NULL;
+
+        /*
+         * Bizarrely, |Function.prototype| must be an interpreted function, so
+         * give it the guts to be one.
+         */
+        functionProto = js_NewFunction(cx, proto, NULL, 0, JSFUN_INTERPRETED, this, NULL);
+        if (!functionProto)
+            return NULL;
+        JS_ASSERT(proto == functionProto);
+        functionProto->flags |= JSFUN_PROTOTYPE;
+
+        JSScript *script =
+            JSScript::NewScript(cx, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, JSVERSION_DEFAULT);
+        if (!script)
+            return NULL;
+        script->noScriptRval = true;
+        script->code[0] = JSOP_STOP;
+        script->code[1] = SRC_NULL;
+        functionProto->u.i.script = script;
+        functionProto->getType(cx)->interpretedFunction = functionProto;
+        script->hasFunction = true;
+        script->setOwnerObject(functionProto);
+    }
+
+    /* Create the Object function now that we have a [[Prototype]] for it. */
+    jsid objectId = ATOM_TO_JSID(CLASS_ATOM(cx, Object));
+    JSFunction *objectCtor;
+    {
+        JSObject *ctor = NewObject<WithProto::Given>(cx, &FunctionClass, functionProto, this);
+        if (!ctor)
+            return NULL;
+        objectCtor = js_NewFunction(cx, ctor, js_Object, 1, JSFUN_CONSTRUCTOR, this,
+                                    JSID_TO_ATOM(objectId));
+        if (!objectCtor)
+            return NULL;
+        JS_ASSERT(ctor == objectCtor);
+
+        objectCtor->setConstructorClass(&ObjectClass);
+    }
+
+    /*
+     * Install |Object| and |Object.prototype| for the benefit of subsequent
+     * code that looks for them.
+     */
+    setObjectClassDetails(objectCtor, objectProto);
+
+    /* Create |Function| so it and |Function.prototype| can be installed. */
+    jsid functionId = ATOM_TO_JSID(CLASS_ATOM(cx, Function));
+    JSFunction *functionCtor;
+    {
+        JSObject *ctor =
+            NewObject<WithProto::Given>(cx, &FunctionClass, functionProto, this);
+        if (!ctor)
+            return NULL;
+        functionCtor = js_NewFunction(cx, ctor, Function, 1, JSFUN_CONSTRUCTOR, this,
+                                      JSID_TO_ATOM(functionId));
+        if (!functionCtor)
+            return NULL;
+        JS_ASSERT(ctor == functionCtor);
+
+        functionCtor->setConstructorClass(&FunctionClass);
+    }
+
+    /*
+     * Install |Function| and |Function.prototype| so that we can freely create
+     * functions and objects without special effort.
+     */
+    setFunctionClassDetails(functionCtor, functionProto);
+
+    /*
+     * The hard part's done: now go back and add all the properties these
+     * primordial values have.
+     */
+    if (!LinkConstructorAndPrototype(cx, objectCtor, objectProto) ||
+        !DefinePropertiesAndBrand(cx, objectProto, object_props, object_methods) ||
+        !DefinePropertiesAndBrand(cx, objectCtor, NULL, object_static_methods) ||
+        !LinkConstructorAndPrototype(cx, functionCtor, functionProto) ||
+        !DefinePropertiesAndBrand(cx, functionProto, NULL, function_methods) ||
+        !DefinePropertiesAndBrand(cx, functionCtor, NULL, NULL))
+    {
+        return NULL;
+    }
+
+    /* Add the global Function and Object properties now. */
+    if (!addDataProperty(cx, objectId, JSProto_Object + JSProto_LIMIT * 2, 0))
+        return false;
+    if (!addDataProperty(cx, functionId, JSProto_Function + JSProto_LIMIT * 2, 0))
+        return false;
+
+    /* Heavy lifting done, but lingering tasks remain. */
+
+    /* ES5 15.1.2.1. */
+    jsid id = ATOM_TO_JSID(cx->runtime->atomState.evalAtom);
+    JSObject *evalobj = js_DefineFunction(cx, this, id, eval, 1, JSFUN_STUB_GSOPS);
+    if (!evalobj)
+        return NULL;
+    setOriginalEval(evalobj);
+
+    /* ES5 13.2.3: Construct the unique [[ThrowTypeError]] function object. */
+    JSFunction *throwTypeError = js_NewFunction(cx, NULL, ThrowTypeError, 0, 0, this, NULL);
+    if (!throwTypeError)
+        return NULL;
+    AutoIdVector ids(cx);
+    if (!throwTypeError->preventExtensions(cx, &ids))
+        return NULL;
+    setThrowTypeError(throwTypeError);
+
+    /*
+     * The global object should have |Object.prototype| as its [[Prototype]].
+     * Eventually we'd like to have standard classes be there from the start,
+     * and thus we would know we were always setting what had previously been a
+     * null [[Prototype]], but right now some code assumes it can set the
+     * [[Prototype]] before standard classes have been initialized.  For now,
+     * only set the [[Prototype]] if it hasn't already been set.
+     */
+    if (shouldSplicePrototype(cx) && !splicePrototype(cx, objectProto))
+        return NULL;
+
+    /*
+     * Notify any debuggers about the creation of the script for
+     * |Function.prototype| -- after all initialization, for simplicity.
+     */
+    js_CallNewScriptHook(cx, functionProto->script(), functionProto);
+    return functionProto;
+}
 
 GlobalObject *
 GlobalObject::create(JSContext *cx, Class *clasp)
@@ -107,7 +255,7 @@ GlobalObject::create(JSContext *cx, Class *clasp)
     JS_ASSERT(clasp->flags & JSCLASS_IS_GLOBAL);
 
     JSObject *obj = NewNonFunction<WithProto::Given>(cx, clasp, NULL, NULL);
-    if (!obj)
+    if (!obj || !obj->setSingletonType(cx))
         return NULL;
 
     GlobalObject *globalObj = obj->asGlobal();
@@ -120,6 +268,7 @@ GlobalObject::create(JSContext *cx, Class *clasp)
         return NULL;
     globalObj->setSlot(REGEXP_STATICS, ObjectValue(*res));
     globalObj->setFlags(0);
+
     return globalObj;
 }
 
@@ -133,12 +282,12 @@ GlobalObject::initStandardClasses(JSContext *cx)
 
     /* Define a top-level property 'undefined' with the undefined value. */
     if (!defineProperty(cx, ATOM_TO_JSID(state.typeAtoms[JSTYPE_VOID]), UndefinedValue(),
-                        PropertyStub, StrictPropertyStub, JSPROP_PERMANENT | JSPROP_READONLY))
+                        JS_PropertyStub, JS_StrictPropertyStub, JSPROP_PERMANENT | JSPROP_READONLY))
     {
         return false;
     }
 
-    if (!js_InitFunctionAndObjectClasses(cx, this))
+    if (!initFunctionAndObjectClasses(cx))
         return false;
 
     /* Initialize the rest of the standard objects and functions. */
@@ -175,6 +324,14 @@ GlobalObject::clear(JSContext *cx)
 
     /* Clear the runtime-codegen-enabled cache. */
     setSlot(RUNTIME_CODEGEN_ENABLED, UndefinedValue());
+
+    /*
+     * Clear the original-eval and [[ThrowTypeError]] slots, in case throwing
+     * trying to execute a script for this global must reinitialize standard
+     * classes.  See bug 470150.
+     */
+    setSlot(EVAL, UndefinedValue());
+    setSlot(THROWTYPEERROR, UndefinedValue());
 
     /*
      * Mark global as cleared. If we try to execute any compile-and-go
@@ -214,42 +371,55 @@ GlobalObject::createConstructor(JSContext *cx, Native ctor, Class *clasp, JSAtom
      * Remember the class this function is a constructor for so that we know to
      * create an object of this class when we call the constructor.
      */
-    FUN_CLASP(fun) = clasp;
+    fun->setConstructorClass(clasp);
     return fun;
 }
 
-JSObject *
-GlobalObject::createBlankPrototype(JSContext *cx, Class *clasp)
+static JSObject *
+CreateBlankProto(JSContext *cx, Class *clasp, JSObject &proto, GlobalObject &global)
 {
-    JS_ASSERT(clasp != &js_ObjectClass);
-    JS_ASSERT(clasp != &js_FunctionClass);
+    JS_ASSERT(clasp != &ObjectClass);
+    JS_ASSERT(clasp != &FunctionClass);
 
-    JSObject *objectProto;
-    if (!js_GetClassPrototype(cx, this, JSProto_Object, &objectProto))
-        return NULL;
-
-    JSObject *proto = NewNonFunction<WithProto::Given>(cx, clasp, objectProto, this);
-    if (!proto)
+    JSObject *blankProto = NewNonFunction<WithProto::Given>(cx, clasp, &proto, &global);
+    if (!blankProto || !blankProto->setSingletonType(cx))
         return NULL;
 
     /*
      * Supply the created prototype object with an empty shape for the benefit
      * of callers of JSObject::initSharingEmptyShape.
      */
-    if (!proto->getEmptyShape(cx, clasp, gc::FINALIZE_OBJECT0))
+    types::TypeObject *type = blankProto->getNewType(cx);
+    if (!type || !type->getEmptyShape(cx, clasp, gc::FINALIZE_OBJECT0))
         return NULL;
 
-    return proto;
+    return blankProto;
+}
+
+JSObject *
+GlobalObject::createBlankPrototype(JSContext *cx, Class *clasp)
+{
+    JSObject *objectProto;
+    if (!js_GetClassPrototype(cx, this, JSProto_Object, &objectProto))
+        return NULL;
+
+    return CreateBlankProto(cx, clasp, *objectProto, *this);
+}
+
+JSObject *
+GlobalObject::createBlankPrototypeInheriting(JSContext *cx, Class *clasp, JSObject &proto)
+{
+    return CreateBlankProto(cx, clasp, proto, *this);
 }
 
 bool
 LinkConstructorAndPrototype(JSContext *cx, JSObject *ctor, JSObject *proto)
 {
     return ctor->defineProperty(cx, ATOM_TO_JSID(cx->runtime->atomState.classPrototypeAtom),
-                                ObjectValue(*proto), PropertyStub, StrictPropertyStub,
+                                ObjectValue(*proto), JS_PropertyStub, JS_StrictPropertyStub,
                                 JSPROP_PERMANENT | JSPROP_READONLY) &&
            proto->defineProperty(cx, ATOM_TO_JSID(cx->runtime->atomState.constructorAtom),
-                                 ObjectValue(*ctor), PropertyStub, StrictPropertyStub, 0);
+                                 ObjectValue(*ctor), JS_PropertyStub, JS_StrictPropertyStub, 0);
 }
 
 bool
@@ -257,7 +427,8 @@ DefinePropertiesAndBrand(JSContext *cx, JSObject *obj, JSPropertySpec *ps, JSFun
 {
     if ((ps && !JS_DefineProperties(cx, obj, ps)) || (fs && !JS_DefineFunctions(cx, obj, fs)))
         return false;
-    obj->brand(cx);
+    if (!cx->typeInferenceEnabled())
+        obj->brand(cx);
     return true;
 }
 
@@ -270,8 +441,8 @@ GlobalDebuggees_finalize(JSContext *cx, JSObject *obj)
 static Class
 GlobalDebuggees_class = {
     "GlobalDebuggee", JSCLASS_HAS_PRIVATE,
-    PropertyStub, PropertyStub, PropertyStub, StrictPropertyStub,
-    EnumerateStub, ResolveStub, ConvertStub, GlobalDebuggees_finalize
+    JS_PropertyStub, JS_PropertyStub, JS_PropertyStub, JS_StrictPropertyStub,
+    JS_EnumerateStub, JS_ResolveStub, JS_ConvertStub, GlobalDebuggees_finalize
 };
 
 GlobalObject::DebuggerVector *
@@ -280,7 +451,7 @@ GlobalObject::getDebuggers()
     Value debuggers = getReservedSlot(DEBUGGERS);
     if (debuggers.isUndefined())
         return NULL;
-    JS_ASSERT(debuggers.toObject().clasp == &GlobalDebuggees_class);
+    JS_ASSERT(debuggers.toObject().getClass() == &GlobalDebuggees_class);
     return (DebuggerVector *) debuggers.toObject().getPrivate();
 }
 

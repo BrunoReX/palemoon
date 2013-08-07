@@ -106,10 +106,6 @@ var gChecking = {
       aAddons = aAddons.filter(function(aAddon) {
         if (aAddon.type == "plugin")
           return false;
-          
-        //Pale Moon: don't list statusbar add-on  
-        if (aAddon.id == "statusbar@palemoon.org") 
-          return false;
 
         if (aAddon.type == "theme") {
           // Don't show application shipped themes

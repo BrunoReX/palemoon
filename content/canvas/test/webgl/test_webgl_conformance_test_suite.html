@@ -364,6 +364,22 @@ function start() {
 
   var testsToIgnore = [];
 
+  if (kIsMac) {
+    // intermittent failure on Mac OS 10.6, "images are different". Some compositing issue??
+    testsToIgnore.push('conformance/shaders/glsl-features/../../glsl-features.html?feature=abs-frag&reffs=shaders/glsl-features/abs-ref.frag&testfs=shaders/glsl-features/abs.frag');
+    testsToIgnore.push('conformance/shaders/glsl-features/../../glsl-features.html?feature=abs-vert-vec2&refvs=shaders/glsl-features/abs-vec2-ref.vert&testvs=shaders/glsl-features/abs-vec2.vert');
+    testsToIgnore.push('conformance/shaders/glsl-features/../../glsl-features.html?feature=abs-vert-vec3&refvs=shaders/glsl-features/abs-vec3-ref.vert&testvs=shaders/glsl-features/abs-vec3.vert');
+    testsToIgnore.push('conformance/shaders/glsl-features/../../glsl-features.html?feature=abs-vert-vec4&refvs=shaders/glsl-features/abs-vec4-ref.vert&testvs=shaders/glsl-features/abs-vec4.vert');
+  }
+
+  if (kIsLinux) {
+    // on talos-r3-fed64-019 I got this error message:
+    // Test failed, "gl.getExtension("OES_texture_float").myProperty should be 2 (of type number).
+    // Was undefined (of type undefined)." (URL: conformance/oes-texture-float.html)
+    // on other linux test slaves it worked. Does this test slave have different driver or hardware or what?
+    testsToIgnore.push('conformance/oes-texture-float.html');
+  }
+
   var testsSuccessful = [];
 
   runTestSuite();
@@ -376,35 +392,39 @@ function start() {
 <div id="content" style="display: none">
 
 </div>
-<table border="2">
-<tr style="height: 300px;">
-<td>
-<table>
-<tr><td><h4>WebGL Conformance Test Runner</h4>
-<tr><td>
-  <div style="border: 1px">
-    <b>Status:</b> <div><span id="status"></span></div><br />
-    <b>Results:</b>
-    <div><span id="results-default"></span></div>
-    <br />
-    <div><span id="expectedtofail"></span></div>
-    <br />
-    <div><span id="ignoredtests"></span></div>
-  </div>
-</td></tr>
-</table>
-</td>
-<td>
-<iframe id="testframe" scrolling="yes" width="100%" height="100%"></iframe>
-</td>
-</tr>
-<tr>
-<td colspan="2">
-<div style="text-align: left; width: 100%; height: 100%; overflow: auto;">
-<div><ul id="results"></ul></div>
-</div>
-</td>
-</tr>
+<table border="2px">
+  <tr style="height: 500px;">
+    <td style="width: 500px;">
+      <iframe id="testframe" scrolling="no" width="500px" height="500px"></iframe>
+    </td>
+    <td>
+      <table>
+        <tr>
+          <td><h4>WebGL Conformance Test Runner</h4></td>
+        </tr>
+        <tr>
+          <td>
+            <div style="border: 1px">
+              <b>Status:</b> <div><span id="status"></span></div><br />
+              <b>Results:</b>
+              <div><span id="results-default"></span></div>
+              <br />
+              <div><span id="expectedtofail"></span></div>
+              <br />
+              <div><span id="ignoredtests"></span></div>
+            </div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <div style="text-align: left; width: 100%; height: 100%; overflow: auto;">
+        <div><ul id="results"></ul></div>
+      </div>
+    </td>
+  </tr>
 </table>
 <canvas id="webglcheck-default" style="display: none;"></canvas>
 </body>

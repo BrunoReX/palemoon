@@ -54,6 +54,42 @@ int UniformComponentCount(GLenum type)
     return 0;
 }
 
+// This is how much data we actually store for a uniform
+int UniformInternalComponentCount(GLenum type)
+{
+    switch (type)
+    {
+      case GL_BOOL:
+      case GL_INT:
+      case GL_SAMPLER_2D:
+      case GL_SAMPLER_CUBE:
+          return 1;
+      case GL_BOOL_VEC2:
+      case GL_INT_VEC2:
+          return 2;
+      case GL_INT_VEC3:
+      case GL_BOOL_VEC3:
+          return 3;
+      case GL_FLOAT:
+      case GL_FLOAT_VEC2:
+      case GL_FLOAT_VEC3:
+      case GL_BOOL_VEC4:
+      case GL_FLOAT_VEC4:
+      case GL_INT_VEC4:
+          return 4;
+      case GL_FLOAT_MAT2:
+          return 8;
+      case GL_FLOAT_MAT3:
+          return 12;
+      case GL_FLOAT_MAT4:
+          return 16;
+      default:
+          UNREACHABLE();
+    }
+
+    return 0;
+}
+
 GLenum UniformComponentType(GLenum type)
 {
     switch(type)
@@ -85,16 +121,22 @@ GLenum UniformComponentType(GLenum type)
     return GL_NONE;
 }
 
-size_t UniformTypeSize(GLenum type)
+size_t UniformComponentSize(GLenum type)
 {
     switch(type)
     {
       case GL_BOOL:  return sizeof(GLboolean);
       case GL_FLOAT: return sizeof(GLfloat);
       case GL_INT:   return sizeof(GLint);
+      default:       UNREACHABLE();
     }
 
-    return UniformTypeSize(UniformComponentType(type)) * UniformComponentCount(type);
+    return 0;
+}
+
+size_t UniformTypeSize(GLenum type)
+{
+    return UniformComponentSize(UniformComponentType(type)) * UniformInternalComponentCount(type);
 }
 
 int VariableRowCount(GLenum type)
@@ -200,18 +242,23 @@ GLsizei ComputeCompressedSize(GLsizei width, GLsizei height, GLenum format)
     {
       case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
       case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
+        return 8 * (GLsizei)ceil((float)width / 4.0f) * (GLsizei)ceil((float)height / 4.0f);
         break;
+      case GL_COMPRESSED_RGBA_S3TC_DXT3_ANGLE:
+      case GL_COMPRESSED_RGBA_S3TC_DXT5_ANGLE:
+        return 16 * (GLsizei)ceil((float)width / 4.0f) * (GLsizei)ceil((float)height / 4.0f);
       default:
         return 0;
     }
 
-    return 8 * (GLsizei)ceil((float)width / 4.0f) * (GLsizei)ceil((float)height / 4.0f);
 }
 
 bool IsCompressed(GLenum format)
 {
     if(format == GL_COMPRESSED_RGB_S3TC_DXT1_EXT ||
-       format == GL_COMPRESSED_RGBA_S3TC_DXT1_EXT)
+       format == GL_COMPRESSED_RGBA_S3TC_DXT1_EXT ||
+       format == GL_COMPRESSED_RGBA_S3TC_DXT3_ANGLE ||
+       format == GL_COMPRESSED_RGBA_S3TC_DXT5_ANGLE)
     {
         return true;
     }

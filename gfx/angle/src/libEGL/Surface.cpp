@@ -22,6 +22,23 @@
 
 namespace egl
 {
+
+namespace
+{
+const int versionWindowsVista = MAKEWORD(0x00, 0x06);
+const int versionWindows7 = MAKEWORD(0x01, 0x06);
+
+// Return the version of the operating system in a format suitable for ordering
+// comparison.
+int getComparableOSVersion()
+{
+    DWORD version = GetVersion();
+    int majorVersion = LOBYTE(LOWORD(version));
+    int minorVersion = HIBYTE(LOWORD(version));
+    return MAKEWORD(minorVersion, majorVersion);
+}
+}
+
 Surface::Surface(Display *display, const Config *config, HWND window) 
     : mDisplay(display), mConfig(config), mWindow(window)
 {
@@ -78,7 +95,7 @@ bool Surface::initialize()
     // Modify present parameters for this window, if we are composited,
     // to minimize the amount of queuing done by DWM between our calls to
     // present and the actual screen.
-    if (mWindow && (LOWORD(GetVersion()) >= 0x60)) {
+    if (mWindow && (getComparableOSVersion() >= versionWindowsVista)) {
       BOOL isComposited;
       HRESULT result = DwmIsCompositionEnabled(&isComposited);
       if (SUCCEEDED(result) && isComposited) {
@@ -165,7 +182,7 @@ bool Surface::resetSwapChain(int backbufferWidth, int backbufferHeight)
     D3DPRESENT_PARAMETERS presentParameters = {0};
     HRESULT result;
 
-    bool useFlipEx = (LOWORD(GetVersion()) >= 0x61) && mDisplay->isD3d9ExDevice();
+    bool useFlipEx = (getComparableOSVersion() >= versionWindows7) && mDisplay->isD3d9ExDevice();
 
     // FlipEx causes unseemly stretching when resizing windows AND when one
     // draws outside of the WM_PAINT callback. While this is seldom a problem in
@@ -174,8 +191,26 @@ bool Surface::resetSwapChain(int backbufferWidth, int backbufferHeight)
     // the current process, disable use of FlipEx.
     DWORD windowPID;
     GetWindowThreadProcessId(mWindow, &windowPID);
-    if(windowPID != GetCurrentProcessId())
-    useFlipEx = false;
+    if (windowPID != GetCurrentProcessId())
+    {
+        useFlipEx = false;
+    }
+
+    // Various hardware does not support D3DSWAPEFFECT_FLIPEX when either the
+    // device format or back buffer format is not 32-bit.
+    HDC deviceContext = GetDC(0);
+    int deviceFormatBits = GetDeviceCaps(deviceContext, BITSPIXEL);
+    ReleaseDC(0, deviceContext);
+    if (mConfig->mBufferSize != 32 || deviceFormatBits != 32)
+    {
+        useFlipEx = false;
+    }
+
+    // D3DSWAPEFFECT_FLIPEX is always VSYNCed
+    if (mSwapInterval == 0)
+    {
+        useFlipEx = false;
+    }
 
     presentParameters.AutoDepthStencilFormat = mConfig->mDepthStencilFormat;
     // We set BackBufferCount = 1 even when we use D3DSWAPEFFECT_FLIPEX.
@@ -215,7 +250,7 @@ bool Surface::resetSwapChain(int backbufferWidth, int backbufferHeight)
 
     if (FAILED(result))
     {
-        ASSERT(result == D3DERR_OUTOFVIDEOMEMORY || result == E_OUTOFMEMORY);
+        ASSERT(result == D3DERR_OUTOFVIDEOMEMORY || result == E_OUTOFMEMORY || result == D3DERR_INVALIDCALL);
 
         ERR("Could not create additional swap chains or offscreen surfaces: %08lX", result);
         release();
@@ -231,7 +266,7 @@ bool Surface::resetSwapChain(int backbufferWidth, int backbufferHeight)
 
     if (FAILED(result))
     {
-        ASSERT(result == D3DERR_OUTOFVIDEOMEMORY || result == E_OUTOFMEMORY);
+        ASSERT(result == D3DERR_OUTOFVIDEOMEMORY || result == E_OUTOFMEMORY || result == D3DERR_INVALIDCALL);
 
         ERR("Could not create depthstencil surface for new swap chain: %08lX", result);
         release();

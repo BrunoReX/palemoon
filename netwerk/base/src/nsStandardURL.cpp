@@ -400,7 +400,6 @@ nsStandardURL::Clear()
     mBasename.Reset();
 
     mExtension.Reset();
-    mParam.Reset();
     mQuery.Reset();
     mRef.Reset();
 
@@ -511,22 +510,22 @@ nsStandardURL::BuildNormalizedSpec(const char *spec)
     // buffers for holding escaped url segments (these will remain empty unless
     // escaping is required).
     nsCAutoString encUsername, encPassword, encHost, encDirectory,
-      encBasename, encExtension, encParam, encQuery, encRef;
+      encBasename, encExtension, encQuery, encRef;
     PRBool useEncUsername, useEncPassword, useEncHost, useEncDirectory,
-      useEncBasename, useEncExtension, useEncParam, useEncQuery, useEncRef;
+      useEncBasename, useEncExtension, useEncQuery, useEncRef;
     nsCAutoString portbuf;
 
     //
     // escape each URL segment, if necessary, and calculate approximate normalized
     // spec length.
     //
-    // [scheme://][username[:password]@]host[:port]/path[;param][?query_string][#ref]
+    // [scheme://][username[:password]@]host[:port]/path[?query_string][#ref]
 
     PRUint32 approxLen = 0;
 
     // the scheme is already ASCII
     if (mScheme.mLen > 0)
-        approxLen += mScheme.mLen + 3; // includes room for "://";
+        approxLen += mScheme.mLen + 3; // includes room for "://", which we insert always
 
     // encode URL segments; convert UTF-8 to origin charset and possibly escape.
     // results written to encXXX variables only if |spec| is not already in the
@@ -537,8 +536,9 @@ nsStandardURL::BuildNormalizedSpec(const char *spec)
         // Items using an extraLen of 1 don't add anything unless mLen > 0
         // Username@
         approxLen += encoder.EncodeSegmentCount(spec, mUsername,  esc_Username,      encUsername,  useEncUsername, 1);
-        // :Password
-        approxLen += encoder.EncodeSegmentCount(spec, mPassword,  esc_Password,      encPassword,  useEncPassword, 1);
+        // :password - we insert the ':' even if there's no actual password if "user:@" was in the spec
+        if (mPassword.mLen >= 0)
+            approxLen += 1 + encoder.EncodeSegmentCount(spec, mPassword,  esc_Password,      encPassword,  useEncPassword);
         // mHost is handled differently below due to encoding differences
         NS_ABORT_IF_FALSE(mPort > 0 || mPort == -1, "Invalid negative mPort");
         if (mPort != -1 && mPort != mDefaultPort)
@@ -556,9 +556,6 @@ nsStandardURL::BuildNormalizedSpec(const char *spec)
 
         // These next ones *always* add their leading character even if length is 0
         // Handles items like "http://#"
-        // ;param
-        if (mParam.mLen >= 0)
-            approxLen += 1 + encoder.EncodeSegmentCount(spec, mParam,     esc_Param,         encParam,     useEncParam);
         // ?query
         if (mQuery.mLen >= 0)
             approxLen += 1 + queryEncoder.EncodeSegmentCount(spec, mQuery, esc_Query,        encQuery,     useEncQuery);
@@ -571,6 +568,7 @@ nsStandardURL::BuildNormalizedSpec(const char *spec)
     // already point to a [ ] delimited IPv6 address literal.
     // However, perform Unicode normalization on it, as IDN does.
     mHostEncoding = eEncoding_ASCII;
+    // Note that we don't disallow URLs without a host - file:, etc
     if (mHost.mLen > 0) {
         const nsCSubstring& tempHost =
             Substring(spec + mHost.mPos, spec + mHost.mPos + mHost.mLen);
@@ -678,10 +676,6 @@ nsStandardURL::BuildNormalizedSpec(const char *spec)
         // calculate corrected filepath length
         mFilepath.mLen = i - mFilepath.mPos;
 
-        if (mParam.mLen >= 0) {
-            buf[i++] = ';';
-            i = AppendSegmentToBuf(buf, i, spec, mParam, &encParam, useEncParam);
-        }
         if (mQuery.mLen >= 0) {
             buf[i++] = '?';
             i = AppendSegmentToBuf(buf, i, spec, mQuery, &encQuery, useEncQuery);
@@ -838,13 +832,11 @@ nsStandardURL::ParsePath(const char *spec, PRUint32 pathPos, PRInt32 pathLen)
 
     nsresult rv = mParser->ParsePath(spec + pathPos, pathLen,
                                      &mFilepath.mPos, &mFilepath.mLen,
-                                     &mParam.mPos, &mParam.mLen,
                                      &mQuery.mPos, &mQuery.mLen,
                                      &mRef.mPos, &mRef.mLen);
     if (NS_FAILED(rv)) return rv;
 
     mFilepath.mPos += pathPos;
-    mParam.mPos += pathPos;
     mQuery.mPos += pathPos;
     mRef.mPos += pathPos;
 
@@ -865,11 +857,23 @@ nsStandardURL::ParsePath(const char *spec, PRUint32 pathPos, PRInt32 pathLen)
 char *
 nsStandardURL::AppendToSubstring(PRUint32 pos,
                                  PRInt32 len,
-                                 const char *tail,
-                                 PRInt32 tailLen)
+                                 const char *tail)
 {
-    if (tailLen < 0)
-        tailLen = strlen(tail);
+    // Verify pos and length are within boundaries
+    if (pos > mSpec.Length())
+        return NULL;
+    if (len < 0)
+        return NULL;
+    if ((PRUint32)len > (mSpec.Length() - pos))
+        return NULL;
+    if (!tail)
+        return NULL;
+
+    PRUint32 tailLen = strlen(tail);
+
+    // Check for int overflow for proposed length of combined string
+    if (PR_UINT32_MAX - ((PRUint32)len + 1) < tailLen)
+        return NULL;
 
     char *result = (char *) NS_Alloc(len + tailLen + 1);
     if (result) {
@@ -1208,7 +1212,6 @@ nsStandardURL::SetSpec(const nsACString &input)
         LOG((" directory = (%u,%d)\n", mDirectory.mPos, mDirectory.mLen));
         LOG((" basename  = (%u,%d)\n", mBasename.mPos,  mBasename.mLen));
         LOG((" extension = (%u,%d)\n", mExtension.mPos, mExtension.mLen));
-        LOG((" param     = (%u,%d)\n", mParam.mPos,     mParam.mLen));
         LOG((" query     = (%u,%d)\n", mQuery.mPos,     mQuery.mLen));
         LOG((" ref       = (%u,%d)\n", mRef.mPos,       mRef.mLen));
     }
@@ -1633,7 +1636,6 @@ nsStandardURL::SetPath(const nsACString &input)
         // these are no longer defined
         mBasename.mLen = -1;
         mExtension.mLen = -1;
-        mParam.mLen = -1;
         mQuery.mLen = -1;
         mRef.mLen = -1;
     }
@@ -1684,8 +1686,7 @@ nsStandardURL::EqualsInternal(nsIURI *unknownOther,
         !SegmentIs(mQuery, other->mSpec.get(), other->mQuery) ||
         !SegmentIs(mUsername, other->mSpec.get(), other->mUsername) ||
         !SegmentIs(mPassword, other->mSpec.get(), other->mPassword) ||
-        Port() != other->Port() ||
-        !SegmentIs(mParam, other->mSpec.get(), other->mParam)) {
+        Port() != other->Port()) {
         // No need to compare files or other URI parts -- these are different
         // beasties
         *result = PR_FALSE;
@@ -1795,7 +1796,6 @@ nsStandardURL::CloneInternal(nsStandardURL::RefHandlingEnum refHandlingMode,
     clone->mDirectory = mDirectory;
     clone->mBasename = mBasename;
     clone->mExtension = mExtension;
-    clone->mParam = mParam;
     clone->mQuery = mQuery;
     clone->mRef = mRef;
     clone->mOriginCharset = mOriginCharset;
@@ -2020,7 +2020,7 @@ nsStandardURL::GetCommonBaseSpec(nsIURI *uri2, nsACString &aResult)
 
     // backup to just after previous slash so we grab an appropriate path
     // segment such as a directory (not partial segments)
-    // todo:  also check for file matches which include '?', '#', and ';'
+    // todo:  also check for file matches which include '?' and '#'
     while ((thisIndex != startCharPos) && (*(thisIndex-1) != '/'))
         thisIndex--;
 
@@ -2101,7 +2101,7 @@ nsStandardURL::GetRelativeSpec(nsIURI *uri2, nsACString &aResult)
 
     // backup to just after previous slash so we grab an appropriate path
     // segment such as a directory (not partial segments)
-    // todo:  also check for file matches with '#', '?' and ';'
+    // todo:  also check for file matches with '#' and '?'
     while ((*(thatIndex-1) != '/') && (thatIndex != startCharPos))
         thatIndex--;
 
@@ -2132,14 +2132,6 @@ NS_IMETHODIMP
 nsStandardURL::GetFilePath(nsACString &result)
 {
     result = Filepath();
-    return NS_OK;
-}
-
-// result may contain unescaped UTF-8 characters
-NS_IMETHODIMP
-nsStandardURL::GetParam(nsACString &result)
-{
-    result = Param();
     return NS_OK;
 }
 
@@ -2263,8 +2255,8 @@ nsStandardURL::SetFilePath(const nsACString &input)
     }
     else if (mPath.mLen > 1) {
         mSpec.Cut(mPath.mPos + 1, mFilepath.mLen - 1);
-        // left shift param, query, and ref
-        ShiftFromParam(1 - mFilepath.mLen);
+        // left shift query, and ref
+        ShiftFromQuery(1 - mFilepath.mLen);
         // these contain only a '/'
         mPath.mLen = 1;
         mDirectory.mLen = 1;
@@ -2274,13 +2266,6 @@ nsStandardURL::SetFilePath(const nsACString &input)
         mExtension.mLen = -1;
     }
     return NS_OK;
-}
-
-NS_IMETHODIMP
-nsStandardURL::SetParam(const nsACString &input)
-{
-    NS_NOTYETIMPLEMENTED("");
-    return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
@@ -2503,7 +2488,7 @@ nsStandardURL::SetFileName(const nsACString &input)
         }
     }
     if (shift) {
-        ShiftFromParam(shift);
+        ShiftFromQuery(shift);
         mFilepath.mLen += shift;
         mPath.mLen += shift;
     }
@@ -2800,7 +2785,9 @@ nsStandardURL::Read(nsIObjectInputStream *stream)
     rv = ReadSegment(stream, mExtension);
     if (NS_FAILED(rv)) return rv;
 
-    rv = ReadSegment(stream, mParam);
+    // handle forward compatibility from older serializations that included mParam
+    URLSegment old_param;
+    rv = ReadSegment(stream, old_param);
     if (NS_FAILED(rv)) return rv;
 
     rv = ReadSegment(stream, mQuery);
@@ -2838,6 +2825,18 @@ nsStandardURL::Read(nsIObjectInputStream *stream)
         return NS_ERROR_UNEXPECTED;
     }
     mHostEncoding = hostEncoding;
+
+    // wait until object is set up, then modify path to include the param
+    if (old_param.mLen >= 0) {  // note that mLen=0 is ";"
+        // If this wasn't empty, it marks characters between the end of the 
+        // file and start of the query - mPath should include the param,
+        // query and ref already.  Bump the mFilePath and 
+        // directory/basename/extension components to include this.
+        mFilepath.Merge(mSpec,  ';', old_param);
+        mDirectory.Merge(mSpec, ';', old_param);
+        mBasename.Merge(mSpec,  ';', old_param);
+        mExtension.Merge(mSpec, ';', old_param);
+    }
     
     return NS_OK;
 }
@@ -2889,7 +2888,12 @@ nsStandardURL::Write(nsIObjectOutputStream *stream)
     rv = WriteSegment(stream, mExtension);
     if (NS_FAILED(rv)) return rv;
 
-    rv = WriteSegment(stream, mParam);
+    // for backwards compatibility since we removed mParam.  Note that this will mean that
+    // an older browser will read "" for mParam, and the param(s) will be part of mPath (as they
+    // after the removal of special handling).  It only matters if you downgrade a browser to before
+    // the patch.
+    URLSegment empty;
+    rv = WriteSegment(stream, empty);
     if (NS_FAILED(rv)) return rv;
 
     rv = WriteSegment(stream, mQuery);
@@ -2964,7 +2968,6 @@ nsStandardURL::Read(const IPC::Message *aMsg, void **aIter)
         !ReadSegment(aMsg, aIter, mDirectory) ||
         !ReadSegment(aMsg, aIter, mBasename) ||
         !ReadSegment(aMsg, aIter, mExtension) ||
-        !ReadSegment(aMsg, aIter, mParam) ||
         !ReadSegment(aMsg, aIter, mQuery) ||
         !ReadSegment(aMsg, aIter, mRef) ||
         !ReadParam(aMsg, aIter, &mOriginCharset) ||
@@ -3005,7 +3008,6 @@ nsStandardURL::Write(IPC::Message *aMsg)
     WriteSegment(aMsg, mDirectory);
     WriteSegment(aMsg, mBasename);
     WriteSegment(aMsg, mExtension);
-    WriteSegment(aMsg, mParam);
     WriteSegment(aMsg, mQuery);
     WriteSegment(aMsg, mRef);
     WriteParam(aMsg, mOriginCharset);

@@ -67,7 +67,8 @@ pref("network.dnsCacheExpiration", 3600); //TTL 1 hour
 pref("nglayout.initialpaint.delay", 150);
 
 //webGL (4.0)
-pref("webgl.prefer-native-gl", true);
+//v9: disabled because of kernel/drivers struggling with native OpenGL
+//pref("webgl.prefer-native-gl", true); 
 //enable it even if ANGLE isn't built. Will disable anyway if no driver present.
 pref("webgl.force-enabled", true); 
 
@@ -79,8 +80,8 @@ pref("gfx.direct2d.force-enabled", false);
 
 //JIT the chrome! (402)
 pref("javascript.options.jitprofiling.chrome", true);
-pref("javascript.options.methodjit.chrome", true);
-pref("javascript.options.methodjit_always", true);
+// pref("javascript.options.methodjit.chrome", true);
+// pref("javascript.options.methodjit_always", true);
 
 //Add-on window fixes (368)
 pref("extensions.getAddons.browseAddons", "https://addons.mozilla.org/%LOCALE%/firefox");
@@ -121,14 +122,41 @@ pref("browser.urlbar.trimURLs", false); //stop being a derp, Mozilla!
 
 //Pale Moon 8 specific
 
-//cache handling 1GB -> 100MB by default, disable automatic
+//cache handling 1GB -> 200MB by default, disable automatic
 //max element size 5MB -> 2MB/1MB, caching anything larger is not recommended
 pref("browser.cache.disk.smart_size.enabled",false);
-pref("browser.cache.disk.capacity",102400);
+pref("browser.cache.disk.capacity",204800);
 pref("browser.cache.disk.max_entry_size",2048);
 pref("browser.cache.memory.capacity",32768);
 pref("browser.cache.memory.max_entry_size",1024);
 
 //image RAM cache size for *decoded* images; 256MB should be enough here;
 pref("image.cache.size",256000);
+
+//Barring a better control mechanism for now, accept all add-ons in $instdir\Pale Moon\extensions
+pref("extensions.autoDisableScopes", 11);
+
+//Pale Moon 9 specific
+
+//Improve memory handling for js
+pref("javascript.options.mem.gc_per_compartment", false);
+pref("javascript.options.mem.high_water_mark", 32);
+pref("javascript.options.mem.max", 50000);
+
+//Disable DNS prefetching to prevent router hangups
+pref("network.dns.disablePrefetch", true);
+
+//Animate preferences window
+pref("browser.preferences.animateFadeIn", true);
+
+//DOM
+pref("dom.disable_window_status_change", false); //Allow status feedback by default
+//Set max script runtimes to sane values
+pref("dom.max_chrome_script_run_time", 90); //Some addons need ample time!
+pref("dom.max_script_run_time", 20); //Should be plenty for a page script to do what it needs
+
+//Image decoding tweaks
+pref("image.mem.decodeondraw", true);
+pref("image.mem.max_ms_before_yield", 200);
+
 

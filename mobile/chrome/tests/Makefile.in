@@ -74,6 +74,7 @@ _BROWSER_FILES = \
   browser_history.js \
   browser_mainui.js \
   browser_preferences_text.js \
+  browser_preferences_fulltoggle.js \
   browser_rect.js \
   browser_rememberPassword.js \
   browser_scroll.js \
@@ -85,6 +86,8 @@ _BROWSER_FILES = \
   browser_tabs.js \
   browser_tapping.js \
   browser_tap_content.html \
+  browser_tapping_edit.js \
+  browser_tap_contentedit.html \
   browser_test.js \
   browser_vkb.js \
   $(warning browser_viewport.js disabled due to failures) \

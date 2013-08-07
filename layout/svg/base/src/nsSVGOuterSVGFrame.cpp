@@ -53,7 +53,6 @@
 #include "nsPIDOMWindow.h"
 #include "nsIObjectLoadingContent.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsSVGMatrix.h"
 
 namespace dom = mozilla::dom;
 
@@ -116,7 +115,7 @@ nsSVGMutationObserver::AttributeChanged(nsIDocument* aDocument,
 void
 nsSVGMutationObserver::UpdateTextFragmentTrees(nsIFrame *aFrame)
 {
-  nsIFrame* kid = aFrame->GetFirstChild(nsnull);
+  nsIFrame* kid = aFrame->GetFirstPrincipalChild();
   while (kid) {
     if (kid->GetType() == nsGkAtoms::svgTextFrame) {
       nsSVGTextFrame* textFrame = static_cast<nsSVGTextFrame*>(kid);
@@ -765,9 +764,9 @@ nsSVGOuterSVGFrame::GetCanvasTM()
     }
 
     gfxMatrix TM = viewBoxTM * zoomPanTM * gfxMatrix().Scale(devPxPerCSSPx, devPxPerCSSPx);
-    mCanvasTM = NS_NewSVGMatrix(TM);
+    mCanvasTM = new gfxMatrix(TM);
   }
-  return nsSVGUtils::ConvertSVGMatrixToThebes(mCanvasTM);
+  return *mCanvasTM;
 }
 
 //----------------------------------------------------------------------

@@ -156,6 +156,8 @@ nsAppShellService::DestroyHiddenWindow()
   return NS_OK;
 }
 
+PRTime gCreateTopLevelWindowTimestamp = 0;
+
 /*
  * Create a new top level window and display the given URL within it...
  */
@@ -170,6 +172,9 @@ nsAppShellService::CreateTopLevelWindow(nsIXULWindow *aParent,
 
 {
   nsresult rv;
+
+  if (!gCreateTopLevelWindowTimestamp)
+    gCreateTopLevelWindowTimestamp = PR_Now();
 
   nsWebShellWindow *newWindow = nsnull;
   rv = JustCreateTopWindow(aParent, aUrl,
@@ -451,7 +456,7 @@ nsAppShellService::GetHiddenWindowAndJSContext(nsIDOMWindow **aWindow,
                 if (!scriptContext) { rv = NS_ERROR_FAILURE; break; }
 
                 // 5. Get JSContext from the script context.
-                JSContext *jsContext = (JSContext*)scriptContext->GetNativeContext();
+                JSContext *jsContext = scriptContext->GetNativeContext();
                 if (!jsContext) { rv = NS_ERROR_FAILURE; break; }
 
                 // Now, give results to caller.

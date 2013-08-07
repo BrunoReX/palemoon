@@ -226,7 +226,7 @@ Section "Uninstall"
     ${un.DeleteRelativeProfiles} "Moonchild Productions\Pale Moon"
     RmDir "$APPDATA\Mozilla\Extensions\{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"
     RmDir "$APPDATA\Mozilla\Extensions"
-    RmDir "$APPDATA\Mozilla"
+    RmDir "$APPDATA\Moonchild Productions"
   ${EndIf}
 
   SetShellVarContext current  ; Set SHCTX to HKCU
@@ -334,7 +334,7 @@ Section "Uninstall"
   ${EndIf}
 
   ; Remove the updates directory for Vista and above
-  ${un.CleanUpdatesDir} "Moonchild Productions\Pale Moon"
+  ${un.CleanUpdatesDir} "Mozilla\Firefox"
 
   ; Remove files that may be left behind by the application in the
   ; VirtualStore directory.

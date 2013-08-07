@@ -281,6 +281,9 @@ public:
   // aEndTime is in microseconds.
   virtual void SetEndTime(PRInt64 aEndTime) = 0;
 
+  // Set the media fragment end time. aEndTime is in microseconds.
+  virtual void SetFragmentEndTime(PRInt64 aEndTime) = 0;
+
   // Functions used by assertions to ensure we're calling things
   // on the appropriate threads.
   virtual PRBool OnDecodeThread() const = 0;
@@ -436,6 +439,10 @@ class nsBuiltinDecoder : public nsMediaDecoder
   virtual PRBool IsSeekable();
 
   virtual nsresult GetSeekable(nsTimeRanges* aSeekable);
+
+  // Set the end time of the media resource. When playback reaches
+  // this point the media pauses. aTime is in seconds.
+  virtual void SetEndTime(double aTime);
 
   virtual Statistics GetStatistics();
 
@@ -597,6 +604,9 @@ class nsBuiltinDecoder : public nsMediaDecoder
   // Return the current decode state. The decoder monitor must be
   // obtained before calling this.
   nsDecoderStateMachine::State GetDecodeState() { return mDecoderStateMachine->GetState(); }
+
+  // Drop reference to state machine.  Only called during shutdown dance.
+  void ReleaseStateMachine() { mDecoderStateMachine = nsnull; }
 
 public:
   // Notifies the element that decoding has failed.

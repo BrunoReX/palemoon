@@ -306,9 +306,9 @@ nsXMLContentSink::DidBuildModel(PRBool aTerminated)
     mIsDocumentObserver = PR_FALSE;
 
     // Check for xslt-param and xslt-param-namespace PIs
-    PRUint32 i;
-    nsIContent* child;
-    for (i = 0; (child = mDocument->GetChildAt(i)); ++i) {
+    for (nsIContent* child = mDocument->GetFirstChild();
+         child;
+         child = child->GetNextSibling()) {
       if (child->IsNodeOfType(nsINode::ePROCESSING_INSTRUCTION)) {
         nsCOMPtr<nsIDOMProcessingInstruction> pi = do_QueryInterface(child);
         CheckXSLTParamPI(pi, mXSLTProcessor, mDocument);
@@ -647,14 +647,28 @@ nsXMLContentSink::CloseElement(nsIContent* aContent)
       }
     }
     // Look for <link rel="dns-prefetch" href="hostname">
+    // and look for <link rel="next" href="hostname"> like in HTML sink
     if (nodeInfo->Equals(nsGkAtoms::link, kNameSpaceID_XHTML)) {
       nsAutoString relVal;
       aContent->GetAttr(kNameSpaceID_None, nsGkAtoms::rel, relVal);
-      if (relVal.EqualsLiteral("dns-prefetch")) {
-        nsAutoString hrefVal;
-        aContent->GetAttr(kNameSpaceID_None, nsGkAtoms::href, hrefVal);
-        if (!hrefVal.IsEmpty()) {
-          PrefetchDNS(hrefVal);
+      if (!relVal.IsEmpty()) {
+        // XXX seems overkill to generate this string array
+        nsAutoTArray<nsString, 4> linkTypes;
+        nsStyleLinkElement::ParseLinkTypes(relVal, linkTypes);
+        PRBool hasPrefetch = linkTypes.Contains(NS_LITERAL_STRING("prefetch"));
+        if (hasPrefetch || linkTypes.Contains(NS_LITERAL_STRING("next"))) {
+          nsAutoString hrefVal;
+          aContent->GetAttr(kNameSpaceID_None, nsGkAtoms::href, hrefVal);
+          if (!hrefVal.IsEmpty()) {
+            PrefetchHref(hrefVal, aContent, hasPrefetch);
+          }
+        }
+        if (linkTypes.Contains(NS_LITERAL_STRING("dns-prefetch"))) {
+          nsAutoString hrefVal;
+          aContent->GetAttr(kNameSpaceID_None, nsGkAtoms::href, hrefVal);
+          if (!hrefVal.IsEmpty()) {
+            PrefetchDNS(hrefVal);
+          }
         }
       }
     }
@@ -1231,7 +1245,7 @@ nsXMLContentSink::HandleDoctypeDecl(const nsAString & aSubset,
 
   // Create a new doctype node
   nsCOMPtr<nsIDOMDocumentType> docType;
-  rv = NS_NewDOMDocumentType(getter_AddRefs(docType), mNodeInfoManager, nsnull,
+  rv = NS_NewDOMDocumentType(getter_AddRefs(docType), mNodeInfoManager,
                              name, aPublicId, aSystemId, aSubset);
   if (NS_FAILED(rv) || !docType) {
     return rv;

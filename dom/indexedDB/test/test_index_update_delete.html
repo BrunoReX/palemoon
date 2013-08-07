@@ -1,0 +1,264 @@
+﻿<!--
+  Any copyright is dedicated to the Public Domain.
+  http://creativecommons.org/publicdomain/zero/1.0/
+-->
+<html>
+<head>
+  <title>Indexed Database Property Test</title>
+
+  <script type="text/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+
+  <script type="text/javascript;version=1.7">
+    function testSteps()
+    {
+      let request = mozIndexedDB.open(window.location.pathname);
+      request.onerror = errorHandler;
+      request.onsuccess = grabEventAndContinueHandler;
+      let event = yield;
+
+      let db = event.target.result;
+      db.onerror = errorHandler;
+
+      db.setVersion("1").onsuccess = grabEventAndContinueHandler;
+      event = yield;
+      dump("OK\n");
+      for each (let objectStoreName in ["1", "2"]) {
+        let objectStore =
+          db.createObjectStore(objectStoreName, { keyPath: "id",
+                                                  autoIncrement: objectStoreName == "2" });
+
+        for (let i = 0; i < 10; i++) {
+          objectStore.add({ id: i, index: i });
+        }
+
+        for each (let indexName in ["1", "2"]) {
+          objectStore.createIndex(indexName, "index", { unique: indexName == "2" });
+        }
+
+        for (let i = 10; i < 20; i++) {
+          objectStore.add({ id: i, index: i });
+        }
+      }
+
+      event.target.transaction.oncomplete = continueToNextStep;
+      yield;
+
+      for each (let objectStoreName in ["1", "2"]) {
+        let objectStore = db.transaction(objectStoreName)
+                            .objectStore(objectStoreName);
+
+        let objectStoreCount = 0;
+        objectStore.openCursor().onsuccess = function(event) {
+          let cursor = event.target.result;
+          if (cursor) {
+            objectStoreCount++;
+            cursor.continue();
+          }
+          else {
+            continueToNextStep();
+          }
+        };
+        yield;
+
+        is(objectStoreCount, 20, "Correct number of entries in objectStore");
+
+        let indexCount = objectStoreCount;
+
+        for each (let indexName in ["1", "2"]) {
+          let index = db.transaction(objectStoreName)
+                        .objectStore(objectStoreName)
+                        .index(indexName);
+
+          let count = 0;
+          index.openKeyCursor().onsuccess = function(event) {
+            let cursor = event.target.result;
+            if (cursor) {
+              count++;
+              cursor.continue();
+            }
+            else {
+              continueToNextStep();
+            }
+          };
+          yield;
+
+          is(count, indexCount, "Correct number of entries in index");
+
+          index = db.transaction(objectStoreName, IDBTransaction.READ_WRITE)
+                    .objectStore(objectStoreName)
+                    .index(indexName);
+
+          let modifiedEntry = indexName == "2" ? 5 : 10;
+          let keyRange = IDBKeyRange.only(modifiedEntry);
+
+          let sawEntry = false;
+          index.openCursor(keyRange).onsuccess = function(event) {
+            let cursor = event.target.result;
+            if (cursor) {
+              sawEntry = true;
+              is(cursor.key, modifiedEntry, "Correct key");
+
+              cursor.value.index = indexName == "2" ? 30 : 35;
+              cursor.update(cursor.value).onsuccess = function(event) {
+                cursor.continue();
+              }
+            }
+            else {
+              continueToNextStep();
+            }
+          }
+          yield;
+
+          is(sawEntry, true, "Saw entry for key value " + modifiedEntry);
+
+          // Recount index. Shouldn't change.
+          index = db.transaction(objectStoreName)
+                    .objectStore(objectStoreName)
+                    .index(indexName);
+
+          count = 0;
+          index.openKeyCursor().onsuccess = function(event) {
+            let cursor = event.target.result;
+            if (cursor) {
+              count++;
+              cursor.continue();
+            }
+            else {
+              continueToNextStep();
+            }
+          };
+          yield;
+
+          is(count, indexCount, "Correct number of entries in index");
+
+          index = db.transaction(objectStoreName, IDBTransaction.READ_WRITE)
+                    .objectStore(objectStoreName)
+                    .index(indexName);
+
+          modifiedEntry = indexName == "2" ? 30 : 35;
+          keyRange = IDBKeyRange.only(modifiedEntry);
+
+          sawEntry = false;
+          index.openCursor(keyRange).onsuccess = function(event) {
+            let cursor = event.target.result;
+            if (cursor) {
+              sawEntry = true;
+              is(cursor.key, modifiedEntry, "Correct key");
+
+              delete cursor.value.index;
+              cursor.update(cursor.value).onsuccess = function(event) {
+                indexCount--;
+                cursor.continue();
+              }
+            }
+            else {
+              continueToNextStep();
+            }
+          }
+          yield;
+
+          is(sawEntry, true, "Saw entry for key value " + modifiedEntry);
+
+          // Recount objectStore. Should be unchanged.
+          objectStore = db.transaction(objectStoreName)
+                          .objectStore(objectStoreName);
+
+          count = 0;
+          objectStore.openCursor().onsuccess = function(event) {
+            let cursor = event.target.result;
+            if (cursor) {
+              count++;
+              cursor.continue();
+            }
+            else {
+              continueToNextStep();
+            }
+          };
+          yield;
+
+          is(count, objectStoreCount, "Correct number of entries in objectStore");
+
+          // Recount index. Should be one item less.
+          index = db.transaction(objectStoreName)
+                    .objectStore(objectStoreName)
+                    .index(indexName);
+
+          count = 0;
+          index.openKeyCursor().onsuccess = function(event) {
+            let cursor = event.target.result;
+            if (cursor) {
+              count++;
+              cursor.continue();
+            }
+            else {
+              continueToNextStep();
+            }
+          };
+          yield;
+
+          is(count, indexCount, "Correct number of entries in index");
+
+          objectStore = db.transaction(objectStoreName, IDBTransaction.READ_WRITE)
+                          .objectStore(objectStoreName);
+
+          modifiedEntry = objectStoreCount - 1;
+
+          objectStore.delete(modifiedEntry).onsuccess =
+            grabEventAndContinueHandler;
+          event = yield;
+
+          objectStoreCount--;
+          indexCount--;
+
+          objectStore = db.transaction(objectStoreName)
+                          .objectStore(objectStoreName);
+
+          count = 0;
+          objectStore.openCursor().onsuccess = function(event) {
+            let cursor = event.target.result;
+            if (cursor) {
+              count++;
+              cursor.continue();
+            }
+            else {
+              continueToNextStep();
+            }
+          };
+          yield;
+
+          is(count, objectStoreCount, "Correct number of entries in objectStore");
+
+          index = db.transaction(objectStoreName)
+                    .objectStore(objectStoreName)
+                    .index(indexName);
+
+          count = 0;
+          index.openKeyCursor().onsuccess = function(event) {
+            let cursor = event.target.result;
+            if (cursor) {
+              count++;
+              cursor.continue();
+            }
+            else {
+              continueToNextStep();
+            }
+          };
+          yield;
+
+          is(count, indexCount, "Correct number of entries in index");
+        }
+      }
+
+      finishTest();
+      yield;
+    }
+
+  </script>
+  <script type="text/javascript;version=1.7" src="helpers.js"></script>
+
+</head>
+
+<body onload="runTest();"></body>
+
+</html>

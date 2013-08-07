@@ -54,7 +54,7 @@
  * make dependency induced by this file should not prove painful.
  */
 
-#include "jspubtd.h"
+#include "jsapi.h"
 #include "jsstaticcheck.h"
 #include "jsutil.h"
 
@@ -85,14 +85,12 @@ typedef struct JSFunctionBox        JSFunctionBox;
 typedef struct JSObjectBox          JSObjectBox;
 typedef struct JSParseNode          JSParseNode;
 typedef struct JSProperty           JSProperty;
-typedef struct JSScript             JSScript;
 typedef struct JSSharpObjectMap     JSSharpObjectMap;
 typedef struct JSThread             JSThread;
 typedef struct JSTreeContext        JSTreeContext;
 typedef struct JSTryNote            JSTryNote;
 
 /* Friend "Advanced API" typedefs. */
-typedef struct JSAtomMap            JSAtomMap;
 typedef struct JSAtomState          JSAtomState;
 typedef struct JSCodeSpec           JSCodeSpec;
 typedef struct JSPrinter            JSPrinter;
@@ -124,10 +122,12 @@ class JSStaticAtom;
 class JSRope;
 class JSAtom;
 struct JSDefinition;
+class JSWrapper;
 
 namespace js {
 
 struct ArgumentsData;
+struct Class;
 
 class RegExp;
 class RegExpStatics;
@@ -135,7 +135,6 @@ class AutoStringRooter;
 class ExecuteArgsGuard;
 class InvokeFrameGuard;
 class InvokeArgsGuard;
-class InvokeSessionGuard;
 class StringBuffer;
 class TraceRecorder;
 struct TraceMonitor;
@@ -205,6 +204,11 @@ typedef HashMap<jsbytecode *, BreakpointSite *, DefaultHasher<jsbytecode *>, Run
     BreakpointSiteMap;
 class Debugger;
 class WatchpointMap;
+
+typedef JSNative             Native;
+typedef JSPropertyOp         PropertyOp;
+typedef JSStrictPropertyOp   StrictPropertyOp;
+typedef JSPropertyDescriptor PropertyDescriptor;
 
 } /* namespace js */
 
@@ -330,11 +334,6 @@ typedef struct JSDebugHooks {
  * If JSLookupPropOp succeeds and returns with *propp non-null, that pointer
  * may be passed as the prop parameter to a JSAttributesOp, as a short-cut
  * that bypasses id re-lookup.
- *
- * NB: successful return with non-null *propp means the implementation may
- * have locked *objp and added a reference count associated with *propp, so
- * callers should not risk deadlock by nesting or interleaving other lookups
- * or any obj-bearing ops before dropping *propp.
  */
 typedef JSBool
 (* JSLookupPropOp)(JSContext *cx, JSObject *obj, jsid id, JSObject **objp,

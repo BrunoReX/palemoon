@@ -50,14 +50,13 @@
 #include "jsobj.h"
 #include "jsprf.h"
 #include "jsutil.h"
-#include "jsvalue.h"
 #include "jsvector.h"
 
 using namespace js;
 
 #ifdef DEBUG
 
-
+
 /*** class HeapReverser **************************************************************************/
 
 /*
@@ -87,7 +86,8 @@ class HeapReverser : public JSTracer {
     class Node {
       public:
         Node() { }
-        Node(uint32 kind) : kind(kind), incoming(), marked(false) { }
+        Node(JSGCTraceKind kind)
+          : kind(kind), incoming(), marked(false) { }
 
         /*
          * Move constructor and move assignment. These allow us to store our
@@ -103,7 +103,7 @@ class HeapReverser : public JSTracer {
         }
 
         /* What kind of Cell this is. */
-        uint32 kind;
+        JSGCTraceKind kind;
 
         /*
          * A vector of this Cell's incoming edges.
@@ -199,9 +199,9 @@ class HeapReverser : public JSTracer {
 
     /* A work item in the stack of nodes whose children we need to traverse. */
     struct Child {
-        Child(void *cell, uint32 kind) : cell(cell), kind(kind) { }
+        Child(void *cell, JSGCTraceKind kind) : cell(cell), kind(kind) { }
         void *cell;
-        uint32 kind;
+        JSGCTraceKind kind;
     };
 
     /*
@@ -214,7 +214,7 @@ class HeapReverser : public JSTracer {
     void *parent;
 
     /* Traverse an edge. */
-    bool traverseEdge(void *cell, uint32 kind);
+    bool traverseEdge(void *cell, JSGCTraceKind kind);
 
     /*
      * JS_TraceRuntime and JS_TraceChildren don't propagate error returns,
@@ -225,14 +225,14 @@ class HeapReverser : public JSTracer {
     bool traversalStatus;
 
     /* Static member function wrapping 'traverseEdge'. */
-    static void traverseEdgeWithThis(JSTracer *tracer, void *cell, uint32 kind) {
+    static void traverseEdgeWithThis(JSTracer *tracer, void *cell, JSGCTraceKind kind) {
         HeapReverser *reverser = static_cast<HeapReverser *>(tracer);
         reverser->traversalStatus = reverser->traverseEdge(cell, kind);
     }
 };
 
 bool
-HeapReverser::traverseEdge(void *cell, uint32 kind) {
+HeapReverser::traverseEdge(void *cell, JSGCTraceKind kind) {
     /* Capture this edge before the JSTracer members get overwritten. */
     char *edgeDescription = getEdgeDescription();
     if (!edgeDescription)
@@ -367,12 +367,12 @@ class ReferenceFinder {
             JSObject *object = static_cast<JSObject *>(cell);
 
             /* Certain classes of object are for internal use only. */
-            JSClass *clasp = JS_GET_CLASS(context, object);
-            if (clasp == Jsvalify(&js_BlockClass) ||
-                clasp == Jsvalify(&js_CallClass) ||
-                clasp == Jsvalify(&js_WithClass) ||
-                clasp == Jsvalify(&js_DeclEnvClass))
+            if (object->isBlock() ||
+                object->isCall() ||
+                object->isWith() ||
+                object->isDeclEnv()) {
                 return JSVAL_VOID;
+            }
 
             /* Internal function objects should also not be revealed. */
             if (JS_ObjectIsFunction(context, object) && IsInternalFunctionObject(object))
@@ -466,7 +466,7 @@ ReferenceFinder::Path::computeName(JSContext *cx)
 bool
 ReferenceFinder::addReferrer(jsval referrer, Path *path)
 {
-    if (!context->compartment->wrap(context, Valueify(&referrer)))
+    if (!context->compartment->wrap(context, &referrer))
         return NULL;
 
     char *pathName = path->computeName(context);

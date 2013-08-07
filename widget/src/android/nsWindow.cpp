@@ -95,8 +95,8 @@ class ContentCreationNotifier : public nsIObserver
                        const PRUnichar* aData)
     {
         if (!strcmp(aTopic, "ipc:content-created")) {
-            ContentParent *cp = ContentParent::GetSingleton(PR_FALSE);
-            NS_ABORT_IF_FALSE(cp, "Must have content process if notified of its creation");
+            nsCOMPtr<nsIObserver> cpo = do_QueryInterface(aSubject);
+            ContentParent* cp = static_cast<ContentParent*>(cpo.get());
             unused << cp->SendScreenSizeChanged(gAndroidScreenBounds);
         } else if (!strcmp(aTopic, "xpcom-shutdown")) {
             nsCOMPtr<nsIObserverService>
@@ -128,6 +128,8 @@ static nsTArray<nsWindow*> gTopLevelWindows;
 static nsRefPtr<gl::GLContext> sGLContext;
 static bool sFailedToCreateGLContext = false;
 static bool sValidSurface;
+static bool sSurfaceExists = false;
+static void *sNativeWindow = nsnull;
 
 // Multitouch swipe thresholds in inches
 static const double SWIPE_MAX_PINCH_DELTA_INCHES = 0.4;
@@ -373,7 +375,7 @@ nsWindow::Show(PRBool aState)
         nsAppShell::gAppShell->PostEvent(new AndroidGeckoEvent(-1, -1, -1, -1));
     }
 
-#ifdef ANDROID_DEBUG_WIDGET
+#ifdef DEBUG_ANDROID_WIDGET
     DumpWindows();
 #endif
 
@@ -447,14 +449,6 @@ nsWindow::Resize(PRInt32 aX,
     ALOG("nsWindow[%p]::Resize [%d %d %d %d] (repaint %d)", (void*)this, aX, aY, aWidth, aHeight, aRepaint);
 
     PRBool needSizeDispatch = aWidth != mBounds.width || aHeight != mBounds.height;
-
-    if (IsTopLevel()) {
-        ALOG("... ignoring Resize sizes on toplevel window");
-        aX = 0;
-        aY = 0;
-        aWidth = gAndroidBounds.width;
-        aHeight = gAndroidBounds.height;
-    }
 
     mBounds.x = aX;
     mBounds.y = aY;
@@ -586,6 +580,8 @@ nsWindow::BringToFront()
     nsGUIEvent event(PR_TRUE, NS_ACTIVATE, this);
     DispatchEvent(&event);
 
+    // force a window resize
+    nsAppShell::gAppShell->ResendLastResizeEvent(this);
     nsAppShell::gAppShell->PostEvent(new AndroidGeckoEvent(-1, -1, -1, -1));
 }
 
@@ -739,11 +735,19 @@ nsWindow::OnGlobalAndroidEvent(AndroidGeckoEvent *ae)
         return;
 
     switch (ae->Type()) {
+        case AndroidGeckoEvent::FORCED_RESIZE:
+            win->mBounds.width = 0;
+            win->mBounds.height = 0;
+            // also resize the children
+            for (PRUint32 i = 0; i < win->mChildren.Length(); i++) {
+                win->mChildren[i]->mBounds.width = 0;
+                win->mChildren[i]->mBounds.height = 0;
+            }
         case AndroidGeckoEvent::SIZE_CHANGED: {
             int nw = ae->P0().x;
             int nh = ae->P0().y;
 
-            if (nw != gAndroidBounds.width ||
+            if (ae->Type() == AndroidGeckoEvent::FORCED_RESIZE || nw != gAndroidBounds.width ||
                 nh != gAndroidBounds.height) {
 
                 gAndroidBounds.width = nw;
@@ -772,9 +776,10 @@ nsWindow::OnGlobalAndroidEvent(AndroidGeckoEvent *ae)
                 break;
 
             // Tell the content process the new screen size.
-            ContentParent *cp = ContentParent::GetSingleton(PR_FALSE);
-            if (cp)
-                unused << cp->SendScreenSizeChanged(gAndroidScreenBounds);
+            nsTArray<ContentParent*> cplist;
+            ContentParent::GetAll(cplist);
+            for (PRUint32 i = 0; i < cplist.Length(); ++i)
+                unused << cplist[i]->SendScreenSizeChanged(gAndroidScreenBounds);
 
             if (gContentCreationNotifier)
                 break;
@@ -841,9 +846,29 @@ nsWindow::OnGlobalAndroidEvent(AndroidGeckoEvent *ae)
             break;
 
         case AndroidGeckoEvent::SURFACE_CREATED:
+            sSurfaceExists = true;
+
+            if (AndroidBridge::Bridge()->HasNativeWindowAccess()) {
+                AndroidGeckoSurfaceView& sview(AndroidBridge::Bridge()->SurfaceView());
+                jobject surface = sview.GetSurface();
+                if (surface) {
+                    sNativeWindow = AndroidBridge::Bridge()->AcquireNativeWindow(surface);
+                    if (sNativeWindow) {
+                        AndroidBridge::Bridge()->SetNativeWindowFormat(sNativeWindow, AndroidBridge::WINDOW_FORMAT_RGB_565);
+                    }
+                }
+            }
             break;
 
         case AndroidGeckoEvent::SURFACE_DESTROYED:
+            if (sGLContext && sValidSurface) {
+                sGLContext->ReleaseSurface();
+            }
+            if (sNativeWindow) {
+                AndroidBridge::Bridge()->ReleaseNativeWindow(sNativeWindow);
+                sNativeWindow = nsnull;
+            }
+            sSurfaceExists = false;
             sValidSurface = false;
             break;
 
@@ -967,6 +992,11 @@ nsWindow::DrawTo(gfxASurface *targetSurface)
 void
 nsWindow::OnDraw(AndroidGeckoEvent *ae)
 {
+  
+    if (!sSurfaceExists) {
+        return;
+    }
+
     if (!IsTopLevel()) {
         ALOG("##### redraw for window %p, which is not a toplevel window -- sending to toplevel!", (void*) this);
         DumpWindows();
@@ -988,7 +1018,35 @@ nsWindow::OnDraw(AndroidGeckoEvent *ae)
     AndroidBridge::Bridge()->HideProgressDialogOnce();
 
     if (GetLayerManager(nsnull)->GetBackendType() == LayerManager::LAYERS_BASIC) {
-        if (AndroidBridge::Bridge()->HasNativeBitmapAccess()) {
+        if (sNativeWindow) {
+            unsigned char *bits;
+            int width, height, format, stride;
+            if (!AndroidBridge::Bridge()->LockWindow(sNativeWindow, &bits, &width, &height, &format, &stride)) {
+                ALOG("failed to lock buffer - skipping draw");
+                return;
+            }
+
+            if (!bits || format != AndroidBridge::WINDOW_FORMAT_RGB_565 ||
+                width != mBounds.width || height != mBounds.height) {
+
+                ALOG("surface is not expected dimensions or format - skipping draw");
+                AndroidBridge::Bridge()->UnlockWindow(sNativeWindow);
+                return;
+            }
+
+            nsRefPtr<gfxImageSurface> targetSurface =
+                new gfxImageSurface(bits,
+                                    gfxIntSize(mBounds.width, mBounds.height),
+                                    stride * 2,
+                                    gfxASurface::ImageFormatRGB16_565);
+            if (targetSurface->CairoStatus()) {
+                ALOG("### Failed to create a valid surface from the bitmap");
+            } else {
+                DrawTo(targetSurface);
+            }
+
+            AndroidBridge::Bridge()->UnlockWindow(sNativeWindow);
+        } else if (AndroidBridge::Bridge()->HasNativeBitmapAccess()) {
             jobject bitmap = sview.GetSoftwareDrawBitmap();
             if (!bitmap) {
                 ALOG("no bitmap to draw into - skipping draw");
@@ -1046,6 +1104,10 @@ nsWindow::OnDraw(AndroidGeckoEvent *ae)
         }
     } else {
         int drawType = sview.BeginDrawing();
+
+        if (drawType == AndroidGeckoSurfaceView::DRAW_DISABLED) {
+            return;
+        }
 
         if (drawType == AndroidGeckoSurfaceView::DRAW_ERROR) {
             ALOG("##### BeginDrawing failed!");
@@ -1569,13 +1631,13 @@ nsWindow::OnKeyEvent(AndroidGeckoEvent *ae)
     if (status == nsEventStatus_eConsumeNoDefault) {
         pressEvent.flags |= NS_EVENT_FLAG_NO_DEFAULT;
     }
-#ifdef ANDROID_DEBUG_WIDGET
+#ifdef DEBUG_ANDROID_WIDGET
     __android_log_print(ANDROID_LOG_INFO, "Gecko", "Dispatching key pressEvent with keyCode %d charCode %d shift %d alt %d sym/ctrl %d metamask %d", pressEvent.keyCode, pressEvent.charCode, pressEvent.isShift, pressEvent.isAlt, pressEvent.isControl, ae->MetaState());
 #endif
     DispatchEvent(&pressEvent);
 }
 
-#ifdef ANDROID_DEBUG_IME
+#ifdef DEBUG_ANDROID_IME
 #define ALOGIME(args...) ALOG(args)
 #else
 #define ALOGIME(args...)
@@ -1614,12 +1676,15 @@ nsWindow::OnIMEEvent(AndroidGeckoEvent *ae)
             ALOGIME("IME: IME_COMPOSITION_END");
             nsCompositionEvent event(PR_TRUE, NS_COMPOSITION_END, this);
             InitEvent(event, nsnull);
+            event.data = mIMELastDispatchedComposingText;
+            mIMELastDispatchedComposingText.Truncate();
             DispatchEvent(&event);
         }
         return;
     case AndroidGeckoEvent::IME_COMPOSITION_BEGIN:
         {
             ALOGIME("IME: IME_COMPOSITION_BEGIN");
+            mIMELastDispatchedComposingText.Truncate();
             nsCompositionEvent event(PR_TRUE, NS_COMPOSITION_START, this);
             InitEvent(event, nsnull);
             DispatchEvent(&event);
@@ -1640,6 +1705,20 @@ nsWindow::OnIMEEvent(AndroidGeckoEvent *ae)
             event.theText.Assign(ae->Characters());
             event.rangeArray = mIMERanges.Elements();
             event.rangeCount = mIMERanges.Length();
+
+            if (mIMEComposing &&
+                event.theText != mIMELastDispatchedComposingText) {
+                nsCompositionEvent compositionUpdate(PR_TRUE,
+                                                     NS_COMPOSITION_UPDATE,
+                                                     this);
+                InitEvent(compositionUpdate, nsnull);
+                compositionUpdate.data = event.theText;
+                mIMELastDispatchedComposingText = event.theText;
+                DispatchEvent(&compositionUpdate);
+                // XXX We must check whether this widget is destroyed or not
+                //     before dispatching next event.  However, Android's
+                //     nsWindow has never checked it...
+            }
 
             ALOGIME("IME: IME_SET_TEXT: l=%u, r=%u",
                 event.theText.Length(), mIMERanges.Length());

@@ -232,7 +232,6 @@
            noautohide="true"
            titlebar="normal"
            close="true"
-           onpopuphiding="InspectorUI.closeInspectorUI();"
            label="&inspectPanelTitle.label;">
       <hbox id="tree-panel-resizer-box" align="end">
         <spacer flex="1" />
@@ -766,7 +765,7 @@
              aria-label="&tabsToolbar.label;"
              context="toolbar-context-menu"
 #ifdef APPMENU_ON_TABBAR
-             defaultset="appmenu-toolbar-button,tabbrowser-tabs,new-tab-button,alltabs-button,tabs-closebutton"
+             defaultset="appmenu-toolbar-button,tabbrowser-tabs,new-tab-button,tabview-button,alltabs-button,tabs-closebutton"
 #else
              defaultset="tabbrowser-tabs,new-tab-button,tabview-button,alltabs-button,tabs-closebutton"
 #endif
@@ -959,7 +958,7 @@
                   contentcontextmenu="contentAreaContextMenu"
                   autocompletepopup="PopupAutoComplete"
                   onclick="return contentAreaClick(event, false);"/>
-      <statuspanel id="statusbar-display" label=""/>
+      <statuspanel id="statusbar-display" inactive="true"/>
     </vbox>
     <vbox id="browser-border-end" hidden="true" layer="true"/>
   </hbox>

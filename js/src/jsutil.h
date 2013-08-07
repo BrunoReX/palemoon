@@ -49,6 +49,25 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef __cplusplus
+
+/* The public JS engine namespace. */
+namespace JS {}
+
+/* The mozilla-shared reusable template/utility namespace. */
+namespace mozilla {}
+
+/* The private JS engine namespace. */
+namespace js {
+
+/* The private namespace is a superset of the public/shared namespaces. */
+using namespace JS;
+using namespace mozilla;
+
+}  /* namespace js */
+
+#endif  /* defined __cplusplus */
+
 JS_BEGIN_EXTERN_C
 
 #define JS_CRASH_UNLESS(__cond)                                                 \
@@ -60,6 +79,10 @@ JS_BEGIN_EXTERN_C
     JS_END_MACRO
 
 #define JS_FREE_PATTERN 0xDA
+
+#ifdef DEBUG
+#define JS_CRASH_DIAGNOSTICS 1
+#endif
 
 #ifdef JS_CRASH_DIAGNOSTICS
 
@@ -262,6 +285,13 @@ static JS_INLINE void js_free(void* p) {
     free(p);
 }
 #endif/* JS_USE_CUSTOM_ALLOCATOR */
+
+/* 
+ * This signature is for malloc_usable_size-like functions used to measure
+ * memory usage.  A return value of zero indicates that the size is unknown,
+ * and so a fall-back computation should be done for the size.
+ */
+typedef size_t(*JSUsableSizeFun)(void *p);
 
 JS_END_EXTERN_C
 
@@ -473,8 +503,6 @@ JS_END_EXTERN_C
  * be used, though this is undesirable.
  */
 namespace js {
-/* Import common mfbt declarations into "js". */
-using namespace mozilla;
 
 class OffTheBooks {
 public:
@@ -812,6 +840,9 @@ class MoveRef {
 
 template<typename T>
 MoveRef<T> Move(T &t) { return MoveRef<T>(t); }
+
+template<typename T>
+MoveRef<T> Move(const T &t) { return MoveRef<T>(const_cast<T &>(t)); }
 
 } /* namespace js */
 

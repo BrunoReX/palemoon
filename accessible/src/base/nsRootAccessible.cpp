@@ -330,7 +330,7 @@ nsRootAccessible::FireAccessibleFocusEvent(nsAccessible* aFocusAccessible,
   if (content) {
     nsAutoString id;
     if (content->GetAttr(kNameSpaceID_None,
-                         nsAccessibilityAtoms::aria_activedescendant, id)) {
+                         nsGkAtoms::aria_activedescendant, id)) {
       nsIDocument* DOMDoc = content->GetOwnerDoc();
       nsIContent* activeDescendantContent = DOMDoc->GetElementById(id);
 
@@ -393,10 +393,10 @@ nsRootAccessible::FireAccessibleFocusEvent(nsAccessible* aFocusAccessible,
 
   // Coalesce focus events from the same document, because DOM focus event might
   // be fired for the document node and then for the focused DOM element.
-  focusDocument->FireDelayedAccessibleEvent(nsIAccessibleEvent::EVENT_FOCUS,
-                                            focusNode,
-                                            AccEvent::eCoalesceFromSameDocument,
-                                            aIsFromUserInput);
+  nsRefPtr<AccEvent> focusEvent =
+    new AccEvent(nsIAccessibleEvent::EVENT_FOCUS, focusAccessible,
+                 aIsFromUserInput, AccEvent::eCoalesceFromSameDocument);
+  focusDocument->FireDelayedAccessibleEvent(focusEvent);
 }
 
 void
@@ -519,8 +519,8 @@ nsRootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
 
 #ifdef MOZ_XUL
   PRBool isTree = targetContent ?
-    targetContent->NodeInfo()->Equals(nsAccessibilityAtoms::tree,
-                                      kNameSpaceID_XUL) : PR_FALSE;
+    targetContent->NodeInfo()->Equals(nsGkAtoms::tree, kNameSpaceID_XUL) :
+    PR_FALSE;
 
   if (isTree) {
     nsRefPtr<nsXULTreeAccessible> treeAcc = do_QueryObject(accessible);

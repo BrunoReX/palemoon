@@ -48,7 +48,7 @@
 #include "nsIWidget.h"
 #include "nsThemeConstants.h"  // For system widget appearance types
 
-#include "nsILookAndFeel.h" // for system colors
+#include "mozilla/LookAndFeel.h" // for system colors
 
 #include "nsString.h"
 #include "nsReadableUtils.h"
@@ -70,6 +70,7 @@ const char* const kCSSRawProperties[] = {
 #undef CSS_PROP_SHORTHAND
 };
 
+using namespace mozilla;
 
 static PRInt32 gTableRefCount;
 static nsStaticCaseInsensitiveNameTable* gPropertyTable;
@@ -352,7 +353,8 @@ nsCSSProps::LookupProperty(const nsACString& aProperty)
     }
   }
   
-  if (res == eCSSProperty_perspective || res == eCSSProperty_perspective_origin || res == eCSSProperty_backface_visibility) {
+  if (res == eCSSProperty_perspective || res == eCSSProperty_perspective_origin || 
+      res == eCSSProperty_backface_visibility || res == eCSSProperty_transform_style) {
     return eCSSProperty_UNKNOWN;
   }
 
@@ -378,7 +380,8 @@ nsCSSProps::LookupProperty(const nsAString& aProperty)
     }
   }
   
-  if (res == eCSSProperty_perspective || res == eCSSProperty_perspective_origin || res == eCSSProperty_backface_visibility) {
+  if (res == eCSSProperty_perspective || res == eCSSProperty_perspective_origin || 
+      res == eCSSProperty_backface_visibility || res == eCSSProperty_transform_style) {
     return eCSSProperty_UNKNOWN;
   }
 
@@ -596,6 +599,11 @@ const PRInt32 nsCSSProps::kBackfaceVisibilityKTable[] = {
   eCSSKeyword_hidden, NS_STYLE_BACKFACE_VISIBILITY_HIDDEN
 };
 
+const PRInt32 nsCSSProps::kTransformStyleKTable[] = {
+  eCSSKeyword_flat, NS_STYLE_TRANSFORM_STYLE_FLAT,
+  eCSSKeyword_preserve_3d, NS_STYLE_TRANSFORM_STYLE_PRESERVE_3D
+};
+
 const PRInt32 nsCSSProps::kBackgroundAttachmentKTable[] = {
   eCSSKeyword_fixed, NS_STYLE_BG_ATTACHMENT_FIXED,
   eCSSKeyword_scroll, NS_STYLE_BG_ATTACHMENT_SCROLL,
@@ -721,73 +729,73 @@ const PRInt32 nsCSSProps::kClearKTable[] = {
 };
 
 const PRInt32 nsCSSProps::kColorKTable[] = {
-  eCSSKeyword_activeborder, nsILookAndFeel::eColor_activeborder,
-  eCSSKeyword_activecaption, nsILookAndFeel::eColor_activecaption,
-  eCSSKeyword_appworkspace, nsILookAndFeel::eColor_appworkspace,
-  eCSSKeyword_background, nsILookAndFeel::eColor_background,
-  eCSSKeyword_buttonface, nsILookAndFeel::eColor_buttonface,
-  eCSSKeyword_buttonhighlight, nsILookAndFeel::eColor_buttonhighlight,
-  eCSSKeyword_buttonshadow, nsILookAndFeel::eColor_buttonshadow,
-  eCSSKeyword_buttontext, nsILookAndFeel::eColor_buttontext,
-  eCSSKeyword_captiontext, nsILookAndFeel::eColor_captiontext,
-  eCSSKeyword_graytext, nsILookAndFeel::eColor_graytext,
-  eCSSKeyword_highlight, nsILookAndFeel::eColor_highlight,
-  eCSSKeyword_highlighttext, nsILookAndFeel::eColor_highlighttext,
-  eCSSKeyword_inactiveborder, nsILookAndFeel::eColor_inactiveborder,
-  eCSSKeyword_inactivecaption, nsILookAndFeel::eColor_inactivecaption,
-  eCSSKeyword_inactivecaptiontext, nsILookAndFeel::eColor_inactivecaptiontext,
-  eCSSKeyword_infobackground, nsILookAndFeel::eColor_infobackground,
-  eCSSKeyword_infotext, nsILookAndFeel::eColor_infotext,
-  eCSSKeyword_menu, nsILookAndFeel::eColor_menu,
-  eCSSKeyword_menutext, nsILookAndFeel::eColor_menutext,
-  eCSSKeyword_scrollbar, nsILookAndFeel::eColor_scrollbar,
-  eCSSKeyword_threeddarkshadow, nsILookAndFeel::eColor_threeddarkshadow,
-  eCSSKeyword_threedface, nsILookAndFeel::eColor_threedface,
-  eCSSKeyword_threedhighlight, nsILookAndFeel::eColor_threedhighlight,
-  eCSSKeyword_threedlightshadow, nsILookAndFeel::eColor_threedlightshadow,
-  eCSSKeyword_threedshadow, nsILookAndFeel::eColor_threedshadow,
-  eCSSKeyword_window, nsILookAndFeel::eColor_window,
-  eCSSKeyword_windowframe, nsILookAndFeel::eColor_windowframe,
-  eCSSKeyword_windowtext, nsILookAndFeel::eColor_windowtext,
+  eCSSKeyword_activeborder, LookAndFeel::eColorID_activeborder,
+  eCSSKeyword_activecaption, LookAndFeel::eColorID_activecaption,
+  eCSSKeyword_appworkspace, LookAndFeel::eColorID_appworkspace,
+  eCSSKeyword_background, LookAndFeel::eColorID_background,
+  eCSSKeyword_buttonface, LookAndFeel::eColorID_buttonface,
+  eCSSKeyword_buttonhighlight, LookAndFeel::eColorID_buttonhighlight,
+  eCSSKeyword_buttonshadow, LookAndFeel::eColorID_buttonshadow,
+  eCSSKeyword_buttontext, LookAndFeel::eColorID_buttontext,
+  eCSSKeyword_captiontext, LookAndFeel::eColorID_captiontext,
+  eCSSKeyword_graytext, LookAndFeel::eColorID_graytext,
+  eCSSKeyword_highlight, LookAndFeel::eColorID_highlight,
+  eCSSKeyword_highlighttext, LookAndFeel::eColorID_highlighttext,
+  eCSSKeyword_inactiveborder, LookAndFeel::eColorID_inactiveborder,
+  eCSSKeyword_inactivecaption, LookAndFeel::eColorID_inactivecaption,
+  eCSSKeyword_inactivecaptiontext, LookAndFeel::eColorID_inactivecaptiontext,
+  eCSSKeyword_infobackground, LookAndFeel::eColorID_infobackground,
+  eCSSKeyword_infotext, LookAndFeel::eColorID_infotext,
+  eCSSKeyword_menu, LookAndFeel::eColorID_menu,
+  eCSSKeyword_menutext, LookAndFeel::eColorID_menutext,
+  eCSSKeyword_scrollbar, LookAndFeel::eColorID_scrollbar,
+  eCSSKeyword_threeddarkshadow, LookAndFeel::eColorID_threeddarkshadow,
+  eCSSKeyword_threedface, LookAndFeel::eColorID_threedface,
+  eCSSKeyword_threedhighlight, LookAndFeel::eColorID_threedhighlight,
+  eCSSKeyword_threedlightshadow, LookAndFeel::eColorID_threedlightshadow,
+  eCSSKeyword_threedshadow, LookAndFeel::eColorID_threedshadow,
+  eCSSKeyword_window, LookAndFeel::eColorID_window,
+  eCSSKeyword_windowframe, LookAndFeel::eColorID_windowframe,
+  eCSSKeyword_windowtext, LookAndFeel::eColorID_windowtext,
   eCSSKeyword__moz_activehyperlinktext, NS_COLOR_MOZ_ACTIVEHYPERLINKTEXT,
-  eCSSKeyword__moz_buttondefault, nsILookAndFeel::eColor__moz_buttondefault,
-  eCSSKeyword__moz_buttonhoverface, nsILookAndFeel::eColor__moz_buttonhoverface,
-  eCSSKeyword__moz_buttonhovertext, nsILookAndFeel::eColor__moz_buttonhovertext,
-  eCSSKeyword__moz_cellhighlight, nsILookAndFeel::eColor__moz_cellhighlight,
-  eCSSKeyword__moz_cellhighlighttext, nsILookAndFeel::eColor__moz_cellhighlighttext,
-  eCSSKeyword__moz_eventreerow, nsILookAndFeel::eColor__moz_eventreerow,
-  eCSSKeyword__moz_field, nsILookAndFeel::eColor__moz_field,
-  eCSSKeyword__moz_fieldtext, nsILookAndFeel::eColor__moz_fieldtext,
+  eCSSKeyword__moz_buttondefault, LookAndFeel::eColorID__moz_buttondefault,
+  eCSSKeyword__moz_buttonhoverface, LookAndFeel::eColorID__moz_buttonhoverface,
+  eCSSKeyword__moz_buttonhovertext, LookAndFeel::eColorID__moz_buttonhovertext,
+  eCSSKeyword__moz_cellhighlight, LookAndFeel::eColorID__moz_cellhighlight,
+  eCSSKeyword__moz_cellhighlighttext, LookAndFeel::eColorID__moz_cellhighlighttext,
+  eCSSKeyword__moz_eventreerow, LookAndFeel::eColorID__moz_eventreerow,
+  eCSSKeyword__moz_field, LookAndFeel::eColorID__moz_field,
+  eCSSKeyword__moz_fieldtext, LookAndFeel::eColorID__moz_fieldtext,
   eCSSKeyword__moz_default_background_color, NS_COLOR_MOZ_DEFAULT_BACKGROUND_COLOR,
   eCSSKeyword__moz_default_color, NS_COLOR_MOZ_DEFAULT_COLOR,
-  eCSSKeyword__moz_dialog, nsILookAndFeel::eColor__moz_dialog,
-  eCSSKeyword__moz_dialogtext, nsILookAndFeel::eColor__moz_dialogtext,
-  eCSSKeyword__moz_dragtargetzone, nsILookAndFeel::eColor__moz_dragtargetzone,
+  eCSSKeyword__moz_dialog, LookAndFeel::eColorID__moz_dialog,
+  eCSSKeyword__moz_dialogtext, LookAndFeel::eColorID__moz_dialogtext,
+  eCSSKeyword__moz_dragtargetzone, LookAndFeel::eColorID__moz_dragtargetzone,
   eCSSKeyword__moz_hyperlinktext, NS_COLOR_MOZ_HYPERLINKTEXT,
-  eCSSKeyword__moz_html_cellhighlight, nsILookAndFeel::eColor__moz_html_cellhighlight,
-  eCSSKeyword__moz_html_cellhighlighttext, nsILookAndFeel::eColor__moz_html_cellhighlighttext,
-  eCSSKeyword__moz_mac_chrome_active, nsILookAndFeel::eColor__moz_mac_chrome_active,
-  eCSSKeyword__moz_mac_chrome_inactive, nsILookAndFeel::eColor__moz_mac_chrome_inactive,
-  eCSSKeyword__moz_mac_focusring, nsILookAndFeel::eColor__moz_mac_focusring,
-  eCSSKeyword__moz_mac_menuselect, nsILookAndFeel::eColor__moz_mac_menuselect,
-  eCSSKeyword__moz_mac_menushadow, nsILookAndFeel::eColor__moz_mac_menushadow,
-  eCSSKeyword__moz_mac_menutextdisable, nsILookAndFeel::eColor__moz_mac_menutextdisable,
-  eCSSKeyword__moz_mac_menutextselect, nsILookAndFeel::eColor__moz_mac_menutextselect,
-  eCSSKeyword__moz_mac_disabledtoolbartext, nsILookAndFeel::eColor__moz_mac_disabledtoolbartext,
-  eCSSKeyword__moz_mac_alternateprimaryhighlight, nsILookAndFeel::eColor__moz_mac_alternateprimaryhighlight,
-  eCSSKeyword__moz_mac_secondaryhighlight, nsILookAndFeel::eColor__moz_mac_secondaryhighlight,
-  eCSSKeyword__moz_menuhover, nsILookAndFeel::eColor__moz_menuhover,
-  eCSSKeyword__moz_menuhovertext, nsILookAndFeel::eColor__moz_menuhovertext,
-  eCSSKeyword__moz_menubartext, nsILookAndFeel::eColor__moz_menubartext,
-  eCSSKeyword__moz_menubarhovertext, nsILookAndFeel::eColor__moz_menubarhovertext,
-  eCSSKeyword__moz_oddtreerow, nsILookAndFeel::eColor__moz_oddtreerow,
+  eCSSKeyword__moz_html_cellhighlight, LookAndFeel::eColorID__moz_html_cellhighlight,
+  eCSSKeyword__moz_html_cellhighlighttext, LookAndFeel::eColorID__moz_html_cellhighlighttext,
+  eCSSKeyword__moz_mac_chrome_active, LookAndFeel::eColorID__moz_mac_chrome_active,
+  eCSSKeyword__moz_mac_chrome_inactive, LookAndFeel::eColorID__moz_mac_chrome_inactive,
+  eCSSKeyword__moz_mac_focusring, LookAndFeel::eColorID__moz_mac_focusring,
+  eCSSKeyword__moz_mac_menuselect, LookAndFeel::eColorID__moz_mac_menuselect,
+  eCSSKeyword__moz_mac_menushadow, LookAndFeel::eColorID__moz_mac_menushadow,
+  eCSSKeyword__moz_mac_menutextdisable, LookAndFeel::eColorID__moz_mac_menutextdisable,
+  eCSSKeyword__moz_mac_menutextselect, LookAndFeel::eColorID__moz_mac_menutextselect,
+  eCSSKeyword__moz_mac_disabledtoolbartext, LookAndFeel::eColorID__moz_mac_disabledtoolbartext,
+  eCSSKeyword__moz_mac_alternateprimaryhighlight, LookAndFeel::eColorID__moz_mac_alternateprimaryhighlight,
+  eCSSKeyword__moz_mac_secondaryhighlight, LookAndFeel::eColorID__moz_mac_secondaryhighlight,
+  eCSSKeyword__moz_menuhover, LookAndFeel::eColorID__moz_menuhover,
+  eCSSKeyword__moz_menuhovertext, LookAndFeel::eColorID__moz_menuhovertext,
+  eCSSKeyword__moz_menubartext, LookAndFeel::eColorID__moz_menubartext,
+  eCSSKeyword__moz_menubarhovertext, LookAndFeel::eColorID__moz_menubarhovertext,
+  eCSSKeyword__moz_oddtreerow, LookAndFeel::eColorID__moz_oddtreerow,
   eCSSKeyword__moz_visitedhyperlinktext, NS_COLOR_MOZ_VISITEDHYPERLINKTEXT,
   eCSSKeyword_currentcolor, NS_COLOR_CURRENTCOLOR,
-  eCSSKeyword__moz_win_mediatext, nsILookAndFeel::eColor__moz_win_mediatext,
-  eCSSKeyword__moz_win_communicationstext, nsILookAndFeel::eColor__moz_win_communicationstext,
-  eCSSKeyword__moz_nativehyperlinktext, nsILookAndFeel::eColor__moz_nativehyperlinktext,
-  eCSSKeyword__moz_comboboxtext, nsILookAndFeel::eColor__moz_comboboxtext,
-  eCSSKeyword__moz_combobox, nsILookAndFeel::eColor__moz_combobox,
+  eCSSKeyword__moz_win_mediatext, LookAndFeel::eColorID__moz_win_mediatext,
+  eCSSKeyword__moz_win_communicationstext, LookAndFeel::eColorID__moz_win_communicationstext,
+  eCSSKeyword__moz_nativehyperlinktext, LookAndFeel::eColorID__moz_nativehyperlinktext,
+  eCSSKeyword__moz_comboboxtext, LookAndFeel::eColorID__moz_comboboxtext,
+  eCSSKeyword__moz_combobox, LookAndFeel::eColorID__moz_combobox,
   eCSSKeyword_UNKNOWN,-1
 };
 
@@ -1975,6 +1983,12 @@ static const nsCSSProperty gOutlineSubpropTable[] = {
   eCSSProperty_outline_width,
   eCSSProperty_outline_style,
   eCSSProperty_outline_color,
+  eCSSProperty_UNKNOWN
+};
+
+static const nsCSSProperty gColumnsSubpropTable[] = {
+  eCSSProperty__moz_column_count,
+  eCSSProperty__moz_column_width,
   eCSSProperty_UNKNOWN
 };
 

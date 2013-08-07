@@ -1412,7 +1412,7 @@ ContainerState::ProcessDisplayItems(const nsDisplayList& aList,
       if (!ownLayer->AsContainerLayer()) {
         // The layer's current transform is applied first, then the result is scaled.
         gfx3DMatrix transform = ownLayer->GetTransform()*
-            gfx3DMatrix::Scale(mParameters.mXScale, mParameters.mYScale, 1.0f);
+            gfx3DMatrix::ScalingMatrix(mParameters.mXScale, mParameters.mYScale, 1.0f);
         ownLayer->SetTransform(transform);
       }
 
@@ -1677,7 +1677,7 @@ ChooseScaleAndSetTransform(FrameLayerBuilder* aLayerBuilder,
                            ContainerLayer* aLayer)
 {
   gfx3DMatrix transform =
-    gfx3DMatrix::Scale(aIncomingScale.mXScale, aIncomingScale.mYScale, 1.0);
+    gfx3DMatrix::ScalingMatrix(aIncomingScale.mXScale, aIncomingScale.mYScale, 1.0);
   if (aTransform) {
     // aTransform is applied first, then the scale is applied to the result
     transform = (*aTransform)*transform;
@@ -1716,7 +1716,7 @@ ChooseScaleAndSetTransform(FrameLayerBuilder* aLayerBuilder,
   }
 
   // Apply the inverse of our resolution-scale before the rest of our transform
-  transform = gfx3DMatrix::Scale(1.0/scale.width, 1.0/scale.height, 1.0)*transform;
+  transform = gfx3DMatrix::ScalingMatrix(1.0/scale.width, 1.0/scale.height, 1.0)*transform;
   aLayer->SetTransform(transform);
 
   FrameLayerBuilder::ContainerParameters
@@ -1903,25 +1903,30 @@ InternalInvalidateThebesLayersInSubtree(nsIFrame* aFrame)
     foundContainerLayer = PR_TRUE;
   }
 
-  PRInt32 listIndex = 0;
-  nsIAtom* childList = nsnull;
-  do {
-    nsIFrame* child = aFrame->GetFirstChild(childList);
-    if (!child && !childList) {
-      nsSubDocumentFrame* subdocumentFrame = do_QueryFrame(aFrame);
-      if (subdocumentFrame) {
-        // Descend into the subdocument
-        child = subdocumentFrame->GetSubdocumentRootFrame();
+  nsAutoTArray<nsIFrame::ChildList,4> childListArray;
+  if (!aFrame->GetFirstPrincipalChild()) {
+    nsSubDocumentFrame* subdocumentFrame = do_QueryFrame(aFrame);
+    if (subdocumentFrame) {
+      // Descend into the subdocument
+      nsIFrame* root = subdocumentFrame->GetSubdocumentRootFrame();
+      if (root) {
+        childListArray.AppendElement(nsIFrame::ChildList(
+          nsFrameList(root, nsLayoutUtils::GetLastSibling(root)),
+          nsIFrame::kPrincipalList));
       }
     }
-    while (child) {
-      if (InternalInvalidateThebesLayersInSubtree(child)) {
+  }
+
+  aFrame->GetChildLists(&childListArray);
+  nsIFrame::ChildListArrayIterator lists(childListArray);
+  for (; !lists.IsDone(); lists.Next()) {
+    nsFrameList::Enumerator childFrames(lists.CurrentList());
+    for (; !childFrames.AtEnd(); childFrames.Next()) {
+      if (InternalInvalidateThebesLayersInSubtree(childFrames.get())) {
         foundContainerLayer = PR_TRUE;
       }
-      child = child->GetNextSibling();
     }
-    childList = aFrame->GetAdditionalChildListName(listIndex++);
-  } while (childList);
+  }
 
   if (!foundContainerLayer) {
     aFrame->RemoveStateBits(NS_FRAME_HAS_CONTAINER_LAYER_DESCENDANT);

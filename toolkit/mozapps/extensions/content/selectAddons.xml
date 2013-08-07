@@ -82,7 +82,6 @@
       <field name="_wasActive"/>
       <field name="_keep">document.getAnonymousElementByAttribute(this, "anonid", "keep");</field>
       <field name="_update">document.getAnonymousElementByAttribute(this, "anonid", "update");</field>
-      <field name="_appStrings">document.getElementById("app-strings");</field>
       <field name="_strings">document.getElementById("strings");</field>
 
       <property name="action" readonly="true">
@@ -125,15 +124,10 @@
           switch (aAddon.scope) {
             case AddonManager.SCOPE_PROFILE:
               this._keep.checked = !aAddon.userDisabled;
-#ifdef MOZ_SUITE
-              // Suite uses brandShortName on this branch due to a string freeze
               if (aDistroInstalled)
-                this.setAttribute("source", this._appStrings.getString("brandShortName"));
+                this.setAttribute("source", this._strings.getString("source.bundled"));
               else
                 this.setAttribute("source", this._strings.getString("source.profile"));
-#else
-              this.setAttribute("source", this._strings.getString("source.profile"));
-#endif
               break;
             default:
               this._keep.checked = false;

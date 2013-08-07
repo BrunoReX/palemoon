@@ -34,8 +34,8 @@
  * the terms of any one of the MPL, the GPL or the LGPL.
  *
  * ***** END LICENSE BLOCK ***** */
-#ifndef nsJSEnvironment_h___
-#define nsJSEnvironment_h___
+#ifndef nsJSEnvironment_h
+#define nsJSEnvironment_h
 
 #include "nsIScriptContext.h"
 #include "nsIScriptRuntime.h"
@@ -114,11 +114,8 @@ public:
                                     nsIArray *argv, nsIVariant **rv);
   virtual nsresult BindCompiledEventHandler(nsISupports *aTarget,
                                             void *aScope,
-                                            nsIAtom *aName,
-                                            void *aHandler);
-  virtual nsresult GetBoundEventHandler(nsISupports* aTarget, void *aScope,
-                                        nsIAtom* aName,
-                                        nsScriptObjectHolder &aHandler);
+                                            void *aHandler,
+                                            nsScriptObjectHolder& aBoundHandler);
   virtual nsresult CompileFunction(void* aTarget,
                                    const nsACString& aName,
                                    PRUint32 aArgCount,
@@ -132,7 +129,7 @@ public:
 
   virtual void SetDefaultLanguageVersion(PRUint32 aVersion);
   virtual nsIScriptGlobalObject *GetGlobalObject();
-  virtual void *GetNativeContext();
+  virtual JSContext* GetNativeContext();
   virtual void *GetNativeGlobal();
   virtual nsresult CreateNativeGlobalForInner(
                                       nsIScriptGlobalObject *aGlobal,
@@ -373,4 +370,4 @@ JSBool NS_DOMWriteStructuredClone(JSContext* cx,
 
 void NS_DOMStructuredCloneError(JSContext* cx, uint32 errorid);
 
-#endif /* nsJSEnvironment_h___ */
+#endif /* nsJSEnvironment_h */

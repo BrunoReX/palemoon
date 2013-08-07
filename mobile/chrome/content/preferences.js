@@ -93,7 +93,7 @@ var PreferencesView = {
   },
 
   delayedInit: function pv__delayedInit() {
-    if (this._languages)
+    if (this._msg)
       return;
 
     this._msg = document.getElementById("prefs-messages");
@@ -103,6 +103,7 @@ var PreferencesView = {
     this._loadHomePage();
 
     MasterPasswordUI.updatePreference();
+    WeaveGlue.init();
   },
 
   _loadLocales: function _loadLocales() {
@@ -111,6 +112,7 @@ var PreferencesView = {
     chrome.QueryInterface(Ci.nsIToolkitChromeRegistry);
 
     let selectedLocale = chrome.getSelectedLocale("browser");
+
     let availableLocales = chrome.getLocalesForPackage("browser");
 
     let strings = Services.strings.createBundle("chrome://browser/content/languages.properties");

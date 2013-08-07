@@ -73,6 +73,8 @@ import android.graphics.Bitmap;
 
 public class GeckoAppShell
 {
+    private static final String LOG_FILE_NAME = "GeckoAppShell";
+
     // static members only
     private GeckoAppShell() { }
 
@@ -90,8 +92,6 @@ public class GeckoAppShell
     static private final int NOTIFY_IME_CANCELCOMPOSITION = 2;
     static private final int NOTIFY_IME_FOCUSCHANGE = 3;
 
-    static public final long kFreeSpaceThreshold = 157286400L; // 150MB
-    static private final long kLibFreeSpaceBuffer = 20971520L; // 29MB
     static private File sCacheFile = null;
     static private int sFreeSpace = -1;
 
@@ -111,6 +111,8 @@ public class GeckoAppShell
     public static native void loadLibs(String apkName, boolean shouldExtract);
     public static native void onChangeNetworkLinkStatus(String status);
     public static native void reportJavaCrash(String stack);
+
+    public static native void processNextNativeEvent();
 
     // A looper thread, accessed by GeckoAppShell.getHandler
     private static class LooperThread extends Thread {
@@ -185,25 +187,25 @@ public class GeckoAppShell
                     sFreeSpace = cacheStats.getFreeBlocks() *
                         cacheStats.getBlockSize();
                 } else {
-                    Log.i("GeckoAppShell", "Unable to get cache dir");
+                    Log.i(LOG_FILE_NAME, "Unable to get cache dir");
                 }
             }
         } catch (Exception e) {
-            Log.e("GeckoAppShell", "exception while stating cache dir: ", e);
+            Log.e(LOG_FILE_NAME, "exception while stating cache dir: ", e);
         }
         return sFreeSpace;
     }
 
     static boolean moveFile(File inFile, File outFile)
     {
-        Log.i("GeckoAppShell", "moving " + inFile + " to " + outFile);
+        Log.i(LOG_FILE_NAME, "moving " + inFile + " to " + outFile);
         if (outFile.isDirectory())
             outFile = new File(outFile, inFile.getName());
         try {
             if (inFile.renameTo(outFile))
                 return true;
         } catch (SecurityException se) {
-            Log.w("GeckoAppShell", "error trying to rename file", se);
+            Log.w(LOG_FILE_NAME, "error trying to rename file", se);
         }
         try {
             long lastModified = inFile.lastModified();
@@ -222,11 +224,11 @@ public class GeckoAppShell
             else
                 return false;
         } catch (Exception e) {
-            Log.e("GeckoAppShell", "exception while moving file: ", e);
+            Log.e(LOG_FILE_NAME, "exception while moving file: ", e);
             try {
                 outFile.delete();
             } catch (SecurityException se) {
-                Log.w("GeckoAppShell", "error trying to delete file", se);
+                Log.w(LOG_FILE_NAME, "error trying to delete file", se);
             }
             return false;
         }
@@ -239,7 +241,7 @@ public class GeckoAppShell
             if (from.renameTo(to))
                 return true;
         } catch (SecurityException se) {
-            Log.w("GeckoAppShell", "error trying to rename file", se);
+            Log.w(LOG_FILE_NAME, "error trying to rename file", se);
         }
         File[] files = from.listFiles();
         boolean retVal = true;
@@ -257,7 +259,7 @@ public class GeckoAppShell
             }
             from.delete();
         } catch(Exception e) {
-            Log.e("GeckoAppShell", "error trying to move file", e);
+            Log.e(LOG_FILE_NAME, "error trying to move file", e);
         }
         return retVal;
     }
@@ -271,7 +273,8 @@ public class GeckoAppShell
         GeckoApp geckoApp = GeckoApp.mAppContext;
         String homeDir;
         if (Build.VERSION.SDK_INT < 8 ||
-            geckoApp.getApplication().getPackageResourcePath().startsWith("/data")) {
+            geckoApp.getApplication().getPackageResourcePath().startsWith("/data") ||
+            geckoApp.getApplication().getPackageResourcePath().startsWith("/system")) {
             File home = geckoApp.getFilesDir();
             homeDir = home.getPath();
             // handle the application being moved to phone from sdcard
@@ -301,15 +304,28 @@ public class GeckoAppShell
             if (intHome != null && intProf != null && intProf.exists())
                 moveDir(intProf, profileDir);
         }
+        try {
+            String[] dirs = GeckoApp.mAppContext.getPluginDirectories();
+            StringBuffer pluginSearchPath = new StringBuffer();
+            for (int i = 0; i < dirs.length; i++) {
+                Log.i("GeckoPlugins", "dir: " + dirs[i]);
+                pluginSearchPath.append(dirs[i]);
+                pluginSearchPath.append(":");
+            }
+            GeckoAppShell.putenv("MOZ_PLUGIN_PATH="+pluginSearchPath);
+        } catch (Exception ex) {
+            Log.i("GeckoPlugins", "exception getting plugin dirs", ex);
+        }
+
         GeckoAppShell.putenv("HOME=" + homeDir);
         GeckoAppShell.putenv("GRE_HOME=" + GeckoApp.sGREDir.getPath());
         Intent i = geckoApp.getIntent();
         String env = i.getStringExtra("env0");
-        Log.i("GeckoApp", "env0: "+ env);
+        Log.i(LOG_FILE_NAME, "env0: "+ env);
         for (int c = 1; env != null; c++) {
             GeckoAppShell.putenv(env);
             env = i.getStringExtra("env" + c);
-            Log.i("GeckoApp", "env"+ c +": "+ env);
+            Log.i(LOG_FILE_NAME, "env"+ c +": "+ env);
         }
 
         File f = geckoApp.getDir("tmp", Context.MODE_WORLD_READABLE |
@@ -341,13 +357,14 @@ public class GeckoAppShell
             GeckoAppShell.putenv("UPDATES_DIRECTORY="   + updatesDir.getPath());
         }
         catch (Exception e) {
-            Log.i("GeckoApp", "No download directory has been found: " + e);
+            Log.i(LOG_FILE_NAME, "No download directory has been found: " + e);
         }
 
         putLocaleEnv();
 
-        if (freeSpace + kLibFreeSpaceBuffer < kFreeSpaceThreshold) {
-            // remove any previously extracted libs since we're apparently low
+        boolean extractLibs = GeckoApp.ACTION_DEBUG.equals(i.getAction());
+        if (!extractLibs) {
+            // remove any previously extracted libs
             File[] files = cacheFile.listFiles();
             if (files != null) {
                 Iterator cacheFiles = Arrays.asList(files).iterator();
@@ -358,7 +375,7 @@ public class GeckoAppShell
                 }
             }
         }
-        loadLibs(apkName, freeSpace > kFreeSpaceThreshold);
+        loadLibs(apkName, extractLibs);
     }
 
     private static void putLocaleEnv() {
@@ -387,6 +404,7 @@ public class GeckoAppShell
             combinedArgs += " " + args;
         if (url != null)
             combinedArgs += " " + url;
+
         // and go
         GeckoAppShell.nativeRun(combinedArgs);
     }
@@ -786,6 +804,18 @@ public class GeckoAppShell
             intent.setDataAndType(Uri.parse(aUriSpec), aMimeType);
         } else {
             Uri uri = Uri.parse(aUriSpec);
+            if ("vnd.youtube".equals(uri.getScheme())) {
+                // Special case youtube to fallback to our own player
+                String[] handlers = getHandlersForURL(aUriSpec, aAction);
+                if (handlers.length == 0) {
+                    intent = new Intent(VideoPlayer.VIDEO_ACTION);
+                    intent.setClassName(GeckoApp.mAppContext.getPackageName(),
+                                        "org.mozilla.gecko.VideoPlayer");
+                    intent.setData(uri);
+                    GeckoApp.mAppContext.startActivity(intent);
+                    return true;
+                }
+            }
             if ("sms".equals(uri.getScheme())) {
                 // Have a apecial handling for the SMS, as the message body
                 // is not extracted from the URI automatically
@@ -837,10 +867,25 @@ public class GeckoAppShell
         getHandler().post(new Runnable() { 
             public void run() {
                 Context context = GeckoApp.surfaceView.getContext();
-                android.text.ClipboardManager cm = (android.text.ClipboardManager)
-                    context.getSystemService(Context.CLIPBOARD_SERVICE);
+                String text = null;
+                if (android.os.Build.VERSION.SDK_INT >= 11) {
+                    android.content.ClipboardManager cm = (android.content.ClipboardManager)
+                        context.getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (cm.hasPrimaryClip()) {
+                        ClipData clip = cm.getPrimaryClip();
+                        if (clip != null) {
+                            ClipData.Item item = clip.getItemAt(0);
+                            text = item.coerceToText(context).toString();
+                        }
+                    }
+                } else {
+                    android.text.ClipboardManager cm = (android.text.ClipboardManager)
+                        context.getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (cm.hasText())
+                        text = cm.getText().toString();
+                }
                 try {
-                    sClipboardQueue.put(cm.hasText() ? cm.getText().toString() : "");
+                    sClipboardQueue.put(text != null ? text : "");
                 } catch (InterruptedException ie) {}
             }});
         try {
@@ -854,9 +899,15 @@ public class GeckoAppShell
         getHandler().post(new Runnable() { 
             public void run() {
                 Context context = GeckoApp.surfaceView.getContext();
-                android.text.ClipboardManager cm = (android.text.ClipboardManager)
-                    context.getSystemService(Context.CLIPBOARD_SERVICE);
-                cm.setText(text);
+                if (android.os.Build.VERSION.SDK_INT >= 11) {
+                    android.content.ClipboardManager cm = (android.content.ClipboardManager)
+                        context.getSystemService(Context.CLIPBOARD_SERVICE);
+                    cm.setPrimaryClip(ClipData.newPlainText("Text", text));
+                } else {
+                    android.text.ClipboardManager cm = (android.text.ClipboardManager)
+                        context.getSystemService(Context.CLIPBOARD_SERVICE);
+                    cm.setText(text);
+                }
             }});
     }
 
@@ -1111,7 +1162,7 @@ public class GeckoAppShell
                             fos.write(new Integer(pid).toString().getBytes());
                             fos.close();
                         } catch(Exception e) {
-                            Log.e("GeckoAppShell", "error putting child in the background", e);
+                            Log.e(LOG_FILE_NAME, "error putting child in the background", e);
                         }
                     }
                     return true;
@@ -1132,7 +1183,7 @@ public class GeckoAppShell
                         fos.write(new Integer(pid).toString().getBytes());
                         fos.close();
                     } catch(Exception e) {
-                        Log.e("GeckoAppShell", "error putting child in the foreground", e);
+                        Log.e(LOG_FILE_NAME, "error putting child in the foreground", e);
                     }
                 }
                 return true;
@@ -1220,7 +1271,7 @@ public class GeckoAppShell
             in.close();
         }
         catch (Exception e) {
-            Log.i("GeckoAppShell", "finding procs throws ",  e);
+            Log.i(LOG_FILE_NAME, "finding procs throws ",  e);
         }
     }
 
@@ -1263,7 +1314,7 @@ public class GeckoAppShell
             return buf.array();
         }
         catch (Exception e) {
-            Log.i("GeckoAppShell", "getIconForExtension error: ",  e);
+            Log.i(LOG_FILE_NAME, "getIconForExtension error: ",  e);
             return null;
         }
     }
@@ -1295,11 +1346,314 @@ public class GeckoAppShell
         try {
             int showPassword =
                 Settings.System.getInt(GeckoApp.mAppContext.getContentResolver(),
-                                       Settings.System.TEXT_SHOW_PASSWORD);
+                                       Settings.System.TEXT_SHOW_PASSWORD, 1);
             return (showPassword > 0);
         }
         catch (Exception e) {
-            return false;
+            return true;
+        }
+    }
+    public static void addPluginView(final View view,
+                                     final double x, final double y,
+                                     final double w, final double h) {
+
+        Log.i("GeckoAppShell", "addPluginView:" + view + " @ x:" + x + " y:" + y + " w:" + w + " h:" + h ) ;
+
+        getMainHandler().post(new Runnable() { 
+                public void run() {
+                    AbsoluteLayout.LayoutParams lp = new AbsoluteLayout.LayoutParams((int)w,
+                                                                                     (int)h,
+                                                                                     (int)x,
+                                                                                     (int)y);
+
+                    if (GeckoApp.mainLayout.indexOfChild(view) == -1) {
+                        view.setWillNotDraw(false);
+                        if(view instanceof SurfaceView)
+                            ((SurfaceView)view).setZOrderOnTop(true);
+
+                        GeckoApp.mainLayout.addView(view, lp);
+                    }
+                    else
+                    {
+                        try {
+                            GeckoApp.mainLayout.updateViewLayout(view, lp);
+                        } catch (IllegalArgumentException e) {
+                            Log.i("updateViewLayout - IllegalArgumentException", "e:" + e);
+                            // it can be the case where we
+                            // get an update before the view
+                            // is actually attached.
+                        }
+                    }
+                }
+            });
+    }
+
+    public static void removePluginView(final View view) {
+        Log.i("GeckoAppShell", "remove view:" + view);
+        getMainHandler().post(new Runnable() { 
+                public void run() {
+                    try {
+                        GeckoApp.mainLayout.removeView(view);
+                    } catch (Exception e) {}
+                }
+            });
+    }
+
+    public static Class<?> loadPluginClass(String className, String libName) {
+        Log.i("GeckoAppShell", "in loadPluginClass... attempting to access className, then libName.....");
+        Log.i("GeckoAppShell", "className: " + className);
+        Log.i("GeckoAppShell", "libName: " + libName);
+
+        try {
+            String[] split = libName.split("/");
+            String packageName = split[split.length - 3];
+            Log.i("GeckoAppShell", "load \"" + className + "\" from \"" + packageName + 
+                  "\" for \"" + libName + "\"");
+            Context pluginContext = 
+                GeckoApp.mAppContext.createPackageContext(packageName,
+                                                          Context.CONTEXT_INCLUDE_CODE |
+                                                      Context.CONTEXT_IGNORE_SECURITY);
+            ClassLoader pluginCL = pluginContext.getClassLoader();
+            return pluginCL.loadClass(className);
+        } catch (java.lang.ClassNotFoundException cnfe) {
+            Log.i("GeckoAppShell", "class not found", cnfe);
+        } catch (android.content.pm.PackageManager.NameNotFoundException nnfe) {
+            Log.i("GeckoAppShell", "package not found", nnfe);
+        }
+        Log.e("GeckoAppShell", "couldn't find class");
+        return null;
+    }
+
+    static HashMap<SurfaceView, SurfaceLockInfo> sSufaceMap = new HashMap<SurfaceView, SurfaceLockInfo>();
+
+    public static void lockSurfaceANP()
+    {
+         Log.i("GeckoAppShell", "other lockSurfaceANP");
+    }
+
+    public static org.mozilla.gecko.SurfaceLockInfo lockSurfaceANP(android.view.SurfaceView sview, int top, int left, int bottom, int right)
+    {
+        Log.i("GeckoAppShell", "real lockSurfaceANP " + sview + ", " + top + ",  " + left + ", " + bottom + ", " + right);
+        if (sview == null)
+            return null;
+
+        int format = -1;
+        try {
+            Field privateFormatField = SurfaceView.class.getDeclaredField("mFormat");
+            privateFormatField.setAccessible(true);
+            format = privateFormatField.getInt(sview);
+        } catch (Exception e) {
+            Log.i("GeckoAppShell", "mFormat is not a field of sview: ", e);
+        }
+
+        int n = 0;
+        if (format == PixelFormat.RGB_565)
+            n = 2;
+        else if (format == PixelFormat.RGBA_8888)
+            n = 4;
+
+        if (n == 0)
+            return null;
+
+        SurfaceLockInfo info = sSufaceMap.get(sview);
+        if (info == null) {
+            info = new SurfaceLockInfo();
+            sSufaceMap.put(sview, info);
+        }
+
+        Rect r = new Rect(left, top, right, bottom);
+
+        info.canvas = sview.getHolder().lockCanvas(r);
+        int bufSizeRequired = info.canvas.getWidth() * info.canvas.getHeight() * n;
+        Log.i("GeckoAppShell", "lockSurfaceANP - bufSizeRequired: " + n + " " + info.canvas.getHeight() + " " + info.canvas.getWidth());
+
+        if (info.width != info.canvas.getWidth() || info.height != info.canvas.getHeight() || info.buffer == null || info.buffer.capacity() < bufSizeRequired) {
+            info.width = info.canvas.getWidth();
+            info.height = info.canvas.getHeight();
+
+            // XXX Bitmaps instead of ByteBuffer
+            info.buffer = ByteBuffer.allocateDirect(bufSizeRequired);  //leak
+            Log.i("GeckoAppShell", "!!!!!!!!!!!  lockSurfaceANP - Allocating buffer! " + bufSizeRequired);
+
+        }
+
+        info.canvas.drawColor(Color.WHITE, PorterDuff.Mode.CLEAR);
+
+        info.format = format;
+        info.dirtyTop = top;
+        info.dirtyBottom = bottom;
+        info.dirtyLeft = left;
+        info.dirtyRight = right;
+
+        return info;
+    }
+
+    public static void unlockSurfaceANP(SurfaceView sview) {
+        SurfaceLockInfo info = sSufaceMap.get(sview);
+
+        int n = 0;
+        Bitmap.Config config;
+        if (info.format == PixelFormat.RGB_565) {
+            n = 2;
+            config = Bitmap.Config.RGB_565;
+        } else {
+            n = 4;
+            config = Bitmap.Config.ARGB_8888;
+        }
+
+        Log.i("GeckoAppShell", "unlockSurfaceANP: " + (info.width * info.height * n));
+
+        Bitmap bm = Bitmap.createBitmap(info.width, info.height, config);
+        bm.copyPixelsFromBuffer(info.buffer);
+        info.canvas.drawBitmap(bm, 0, 0, null);
+        sview.getHolder().unlockCanvasAndPost(info.canvas);
+    }
+
+    public static Class getSurfaceLockInfoClass() {
+        Log.i("GeckoAppShell", "class name: " + SurfaceLockInfo.class.getName());
+        return SurfaceLockInfo.class;
+    }
+
+    public static Method getSurfaceLockMethod() {
+        Method[] m = GeckoAppShell.class.getMethods();
+        for (int i = 0; i < m.length; i++) {
+            if (m[i].getName().equals("lockSurfaceANP"))
+                return m[i];
+        }
+        return null;
+    }
+
+    static native void executeNextRunnable();
+
+    static class GeckoRunnableCallback implements Runnable {
+        public void run() {
+            Log.i("GeckoShell", "run GeckoRunnableCallback");
+            GeckoAppShell.executeNextRunnable();
+        }
+    }
+
+    public static void postToJavaThread(boolean mainThread) {
+        Log.i("GeckoShell", "post to " + (mainThread ? "main " : "") + "java thread");
+        getMainHandler().post(new GeckoRunnableCallback());
+    }
+    
+    public static android.hardware.Camera sCamera = null;
+    
+    static native void cameraCallbackBridge(byte[] data);
+
+    static int kPreferedFps = 25;
+    static byte[] sCameraBuffer = null;
+
+    static int[] initCamera(String aContentType, int aCamera, int aWidth, int aHeight) {
+        Log.i("GeckoAppJava", "initCamera(" + aContentType + ", " + aWidth + "x" + aHeight + ") on thread " + Thread.currentThread().getId());
+
+        getMainHandler().post(new Runnable() {
+                public void run() {
+                    try {
+                        GeckoApp.mAppContext.enableCameraView();
+                    } catch (Exception e) {}
+                }
+            });
+
+        // [0] = 0|1 (failure/success)
+        // [1] = width
+        // [2] = height
+        // [3] = fps
+        int[] result = new int[4];
+        result[0] = 0;
+
+        if (Build.VERSION.SDK_INT >= 9) {
+            if (android.hardware.Camera.getNumberOfCameras() == 0)
+                return result;
+        }
+
+        try {
+            // no front/back camera before API level 9
+            if (Build.VERSION.SDK_INT >= 9)
+                sCamera = android.hardware.Camera.open(aCamera);
+            else
+                sCamera = android.hardware.Camera.open();
+
+            android.hardware.Camera.Parameters params = sCamera.getParameters();
+            params.setPreviewFormat(ImageFormat.NV21);
+
+            // use the preview fps closest to 25 fps.
+            int fpsDelta = 1000;
+            try {
+                Iterator<Integer> it = params.getSupportedPreviewFrameRates().iterator();
+                while (it.hasNext()) {
+                    int nFps = it.next();
+                    if (Math.abs(nFps - kPreferedFps) < fpsDelta) {
+                        fpsDelta = Math.abs(nFps - kPreferedFps);
+                        params.setPreviewFrameRate(nFps);
+                    }
+                }
+            } catch(Exception e) {
+                params.setPreviewFrameRate(kPreferedFps);
+            }
+
+            // set up the closest preview size available
+            Iterator<android.hardware.Camera.Size> sit = params.getSupportedPreviewSizes().iterator();
+            int sizeDelta = 10000000;
+            int bufferSize = 0;
+            while (sit.hasNext()) {
+                android.hardware.Camera.Size size = sit.next();
+                if (Math.abs(size.width * size.height - aWidth * aHeight) < sizeDelta) {
+                    sizeDelta = Math.abs(size.width * size.height - aWidth * aHeight);
+                    params.setPreviewSize(size.width, size.height);
+                    bufferSize = size.width * size.height;
+                }
+            }
+
+            try {
+                sCamera.setPreviewDisplay(GeckoApp.cameraView.getHolder());
+            } catch(IOException e) {
+                Log.e("GeckoAppJava", "Error setPreviewDisplay:", e);
+            } catch(RuntimeException e) {
+                Log.e("GeckoAppJava", "Error setPreviewDisplay:", e);
+            }
+
+            sCamera.setParameters(params);
+            sCameraBuffer = new byte[(bufferSize * 12) / 8];
+            sCamera.addCallbackBuffer(sCameraBuffer);
+            sCamera.setPreviewCallbackWithBuffer(new android.hardware.Camera.PreviewCallback() {
+                public void onPreviewFrame(byte[] data, android.hardware.Camera camera) {
+                    cameraCallbackBridge(data);
+                    if (sCamera != null)
+                        sCamera.addCallbackBuffer(sCameraBuffer);
+                }
+            });
+            sCamera.startPreview();
+            params = sCamera.getParameters();
+            Log.i("GeckoAppJava", "Camera: " + params.getPreviewSize().width + "x" + params.getPreviewSize().height +
+                  " @ " + params.getPreviewFrameRate() + "fps. format is " + params.getPreviewFormat());
+            result[0] = 1;
+            result[1] = params.getPreviewSize().width;
+            result[2] = params.getPreviewSize().height;
+            result[3] = params.getPreviewFrameRate();
+
+            Log.i("GeckoAppJava", "Camera preview started");
+        } catch(RuntimeException e) {
+            Log.e("GeckoAppJava", "initCamera RuntimeException : ", e);
+            result[0] = result[1] = result[2] = result[3] = 0;
+        }
+        return result;
+    }
+
+    static synchronized void closeCamera() {
+        Log.i("GeckoAppJava", "closeCamera() on thread " + Thread.currentThread().getId());
+        getMainHandler().post(new Runnable() {
+                public void run() {
+                    try {
+                        GeckoApp.mAppContext.disableCameraView();
+                    } catch (Exception e) {}
+                }
+            });
+        if (sCamera != null) {
+            sCamera.stopPreview();
+            sCamera.release();
+            sCamera = null;
+            sCameraBuffer = null;
         }
     }
 }

@@ -64,6 +64,7 @@ public:
 
   virtual void InitInternal();
   virtual void WriteInternal(const char* aBuffer, PRUint32 aCount);
+  virtual Telemetry::ID SpeedHistogram();
 
   void CreateFrame(png_uint_32 x_offset, png_uint_32 y_offset,
                    PRInt32 width, PRInt32 height,
@@ -71,6 +72,21 @@ public:
   void SetAnimFrameInfo();
 
   void EndImageFrame();
+
+  // Checks if the info header contains valid information
+  bool HasValidInfo() const 
+  {
+    return mInfo && mInfo->valid;
+  }
+
+  // Obtain the pixel depth if available or 0 otherwise
+  PRInt32 GetPixelDepth() const
+  {
+    if (!mInfo) {
+      return 0;
+    }
+    return mInfo->pixel_depth;
+  }
 
 public:
   png_structp mPNG;
@@ -113,6 +129,10 @@ public:
                                     png_const_charp error_msg);
   static void PNGAPI warning_callback(png_structp png_ptr,
                                       png_const_charp warning_msg);
+
+  // This is defined in the PNG spec as an invariant. We use it to
+  // do manual validation without libpng.
+  static const PRUint8 pngSignatureBytes[];
 };
 
 } // namespace imagelib

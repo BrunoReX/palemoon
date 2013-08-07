@@ -15,6 +15,8 @@ pref("services.sync.scheduler.activeInterval",       600);   // 10 minutes
 pref("services.sync.scheduler.immediateInterval",    90);    // 1.5 minutes
 pref("services.sync.scheduler.idleTime",             300);   // 5 minutes
 
+pref("services.sync.errorhandler.networkFailureReportTimeout", 604800); // 1 week
+
 pref("services.sync.engine.bookmarks", true);
 pref("services.sync.engine.history", true);
 pref("services.sync.engine.passwords", true);
@@ -32,6 +34,7 @@ pref("services.sync.log.appender.dump", "Error");
 pref("services.sync.log.appender.file.level", "Trace");
 pref("services.sync.log.appender.file.logOnError", true);
 pref("services.sync.log.appender.file.logOnSuccess", false);
+pref("services.sync.log.appender.file.maxErrorAge", 864000); // 10 days
 pref("services.sync.log.rootLogger", "Debug");
 pref("services.sync.log.logger.service.main", "Debug");
 pref("services.sync.log.logger.authenticator", "Debug");

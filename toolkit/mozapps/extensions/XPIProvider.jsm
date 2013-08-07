@@ -969,7 +969,6 @@ function flushJarCache(aJarFile) {
 
 function flushStartupCache() {
   // Init this, so it will get the notification.
-  Cc["@mozilla.org/xul/xul-prototype-cache;1"].getService(Ci.nsISupports);
   Services.obs.notifyObservers(null, "startupcache-invalidate", null);
 }
 
@@ -1710,6 +1709,9 @@ var XPIProvider = {
    * Shows the "Compatibility Updates" UI
    */
   showUpgradeUI: function XPI_showUpgradeUI() {
+    // Flip a flag to indicate that we interrupted startup with an interactive prompt
+    Services.startup.interrupted = true;
+
     if (!Prefs.getBoolPref(PREF_SHOWN_SELECTION_UI, false)) {
       // This *must* be modal as it has to block startup.
       var features = "chrome,centerscreen,dialog,titlebar,modal";
@@ -3476,12 +3478,17 @@ var XPIProvider = {
 
     let principal = Cc["@mozilla.org/systemprincipal;1"].
                     createInstance(Ci.nsIPrincipal);
-    this.bootstrapScopes[aId] = new Components.utils.Sandbox(principal);
 
     if (!aFile.exists()) {
+      this.bootstrapScopes[aId] = new Components.utils.Sandbox(principal,
+                                                               {sandboxName: aFile.path});
       ERROR("Attempted to load bootstrap scope from missing directory " + bootstrap.path);
       return;
     }
+
+    let uri = getURIForResourceInFile(aFile, "bootstrap.js").spec;
+    this.bootstrapScopes[aId] = new Components.utils.Sandbox(principal,
+                                                             {sandboxName: uri});
 
     let loader = Cc["@mozilla.org/moz/jssubscript-loader;1"].
                  createInstance(Ci.mozIJSSubScriptLoader);
@@ -3490,8 +3497,7 @@ var XPIProvider = {
       // As we don't want our caller to control the JS version used for the
       // bootstrap file, we run loadSubScript within the context of the
       // sandbox with the latest JS version set explicitly.
-      this.bootstrapScopes[aId].__SCRIPT_URI_SPEC__ =
-          getURIForResourceInFile(aFile, "bootstrap.js").spec;
+      this.bootstrapScopes[aId].__SCRIPT_URI_SPEC__ = uri;
       Components.utils.evalInSandbox(
         "Components.classes['@mozilla.org/moz/jssubscript-loader;1'] \
                    .createInstance(Components.interfaces.mozIJSSubScriptLoader) \
@@ -4016,8 +4022,8 @@ var XPIDatabase = {
     getInstallLocations: "SELECT DISTINCT location FROM addon",
     getVisibleAddonForID: "SELECT " + FIELDS_ADDON + " FROM addon WHERE " +
                           "visible=1 AND id=:id",
-    getVisibleAddoForInternalName: "SELECT " + FIELDS_ADDON + " FROM addon " +
-                                   "WHERE visible=1 AND internalName=:internalName",
+    getVisibleAddonForInternalName: "SELECT " + FIELDS_ADDON + " FROM addon " +
+                                    "WHERE visible=1 AND internalName=:internalName",
     getVisibleAddons: "SELECT " + FIELDS_ADDON + " FROM addon WHERE visible=1",
     getVisibleAddonsWithPendingOperations: "SELECT " + FIELDS_ADDON + " FROM " +
                                            "addon WHERE visible=1 " +
@@ -4982,7 +4988,8 @@ var XPIDatabase = {
       stmt = this.getStatement("getVisibleAddons");
     }
     else {
-      let sql = "SELECT * FROM addon WHERE visible=1 AND type IN (";
+      let sql = "SELECT " + FIELDS_ADDON + " FROM addon WHERE visible=1 AND " +
+                "type IN (";
       for (let i = 1; i <= aTypes.length; i++) {
         sql += "?" + i;
         if (i < aTypes.length)
@@ -5021,7 +5028,7 @@ var XPIDatabase = {
    * @return a DBAddonInternal
    */
   getVisibleAddonForInternalName: function XPIDB_getVisibleAddonForInternalName(aInternalName) {
-    let stmt = this.getStatement("getVisibleAddoForInternalName");
+    let stmt = this.getStatement("getVisibleAddonForInternalName");
 
     let addon = null;
     stmt.params.internalName = aInternalName;
