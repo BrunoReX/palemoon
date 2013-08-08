@@ -168,11 +168,15 @@ pref("browser.tabs.onTop",false);
 
 //Smooth scrolling settings
 pref("general.smoothScroll",true);
-pref("general.smoothScroll.lines.durationMinMS",100);
+pref("general.smoothScroll.lines",true);
+pref("general.smoothScroll.lines.durationMinMS",50);
 pref("general.smoothScroll.lines.durationMaxMS",200);
+pref("general.smoothScroll.pages",false);
 pref("general.smoothScroll.pages.durationMinMS",200);
 pref("general.smoothScroll.pages.durationMaxMS",600);
-pref("general.smoothScroll.pixels.durationMinMS",150);
-pref("general.smoothScroll.pixels.durationMaxMS",800);
-pref("general.smoothScroll.scrollbars.durationMinMS",100);
+pref("general.smoothScroll.pixels",true);
+pref("general.smoothScroll.pixels.durationMinMS",100);
+pref("general.smoothScroll.pixels.durationMaxMS",500);
+pref("general.smoothScroll.scrollbars",true);
+pref("general.smoothScroll.scrollbars.durationMinMS",50);
 pref("general.smoothScroll.scrollbars.durationMaxMS",200);

@@ -38,18 +38,18 @@ tabbrowser {
   max-width: 250px;
   min-width: 100px;
   width: 0;
-  -moz-transition: min-width 100ms ease-out,
-                   max-width 150ms ease-out,
-                   opacity 50ms ease-out 20ms /* hide the tab for the first 20ms of the max-width transition */;
+  -moz-transition: min-width 150ms ease-out,
+                   max-width 200ms ease-out,
+                   opacity 80ms ease-out;
 }
 
 .tabbrowser-tab:not([pinned]):not([fadein]) {
   max-width: 0.1px;
   min-width: 0.1px;
   opacity: 0 !important;
-  -moz-transition: min-width 100ms ease-out,
-                   max-width 150ms ease-out,
-                   opacity 30ms ease-out 50ms /* hide the tab for the last 20ms of the max-width transition */;
+  -moz-transition: min-width 150ms ease-out,
+                   max-width 200ms ease-out,
+                   opacity 80ms ease-out;
 }
 
 .tab-throbber:not([fadein]):not([pinned]),
