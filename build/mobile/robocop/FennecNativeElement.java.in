@@ -1,48 +1,13 @@
 #filter substitution
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Firefox Mobile Test Framework.
- *
- * The Initial Developer of the Original Code is Mozilla.
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- * Trevor Fairey <tnfairey@gmail.com>
- * David Burns <dburns@mozilla.com>
- * Joel Maher <joel.maher@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package @ANDROID_PACKAGE_NAME@;
 
 import java.util.List;
 
 import android.app.Activity;
-import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -51,114 +16,152 @@ import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.TextSwitcher;
 import android.app.Instrumentation;
-import android.util.Log;
 import com.jayway.android.robotium.solo.Solo;
 import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.TimeUnit;
 
 public class FennecNativeElement implements Element {
-  private final Activity mActivity;
-  private Integer id;
-  private Solo robocop;
+    private final Activity mActivity;
+    private Integer mId;
+    private Solo mSolo;
+    // max time to wait for thread synchronization
+    private static final int MAX_WAIT_MS = 60000;
 
-  public FennecNativeElement(Integer id, Activity activity, Solo solo){
-    this.id = id;
-    mActivity = activity;
-    robocop = solo;
-  }
-
-  public Integer getId() {
-    return id;
-  }
-
-  public void click() {
-    final SynchronousQueue syncQueue = new SynchronousQueue();
-    mActivity.runOnUiThread(
-        new Runnable() {
-          public void run() {
-            View view = (View)mActivity.findViewById(id);
-            if(view != null) {
-              if (!view.performClick()) {
-                Log.w("Robocop", "Robocop called click on an element with no listener");
-              }
-            } else {
-              throw new RoboCopException("click: unable to find view "+id); 
-            }
-            syncQueue.offer(new Object());
-          }
-        });
-    try {
-      syncQueue.take();
-    } catch (InterruptedException e) {
-      e.printStackTrace();
+    public FennecNativeElement(Integer id, Activity activity, Solo solo) {
+        mId = id;
+        mActivity = activity;
+        mSolo = solo;
     }
-  }
 
-  private Object text;
+    public Integer getId() {
+        return mId;
+    }
 
-  public String getText() {
-    final SynchronousQueue syncQueue = new SynchronousQueue();
-    mActivity.runOnUiThread(
-        new Runnable() {
-          public void run() {
-            View v = mActivity.findViewById(id);
-            if(v instanceof EditText) {
-              EditText et = (EditText)v;
-              text = et.getEditableText();
-            }else if(v instanceof TextSwitcher) {
-              TextSwitcher ts = (TextSwitcher)v;
-              ts.getNextView();
-              text = ((TextView)ts.getCurrentView()).getText();
-            }else if(v instanceof ViewGroup) {
-              ViewGroup vg = (ViewGroup)v;
-              for(int i = 0; i < vg.getChildCount(); i++) {
-                if(vg.getChildAt(i) instanceof TextView) {
-                  text = ((TextView)vg.getChildAt(i)).getText();
+    private boolean mClickSuccess;
+
+    public boolean click() {
+        final SynchronousQueue syncQueue = new SynchronousQueue();
+        mClickSuccess = false;
+        mActivity.runOnUiThread(
+            new Runnable() {
+                public void run() {
+                    View view = (View)mActivity.findViewById(mId);
+                    if (view != null) {
+                        if (view.performClick()) {
+                            mClickSuccess = true;
+                        } else {
+                            FennecNativeDriver.log(FennecNativeDriver.LogLevel.WARN,
+                                "Robocop called click on an element with no listener");
+                        }
+                    } else {
+                        FennecNativeDriver.log(FennecNativeDriver.LogLevel.ERROR,
+                            "click: unable to find view "+mId);
+                    }
+                    try {
+                        syncQueue.put(new Object());
+                    } catch (InterruptedException e) {
+                        FennecNativeDriver.log(FennecNativeDriver.LogLevel.ERROR, e);
+                    }
                 }
-              } //end of for
-            } else if(v instanceof TextView) {
-              text = ((TextView)v).getText(); 
-            } else if(v == null) {
-              throw new RoboCopException("getText: unable to find view "+id); 
-            } else {
-              throw new RoboCopException("getText: unhandled type for view "+id); 
+            });
+        try {
+            // Wait for the UiThread code to finish running
+            if (syncQueue.poll(MAX_WAIT_MS, TimeUnit.MILLISECONDS) == null) {
+                FennecNativeDriver.log(FennecNativeDriver.LogLevel.ERROR, 
+                    "click: time-out waiting for UI thread");
             }
-            syncQueue.offer(new Object());
-          } // end of run() method definition
-        } // end of anonymous Runnable object instantiation
-    );
-    try {   
-      //Wait for the UiThread code to finish running
-      syncQueue.take();
-    } catch (InterruptedException e) {
-      e.printStackTrace();
+        } catch (InterruptedException e) {
+            FennecNativeDriver.log(FennecNativeDriver.LogLevel.ERROR, e);
+        }
+        return mClickSuccess;
     }
-    if(text == null) {
-      throw new RoboCopException("getText: Text is null for view "+id);
-    }
-    return text.toString();
-  }
 
-  private boolean displayed;
+    private Object mText;
 
-  public boolean isDisplayed() {
-    final SynchronousQueue syncQueue = new SynchronousQueue();
-    displayed = false;
-    mActivity.runOnUiThread(
-        new Runnable() {
-          public void run() {
-            View view = (View)mActivity.findViewById(id);
-            if(view != null) {
-              displayed = true;
+    public String getText() {
+        final SynchronousQueue syncQueue = new SynchronousQueue();
+        mText = null;
+        mActivity.runOnUiThread(
+            new Runnable() {
+                public void run() {
+                    View v = mActivity.findViewById(mId);
+                    if (v instanceof EditText) {
+                        EditText et = (EditText)v;
+                        mText = et.getEditableText();
+                    } else if (v instanceof TextSwitcher) {
+                        TextSwitcher ts = (TextSwitcher)v;
+                        ts.getNextView();
+                        mText = ((TextView)ts.getCurrentView()).getText();
+                    } else if (v instanceof ViewGroup) {
+                        ViewGroup vg = (ViewGroup)v;
+                        for (int i = 0; i < vg.getChildCount(); i++) {
+                            if (vg.getChildAt(i) instanceof TextView) {
+                                mText = ((TextView)vg.getChildAt(i)).getText();
+                            }
+                        }
+                    } else if (v instanceof TextView) {
+                        mText = ((TextView)v).getText(); 
+                    } else if (v == null) {
+                        FennecNativeDriver.log(FennecNativeDriver.LogLevel.ERROR,
+                            "getText: unable to find view "+mId);
+                    } else {
+                        FennecNativeDriver.log(FennecNativeDriver.LogLevel.ERROR,
+                            "getText: unhandled type for view "+mId);
+                    }
+                    try {
+                        syncQueue.put(new Object());
+                    } catch (InterruptedException e) {
+                        FennecNativeDriver.log(FennecNativeDriver.LogLevel.ERROR, e);
+                    }
+                } // end of run() method definition
+            } // end of anonymous Runnable object instantiation
+        );
+        try {     
+            // Wait for the UiThread code to finish running
+            if (syncQueue.poll(MAX_WAIT_MS, TimeUnit.MILLISECONDS) == null) {
+                FennecNativeDriver.log(FennecNativeDriver.LogLevel.ERROR, 
+                    "getText: time-out waiting for UI thread");
             }
-            syncQueue.offer(new Object());
-          }
-        });
-    try {
-      syncQueue.take();
-    } catch (InterruptedException e) {
-      e.printStackTrace();
+        } catch (InterruptedException e) {
+            FennecNativeDriver.log(FennecNativeDriver.LogLevel.ERROR, e);
+        }
+        if (mText == null) {
+            FennecNativeDriver.log(FennecNativeDriver.LogLevel.WARN,
+                "getText: Text is null for view "+mId);
+            return null;
+        }
+        return mText.toString();
     }
-    return displayed;
-  }
+
+    private boolean mDisplayed;
+
+    public boolean isDisplayed() {
+        final SynchronousQueue syncQueue = new SynchronousQueue();
+        mDisplayed = false;
+        mActivity.runOnUiThread(
+            new Runnable() {
+                public void run() {
+                    View view = (View)mActivity.findViewById(mId);
+                    if (view != null) {
+                        mDisplayed = true;
+                    }
+                    try {
+                        syncQueue.put(new Object());
+                    } catch (InterruptedException e) {
+                        FennecNativeDriver.log(FennecNativeDriver.LogLevel.ERROR, e);
+                    }
+                }
+            });
+        try {
+            // Wait for the UiThread code to finish running
+            if (syncQueue.poll(MAX_WAIT_MS, TimeUnit.MILLISECONDS) == null) {
+                FennecNativeDriver.log(FennecNativeDriver.LogLevel.ERROR, 
+                    "isDisplayed: time-out waiting for UI thread");
+            }
+        } catch (InterruptedException e) {
+            FennecNativeDriver.log(FennecNativeDriver.LogLevel.ERROR, e);
+        }
+        return mDisplayed;
+    }
 
 }

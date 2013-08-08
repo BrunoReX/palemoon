@@ -1,45 +1,12 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is common code between maintenanceservice and updater
- *
- * The Initial Developer of the Original Code is
- * Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Brian R. Bondy <netzen@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 BOOL LaunchWinPostProcess(const WCHAR *installationDir,
                           const WCHAR *updateInfoDir, 
                           bool forceSync,
                           HANDLE userToken);
-BOOL StartServiceUpdate(int argc, LPWSTR *argv);
+BOOL StartServiceUpdate(LPCWSTR installDir);
 BOOL GetUpdateDirectoryPath(LPWSTR path);
 DWORD LaunchServiceSoftwareUpdateCommand(int argc, LPCWSTR *argv);
 BOOL WriteStatusFailure(LPCWSTR updateDirPath, int errorCode);
@@ -47,5 +14,19 @@ BOOL WriteStatusPending(LPCWSTR updateDirPath);
 DWORD WaitForServiceStop(LPCWSTR serviceName, DWORD maxWaitSeconds);
 DWORD WaitForProcessExit(LPCWSTR filename, DWORD maxSeconds);
 BOOL DoesFallbackKeyExist();
+BOOL IsLocalFile(LPCWSTR file, BOOL &isLocal);
+DWORD StartServiceCommand(int argc, LPCWSTR* argv);
 
 #define SVC_NAME L"MozillaMaintenance"
+
+#define BASE_SERVICE_REG_KEY \
+  L"SOFTWARE\\Mozilla\\MaintenanceService"
+
+// The test only fallback key, as its name implies, is only present on machines
+// that will use automated tests.  Since automated tests always run from a 
+// different directory for each test, the presence of this key bypasses the
+// "This is a valid installation directory" check.  This key also stores
+// the allowed name and issuer for cert checks so that the cert check
+// code can still be run unchanged.
+#define TEST_ONLY_FALLBACK_KEY_PATH \
+  BASE_SERVICE_REG_KEY L"\\3932ecacee736d366d6436db0f55bce4"

@@ -1,4 +1,4 @@
-Cu.import("resource://services-sync/log4moz.js");
+Cu.import("resource://services-common/log4moz.js");
 Cu.import("resource://services-sync/identity.js");
 Cu.import("resource://services-sync/jpakeclient.js");
 Cu.import("resource://services-sync/constants.js");
@@ -66,6 +66,13 @@ function server_report(request, response) {
   response.setStatusLine(request.httpVersion, 200, "OK");
 }
 
+// Hook for test code.
+let hooks = {};
+function initHooks() {
+  hooks.onGET = function onGET(request) {};
+}
+initHooks();
+
 function ServerChannel() {
   this.data = "";
   this.etag = "";
@@ -83,6 +90,7 @@ ServerChannel.prototype = {
       let etag = request.getHeader("If-None-Match");
       if (etag == this.etag) {
         response.setStatusLine(request.httpVersion, 304, "Not Modified");
+        hooks.onGET(request);
         return;
       }
     }
@@ -95,6 +103,7 @@ ServerChannel.prototype = {
     if (this.getCount == SERVER_MAX_GETS) {
       this.clear();
     }
+    hooks.onGET(request);
   },
 
   PUT: function PUT(request, response) {
@@ -159,7 +168,7 @@ const DATA = {"msg": "eggstreamly sekrit"};
 const POLLINTERVAL = 50;
 
 function run_test() {
-  Svc.Prefs.set("jpake.serverURL", "http://localhost:8080/");
+  Svc.Prefs.set("jpake.serverURL", TEST_SERVER_URL);
   Svc.Prefs.set("jpake.pollInterval", POLLINTERVAL);
   Svc.Prefs.set("jpake.maxTries", 2);
   Svc.Prefs.set("jpake.firstMsgMaxTries", 5);
@@ -174,16 +183,15 @@ function run_test() {
 
   // Simulate Sync setup with credentials in place. We want to make
   // sure the J-PAKE requests don't include those data.
-  let id = new Identity(PWDMGR_PASSWORD_REALM, "johndoe");
-  id.password = "ilovejane";
-  ID.set("WeaveID", id);
+  setBasicCredentials("johndoe", "ilovejane");
 
   server = httpd_setup({"/new_channel": server_new_channel,
                         "/report":      server_report});
 
   initTestLogging("Trace");
   Log4Moz.repository.getLogger("Sync.JPAKEClient").level = Log4Moz.Level.Trace;
-  Log4Moz.repository.getLogger("Sync.RESTRequest").level = Log4Moz.Level.Trace;
+  Log4Moz.repository.getLogger("Common.RESTRequest").level =
+    Log4Moz.Level.Trace;
   run_next_test();
 }
 
@@ -264,11 +272,19 @@ add_test(function test_firstMsgMaxTries() {
       // For the purpose of the tests, the poll interval is 50ms and
       // we're polling up to 5 times for the first exchange (as
       // opposed to 2 times for most of the other exchanges). So let's
-      // pretend it took 150ms to enter the PIN on the sender.
-      _("Received PIN " + pin + ". Waiting 150ms before entering it into sender...");
+      // pretend it took 150ms to enter the PIN on the sender, which should
+      // require 3 polls.
+      // Rather than using an imprecise timer, we hook into the channel's
+      // GET handler to know how long to wait.
+      _("Received PIN " + pin + ". Waiting for three polls before entering it into sender...");
       this.cid = pin.slice(JPAKE_LENGTH_SECRET);
-      Utils.namedTimer(function() { snd.pairWithPIN(pin, false); },
-                       150, this, "_sendTimer");
+      let count = 0;
+      hooks.onGET = function onGET(request) {
+        if (++count == 3) {
+          _("Third GET. Triggering pair.");
+          Utils.nextTick(function() { snd.pairWithPIN(pin, false); });
+        }
+      };
     },
     onPairingStart: function onPairingStart(pin) {},
     onComplete: function onComplete(data) {
@@ -276,12 +292,15 @@ add_test(function test_firstMsgMaxTries() {
       // Ensure channel was cleared, no error report.
       do_check_eq(channels[this.cid].data, undefined);
       do_check_eq(error_report, undefined);
+
+      // Clean up.
+      initHooks();
       run_next_test();
     }
   });
   rec.receiveNoPIN();
 });
-
+  
 
 add_test(function test_lastMsgMaxTries() {
   _("Test that receiver can wait longer for the last message.");
@@ -294,9 +313,15 @@ add_test(function test_lastMsgMaxTries() {
       // to 2 times for other exchanges). So let's pretend it took
       // 150ms to come up with the final payload, which should require
       // 3 polls.
-      _("Pairing successful, waiting 150ms to send final payload.");
-      Utils.namedTimer(function() { snd.sendAndComplete(DATA); },
-                       150, this, "_sendTimer");
+      // Rather than using an imprecise timer, we hook into the channel's
+      // GET handler to know how long to wait.
+      let count = 0;
+      hooks.onGET = function onGET(request) {
+        if (++count == 3) {
+          _("Third GET. Triggering send.");
+          Utils.nextTick(function() { snd.sendAndComplete(DATA); });
+        }
+      };
     },
     onComplete: function onComplete() {}
   });
@@ -314,6 +339,9 @@ add_test(function test_lastMsgMaxTries() {
       // Ensure channel was cleared, no error report.
       do_check_eq(channels[this.cid].data, undefined);
       do_check_eq(error_report, undefined);
+
+      // Clean up.
+      initHooks();
       run_next_test();
     }
   });
@@ -404,14 +432,22 @@ add_test(function test_abort_sender() {
       // Ensure channel was cleared, no error report.
       do_check_eq(channels[this.cid].data, undefined);
       do_check_eq(error_report, undefined);
+      initHooks();
       run_next_test();
     },
     displayPIN: function displayPIN(pin) {
       _("Received PIN " + pin + ". Entering it in the other computer...");
       this.cid = pin.slice(JPAKE_LENGTH_SECRET);
       Utils.nextTick(function() { snd.pairWithPIN(pin, false); });
-      Utils.namedTimer(function() { snd.abort(); },
-                       POLLINTERVAL, this, "_abortTimer");
+
+      // Abort after the first poll.
+      let count = 0;
+      hooks.onGET = function onGET(request) {
+        if (++count >= 1) {
+          _("First GET. Aborting.");
+          Utils.nextTick(function() { snd.abort(); });
+        }
+      };
     },
     onPairingStart: function onPairingStart(pin) {}
   });

@@ -1,43 +1,8 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* vim:set ts=4 sw=4 sts=4 et cin: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications.
- * Portions created by the Initial Developer are Copyright (C) 2001
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Darin Fisher <darin@netscape.com> (original author)
- *   Andreas M. Schneider <clarence@clarence.de>
- *   Christian Biesinger <cbiesinger@web.de>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <stdlib.h>
 #include "nsHttpResponseHead.h"
@@ -75,7 +40,7 @@ nsHttpResponseHead::SetContentLength(PRInt64 len)
     if (!LL_GE_ZERO(len)) // < 0
         mHeaders.ClearHeader(nsHttp::Content_Length);
     else
-        mHeaders.SetHeader(nsHttp::Content_Length, nsPrintfCString(20, "%lld", len));
+        mHeaders.SetHeader(nsHttp::Content_Length, nsPrintfCString("%lld", len));
 }
 
 void
@@ -190,7 +155,7 @@ nsHttpResponseHead::ParseStatusLine(const char *line)
             mStatusText.AssignLiteral("OK");
         }
         else
-            mStatusText = ++line;
+            mStatusText = nsDependentCString(++line);
     }
 
     LOG(("Have status line [version=%u status=%u statusText=%s]\n",
@@ -249,7 +214,7 @@ nsHttpResponseHead::ParseHeaderLine(const char *line)
 nsresult
 nsHttpResponseHead::ComputeCurrentAge(PRUint32 now,
                                       PRUint32 requestTime,
-                                      PRUint32 *result)
+                                      PRUint32 *result) const
 {
     PRUint32 dateValue;
     PRUint32 ageValue;
@@ -291,7 +256,7 @@ nsHttpResponseHead::ComputeCurrentAge(PRUint32 now,
 //     freshnessLifetime = 0
 //
 nsresult
-nsHttpResponseHead::ComputeFreshnessLifetime(PRUint32 *result)
+nsHttpResponseHead::ComputeFreshnessLifetime(PRUint32 *result) const
 {
     *result = 0;
 
@@ -338,7 +303,7 @@ nsHttpResponseHead::ComputeFreshnessLifetime(PRUint32 *result)
 }
 
 bool
-nsHttpResponseHead::MustValidate()
+nsHttpResponseHead::MustValidate() const
 {
     LOG(("nsHttpResponseHead::MustValidate ??\n"));
 
@@ -355,6 +320,7 @@ nsHttpResponseHead::MustValidate()
     case 302:
     case 304:
     case 307:
+    case 308:
         break;
         // Uncacheable redirects
     case 303:
@@ -398,7 +364,7 @@ nsHttpResponseHead::MustValidate()
 }
 
 bool
-nsHttpResponseHead::MustValidateIfExpired()
+nsHttpResponseHead::MustValidateIfExpired() const
 {
     // according to RFC2616, section 14.9.4:
     //
@@ -410,7 +376,7 @@ nsHttpResponseHead::MustValidateIfExpired()
 }
 
 bool
-nsHttpResponseHead::IsResumable()
+nsHttpResponseHead::IsResumable() const
 {
     // even though some HTTP/1.0 servers may support byte range requests, we're not
     // going to bother with them, since those servers wouldn't understand If-Range.
@@ -421,7 +387,7 @@ nsHttpResponseHead::IsResumable()
 }
 
 bool
-nsHttpResponseHead::ExpiresInPast()
+nsHttpResponseHead::ExpiresInPast() const
 {
     PRUint32 maxAgeVal, expiresVal, dateVal;
     
@@ -436,7 +402,7 @@ nsHttpResponseHead::ExpiresInPast()
 }
 
 nsresult
-nsHttpResponseHead::UpdateHeaders(nsHttpHeaderArray &headers)
+nsHttpResponseHead::UpdateHeaders(const nsHttpHeaderArray &headers)
 {
     LOG(("nsHttpResponseHead::UpdateHeaders [this=%x]\n", this));
 
@@ -503,7 +469,7 @@ nsHttpResponseHead::Reset()
 }
 
 nsresult
-nsHttpResponseHead::ParseDateHeader(nsHttpAtom header, PRUint32 *result)
+nsHttpResponseHead::ParseDateHeader(nsHttpAtom header, PRUint32 *result) const
 {
     const char *val = PeekHeader(header);
     if (!val)
@@ -519,7 +485,7 @@ nsHttpResponseHead::ParseDateHeader(nsHttpAtom header, PRUint32 *result)
 }
 
 nsresult
-nsHttpResponseHead::GetAgeValue(PRUint32 *result)
+nsHttpResponseHead::GetAgeValue(PRUint32 *result) const
 {
     const char *val = PeekHeader(nsHttp::Age);
     if (!val)
@@ -532,7 +498,7 @@ nsHttpResponseHead::GetAgeValue(PRUint32 *result)
 // Return the value of the (HTTP 1.1) max-age directive, which itself is a
 // component of the Cache-Control response header
 nsresult
-nsHttpResponseHead::GetMaxAgeValue(PRUint32 *result)
+nsHttpResponseHead::GetMaxAgeValue(PRUint32 *result) const
 {
     const char *val = PeekHeader(nsHttp::Cache_Control);
     if (!val)
@@ -550,7 +516,7 @@ nsHttpResponseHead::GetMaxAgeValue(PRUint32 *result)
 }
 
 nsresult
-nsHttpResponseHead::GetExpiresValue(PRUint32 *result)
+nsHttpResponseHead::GetExpiresValue(PRUint32 *result) const
 {
     const char *val = PeekHeader(nsHttp::Expires);
     if (!val)
@@ -573,7 +539,7 @@ nsHttpResponseHead::GetExpiresValue(PRUint32 *result)
 }
 
 PRInt64
-nsHttpResponseHead::TotalEntitySize()
+nsHttpResponseHead::TotalEntitySize() const
 {
     const char* contentRange = PeekHeader(nsHttp::Content_Range);
     if (!contentRange)

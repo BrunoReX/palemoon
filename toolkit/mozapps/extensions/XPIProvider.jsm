@@ -1,42 +1,6 @@
-/*
-# ***** BEGIN LICENSE BLOCK *****
-# Version: MPL 1.1/GPL 2.0/LGPL 2.1
-#
-# The contents of this file are subject to the Mozilla Public License Version
-# 1.1 (the "License"); you may not use this file except in compliance with
-# the License. You may obtain a copy of the License at
-# http://www.mozilla.org/MPL/
-#
-# Software distributed under the License is distributed on an "AS IS" basis,
-# WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
-# for the specific language governing rights and limitations under the
-# License.
-#
-# The Original Code is the Extension Manager.
-#
-# The Initial Developer of the Original Code is
-# the Mozilla Foundation.
-# Portions created by the Initial Developer are Copyright (C) 2009
-# the Initial Developer. All Rights Reserved.
-#
-# Contributor(s):
-#   Dave Townsend <dtownsend@oxymoronical.com>
-#   Blair McBride <bmcbride@mozilla.com>
-#
-# Alternatively, the contents of this file may be used under the terms of
-# either the GNU General Public License Version 2 or later (the "GPL"), or
-# the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
-# in which case the provisions of the GPL or the LGPL are applicable instead
-# of those above. If you wish to allow use of your version of this file only
-# under the terms of either the GPL or the LGPL, and not to allow others to
-# use your version of this file under the terms of the MPL, indicate your
-# decision by deleting the provisions above and replace them with the notice
-# and other provisions required by the GPL or the LGPL. If you do not delete
-# the provisions above, a recipient may use your version of this file under
-# the terms of any one of the MPL, the GPL or the LGPL.
-#
-# ***** END LICENSE BLOCK *****
-*/
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
@@ -47,12 +11,19 @@ const Cr = Components.results;
 var EXPORTED_SYMBOLS = [];
 
 Components.utils.import("resource://gre/modules/Services.jsm");
+Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 Components.utils.import("resource://gre/modules/AddonManager.jsm");
-Components.utils.import("resource://gre/modules/AddonRepository.jsm");
-Components.utils.import("resource://gre/modules/ChromeManifestParser.jsm");
-Components.utils.import("resource://gre/modules/LightweightThemeManager.jsm");
-Components.utils.import("resource://gre/modules/FileUtils.jsm");
-Components.utils.import("resource://gre/modules/NetUtil.jsm");
+
+XPCOMUtils.defineLazyModuleGetter(this, "AddonRepository",
+                                  "resource://gre/modules/AddonRepository.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "ChromeManifestParser",
+                                  "resource://gre/modules/ChromeManifestParser.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "LightweightThemeManager",
+                                  "resource://gre/modules/LightweightThemeManager.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
+                                  "resource://gre/modules/FileUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
+                                  "resource://gre/modules/NetUtil.jsm");
 
 const PREF_DB_SCHEMA                  = "extensions.databaseSchema";
 const PREF_INSTALL_CACHE              = "extensions.installCache";
@@ -64,9 +35,8 @@ const PREF_EM_DSS_ENABLED             = "extensions.dss.enabled";
 const PREF_DSS_SWITCHPENDING          = "extensions.dss.switchPending";
 const PREF_DSS_SKIN_TO_SELECT         = "extensions.lastSelectedSkin";
 const PREF_GENERAL_SKINS_SELECTEDSKIN = "general.skins.selectedSkin";
-const PREF_EM_CHECK_COMPATIBILITY_BASE = "extensions.checkCompatibility";
-const PREF_EM_CHECK_UPDATE_SECURITY   = "extensions.checkUpdateSecurity";
 const PREF_EM_UPDATE_URL              = "extensions.update.url";
+const PREF_EM_UPDATE_BACKGROUND_URL   = "extensions.update.background.url";
 const PREF_EM_ENABLED_ADDONS          = "extensions.enabledAddons";
 const PREF_EM_EXTENSION_FORMAT        = "extensions.";
 const PREF_EM_ENABLED_SCOPES          = "extensions.enabledScopes";
@@ -123,17 +93,7 @@ const PREFIX_NS_EM                    = "http://www.mozilla.org/2004/em-rdf#";
 
 const TOOLKIT_ID                      = "toolkit@mozilla.org";
 
-const BRANCH_REGEXP                   = /^([^\.]+\.[0-9]+[a-z]*).*/gi;
-
-const DB_SCHEMA                       = 12;
-
-#ifdef MOZ_COMPATIBILITY_NIGHTLY
-const PREF_EM_CHECK_COMPATIBILITY = PREF_EM_CHECK_COMPATIBILITY_BASE +
-                                    ".nightly";
-#else
-const PREF_EM_CHECK_COMPATIBILITY = PREF_EM_CHECK_COMPATIBILITY_BASE + "." +
-                                    Services.appinfo.version.replace(BRANCH_REGEXP, "$1");
-#endif
+const DB_SCHEMA                       = 13;
 
 // Properties that exist in the install manifest
 const PROP_METADATA      = ["id", "version", "type", "internalName", "updateURL",
@@ -202,6 +162,24 @@ var gIDTest = /^(\{[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\
 }, this);
 
 /**
+ * Sets permissions on a file
+ *
+ * @param  aFile
+ *         The file or directory to operate on.
+ * @param  aPermissions
+ *         The permisions to set
+ */
+function setFilePermissions(aFile, aPermissions) {
+  try {
+    aFile.permissions = aPermissions;
+  }
+  catch (e) {
+    WARN("Failed to set permissions " + aPermissions.toString(8) + " on " +
+         aFile.path, e);
+  }
+}
+
+/**
  * A safe way to install a file or the contents of a directory to a new
  * directory. The file or directory is moved or copied recursively and if
  * anything fails an attempt is made to rollback the entire operation. The
@@ -261,6 +239,10 @@ SafeInstallOperation.prototype = {
       entries.close();
     }
 
+    cacheEntries.sort(function(a, b) {
+      return a.path > b.path ? -1 : 1;
+    });
+
     cacheEntries.forEach(function(aEntry) {
       try {
         this._installDirEntry(aEntry, newDir, aCopy);
@@ -279,7 +261,7 @@ SafeInstallOperation.prototype = {
     // The directory should be empty by this point. If it isn't this will throw
     // and all of the operations will be rolled back
     try {
-      aDirectory.permissions = FileUtils.PERMS_DIRECTORY;
+      setFilePermissions(aDirectory, FileUtils.PERMS_DIRECTORY);
       aDirectory.remove(false);
     }
     catch (e) {
@@ -293,8 +275,25 @@ SafeInstallOperation.prototype = {
   },
 
   _installDirEntry: function(aDirEntry, aTargetDirectory, aCopy) {
+    let isDir = null;
+
     try {
-      if (aDirEntry.isDirectory())
+      isDir = aDirEntry.isDirectory();
+    }
+    catch (e) {
+      // If the file has already gone away then don't worry about it, this can
+      // happen on OSX where the resource fork is automatically moved with the
+      // data fork for the file. See bug 733436.
+      if (e.result == Cr.NS_ERROR_FILE_TARGET_DOES_NOT_EXIST)
+        return;
+
+      ERROR("Failure " + (aCopy ? "copying" : "moving") + " " + aDirEntry.path +
+            " to " + aTargetDirectory.path);
+      throw e;
+    }
+
+    try {
+      if (isDir)
         this._installDirectory(aDirEntry, aTargetDirectory, aCopy);
       else
         this._installFile(aDirEntry, aTargetDirectory, aCopy);
@@ -518,13 +517,13 @@ function isUsableAddon(aAddon) {
   if (aAddon.blocklistState == Ci.nsIBlocklistService.STATE_BLOCKED)
     return false;
 
-  if (XPIProvider.checkUpdateSecurity && !aAddon.providesUpdatesSecurely)
+  if (AddonManager.checkUpdateSecurity && !aAddon.providesUpdatesSecurely)
     return false;
 
   if (!aAddon.isPlatformCompatible)
     return false;
 
-  if (XPIProvider.checkCompatibility) {
+  if (AddonManager.checkCompatibility) {
     if (!aAddon.isCompatible)
       return false;
   }
@@ -1089,7 +1088,13 @@ function extractFiles(aZipFile, aDir) {
         continue;
 
       zipReader.extract(entryName, target);
-      target.permissions |= FileUtils.PERMS_FILE;
+      try {
+        target.permissions |= FileUtils.PERMS_FILE;
+      }
+      catch (e) {
+        WARN("Failed to set permissions " + aPermissions.toString(8) + " on " +
+             target.path, e);
+      }
     }
   }
   finally {
@@ -1161,7 +1166,7 @@ function escapeAddonURI(aAddon, aUri, aUpdateType, aAppVersion)
   uri = uri.replace(/%ITEM_MAXAPPVERSION%/g, maxVersion);
 
   let compatMode = "normal";
-  if (!XPIProvider.checkCompatibility)
+  if (!AddonManager.checkCompatibility)
     compatMode = "ignore";
   else if (AddonManager.strictCompatibility)
     compatMode = "strict";
@@ -1256,7 +1261,7 @@ function cleanStagingDir(aDir, aLeafNames) {
   }
 
   try {
-    aDir.permissions = FileUtils.PERMS_DIRECTORY;
+    setFilePermissions(aDir, FileUtils.PERMS_DIRECTORY);
     aDir.remove(false);
   }
   catch (e) {
@@ -1272,8 +1277,23 @@ function cleanStagingDir(aDir, aLeafNames) {
  *         The nsIFile to remove
  */
 function recursiveRemove(aFile) {
-  aFile.permissions = aFile.isDirectory() ? FileUtils.PERMS_DIRECTORY
-                                          : FileUtils.PERMS_FILE;
+  let isDir = null;
+
+  try {
+    isDir = aFile.isDirectory();
+  }
+  catch (e) {
+    // If the file has already gone away then don't worry about it, this can
+    // happen on OSX where the resource fork is automatically moved with the
+    // data fork for the file. See bug 733436.
+    if (e.result == Cr.NS_ERROR_FILE_TARGET_DOES_NOT_EXIST)
+      return;
+
+    throw e;
+  }
+
+  setFilePermissions(aFile, isDir ? FileUtils.PERMS_DIRECTORY
+                                  : FileUtils.PERMS_FILE);
 
   try {
     aFile.remove(true);
@@ -1286,21 +1306,26 @@ function recursiveRemove(aFile) {
     }
   }
 
+  let entries = aFile.directoryEntries
+                     .QueryInterface(Ci.nsIDirectoryEnumerator);
+  let cacheEntries = [];
   let entry;
-  let dirEntries = aFile.directoryEntries.QueryInterface(Ci.nsIDirectoryEnumerator);
+  while (entry = entries.nextFile)
+    cacheEntries.push(entry);
+  entries.close();
+
+  cacheEntries.sort(function(a, b) {
+    return a.path > b.path ? -1 : 1;
+  });
+
+  cacheEntries.forEach(recursiveRemove);
+
   try {
-    while (entry = dirEntries.nextFile)
-      recursiveRemove(entry);
-    try {
-      aFile.remove(true);
-    }
-    catch (e) {
-      ERROR("Failed to remove empty directory " + aFile.path, e);
-      throw e;
-    }
+    aFile.remove(true);
   }
-  finally {
-    dirEntries.close();
+  catch (e) {
+    ERROR("Failed to remove empty directory " + aFile.path, e);
+    throw e;
   }
 }
 
@@ -1457,10 +1482,6 @@ var XPIProvider = {
   // will be the same as currentSkin when it is the skin to be used when the
   // application is restarted
   selectedSkin: null,
-  // The value of the checkCompatibility preference
-  checkCompatibility: true,
-  // The value of the checkUpdateSecurity preference
-  checkUpdateSecurity: true,
   // The value of the minCompatibleAppVersion preference
   minCompatibleAppVersion: null,
   // The value of the minCompatiblePlatformVersion preference
@@ -1586,18 +1607,12 @@ var XPIProvider = {
     this.selectedSkin = this.currentSkin;
     this.applyThemeChange();
 
-    this.checkCompatibility = Prefs.getBoolPref(PREF_EM_CHECK_COMPATIBILITY,
-                                                true)
-    this.checkUpdateSecurity = Prefs.getBoolPref(PREF_EM_CHECK_UPDATE_SECURITY,
-                                                 true)
     this.minCompatibleAppVersion = Prefs.getCharPref(PREF_EM_MIN_COMPAT_APP_VERSION,
                                                      null);
     this.minCompatiblePlatformVersion = Prefs.getCharPref(PREF_EM_MIN_COMPAT_PLATFORM_VERSION,
                                                           null);
     this.enabledAddons = [];
 
-    Services.prefs.addObserver(PREF_EM_CHECK_COMPATIBILITY, this, false);
-    Services.prefs.addObserver(PREF_EM_CHECK_UPDATE_SECURITY, this, false);
     Services.prefs.addObserver(PREF_EM_MIN_COMPAT_APP_VERSION, this, false);
     Services.prefs.addObserver(PREF_EM_MIN_COMPAT_PLATFORM_VERSION, this, false);
 
@@ -1640,7 +1655,7 @@ var XPIProvider = {
       } catch (e) { }
       try {
         Services.appinfo.annotateCrashReport("EMCheckCompatibility",
-                                             this.checkCompatibility);
+                                             AddonManager.checkCompatibility);
       } catch (e) { }
       this.addAddonsToCrashReporter();
     }
@@ -1678,9 +1693,6 @@ var XPIProvider = {
    */
   shutdown: function XPI_shutdown() {
     LOG("shutdown");
-
-    Services.prefs.removeObserver(PREF_EM_CHECK_COMPATIBILITY, this);
-    Services.prefs.removeObserver(PREF_EM_CHECK_UPDATE_SECURITY, this);
 
     this.bootstrappedAddons = {};
     this.bootstrapScopes = {};
@@ -2303,6 +2315,12 @@ var XPIProvider = {
           let file = aInstallLocation.getLocationForID(aOldAddon.id);
           newAddon = loadManifestFromFile(file);
           applyBlocklistChanges(aOldAddon, newAddon);
+
+          // Carry over any pendingUninstall state to add-ons modified directly
+          // in the profile. This is impoprtant when the attempt to remove the
+          // add-on in processPendingFileChanges failed and caused an mtime
+          // change to the add-ons files.
+          newAddon.pendingUninstall = aOldAddon.pendingUninstall;
         }
 
         // The ID in the manifest that was loaded must match the ID of the old
@@ -2388,6 +2406,12 @@ var XPIProvider = {
       XPIDatabase.setAddonDescriptor(aOldAddon, aAddonState.descriptor);
       if (aOldAddon.visible) {
         visibleAddons[aOldAddon.id] = aOldAddon;
+
+        if (aOldAddon.bootstrap && aOldAddon.active) {
+          let bootstrap = oldBootstrappedAddons[aOldAddon.id];
+          bootstrap.descriptor = aAddonState.descriptor;
+          XPIProvider.bootstrappedAddons[aOldAddon.id] = bootstrap;
+        }
 
         return true;
       }
@@ -3391,14 +3415,8 @@ var XPIProvider = {
    */
   observe: function XPI_observe(aSubject, aTopic, aData) {
     switch (aData) {
-    case PREF_EM_CHECK_COMPATIBILITY:
-    case PREF_EM_CHECK_UPDATE_SECURITY:
     case PREF_EM_MIN_COMPAT_APP_VERSION:
     case PREF_EM_MIN_COMPAT_PLATFORM_VERSION:
-      this.checkCompatibility = Prefs.getBoolPref(PREF_EM_CHECK_COMPATIBILITY,
-                                                  true);
-      this.checkUpdateSecurity = Prefs.getBoolPref(PREF_EM_CHECK_UPDATE_SECURITY,
-                                                   true);
       this.minCompatibleAppVersion = Prefs.getCharPref(PREF_EM_MIN_COMPAT_APP_VERSION,
                                                        null);
       this.minCompatiblePlatformVersion = Prefs.getCharPref(PREF_EM_MIN_COMPAT_PLATFORM_VERSION,
@@ -3591,7 +3609,7 @@ var XPIProvider = {
     if (!aFile.exists()) {
       this.bootstrapScopes[aId] = new Components.utils.Sandbox(principal,
                                                                {sandboxName: aFile.path});
-      ERROR("Attempted to load bootstrap scope from missing directory " + bootstrap.path);
+      ERROR("Attempted to load bootstrap scope from missing directory " + aFile.path);
       return;
     }
 
@@ -3603,6 +3621,16 @@ var XPIProvider = {
                  createInstance(Ci.mozIJSSubScriptLoader);
 
     try {
+      // Copy the reason values from the global object into the bootstrap scope.
+      for (let name in BOOTSTRAP_REASONS)
+        this.bootstrapScopes[aId][name] = BOOTSTRAP_REASONS[name];
+
+      // Add other stuff that extensions want.
+      const features = [ "Worker", "ChromeWorker" ];
+
+      for (let feature of features)
+        this.bootstrapScopes[aId][feature] = gGlobalScope[feature];
+
       // As we don't want our caller to control the JS version used for the
       // bootstrap file, we run loadSubScript within the context of the
       // sandbox with the latest JS version set explicitly.
@@ -3620,17 +3648,6 @@ var XPIProvider = {
     catch (e) {
       WARN("Error loading bootstrap.js for " + aId, e);
     }
-
-    // Copy the reason values from the global object into the bootstrap scope.
-    for (let name in BOOTSTRAP_REASONS)
-      this.bootstrapScopes[aId][name] = BOOTSTRAP_REASONS[name];
-
-
-    // Add other stuff that extensions want.
-    const features = [ "Worker", "ChromeWorker" ];
-
-    for each (let feature in features)
-      this.bootstrapScopes[aId][feature] = gGlobalScope[feature];
   },
 
   /**
@@ -3762,12 +3779,22 @@ var XPIProvider = {
     let wasDisabled = isAddonDisabled(aAddon);
     let isDisabled = aUserDisabled || aSoftDisabled || appDisabled;
 
+    // If appDisabled changes but the result of isAddonDisabled() doesn't,
+    // no onDisabling/onEnabling is sent - so send a onPropertyChanged.
+    let appDisabledChanged = aAddon.appDisabled != appDisabled;
+
     // Update the properties in the database
     XPIDatabase.setAddonProperties(aAddon, {
       userDisabled: aUserDisabled,
       appDisabled: appDisabled,
       softDisabled: aSoftDisabled
     });
+
+    if (appDisabledChanged) {
+      AddonManagerPrivate.callAddonListeners("onPropertyChanged",
+                                            aAddon,
+                                            ["appDisabled"]);
+    }
 
     // If the add-on is not visible or the add-on is not changing state then
     // there is no need to do anything else
@@ -4687,6 +4714,8 @@ var XPIDatabase = {
                                   "homepageURL TEXT");
       this.connection.createTable("locale_strings",
                                   "locale_id INTEGER, type TEXT, value TEXT");
+      this.connection.executeSimpleSQL("CREATE INDEX locale_strings_idx ON " +
+        "locale_strings (locale_id)");
       this.connection.executeSimpleSQL("CREATE TRIGGER delete_addon AFTER DELETE " +
         "ON addon BEGIN " +
         "DELETE FROM targetApplication WHERE addon_internal_id=old.internal_id; " +
@@ -5352,7 +5381,7 @@ var XPIDatabase = {
         aLocale.locales.forEach(function(aName) {
           stmt.params.internal_id = internal_id;
           stmt.params.name = aName;
-          stmt.params.locale = insertLocale(aLocale);
+          stmt.params.locale = id;
           executeStatement(stmt);
         });
       });
@@ -5407,7 +5436,7 @@ var XPIDatabase = {
       aNewAddon.applyBackgroundUpdates = aOldAddon.applyBackgroundUpdates;
       aNewAddon.foreignInstall = aOldAddon.foreignInstall;
       aNewAddon.active = (aNewAddon.visible && !aNewAddon.userDisabled &&
-                          !aNewAddon.appDisabled)
+                          !aNewAddon.appDisabled && !aNewAddon.pendingUninstall)
 
       this.addAddonMetadata(aNewAddon, aDescriptor);
       this.commitTransaction();
@@ -5637,9 +5666,13 @@ var XPIDatabase = {
 
     if (fullCount > 0) {
       LOG("Writing add-ons list");
-      var fos = FileUtils.openSafeFileOutputStream(addonsList);
+
+      let addonsListTmp = FileUtils.getFile(KEY_PROFILEDIR, [FILE_XPI_ADDONS_LIST + ".tmp"],
+                                            true);
+      var fos = FileUtils.openFileOutputStream(addonsListTmp);
       fos.write(text, text.length);
-      FileUtils.closeSafeFileOutputStream(fos);
+      fos.close();
+      addonsListTmp.moveTo(addonsListTmp.parent, FILE_XPI_ADDONS_LIST);
 
       Services.prefs.setCharPref(PREF_EM_ENABLED_ADDONS, enabledAddons.join(","));
     }
@@ -6703,6 +6736,18 @@ AddonInstall.prototype = {
             XPIProvider.callBootstrapMethod(self.addon.id, self.addon.version,
                                             self.addon.type, file, "install",
                                             reason);
+          }
+
+          AddonManagerPrivate.callAddonListeners("onInstalled",
+                                                 createWrapper(self.addon));
+
+          LOG("Install of " + self.sourceURI.spec + " completed.");
+          self.state = AddonManager.STATE_INSTALLED;
+          AddonManagerPrivate.callInstallListeners("onInstallEnded",
+                                                   self.listeners, self.wrapper,
+                                                   createWrapper(self.addon));
+
+          if (self.addon.bootstrap) {
             if (self.addon.active) {
               XPIProvider.callBootstrapMethod(self.addon.id, self.addon.version,
                                               self.addon.type, file, "startup",
@@ -6712,14 +6757,6 @@ AddonInstall.prototype = {
               XPIProvider.unloadBootstrapScope(self.addon.id);
             }
           }
-          AddonManagerPrivate.callAddonListeners("onInstalled",
-                                                 createWrapper(self.addon));
-
-          LOG("Install of " + self.sourceURI.spec + " completed.");
-          self.state = AddonManager.STATE_INSTALLED;
-          AddonManagerPrivate.callInstallListeners("onInstallEnded",
-                                                   self.listeners, self.wrapper,
-                                                   createWrapper(self.addon));
         });
       }
     }
@@ -6924,8 +6961,15 @@ function UpdateChecker(aAddon, aListener, aReason, aAppVersion, aPlatformVersion
   this.platformVersion = aPlatformVersion;
   this.syncCompatibility = (aReason == AddonManager.UPDATE_WHEN_NEW_APP_INSTALLED);
 
-  let updateURL = aAddon.updateURL ? aAddon.updateURL :
-                                     Services.prefs.getCharPref(PREF_EM_UPDATE_URL);
+  let updateURL = aAddon.updateURL;
+  if (!updateURL) {
+    if (aReason == AddonManager.UPDATE_WHEN_PERIODIC_UPDATE &&
+        Services.prefs.getPrefType(PREF_EM_UPDATE_BACKGROUND_URL) == Services.prefs.PREF_STRING) {
+      updateURL = Services.prefs.getCharPref(PREF_EM_UPDATE_BACKGROUND_URL);
+    } else {
+      updateURL = Services.prefs.getCharPref(PREF_EM_UPDATE_URL);
+    }
+  }
 
   const UPDATE_TYPE_COMPATIBILITY = 32;
   const UPDATE_TYPE_NEWVERSION = 64;
@@ -6977,7 +7021,7 @@ UpdateChecker.prototype = {
 
     let ignoreMaxVersion = false;
     let ignoreStrictCompat = false;
-    if (!XPIProvider.checkCompatibility) {
+    if (!AddonManager.checkCompatibility) {
       ignoreMaxVersion = true;
       ignoreStrictCompat = true;
     } else if (this.addon.type == "extension" &&
@@ -7040,17 +7084,17 @@ UpdateChecker.prototype = {
                                                compatOverrides);
 
     if (update && Services.vc.compare(this.addon.version, update.version) < 0) {
-      for (let i = 0; i < XPIProvider.installs.length; i++) {
+      for (let currentInstall of XPIProvider.installs) {
         // Skip installs that don't match the available update
-        if (XPIProvider.installs[i].existingAddon != this.addon ||
-            XPIProvider.installs[i].version != update.version)
+        if (currentInstall.existingAddon != this.addon ||
+            currentInstall.version != update.version)
           continue;
 
         // If the existing install has not yet started downloading then send an
         // available update notification. If it is already downloading then
         // don't send any available update notification
-        if (XPIProvider.installs[i].state == AddonManager.STATE_AVAILABLE)
-          sendUpdateAvailableMessages(this, XPIProvider.installs[i]);
+        if (currentInstall.state == AddonManager.STATE_AVAILABLE)
+          sendUpdateAvailableMessages(this, currentInstall);
         else
           sendUpdateAvailableMessages(this, null);
         return;
@@ -7139,8 +7183,7 @@ AddonInternal.prototype = {
     }
     catch (e) { }
 
-    for (let i = 0; i < this.targetPlatforms.length; i++) {
-      let platform = this.targetPlatforms[i];
+    for (let platform of this.targetPlatforms) {
       if (platform.os == Services.appinfo.OS) {
         if (platform.abi) {
           needsABI = true;
@@ -7208,11 +7251,11 @@ AddonInternal.prototype = {
 
   get matchingTargetApplication() {
     let app = null;
-    for (let i = 0; i < this.targetApplications.length; i++) {
-      if (this.targetApplications[i].id == Services.appinfo.ID)
-        return this.targetApplications[i];
-      if (this.targetApplications[i].id == TOOLKIT_ID)
-        app = this.targetApplications[i];
+    for (let targetApp of this.targetApplications) {
+      if (targetApp.id == Services.appinfo.ID)
+        return targetApp;
+      if (targetApp.id == TOOLKIT_ID)
+        app = targetApp;
     }
     return app;
   },
@@ -7333,8 +7376,7 @@ function DBAddonInternal() {
 
   this.__defineGetter__("pendingUpgrade", function() {
     delete this.pendingUpgrade;
-    for (let i = 0; i < XPIProvider.installs.length; i++) {
-      let install = XPIProvider.installs[i];
+    for (let install of XPIProvider.installs) {
       if (install.state == AddonManager.STATE_INSTALLED &&
           !(install.addon instanceof DBAddonInternal) &&
           install.addon.id == this.id &&
@@ -7768,7 +7810,15 @@ function AddonWrapper(aAddon) {
   this.hasResource = function(aPath) {
     let bundle = aAddon._sourceBundle.clone();
 
-    if (bundle.isDirectory()) {
+    // Bundle may not exist any more if the addon has just been uninstalled,
+    // but explicitly first checking .exists() results in unneeded file I/O.
+    try {
+      var isDir = bundle.isDirectory();
+    } catch (e) {
+      return false;
+    }
+
+    if (isDir) {
       if (aPath) {
         aPath.split("/").forEach(function(aPart) {
           bundle.append(aPart);
@@ -7779,10 +7829,16 @@ function AddonWrapper(aAddon) {
 
     let zipReader = Cc["@mozilla.org/libjar/zip-reader;1"].
                     createInstance(Ci.nsIZipReader);
-    zipReader.open(bundle);
-    let result = zipReader.hasEntry(aPath);
-    zipReader.close();
-    return result;
+    try {
+      zipReader.open(bundle);
+      return zipReader.hasEntry(aPath);
+    }
+    catch (e) {
+      return false;
+    }
+    finally {
+      zipReader.close();
+    }
   },
 
   /**
@@ -8080,7 +8136,11 @@ DirectoryInstallLocation.prototype = {
 
     let newFile = this._directory.clone().QueryInterface(Ci.nsILocalFile);
     newFile.append(aSource.leafName);
-    newFile.lastModifiedTime = Date.now();
+    try {
+      newFile.lastModifiedTime = Date.now();
+    } catch (e)  {
+      WARN("failed to set lastModifiedTime on " + newFile.path, e);
+    }
     this._FileToIDMap[newFile.path] = aId;
     this._IDToFileMap[aId] = newFile;
 

@@ -13,6 +13,7 @@ Browser context menu subtest.
 <img id="test-image" src="ctxmenu-image.png">
 <canvas id="test-canvas" width="100" height="100" style="background-color: blue"></canvas>
 <video controls id="test-video-ok"  src="video.ogg" width="100" height="100" style="background-color: green"></video>
+<video id="test-audio-in-video" src="audio.ogg" width="100" height="100" style="background-color: red"></video>
 <video controls id="test-video-bad" src="bogus.duh" width="100" height="100" style="background-color: orange"></video>
 <video controls id="test-video-bad2" width="100" height="100" style="background-color: yellow">
   <source src="bogus.duh" type="video/durrrr;">
@@ -23,6 +24,7 @@ Browser context menu subtest.
 <textarea id="test-textarea">chssseesbbbie</textarea> <!-- a weird word which generates only one suggestion -->
 <div id="test-contenteditable" contenteditable="true">chssseefsbbbie</div> <!-- a more weird word which generates no suggestions -->
 <input id="test-input-spellcheck" type="text" spellcheck="true" autofocus value="prodkjfgigrty"> <!-- this one also generates one suggestion -->
+<div id="test-dom-full-screen">DOM full screen FTW</div>
 <div contextmenu="myMenu">
   <p id="test-pagemenu" hopeless="true">I've got a context menu!</p>
   <menu id="myMenu" type="context">
@@ -58,6 +60,8 @@ Browser context menu subtest.
     <menuitem></menuitem>
   </menu>
 </div>
+<div id="test-select-text">Lorem ipsum dolor sit amet, consectetuer adipiscing elit.</div>
+<div id="test-select-text-link">http://mozilla.com</div>
 
 </body>
 </html>

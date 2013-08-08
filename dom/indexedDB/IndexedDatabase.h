@@ -1,48 +1,15 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=2 et sw=2 tw=80: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Indexed Database.
- *
- * The Initial Developer of the Original Code is
- * The Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Shawn Wilsher <me@shawnwilsher.com>
- *   Ben Turner <bent.mozilla@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef mozilla_dom_indexeddb_indexeddatabase_h__
 #define mozilla_dom_indexeddb_indexeddatabase_h__
 
 #include "nsIProgrammingLanguage.h"
 
+#include "mozilla/Attributes.h"
 #include "jsapi.h"
 #include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
@@ -61,57 +28,147 @@
   using namespace mozilla::dom::indexedDB;
 
 class nsIDOMBlob;
+class nsIInputStream;
 
 BEGIN_INDEXEDDB_NAMESPACE
 
 class FileInfo;
+class IDBDatabase;
+class IDBTransaction;
 
-struct StructuredCloneReadInfo {
-  void Swap(StructuredCloneReadInfo& aCloneReadInfo) {
+template <class T>
+void SwapData(T& aData1, T& aData2)
+{
+  T temp = aData2;
+  aData2 = aData1;
+  aData1 = temp;
+}
+
+struct SerializedStructuredCloneReadInfo;
+
+struct StructuredCloneReadInfo
+{
+  // In IndexedDatabaseInlines.h
+  inline StructuredCloneReadInfo();
+
+  void Swap(StructuredCloneReadInfo& aCloneReadInfo)
+  {
     mCloneBuffer.swap(aCloneReadInfo.mCloneBuffer);
     mFileInfos.SwapElements(aCloneReadInfo.mFileInfos);
+    SwapData(mDatabase, aCloneReadInfo.mDatabase);
   }
+
+  // In IndexedDatabaseInlines.h
+  inline bool
+  SetFromSerialized(const SerializedStructuredCloneReadInfo& aOther);
 
   JSAutoStructuredCloneBuffer mCloneBuffer;
   nsTArray<nsRefPtr<FileInfo> > mFileInfos;
+  IDBDatabase* mDatabase;
 };
 
-struct StructuredCloneWriteInfo {
-  void Swap(StructuredCloneWriteInfo& aCloneWriteInfo) {
-    mCloneBuffer.swap(aCloneWriteInfo.mCloneBuffer);
-    mBlobs.SwapElements(aCloneWriteInfo.mBlobs);
-    mOffsetToKeyProp = aCloneWriteInfo.mOffsetToKeyProp;
+struct SerializedStructuredCloneReadInfo
+{
+  SerializedStructuredCloneReadInfo()
+  : data(nsnull), dataLength(0)
+  { }
+
+  bool
+  operator==(const SerializedStructuredCloneReadInfo& aOther) const
+  {
+    return this->data == aOther.data &&
+           this->dataLength == aOther.dataLength;
   }
 
+  SerializedStructuredCloneReadInfo&
+  operator=(const StructuredCloneReadInfo& aOther)
+  {
+    data = aOther.mCloneBuffer.data();
+    dataLength = aOther.mCloneBuffer.nbytes();
+    return *this;
+  }
+
+  // Make sure to update ipc/SerializationHelpers.h when changing members here!
+  uint64_t* data;
+  size_t dataLength;
+};
+
+struct StructuredCloneFile
+{
+  bool operator==(const StructuredCloneFile& aOther) const
+  {
+    return this->mFile == aOther.mFile &&
+           this->mFileInfo == aOther.mFileInfo &&
+           this->mInputStream == aOther.mInputStream;
+  }
+
+  nsCOMPtr<nsIDOMBlob> mFile;
+  nsRefPtr<FileInfo> mFileInfo;
+  nsCOMPtr<nsIInputStream> mInputStream;
+};
+
+struct SerializedStructuredCloneWriteInfo;
+
+struct StructuredCloneWriteInfo
+{
+  // In IndexedDatabaseInlines.h
+  inline StructuredCloneWriteInfo();
+
+  void Swap(StructuredCloneWriteInfo& aCloneWriteInfo)
+  {
+    mCloneBuffer.swap(aCloneWriteInfo.mCloneBuffer);
+    mFiles.SwapElements(aCloneWriteInfo.mFiles);
+    SwapData(mTransaction, aCloneWriteInfo.mTransaction);
+    SwapData(mOffsetToKeyProp, aCloneWriteInfo.mOffsetToKeyProp);
+  }
+
+  bool operator==(const StructuredCloneWriteInfo& aOther) const
+  {
+    return this->mCloneBuffer.nbytes() == aOther.mCloneBuffer.nbytes() &&
+           this->mCloneBuffer.data() == aOther.mCloneBuffer.data() &&
+           this->mFiles == aOther.mFiles &&
+           this->mTransaction == aOther.mTransaction &&
+           this->mOffsetToKeyProp == aOther.mOffsetToKeyProp;
+  }
+
+  // In IndexedDatabaseInlines.h
+  inline bool
+  SetFromSerialized(const SerializedStructuredCloneWriteInfo& aOther);
+
   JSAutoStructuredCloneBuffer mCloneBuffer;
-  nsTArray<nsCOMPtr<nsIDOMBlob> > mBlobs;
+  nsTArray<StructuredCloneFile> mFiles;
+  IDBTransaction* mTransaction;
   PRUint64 mOffsetToKeyProp;
 };
 
-inline
-void
-AppendConditionClause(const nsACString& aColumnName,
-                      const nsACString& aArgName,
-                      bool aLessThan,
-                      bool aEquals,
-                      nsACString& aResult)
+struct SerializedStructuredCloneWriteInfo
 {
-  aResult += NS_LITERAL_CSTRING(" AND ") + aColumnName +
-             NS_LITERAL_CSTRING(" ");
+  SerializedStructuredCloneWriteInfo()
+  : data(nsnull), dataLength(0), offsetToKeyProp(0)
+  { }
 
-  if (aLessThan) {
-    aResult.AppendLiteral("<");
-  }
-  else {
-    aResult.AppendLiteral(">");
-  }
-
-  if (aEquals) {
-    aResult.AppendLiteral("=");
+  bool
+  operator==(const SerializedStructuredCloneWriteInfo& aOther) const
+  {
+    return this->data == aOther.data &&
+           this->dataLength == aOther.dataLength &&
+           this->offsetToKeyProp == aOther.offsetToKeyProp;
   }
 
-  aResult += NS_LITERAL_CSTRING(" :") + aArgName;
-}
+  SerializedStructuredCloneWriteInfo&
+  operator=(const StructuredCloneWriteInfo& aOther)
+  {
+    data = aOther.mCloneBuffer.data();
+    dataLength = aOther.mCloneBuffer.nbytes();
+    offsetToKeyProp = aOther.mOffsetToKeyProp;
+    return *this;
+  }
+
+  // Make sure to update ipc/SerializationHelpers.h when changing members here!
+  uint64_t* data;
+  size_t dataLength;
+  uint64_t offsetToKeyProp;
+};
 
 END_INDEXEDDB_NAMESPACE
 

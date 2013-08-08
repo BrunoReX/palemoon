@@ -1,41 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Pierre Phaneuf <pp@ludusdesign.com>
- *   Mats Palmgren <matspal@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nscore.h"
 #include "nsCOMPtr.h"
@@ -76,7 +42,6 @@
 #include "nsAccessibilityService.h"
 #endif
 #include "nsHTMLSelectElement.h"
-#include "nsIPrivateDOMEvent.h"
 #include "nsCSSRendering.h"
 #include "nsITheme.h"
 #include "nsIDOMEventListener.h"
@@ -257,8 +222,7 @@ void nsListControlFrame::PaintFocus(nsRenderingContext& aRC, nsPoint aPt)
     // get it into our coordinates
     fRect.MoveBy(childframe->GetParent()->GetOffsetTo(this));
   } else {
-    float inflation = nsLayoutUtils::FontSizeInflationFor(this,
-                        nsLayoutUtils::eNotInReflow);
+    float inflation = nsLayoutUtils::FontSizeInflationFor(this);
     fRect.x = fRect.y = 0;
     fRect.width = GetScrollPortRect().width;
     fRect.height = CalcFallbackRowHeight(inflation);
@@ -285,7 +249,7 @@ void nsListControlFrame::PaintFocus(nsRenderingContext& aRC, nsPoint aPt)
 }
 
 void
-nsListControlFrame::InvalidateFocus(const nsHTMLReflowState *aReflowState)
+nsListControlFrame::InvalidateFocus()
 {
   if (mFocused != this)
     return;
@@ -295,9 +259,7 @@ nsListControlFrame::InvalidateFocus(const nsHTMLReflowState *aReflowState)
     // Invalidating from the containerFrame because that's where our focus
     // is drawn.
     // The origin of the scrollport is the origin of containerFrame.
-    float inflation = nsLayoutUtils::FontSizeInflationFor(this,
-                        aReflowState ? nsLayoutUtils::eInReflow
-                                     : nsLayoutUtils::eNotInReflow);
+    float inflation = nsLayoutUtils::FontSizeInflationFor(this);
     nsRect invalidateArea = containerFrame->GetVisualOverflowRect();
     nsRect emptyFallbackArea(0, 0, GetScrollPortRect().width,
                              CalcFallbackRowHeight(inflation));
@@ -313,7 +275,7 @@ NS_QUERYFRAME_HEAD(nsListControlFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsHTMLScrollFrame)
 
 #ifdef ACCESSIBILITY
-already_AddRefed<nsAccessible>
+already_AddRefed<Accessible>
 nsListControlFrame::CreateAccessible()
 {
   nsAccessibilityService* accService = nsIPresShell::AccService();
@@ -347,26 +309,6 @@ GetMaxOptionHeight(nsIFrame* aContainer)
   return result;
 }
 
-static PRUint32
-GetNumberOfOptionsRecursive(nsIContent* aContent)
-{
-  if (!aContent) {
-    return 0;
-  }
-
-  PRUint32 optionCount = 0;
-  for (nsIContent* cur = aContent->GetFirstChild();
-       cur;
-       cur = cur->GetNextSibling()) {
-    if (cur->IsHTML(nsGkAtoms::option)) {
-      ++optionCount;
-    } else if (cur->IsHTML(nsGkAtoms::optgroup)) {
-      optionCount += GetNumberOfOptionsRecursive(cur);
-    }
-  }
-  return optionCount;
-}
-
 //-----------------------------------------------------------------
 // Main Reflow for ListBox/Dropdown
 //-----------------------------------------------------------------
@@ -383,8 +325,7 @@ nsListControlFrame::CalcHeightOfARow()
   // Check to see if we have zero items (and optimize by checking
   // heightOfARow first)
   if (heightOfARow == 0 && GetNumberOfOptions() == 0) {
-    float inflation =
-      nsLayoutUtils::FontSizeInflationInner(this, nsLayoutUtils::eInReflow);
+    float inflation = nsLayoutUtils::FontSizeInflationFor(this);
     heightOfARow = CalcFallbackRowHeight(inflation);
   }
 
@@ -1175,8 +1116,7 @@ nsListControlFrame::OnContentReset()
 }
 
 void 
-nsListControlFrame::ResetList(bool aAllowScrolling,
-                              const nsHTMLReflowState *aReflowState)
+nsListControlFrame::ResetList(bool aAllowScrolling)
 {
   // if all the frames aren't here 
   // don't bother reseting
@@ -1200,7 +1140,7 @@ nsListControlFrame::ResetList(bool aAllowScrolling,
 
   mStartSelectionIndex = kNothingSelected;
   mEndSelectionIndex = kNothingSelected;
-  InvalidateFocus(aReflowState);
+  InvalidateFocus();
   // Combobox will redisplay itself with the OnOptionSelected event
 } 
  
@@ -1753,7 +1693,7 @@ nsListControlFrame::DidReflow(nsPresContext*           aPresContext,
     // The idea is that we want scroll history restoration to trump ResetList
     // scrolling to the selected element, when the ResetList was probably only
     // caused by content loading normally.
-    ResetList(!DidHistoryRestore() || mPostChildrenLoadedReset, aReflowState);
+    ResetList(!DidHistoryRestore() || mPostChildrenLoadedReset);
   }
 
   mHasPendingInterruptAtStartOfReflow = false;
@@ -2211,25 +2151,12 @@ nsListControlFrame::ScrollToFrame(nsIContent* aOptElement)
   // otherwise we find the content's frame and scroll to it
   nsIFrame *childFrame = aOptElement->GetPrimaryFrame();
   if (childFrame) {
-    nsPoint pt = GetScrollPosition();
-    // get the scroll port rect relative to the scrolled frame
-    nsRect rect = GetScrollPortRect() + pt;
-    // get the option's rect relative to the scrolled frame
-    nsRect fRect(childFrame->GetOffsetTo(GetScrolledFrame()),
-                 childFrame->GetSize());
-
-    // See if the selected frame (fRect) is inside the scrollport
-    // area (rect). Check only the vertical dimension. Don't
-    // scroll just because there's horizontal overflow.
-    if (!(rect.y <= fRect.y && fRect.YMost() <= rect.YMost())) {
-      // figure out which direction we are going
-      if (fRect.YMost() > rect.YMost()) {
-        pt.y = fRect.y - (rect.height - fRect.height);
-      } else {
-        pt.y = fRect.y;
-      }
-      ScrollTo(nsPoint(fRect.x, pt.y), nsIScrollableFrame::INSTANT);
-    }
+    PresContext()->PresShell()->
+      ScrollFrameRectIntoView(childFrame,
+                              nsRect(nsPoint(0, 0), childFrame->GetSize()),
+                              nsIPresShell::ScrollAxis(), nsIPresShell::ScrollAxis(),
+                              nsIPresShell::SCROLL_OVERFLOW_HIDDEN |
+                              nsIPresShell::SCROLL_FIRST_ANCESTOR_ONLY);
   }
   return NS_OK;
 }

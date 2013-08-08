@@ -1,42 +1,7 @@
 /* -*-  Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is js-ctypes.
- *
- * The Initial Developer of the Original Code is
- * The Mozilla Foundation <http://www.mozilla.org/>.
- * Portions created by the Initial Developer are Copyright (C) 2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  Mark Finkle <mark.finkle@gmail.com>, <mfinkle@mozilla.com>
- *  Fredrik Larsson <nossralf@gmail.com>
- *  Dan Witte <dwitte@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "jscntxt.h"
 #include "jsstr.h"
@@ -53,10 +18,10 @@ namespace ctypes {
 
 namespace Library
 {
-  static void Finalize(JSContext* cx, JSObject* obj);
+  static void Finalize(JSFreeOp *fop, JSObject* obj);
 
-  static JSBool Close(JSContext* cx, uintN argc, jsval* vp);
-  static JSBool Declare(JSContext* cx, uintN argc, jsval* vp);
+  static JSBool Close(JSContext* cx, unsigned argc, jsval* vp);
+  static JSBool Declare(JSContext* cx, unsigned argc, jsval* vp);
 }
 
 /*******************************************************************************
@@ -67,8 +32,7 @@ static JSClass sLibraryClass = {
   "Library",
   JSCLASS_HAS_RESERVED_SLOTS(LIBRARY_SLOTS),
   JS_PropertyStub, JS_PropertyStub, JS_PropertyStub, JS_StrictPropertyStub,
-  JS_EnumerateStub,JS_ResolveStub, JS_ConvertStub, Library::Finalize,
-  JSCLASS_NO_OPTIONAL_MEMBERS
+  JS_EnumerateStub,JS_ResolveStub, JS_ConvertStub, Library::Finalize
 };
 
 #define CTYPESFN_FLAGS \
@@ -81,7 +45,7 @@ static JSFunctionSpec sLibraryFunctions[] = {
 };
 
 JSBool
-Library::Name(JSContext* cx, uintN argc, jsval *vp)
+Library::Name(JSContext* cx, unsigned argc, jsval *vp)
 {
   if (argc != 1) {
     JS_ReportError(cx, "libraryName takes one argument");
@@ -121,8 +85,7 @@ Library::Create(JSContext* cx, jsval path, JSCTypesCallbacks* callbacks)
   js::AutoObjectRooter root(cx, libraryObj);
 
   // initialize the library
-  if (!JS_SetReservedSlot(cx, libraryObj, SLOT_LIBRARY, PRIVATE_TO_JSVAL(NULL)))
-    return NULL;
+  JS_SetReservedSlot(libraryObj, SLOT_LIBRARY, PRIVATE_TO_JSVAL(NULL));
 
   // attach API functions
   if (!JS_DefineFunctions(cx, libraryObj, sLibraryFunctions))
@@ -187,43 +150,47 @@ Library::Create(JSContext* cx, jsval path, JSCTypesCallbacks* callbacks)
   }
 
   // stash the library
-  if (!JS_SetReservedSlot(cx, libraryObj, SLOT_LIBRARY,
-         PRIVATE_TO_JSVAL(library)))
-    return NULL;
+  JS_SetReservedSlot(libraryObj, SLOT_LIBRARY, PRIVATE_TO_JSVAL(library));
 
   return libraryObj;
 }
 
 bool
-Library::IsLibrary(JSContext* cx, JSObject* obj)
+Library::IsLibrary(JSObject* obj)
 {
-  return JS_GET_CLASS(cx, obj) == &sLibraryClass;
+  return JS_GetClass(obj) == &sLibraryClass;
 }
 
 PRLibrary*
-Library::GetLibrary(JSContext* cx, JSObject* obj)
+Library::GetLibrary(JSObject* obj)
 {
-  JS_ASSERT(IsLibrary(cx, obj));
+  JS_ASSERT(IsLibrary(obj));
 
-  jsval slot;
-  JS_GetReservedSlot(cx, obj, SLOT_LIBRARY, &slot);
+  jsval slot = JS_GetReservedSlot(obj, SLOT_LIBRARY);
   return static_cast<PRLibrary*>(JSVAL_TO_PRIVATE(slot));
 }
 
-void
-Library::Finalize(JSContext* cx, JSObject* obj)
+static void
+UnloadLibrary(JSObject* obj)
 {
-  // unload the library
-  PRLibrary* library = GetLibrary(cx, obj);
+  PRLibrary* library = Library::GetLibrary(obj);
   if (library)
     PR_UnloadLibrary(library);
 }
 
+void
+Library::Finalize(JSFreeOp *fop, JSObject* obj)
+{
+  UnloadLibrary(obj);
+}
+
 JSBool
-Library::Open(JSContext* cx, uintN argc, jsval *vp)
+Library::Open(JSContext* cx, unsigned argc, jsval *vp)
 {
   JSObject* ctypesObj = JS_THIS_OBJECT(cx, vp);
-  if (!ctypesObj || !IsCTypesGlobal(cx, ctypesObj)) {
+  if (!ctypesObj)
+    return JS_FALSE;
+  if (!IsCTypesGlobal(ctypesObj)) {
     JS_ReportError(cx, "not a ctypes object");
     return JS_FALSE;
   }
@@ -233,7 +200,7 @@ Library::Open(JSContext* cx, uintN argc, jsval *vp)
     return JS_FALSE;
   }
 
-  JSObject* library = Create(cx, JS_ARGV(cx, vp)[0], GetCallbacks(cx, ctypesObj));
+  JSObject* library = Create(cx, JS_ARGV(cx, vp)[0], GetCallbacks(ctypesObj));
   if (!library)
     return JS_FALSE;
 
@@ -242,10 +209,12 @@ Library::Open(JSContext* cx, uintN argc, jsval *vp)
 }
 
 JSBool
-Library::Close(JSContext* cx, uintN argc, jsval* vp)
+Library::Close(JSContext* cx, unsigned argc, jsval* vp)
 {
   JSObject* obj = JS_THIS_OBJECT(cx, vp);
-  if (!obj || !IsLibrary(cx, obj)) {
+  if (!obj)
+    return JS_FALSE;
+  if (!IsLibrary(obj)) {
     JS_ReportError(cx, "not a library");
     return JS_FALSE;
   }
@@ -256,23 +225,25 @@ Library::Close(JSContext* cx, uintN argc, jsval* vp)
   }
 
   // delete our internal objects
-  Finalize(cx, obj);
-  JS_SetReservedSlot(cx, obj, SLOT_LIBRARY, PRIVATE_TO_JSVAL(NULL));
+  UnloadLibrary(obj);
+  JS_SetReservedSlot(obj, SLOT_LIBRARY, PRIVATE_TO_JSVAL(NULL));
 
   JS_SET_RVAL(cx, vp, JSVAL_VOID);
   return JS_TRUE;
 }
 
 JSBool
-Library::Declare(JSContext* cx, uintN argc, jsval* vp)
+Library::Declare(JSContext* cx, unsigned argc, jsval* vp)
 {
   JSObject* obj = JS_THIS_OBJECT(cx, vp);
-  if (!obj || !IsLibrary(cx, obj)) {
+  if (!obj)
+    return JS_FALSE;
+  if (!IsLibrary(obj)) {
     JS_ReportError(cx, "not a library");
     return JS_FALSE;
   }
 
-  PRLibrary* library = GetLibrary(cx, obj);
+  PRLibrary* library = GetLibrary(obj);
   if (!library) {
     JS_ReportError(cx, "library not open");
     return JS_FALSE;
@@ -321,16 +292,16 @@ Library::Declare(JSContext* cx, uintN argc, jsval* vp)
   } else {
     // Case 2).
     if (JSVAL_IS_PRIMITIVE(argv[1]) ||
-        !CType::IsCType(cx, JSVAL_TO_OBJECT(argv[1])) ||
-        !CType::IsSizeDefined(cx, JSVAL_TO_OBJECT(argv[1]))) {
+        !CType::IsCType(JSVAL_TO_OBJECT(argv[1])) ||
+        !CType::IsSizeDefined(JSVAL_TO_OBJECT(argv[1]))) {
       JS_ReportError(cx, "second argument must be a type of defined size");
       return JS_FALSE;
     }
 
     typeObj = JSVAL_TO_OBJECT(argv[1]);
-    if (CType::GetTypeCode(cx, typeObj) == TYPE_pointer) {
-      fnObj = PointerType::GetBaseType(cx, typeObj);
-      isFunction = fnObj && CType::GetTypeCode(cx, fnObj) == TYPE_function;
+    if (CType::GetTypeCode(typeObj) == TYPE_pointer) {
+      fnObj = PointerType::GetBaseType(typeObj);
+      isFunction = fnObj && CType::GetTypeCode(fnObj) == TYPE_function;
     }
   }
 
@@ -340,7 +311,7 @@ Library::Declare(JSContext* cx, uintN argc, jsval* vp)
   AutoCString symbol;
   if (isFunction) {
     // Build the symbol, with mangling if necessary.
-    FunctionType::BuildSymbolName(cx, nameStr, fnObj, symbol);
+    FunctionType::BuildSymbolName(nameStr, fnObj, symbol);
     AppendString(symbol, "\0");
 
     // Look up the function symbol.

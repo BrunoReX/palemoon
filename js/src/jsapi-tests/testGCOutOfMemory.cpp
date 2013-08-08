@@ -7,7 +7,6 @@
  */
 
 #include "tests.h"
-#include "jsgcchunk.h"
 #include "jscntxt.h"
 
 static unsigned errorCount = 0;
@@ -38,7 +37,7 @@ BEGIN_TEST(testGCOutOfMemory)
     CHECK(!ok);
     CHECK(!JS_IsExceptionPending(cx));
     CHECK_EQUAL(errorCount, 1);
-    JS_GC(cx);
+    JS_GC(rt);
     EVAL("(function() {"
          "    var array = [];"
          "    for (var i = max >> 2; i != 0;) {"

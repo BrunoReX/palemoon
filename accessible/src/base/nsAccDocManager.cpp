@@ -1,49 +1,21 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  Alexander Surkov <surkov.alexander@gmail.com> (original author)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsAccDocManager.h"
 
+#include "ApplicationAccessible.h"
+#include "DocAccessible-inl.h"
 #include "nsAccessibilityService.h"
 #include "nsAccUtils.h"
-#include "nsApplicationAccessible.h"
-#include "nsOuterDocAccessible.h"
-#include "nsRootAccessibleWrap.h"
+#include "nsARIAMap.h"
+#include "RootAccessibleWrap.h"
 #include "States.h"
+
+#ifdef DEBUG
+#include "Logging.h"
+#endif
 
 #include "nsCURILoader.h"
 #include "nsDocShellLoadTypes.h"
@@ -66,7 +38,7 @@ using namespace mozilla::a11y;
 ////////////////////////////////////////////////////////////////////////////////
 // nsAccDocManager public
 
-nsDocAccessible*
+DocAccessible*
 nsAccDocManager::GetDocAccessible(nsIDocument *aDocument)
 {
   if (!aDocument)
@@ -75,14 +47,14 @@ nsAccDocManager::GetDocAccessible(nsIDocument *aDocument)
   // Ensure CacheChildren is called before we query cache.
   nsAccessNode::GetApplicationAccessible()->EnsureChildren();
 
-  nsDocAccessible* docAcc = mDocAccessibleCache.GetWeak(aDocument);
+  DocAccessible* docAcc = mDocAccessibleCache.GetWeak(aDocument);
   if (docAcc)
     return docAcc;
 
   return CreateDocOrRootAccessible(aDocument);
 }
 
-nsAccessible*
+Accessible*
 nsAccDocManager::FindAccessibleInCache(nsINode* aNode) const
 {
   nsSearchAccessibleInCacheArg arg;
@@ -173,7 +145,10 @@ nsAccDocManager::OnStateChange(nsIWebProgress *aWebProgress,
 
   // Document was loaded.
   if (aStateFlags & STATE_STOP) {
-    NS_LOG_ACCDOCLOAD("document loaded", aWebProgress, aRequest, aStateFlags)
+#ifdef DEBUG
+    if (logging::IsEnabled(logging::eDocLoad))
+      logging::DocLoad("document loaded", aWebProgress, aRequest, aStateFlags);
+#endif
 
     // Figure out an event type to notify the document has been loaded.
     PRUint32 eventType = nsIAccessibleEvent::EVENT_DOCUMENT_LOAD_STOPPED;
@@ -199,10 +174,12 @@ nsAccDocManager::OnStateChange(nsIWebProgress *aWebProgress,
   }
 
   // Document loading was started.
-  NS_LOG_ACCDOCLOAD("start document loading", aWebProgress, aRequest,
-                    aStateFlags)
+#ifdef DEBUG
+  if (logging::IsEnabled(logging::eDocLoad))
+    logging::DocLoad("start document loading", aWebProgress, aRequest, aStateFlags);
+#endif
 
-  nsDocAccessible* docAcc = mDocAccessibleCache.GetWeak(document);
+  DocAccessible* docAcc = mDocAccessibleCache.GetWeak(document);
   if (!docAcc)
     return NS_OK;
 
@@ -286,7 +263,10 @@ nsAccDocManager::HandleEvent(nsIDOMEvent *aEvent)
     // accessible and all its sub document accessible are shutdown as result of
     // processing.
 
-    NS_LOG_ACCDOCDESTROY("received 'pagehide' event", document)
+#ifdef DEBUG
+    if (logging::IsEnabled(logging::eDocDestroy))
+      logging::DocDestroy("received 'pagehide' event", document);
+#endif
 
     // Ignore 'pagehide' on temporary documents since we ignore them entirely in
     // accessibility.
@@ -298,7 +278,7 @@ nsAccDocManager::HandleEvent(nsIDOMEvent *aEvent)
     // We're allowed to not remove listeners when accessible document is
     // shutdown since we don't keep strong reference on chrome event target and
     // listeners are removed automatically when chrome event target goes away.
-    nsDocAccessible* docAccessible = mDocAccessibleCache.GetWeak(document);
+    DocAccessible* docAccessible = mDocAccessibleCache.GetWeak(document);
     if (docAccessible)
       docAccessible->Shutdown();
 
@@ -309,7 +289,11 @@ nsAccDocManager::HandleEvent(nsIDOMEvent *aEvent)
   // webprogress notifications nor 'pageshow' event.
   if (type.EqualsLiteral("DOMContentLoaded") &&
       nsCoreUtils::IsErrorPage(document)) {
-    NS_LOG_ACCDOCLOAD2("handled 'DOMContentLoaded' event", document)
+#ifdef DEBUG
+    if (logging::IsEnabled(logging::eDocLoad))
+      logging::DocLoad("handled 'DOMContentLoaded' event", document);
+#endif
+
     HandleDOMDocumentLoad(document,
                           nsIAccessibleEvent::EVENT_DOCUMENT_LOAD_COMPLETE);
   }
@@ -326,7 +310,7 @@ nsAccDocManager::HandleDOMDocumentLoad(nsIDocument *aDocument,
 {
   // Document accessible can be created before we were notified the DOM document
   // was loaded completely. However if it's not created yet then create it.
-  nsDocAccessible* docAcc = mDocAccessibleCache.GetWeak(aDocument);
+  DocAccessible* docAcc = mDocAccessibleCache.GetWeak(aDocument);
   if (!docAcc) {
     docAcc = CreateDocOrRootAccessible(aDocument);
     if (!docAcc)
@@ -346,17 +330,23 @@ nsAccDocManager::AddListeners(nsIDocument *aDocument,
   elm->AddEventListenerByType(this, NS_LITERAL_STRING("pagehide"),
                               NS_EVENT_FLAG_CAPTURE);
 
-  NS_LOG_ACCDOCCREATE_TEXT("  added 'pagehide' listener")
+#ifdef DEBUG
+  if (logging::IsEnabled(logging::eDocCreate))
+    logging::Text("added 'pagehide' listener");
+#endif
 
   if (aAddDOMContentLoadedListener) {
     elm->AddEventListenerByType(this, NS_LITERAL_STRING("DOMContentLoaded"),
                                 NS_EVENT_FLAG_CAPTURE);
-    NS_LOG_ACCDOCCREATE_TEXT("  added 'DOMContentLoaded' listener")
+#ifdef DEBUG
+    if (logging::IsEnabled(logging::eDocCreate))
+      logging::Text("added 'DOMContentLoaded' listener");
+#endif
   }
 }
 
-nsDocAccessible*
-nsAccDocManager::CreateDocOrRootAccessible(nsIDocument *aDocument)
+DocAccessible*
+nsAccDocManager::CreateDocOrRootAccessible(nsIDocument* aDocument)
 {
   // Ignore temporary, hiding, resource documents and documents without
   // docshell.
@@ -364,9 +354,9 @@ nsAccDocManager::CreateDocOrRootAccessible(nsIDocument *aDocument)
       aDocument->IsResourceDoc() || !aDocument->IsActive())
     return nsnull;
 
-  // Ignore documents without presshell.
-  nsIPresShell *presShell = aDocument->GetShell();
-  if (!presShell)
+  // Ignore documents without presshell and not having root frame.
+  nsIPresShell* presShell = aDocument->GetShell();
+  if (!presShell || !presShell->GetRootFrame())
     return nsnull;
 
   // Do not create document accessible until role content is loaded, otherwise
@@ -377,13 +367,10 @@ nsAccDocManager::CreateDocOrRootAccessible(nsIDocument *aDocument)
 
   bool isRootDoc = nsCoreUtils::IsRootDocument(aDocument);
 
-  nsDocAccessible* parentDocAcc = nsnull;
+  DocAccessible* parentDocAcc = nsnull;
   if (!isRootDoc) {
     // XXXaaronl: ideally we would traverse the presshell chain. Since there's
     // no easy way to do that, we cheat and use the document hierarchy.
-    // GetAccessible() is bad because it doesn't support our concept of multiple
-    // presshells per doc. It should be changed to use
-    // GetAccessibleInWeakShell().
     parentDocAcc = GetDocAccessible(aDocument->GetParentDocument());
     NS_ASSERTION(parentDocAcc,
                  "Can't create an accessible for the document!");
@@ -393,25 +380,23 @@ nsAccDocManager::CreateDocOrRootAccessible(nsIDocument *aDocument)
 
   // We only create root accessibles for the true root, otherwise create a
   // doc accessible.
-  nsCOMPtr<nsIWeakReference> weakShell(do_GetWeakReference(presShell));
-  nsRefPtr<nsDocAccessible> docAcc = isRootDoc ?
-    new nsRootAccessibleWrap(aDocument, rootElm, weakShell) :
-    new nsDocAccessibleWrap(aDocument, rootElm, weakShell);
+  nsRefPtr<DocAccessible> docAcc = isRootDoc ?
+    new RootAccessibleWrap(aDocument, rootElm, presShell) :
+    new DocAccessibleWrap(aDocument, rootElm, presShell);
 
   // Cache the document accessible into document cache.
-  if (!docAcc || !mDocAccessibleCache.Put(aDocument, docAcc))
-    return nsnull;
+  mDocAccessibleCache.Put(aDocument, docAcc);
 
   // Initialize the document accessible.
   if (!docAcc->Init()) {
     docAcc->Shutdown();
     return nsnull;
   }
-  docAcc->SetRoleMapEntry(nsAccUtils::GetRoleMapEntry(aDocument));
+  docAcc->SetRoleMapEntry(aria::GetRoleMap(aDocument));
 
   // Bind the document to the tree.
   if (isRootDoc) {
-    nsAccessible* appAcc = nsAccessNode::GetApplicationAccessible();
+    Accessible* appAcc = nsAccessNode::GetApplicationAccessible();
     if (!appAcc->AppendChild(docAcc)) {
       docAcc->Shutdown();
       return nsnull;
@@ -430,8 +415,12 @@ nsAccDocManager::CreateDocOrRootAccessible(nsIDocument *aDocument)
     parentDocAcc->BindChildDocument(docAcc);
   }
 
-  NS_LOG_ACCDOCCREATE("document creation finished", aDocument)
-  NS_LOG_ACCDOCCREATE_STACK
+#ifdef DEBUG
+  if (logging::IsEnabled(logging::eDocCreate)) {
+    logging::DocCreate("document creation finished", aDocument);
+    logging::Stack();
+  }
+#endif
 
   AddListeners(aDocument, isRootDoc);
   return docAcc;
@@ -442,12 +431,12 @@ nsAccDocManager::CreateDocOrRootAccessible(nsIDocument *aDocument)
 
 PLDHashOperator
 nsAccDocManager::GetFirstEntryInDocCache(const nsIDocument* aKey,
-                                         nsDocAccessible* aDocAccessible,
+                                         DocAccessible* aDocAccessible,
                                          void* aUserArg)
 {
   NS_ASSERTION(aDocAccessible,
                "No doc accessible for the object in doc accessible cache!");
-  *reinterpret_cast<nsDocAccessible**>(aUserArg) = aDocAccessible;
+  *reinterpret_cast<DocAccessible**>(aUserArg) = aDocAccessible;
 
   return PL_DHASH_STOP;
 }
@@ -455,7 +444,7 @@ nsAccDocManager::GetFirstEntryInDocCache(const nsIDocument* aKey,
 void
 nsAccDocManager::ClearDocCache()
 {
-  nsDocAccessible* docAcc = nsnull;
+  DocAccessible* docAcc = nsnull;
   while (mDocAccessibleCache.EnumerateRead(GetFirstEntryInDocCache, static_cast<void*>(&docAcc))) {
     if (docAcc)
       docAcc->Shutdown();
@@ -464,7 +453,7 @@ nsAccDocManager::ClearDocCache()
 
 PLDHashOperator
 nsAccDocManager::SearchAccessibleInDocCache(const nsIDocument* aKey,
-                                            nsDocAccessible* aDocAccessible,
+                                            DocAccessible* aDocAccessible,
                                             void* aUserArg)
 {
   NS_ASSERTION(aDocAccessible,
@@ -484,7 +473,7 @@ nsAccDocManager::SearchAccessibleInDocCache(const nsIDocument* aKey,
 #ifdef DEBUG
 PLDHashOperator
 nsAccDocManager::SearchIfDocIsRefreshing(const nsIDocument* aKey,
-                                         nsDocAccessible* aDocAccessible,
+                                         DocAccessible* aDocAccessible,
                                          void* aUserArg)
 {
   NS_ASSERTION(aDocAccessible,

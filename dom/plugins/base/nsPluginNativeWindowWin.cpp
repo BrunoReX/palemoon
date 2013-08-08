@@ -1,43 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Andrei Volkov <av@netscape.com>
- *   Brian Stell <bstell@netscape.com>
- *   Peter Lubczynski <peterl@netscape.com>
- *   Jim Mathies <jmathies@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "windows.h"
 #include "windowsx.h"
@@ -59,6 +23,8 @@
 #include "nsAutoPtr.h"
 #include "nsTWeakRef.h"
 #include "nsCrashOnException.h"
+
+using namespace mozilla;
 
 #define NP_POPUP_API_VERSION 16
 
@@ -178,14 +144,14 @@ static UINT sLastMsg = 0;
 static bool ProcessFlashMessageDelayed(nsPluginNativeWindowWin * aWin, nsNPAPIPluginInstance * aInst,
                                          HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-  NS_ENSURE_TRUE(aWin, NS_ERROR_NULL_POINTER);
-  NS_ENSURE_TRUE(aInst, NS_ERROR_NULL_POINTER);
+  NS_ENSURE_TRUE(aWin, false);
+  NS_ENSURE_TRUE(aInst, false);
 
   if (msg == sWM_FLASHBOUNCEMSG) {
     // See PluginWindowEvent::Run() below.
     NS_ASSERTION((sWM_FLASHBOUNCEMSG != 0), "RegisterWindowMessage failed in flash plugin WM_USER message handling!");
     ::CallWindowProc((WNDPROC)aWin->GetWindowProc(), hWnd, WM_USER_FLASH, wParam, lParam);
-    return TRUE;
+    return true;
   }
 
   if (msg != WM_USER_FLASH)
@@ -218,6 +184,8 @@ NS_IMETHODIMP nsDelayedPopupsEnabledEvent::Run()
   mInst->PushPopupsEnabledState(false);
   return NS_OK;	
 }
+
+static LRESULT CALLBACK PluginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 /**
  *   New plugin window procedure
@@ -347,12 +315,15 @@ static LRESULT CALLBACK PluginWndProcInternal(HWND hWnd, UINT msg, WPARAM wParam
   }
 
   sInMessageDispatch = true;
-
-  LRESULT res = TRUE;
-  NS_TRY_SAFE_CALL_RETURN(res, 
-                          ::CallWindowProc((WNDPROC)win->GetWindowProc(), hWnd, msg, wParam, lParam),
-                          inst);
-
+  LRESULT res;
+  WNDPROC proc = (WNDPROC)win->GetWindowProc();
+  if (PluginWndProc == proc) {
+    NS_WARNING("Previous plugin window procedure references PluginWndProc! "
+               "Report this bug!");
+    res = CallWindowProc(DefWindowProc, hWnd, msg, wParam, lParam);
+  } else {
+    res = CallWindowProc(proc, hWnd, msg, wParam, lParam);
+  }
   sInMessageDispatch = false;
 
   if (inst) {
@@ -453,9 +424,9 @@ SetWindowLongAHook(HWND hWnd,
   nsPluginNativeWindowWin * win =
     (nsPluginNativeWindowWin *)GetProp(hWnd, NS_PLUGIN_WINDOW_PROPERTY_ASSOCIATION);
 
-  // Hook our subclass back up, just like we do on setwindow.   
+  // Hook our subclass back up, just like we do on setwindow.
   win->SetPrevWindowProc(
-    reinterpret_cast<WNDPROC>(sUser32SetWindowLongAHookStub(hWnd, nIndex,
+    reinterpret_cast<WNDPROC>(sUser32SetWindowLongWHookStub(hWnd, nIndex,
       reinterpret_cast<LONG_PTR>(PluginWndProc))));
   return proc;
 }

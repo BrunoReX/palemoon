@@ -1,43 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Original Author: David W. Hyatt (hyatt@netscape.com)
- *   - Brendan Eich (brendan@mozilla.org)
- *   - Mike Pinkerton (pinkerton@netscape.com)
- *   Mats Palmgren <mats.palmgren@bredband.net>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Util.h"
 
@@ -53,12 +17,8 @@
 #include "nsIURL.h"
 #include "nsIChannel.h"
 #include "nsXPIDLString.h"
-#include "nsIParser.h"
-#include "nsParserCIID.h"
-#include "nsNetUtil.h"
 #include "plstr.h"
 #include "nsIContent.h"
-#include "nsIDOMElement.h"
 #include "nsIDocument.h"
 #include "nsIXMLContentSink.h"
 #include "nsContentCID.h"
@@ -97,6 +57,8 @@
 using namespace mozilla;
 
 #define NS_MAX_XBL_BINDING_RECURSION 20
+
+nsXBLService* nsXBLService::gInstance = nsnull;
 
 static bool
 IsAncestorBinding(nsIDocument* aDocument,
@@ -167,8 +129,7 @@ public:
 
     // Get the binding.
     bool ready = false;
-    gXBLService->BindingReady(mBoundElement, mBindingURI, &ready);
-
+    nsXBLService::GetInstance()->BindingReady(mBoundElement, mBindingURI, &ready);
     if (!ready)
       return;
 
@@ -196,26 +157,11 @@ public:
     }
   }
 
-  static nsIXBLService* gXBLService;
-  static int gRefCnt;
-
 protected:
   nsXBLBindingRequest(nsIURI* aURI, nsIContent* aBoundElement)
     : mBindingURI(aURI),
       mBoundElement(aBoundElement)
   {
-    gRefCnt++;
-    if (gRefCnt == 1) {
-      CallGetService("@mozilla.org/xbl;1", &gXBLService);
-    }
-  }
-
-  ~nsXBLBindingRequest()
-  {
-    gRefCnt--;
-    if (gRefCnt == 0) {
-      NS_IF_RELEASE(gXBLService);
-    }
   }
 
 private:
@@ -231,10 +177,7 @@ static const size_t kBucketSizes[] = {
 
 static const PRInt32 kNumBuckets = sizeof(kBucketSizes)/sizeof(size_t);
 static const PRInt32 kNumElements = 64;
-static const PRInt32 kInitialSize = (NS_SIZE_IN_HEAP(sizeof(nsXBLBindingRequest))) * kNumElements;
-
-nsIXBLService* nsXBLBindingRequest::gXBLService = nsnull;
-int nsXBLBindingRequest::gRefCnt = 0;
+static const PRInt32 kInitialSize = sizeof(nsXBLBindingRequest) * kNumElements;
 
 // nsXBLStreamListener, a helper class used for 
 // asynchronous parsing of URLs
@@ -247,8 +190,7 @@ public:
   NS_DECL_NSIREQUESTOBSERVER
   NS_DECL_NSIDOMEVENTLISTENER
 
-  nsXBLStreamListener(nsXBLService* aXBLService,
-                      nsIDocument* aBoundDocument,
+  nsXBLStreamListener(nsIDocument* aBoundDocument,
                       nsIXMLContentSink* aSink,
                       nsIDocument* aBindingDocument);
   ~nsXBLStreamListener();
@@ -257,8 +199,6 @@ public:
   bool HasRequest(nsIURI* aURI, nsIContent* aBoundElement);
 
 private:
-  nsXBLService* mXBLService; // [WEAK]
-
   nsCOMPtr<nsIStreamListener> mInner;
   nsAutoTArray<nsXBLBindingRequest*, 8> mBindingRequests;
   
@@ -273,14 +213,12 @@ NS_IMPL_ISUPPORTS3(nsXBLStreamListener,
                    nsIRequestObserver,
                    nsIDOMEventListener)
 
-nsXBLStreamListener::nsXBLStreamListener(nsXBLService* aXBLService,
-                                         nsIDocument* aBoundDocument,
+nsXBLStreamListener::nsXBLStreamListener(nsIDocument* aBoundDocument,
                                          nsIXMLContentSink* aSink,
                                          nsIDocument* aBindingDocument)
 : mSink(aSink), mBindingDocument(aBindingDocument)
 {
   /* member initializers and constructor code */
-  mXBLService = aXBLService;
   mBoundDocument = do_GetWeakReference(aBoundDocument);
 }
 
@@ -288,7 +226,7 @@ nsXBLStreamListener::~nsXBLStreamListener()
 {
   for (PRUint32 i = 0; i < mBindingRequests.Length(); i++) {
     nsXBLBindingRequest* req = mBindingRequests.ElementAt(i);
-    nsXBLBindingRequest::Destroy(mXBLService->mPool, req);
+    nsXBLBindingRequest::Destroy(nsXBLService::GetInstance()->mPool, req);
   }
 }
 
@@ -404,7 +342,7 @@ nsXBLStreamListener::HandleEvent(nsIDOMEvent* aEvent)
 
     if (!bindingDocument->GetRootElement()) {
       // FIXME: How about an error console warning?
-      NS_WARNING("*** XBL doc with no root element! Something went horribly wrong! ***");
+      NS_WARNING("XBL doc with no root element - this usually shouldn't happen");
       return NS_ERROR_FAILURE;
     }
 
@@ -452,7 +390,6 @@ nsXBLStreamListener::HandleEvent(nsIDOMEvent* aEvent)
 // Implementation /////////////////////////////////////////////////////////////////
 
 // Static member variable initialization
-PRUint32 nsXBLService::gRefCnt = 0;
 bool nsXBLService::gAllowDataURIs = false;
 
 nsHashtable* nsXBLService::gClassTable = nsnull;
@@ -462,38 +399,45 @@ PRUint32 nsXBLService::gClassLRUListLength = 0;
 PRUint32 nsXBLService::gClassLRUListQuota = 64;
 
 // Implement our nsISupports methods
-NS_IMPL_ISUPPORTS3(nsXBLService, nsIXBLService, nsIObserver, nsISupportsWeakReference)
+NS_IMPL_ISUPPORTS2(nsXBLService, nsIObserver, nsISupportsWeakReference)
+
+void
+nsXBLService::Init()
+{
+  gInstance = new nsXBLService();
+  NS_ADDREF(gInstance);
+
+  // Register the first (and only) nsXBLService as a memory pressure observer
+  // so it can flush the LRU list in low-memory situations.
+  nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
+  if (os)
+    os->AddObserver(gInstance, "memory-pressure", true);
+}
 
 // Constructors/Destructors
 nsXBLService::nsXBLService(void)
 {
   mPool.Init("XBL Binding Requests", kBucketSizes, kNumBuckets, kInitialSize);
 
-  gRefCnt++;
-  if (gRefCnt == 1) {
-    gClassTable = new nsHashtable();
-  }
+  gClassTable = new nsHashtable();
 
   Preferences::AddBoolVarCache(&gAllowDataURIs, "layout.debug.enable_data_xbl");
 }
 
 nsXBLService::~nsXBLService(void)
 {
-  gRefCnt--;
-  if (gRefCnt == 0) {
-    // Walk the LRU list removing and deleting the nsXBLJSClasses.
-    FlushMemory();
+  // Walk the LRU list removing and deleting the nsXBLJSClasses.
+  FlushMemory();
 
-    // Any straggling nsXBLJSClass instances held by unfinalized JS objects
-    // created for bindings will be deleted when those objects are finalized
-    // (and not put on gClassLRUList, because length >= quota).
-    gClassLRUListLength = gClassLRUListQuota = 0;
+  // Any straggling nsXBLJSClass instances held by unfinalized JS objects
+  // created for bindings will be deleted when those objects are finalized
+  // (and not put on gClassLRUList, because length >= quota).
+  gClassLRUListLength = gClassLRUListQuota = 0;
 
-    // At this point, the only hash table entries should be for referenced
-    // XBL class structs held by unfinalized JS binding objects.
-    delete gClassTable;
-    gClassTable = nsnull;
-  }
+  // At this point, the only hash table entries should be for referenced
+  // XBL class structs held by unfinalized JS binding objects.
+  delete gClassTable;
+  gClassTable = nsnull;
 }
 
 // static
@@ -511,7 +455,7 @@ nsXBLService::IsChromeOrResourceURI(nsIURI* aURI)
 
 // This function loads a particular XBL file and installs all of the bindings
 // onto the element.
-NS_IMETHODIMP
+nsresult
 nsXBLService::LoadBindings(nsIContent* aContent, nsIURI* aURL,
                            nsIPrincipal* aOriginPrincipal, bool aAugmentFlag,
                            nsXBLBinding** aBinding, bool* aResolveStyle) 
@@ -650,18 +594,6 @@ nsXBLService::FlushStyleBindings(nsIContent* aContent)
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsXBLService::ResolveTag(nsIContent* aContent, PRInt32* aNameSpaceID,
-                         nsIAtom** aResult)
-{
-  nsIDocument* document = aContent->OwnerDoc();
-  *aResult = document->BindingManager()->ResolveTag(aContent, aNameSpaceID);
-  NS_IF_ADDREF(*aResult);
-
-  return NS_OK;
-}
-
-
 //
 // AttachGlobalKeyHandler
 //
@@ -669,7 +601,7 @@ nsXBLService::ResolveTag(nsIContent* aContent, PRInt32* aNameSpaceID,
 // event receiver (either a document or an content node). If the receiver is content,
 // then extra work needs to be done to hook it up to the document (XXX WHY??)
 //
-NS_IMETHODIMP
+nsresult
 nsXBLService::AttachGlobalKeyHandler(nsIDOMEventTarget* aTarget)
 {
   // check if the receiver is a content node (not a document), and hook
@@ -726,7 +658,7 @@ nsXBLService::AttachGlobalKeyHandler(nsIDOMEventTarget* aTarget)
 //
 // Removes a key handler added by DeatchGlobalKeyHandler.
 //
-NS_IMETHODIMP
+nsresult
 nsXBLService::DetachGlobalKeyHandler(nsIDOMEventTarget* aTarget)
 {
   nsCOMPtr<nsIDOMEventTarget> piTarget = aTarget;
@@ -789,9 +721,10 @@ nsXBLService::FlushMemory()
 
 // Internal helper methods ////////////////////////////////////////////////////////////////
 
-NS_IMETHODIMP nsXBLService::BindingReady(nsIContent* aBoundElement, 
-                                         nsIURI* aURI, 
-                                         bool* aIsReady)
+nsresult
+nsXBLService::BindingReady(nsIContent* aBoundElement,
+                           nsIURI* aURI, 
+                           bool* aIsReady)
 {
   // Don't do a security check here; we know this binding is set to go.
   return GetBinding(aBoundElement, aURI, true, nsnull, aIsReady, nsnull);
@@ -840,9 +773,20 @@ nsXBLService::GetBinding(nsIContent* aBoundElement, nsIURI* aURI,
 
   nsXBLPrototypeBinding* protoBinding = docInfo->GetPrototypeBinding(ref);
 
-  NS_WARN_IF_FALSE(protoBinding, "Unable to locate an XBL binding");
-  if (!protoBinding)
+  if (!protoBinding) {
+#ifdef DEBUG
+    nsCAutoString uriSpec;
+    aURI->GetSpec(uriSpec);
+    nsCAutoString doc;
+    boundDocument->GetDocumentURI()->GetSpec(doc);
+    nsCAutoString message("Unable to locate an XBL binding for URI ");
+    message += uriSpec;
+    message += " in document ";
+    message += doc;
+    NS_WARNING(message.get());
+#endif
     return NS_ERROR_FAILURE;
+  }
 
   NS_ENSURE_TRUE(aDontExtendURIs.AppendElement(protoBinding->BindingURI()),
                  NS_ERROR_OUT_OF_MEMORY);
@@ -950,7 +894,7 @@ IsSystemOrChromeURLPrincipal(nsIPrincipal* aPrincipal)
   return NS_SUCCEEDED(uri->SchemeIs("chrome", &isChrome)) && isChrome;
 }
 
-NS_IMETHODIMP
+nsresult
 nsXBLService::LoadBindingDocumentInfo(nsIContent* aBoundElement,
                                       nsIDocument* aBoundDocument,
                                       nsIURI* aBindingURI,
@@ -1110,11 +1054,7 @@ nsXBLService::LoadBindingDocumentInfo(nsIContent* aBoundElement,
     }
   }
 
-  if (!info)
-    return NS_OK;
- 
-  *aResult = info;
-  NS_IF_ADDREF(*aResult);
+  info.forget(aResult);
 
   return NS_OK;
 }
@@ -1163,7 +1103,7 @@ nsXBLService::FetchBindingDocument(nsIContent* aBoundElement, nsIDocument* aBoun
   if (!aForceSyncLoad) {
     // We can be asynchronous
     nsXBLStreamListener* xblListener =
-      new nsXBLStreamListener(this, aBoundDocument, xblSink, doc);
+      new nsXBLStreamListener(aBoundDocument, xblSink, doc);
     NS_ENSURE_TRUE(xblListener,NS_ERROR_OUT_OF_MEMORY);
 
     // Add ourselves to the list of loading docs.
@@ -1212,28 +1152,6 @@ nsXBLService::FetchBindingDocument(nsIContent* aBoundElement, nsIDocument* aBoun
   NS_ENSURE_SUCCESS(rv, rv);
 
   doc.swap(*aResult);
-
-  return NS_OK;
-}
-
-// Creation Routine ///////////////////////////////////////////////////////////////////////
-
-nsresult NS_NewXBLService(nsIXBLService** aResult);
-
-nsresult
-NS_NewXBLService(nsIXBLService** aResult)
-{
-  nsXBLService* result = new nsXBLService;
-  if (! result)
-    return NS_ERROR_OUT_OF_MEMORY;
-
-  NS_ADDREF(*aResult = result);
-
-  // Register the first (and only) nsXBLService as a memory pressure observer
-  // so it can flush the LRU list in low-memory situations.
-  nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
-  if (os)
-    os->AddObserver(result, "memory-pressure", true);
 
   return NS_OK;
 }

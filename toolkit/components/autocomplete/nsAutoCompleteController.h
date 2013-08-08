@@ -1,40 +1,6 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Joe Hewitt <hewitt@netscape.com> (Original Author)
- *   Masayuki Nakano <masayuki@d-toybox.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef __nsAutoCompleteController__
 #define __nsAutoCompleteController__
@@ -74,9 +40,11 @@ protected:
   nsresult OpenPopup();
   nsresult ClosePopup();
 
-  nsresult StartSearch();
-  
-  nsresult StartSearchTimer();
+  nsresult StartSearch(PRUint16 aSearchType);
+
+  nsresult BeforeSearches();
+  nsresult StartSearches();
+  void AfterSearches();
   nsresult ClearSearchTimer();
 
   nsresult ProcessResult(PRInt32 aSearchIndex, nsIAutoCompleteResult *aResult);
@@ -98,8 +66,49 @@ private:
   nsresult GetResultValueLabelAt(PRInt32 aIndex, bool aValueOnly,
                                  bool aGetValue, nsAString & _retval);
 protected:
+
+  /**
+   * Gets and validates the defaultComplete result and the relative
+   * defaultIndex value.
+   *
+   * @param aResultIndex
+   *        Index of the defaultComplete result to be used.  Pass -1 to search
+   *        for the first result providing a valid defaultIndex.
+   * @param _result
+   *        The found result.
+   * @param _defaultIndex
+   *        The defaultIndex relative to _result.
+   */
+  nsresult GetDefaultCompleteResult(PRInt32 aResultIndex,
+                                    nsIAutoCompleteResult** _result,
+                                    PRInt32* _defaultIndex);
+
+  /**
+   * Gets the defaultComplete value to be suggested to the user.
+   *
+   * @param aResultIndex
+   *        Index of the defaultComplete result to be used.
+   * @param aPreserveCasing
+   *        Whether user casing should be preserved.
+   * @param _retval
+   *        The value to be completed.
+   */
   nsresult GetDefaultCompleteValue(PRInt32 aResultIndex, bool aPreserveCasing,
                                    nsAString &_retval);
+
+  /**
+   * Gets the defaultComplete value to be used when the user confirms the
+   * current match.
+   * The value is returned only if it case-insensitively matches the current
+   * input text, otherwise the method returns NS_ERROR_FAILURE.
+   * This happens because we don't want to replace text if the user backspaces
+   * just before Enter.
+   *
+   * @param _retval
+   *        The value to be completed.
+   */
+  nsresult GetFinalDefaultCompleteValue(nsAString &_retval);
+
   nsresult ClearResults();
   
   nsresult RowIndexToSearch(PRInt32 aRowIndex,
@@ -111,8 +120,14 @@ protected:
 
   nsCOMArray<nsIAutoCompleteSearch> mSearches;
   nsCOMArray<nsIAutoCompleteResult> mResults;
+  // Caches the match counts for the current ongoing results to allow
+  // incremental results to keep the rowcount up to date.
   nsTArray<PRUint32> mMatchCounts;
-  
+  // Temporarily keeps the results alive while invoking startSearch() for each
+  // search.  This is needed to allow the searches to reuse the previous result,
+  // since otherwise the first search clears mResults.
+  nsCOMArray<nsIAutoCompleteResult> mResultCache;
+
   nsCOMPtr<nsITimer> mTimer;
   nsCOMPtr<nsITreeSelection> mSelection;
   nsCOMPtr<nsITreeBoxObject> mTree;
@@ -121,12 +136,18 @@ protected:
   bool mDefaultIndexCompleted;
   bool mBackspaced;
   bool mPopupClosedByCompositionStart;
-  bool mIsIMEComposing;
-  bool mIgnoreHandleText;
+  enum CompositionState {
+    eCompositionState_None,
+    eCompositionState_Composing,
+    eCompositionState_Committing
+  };
+  CompositionState mCompositionState;
   PRUint16 mSearchStatus;
   PRUint32 mRowCount;
   PRUint32 mSearchesOngoing;
+  PRUint32 mSearchesFailed;
   bool mFirstSearchResult;
+  PRUint32 mImmediateSearchesCount;
 };
 
 #endif /* __nsAutoCompleteController__ */

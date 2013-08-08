@@ -1,43 +1,12 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "nsHTMLFormElement.h"
 #include "nsIHTMLDocument.h"
 #include "nsIDOMEventTarget.h"
 #include "nsEventStateManager.h"
+#include "nsEventStates.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
@@ -149,7 +118,7 @@ public:
   nsresult GetSortedControls(nsTArray<nsGenericHTMLFormElement*>& aControls) const;
 
   // nsWrapperCache
-  virtual JSObject* WrapObject(JSContext *cx, XPCWrappedNativeScope *scope,
+  virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
                                bool *triedToWrap)
   {
     return mozilla::dom::binding::HTMLCollection::create(cx, scope, this,
@@ -222,7 +191,6 @@ ShouldBeInElements(nsIFormControl* aFormControl)
   //
   // NS_FORM_INPUT_IMAGE
   // NS_FORM_LABEL
-  // NS_FORM_PROGRESS
 
   return false;
 }
@@ -289,12 +257,9 @@ nsHTMLFormElement::Init()
     return rv;
   }
   
-  NS_ENSURE_TRUE(mSelectedRadioButtons.Init(4),
-                 NS_ERROR_OUT_OF_MEMORY);
-  NS_ENSURE_TRUE(mRequiredRadioButtonCounts.Init(4),
-                 NS_ERROR_OUT_OF_MEMORY);
-  NS_ENSURE_TRUE(mValueMissingRadioGroups.Init(4),
-                 NS_ERROR_OUT_OF_MEMORY);
+  mSelectedRadioButtons.Init(4);
+  mRequiredRadioButtonCounts.Init(4);
+  mValueMissingRadioGroups.Init(4);
 
   return NS_OK;
 }
@@ -377,7 +342,7 @@ nsHTMLFormElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
 
 nsresult
 nsHTMLFormElement::AfterSetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
-                                const nsAString* aValue, bool aNotify)
+                                const nsAttrValue* aValue, bool aNotify)
 {
   if (aName == nsGkAtoms::novalidate && aNameSpaceID == kNameSpaceID_None) {
     // Update all form elements states because they might be [no longer]
@@ -1008,13 +973,25 @@ nsHTMLFormElement::WalkFormElements(nsFormSubmission* aFormSubmission)
   nsresult rv = mControls->GetSortedControls(sortedControls);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  PRUint32 len = sortedControls.Length();
+
+  // Hold a reference to the elements so they can't be deleted while
+  // calling SubmitNamesValues().
+  for (PRUint32 i = 0; i < len; ++i) {
+    static_cast<nsGenericHTMLElement*>(sortedControls[i])->AddRef();
+  }
+
   //
   // Walk the list of nodes and call SubmitNamesValues() on the controls
   //
-  PRUint32 len = sortedControls.Length();
   for (PRUint32 i = 0; i < len; ++i) {
     // Tell the control to submit its name/value pairs to the submission
     sortedControls[i]->SubmitNamesValues(aFormSubmission);
+  }
+
+  // Release the references.
+  for (PRUint32 i = 0; i < len; ++i) {
+    static_cast<nsGenericHTMLElement*>(sortedControls[i])->Release();
   }
 
   return NS_OK;
@@ -1052,7 +1029,12 @@ CompareFormControlPosition(nsGenericHTMLFormElement *aControl1,
 {
   NS_ASSERTION(aControl1 != aControl2, "Comparing a form control to itself");
 
-  NS_ASSERTION(aControl1->GetParent() && aControl2->GetParent(),
+  // If an element has a @form, we can assume it *might* be able to not have
+  // a parent and still be in the form.
+  NS_ASSERTION((aControl1->HasAttr(kNameSpaceID_None, nsGkAtoms::form) ||
+                aControl1->GetParent()) &&
+               (aControl2->HasAttr(kNameSpaceID_None, nsGkAtoms::form) ||
+                aControl2->GetParent()),
                "Form controls should always have parents");
 
   // If we pass aForm, we are assuming both controls are form descendants which
@@ -1103,7 +1085,11 @@ nsresult
 nsHTMLFormElement::AddElement(nsGenericHTMLFormElement* aChild,
                               bool aUpdateValidity, bool aNotify)
 {
-  NS_ASSERTION(aChild->GetParent(), "Form control should have a parent");
+  // If an element has a @form, we can assume it *might* be able to not have
+  // a parent and still be in the form.
+  NS_ASSERTION(aChild->HasAttr(kNameSpaceID_None, nsGkAtoms::form) ||
+               aChild->GetParent(),
+               "Form control should have a parent");
 
   // Determine whether to add the new element to the elements or
   // the not-in-elements list.
@@ -1810,6 +1796,8 @@ nsHTMLFormElement::UpdateValidity(bool aElementValidity)
       mControls->mNotInElements[i]->UpdateState(true);
     }
   }
+
+  UpdateState(true);
 }
 
 // nsIWebProgressListener
@@ -1883,8 +1871,7 @@ NS_IMETHODIMP
 nsHTMLFormElement::SetCurrentRadioButton(const nsAString& aName,
                                          nsIDOMHTMLInputElement* aRadio)
 {
-  NS_ENSURE_TRUE(mSelectedRadioButtons.Put(aName, aRadio),
-                 NS_ERROR_OUT_OF_MEMORY);
+  mSelectedRadioButtons.Put(aName, aRadio);
 
   return NS_OK;
 }
@@ -1894,41 +1881,6 @@ nsHTMLFormElement::GetCurrentRadioButton(const nsAString& aName,
                                          nsIDOMHTMLInputElement** aRadio)
 {
   mSelectedRadioButtons.Get(aName, aRadio);
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsHTMLFormElement::GetPositionInGroup(nsIDOMHTMLInputElement *aRadio,
-                                      PRInt32 *aPositionIndex,
-                                      PRInt32 *aItemsInGroup)
-{
-  *aPositionIndex = 0;
-  *aItemsInGroup = 1;
-
-  nsAutoString name;
-  aRadio->GetName(name);
-  if (name.IsEmpty()) {
-    return NS_OK;
-  }
-
-  nsCOMPtr<nsISupports> itemWithName;
-  itemWithName = ResolveName(name);
-  NS_ENSURE_TRUE(itemWithName, NS_ERROR_FAILURE);
-  nsCOMPtr<nsINodeList> radioGroup(do_QueryInterface(itemWithName));
-
-  NS_ASSERTION(radioGroup, "No such radio group in this container");
-  if (!radioGroup) {
-    return NS_OK;
-  }
-
-  nsCOMPtr<nsIContent> currentRadioNode(do_QueryInterface(aRadio));
-  NS_ASSERTION(currentRadioNode, "No nsIContent for current radio button");
-  *aPositionIndex = radioGroup->IndexOf(currentRadioNode);
-  NS_ASSERTION(*aPositionIndex >= 0, "Radio button not found in its own group");
-  PRUint32 itemsInGroup;
-  radioGroup->GetLength(&itemsInGroup);
-  *aItemsInGroup = itemsInGroup;
 
   return NS_OK;
 }
@@ -2133,6 +2085,19 @@ nsHTMLFormElement::SetValueMissingState(const nsAString& aName, bool aValue)
   mValueMissingRadioGroups.Put(aName, aValue);
 }
 
+nsEventStates
+nsHTMLFormElement::IntrinsicState() const
+{
+  nsEventStates state = nsGenericHTMLElement::IntrinsicState();
+
+  if (mInvalidElementsCount) {
+    state |= NS_EVENT_STATE_INVALID;
+  } else {
+      state |= NS_EVENT_STATE_VALID;
+  }
+
+  return state;
+}
 
 //----------------------------------------------------------------------
 // nsFormControlList implementation, this could go away if there were
@@ -2144,8 +2109,7 @@ nsFormControlList::nsFormControlList(nsHTMLFormElement* aForm) :
   // of 8 to reduce allocations on small forms.
   mElements(8)
 {
-  // Mark ourselves as a proxy
-  SetIsProxy();
+  SetIsDOMBinding();
 }
 
 nsFormControlList::~nsFormControlList()
@@ -2156,10 +2120,7 @@ nsFormControlList::~nsFormControlList()
 
 nsresult nsFormControlList::Init()
 {
-  NS_ENSURE_TRUE(
-    mNameLookupTable.Init(NS_FORM_CONTROL_LIST_HASHTABLE_SIZE),
-    NS_ERROR_OUT_OF_MEMORY);
-
+  mNameLookupTable.Init(NS_FORM_CONTROL_LIST_HASHTABLE_SIZE);
   return NS_OK;
 }
 
@@ -2322,9 +2283,7 @@ nsFormControlList::AddElementToTable(nsGenericHTMLFormElement* aChild,
 
   if (!supports) {
     // No entry found, add the form control
-    NS_ENSURE_TRUE(mNameLookupTable.Put(aName,
-                                        NS_ISUPPORTS_CAST(nsIContent*, aChild)),
-                   NS_ERROR_FAILURE);
+    mNameLookupTable.Put(aName, NS_ISUPPORTS_CAST(nsIContent*, aChild));
   } else {
     // Found something in the hash, check its type
     nsCOMPtr<nsIContent> content = do_QueryInterface(supports);
@@ -2342,7 +2301,10 @@ nsFormControlList::AddElementToTable(nsGenericHTMLFormElement* aChild,
       // the list in the hash
       nsSimpleContentList *list = new nsSimpleContentList(mForm);
 
-      NS_ASSERTION(content->GetParent(), "Item in list without parent");
+      // If an element has a @form, we can assume it *might* be able to not have
+      // a parent and still be in the form.
+      NS_ASSERTION(content->HasAttr(kNameSpaceID_None, nsGkAtoms::form) ||
+                   content->GetParent(), "Item in list without parent");
 
       // Determine the ordering between the new and old element.
       bool newFirst = nsContentUtils::PositionIsBefore(aChild, content);
@@ -2354,8 +2316,7 @@ nsFormControlList::AddElementToTable(nsGenericHTMLFormElement* aChild,
       nsCOMPtr<nsISupports> listSupports = do_QueryObject(list);
 
       // Replace the element with the list.
-      NS_ENSURE_TRUE(mNameLookupTable.Put(aName, listSupports),
-                     NS_ERROR_FAILURE);
+      mNameLookupTable.Put(aName, listSupports);
     } else {
       // There's already a list in the hash, add the child to the list
       nsCOMPtr<nsIDOMNodeList> nodeList = do_QueryInterface(supports);
@@ -2464,7 +2425,7 @@ nsFormControlList::RemoveElementFromTable(nsGenericHTMLFormElement* aChild,
     // single element.
     nsIContent* node = list->GetNodeAt(0);
     if (node) {
-      NS_ENSURE_TRUE(mNameLookupTable.Put(aName, node),NS_ERROR_FAILURE);
+      mNameLookupTable.Put(aName, node);
     }
   }
 

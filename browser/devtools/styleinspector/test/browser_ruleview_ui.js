@@ -7,34 +7,11 @@ Cu.import("resource:///modules/devtools/CssRuleView.jsm", tempScope);
 let CssRuleView = tempScope.CssRuleView;
 let _ElementStyle = tempScope._ElementStyle;
 let _editableField = tempScope._editableField;
+let inplaceEditor = tempScope._getInplaceEditorForSpan;
 
 let doc;
 let ruleDialog;
 let ruleView;
-
-function waitForEditorFocus(aParent, aCallback)
-{
-  aParent.addEventListener("focus", function onFocus(evt) {
-    if (evt.target.inplaceEditor) {
-      aParent.removeEventListener("focus", onFocus, true);
-      let editor = evt.target.inplaceEditor;
-      executeSoon(function() {
-        aCallback(editor);
-      });
-    }
-  }, true);
-}
-
-function waitForEditorBlur(aEditor, aCallback)
-{
-  let input = aEditor.input;
-  input.addEventListener("blur", function onBlur() {
-    input.removeEventListener("blur", onBlur, false);
-    executeSoon(function() {
-      aCallback();
-    });
-  }, false);
-}
 
 var gRuleViewChanged = false;
 function ruleViewChanged()
@@ -71,7 +48,13 @@ function startTest()
     ruleView = new CssRuleView(doc);
     doc.documentElement.appendChild(ruleView.element);
     ruleView.element.addEventListener("CssRuleViewChanged", ruleViewChanged, false);
+    is(ruleView.element.querySelectorAll("#noResults").length, 1, "Has a no-results element.");
     ruleView.highlight(testElement);
+    is(ruleView.element.querySelectorAll("#noResults").length, 0, "After a highlight, no longer has a no-results element.");
+    ruleView.highlight(null);
+    is(ruleView.element.querySelectorAll("#noResults").length, 1, "After highlighting null, has a no-results element again.");
+    ruleView.highlight(testElement);
+
     waitForFocus(testCancelNew, ruleDialog);
   }, true);
 }
@@ -83,7 +66,7 @@ function testCancelNew()
 
   let elementRuleEditor = ruleView.element.children[0]._ruleEditor;
   waitForEditorFocus(elementRuleEditor.element, function onNewElement(aEditor) {
-    is(elementRuleEditor.newPropSpan.inplaceEditor, aEditor, "Next focused editor should be the new property editor.");
+    is(inplaceEditor(elementRuleEditor.newPropSpan), aEditor, "Next focused editor should be the new property editor.");
     let input = aEditor.input;
     waitForEditorBlur(aEditor, function () {
       ok(!gRuleViewChanged, "Shouldn't get a change event after a cancel.");
@@ -104,8 +87,16 @@ function testCreateNew()
   // Create a new property.
   let elementRuleEditor = ruleView.element.children[0]._ruleEditor;
   waitForEditorFocus(elementRuleEditor.element, function onNewElement(aEditor) {
-    is(elementRuleEditor.newPropSpan.inplaceEditor, aEditor, "Next focused editor should be the new property editor.");
+    is(inplaceEditor(elementRuleEditor.newPropSpan), aEditor, "Next focused editor should be the new property editor.");
+
     let input = aEditor.input;
+
+    ok(input.selectionStart === 0 && input.selectionEnd === input.value.length, "Editor contents are selected.");
+
+    // Try clicking on the editor's input again, shouldn't cause trouble (see bug 761665).
+    EventUtils.synthesizeMouse(input, 1, 1, { }, ruleDialog);
+    input.select();
+
     input.value = "background-color";
 
     waitForEditorFocus(elementRuleEditor.element, function onNewValue(aEditor) {
@@ -113,7 +104,7 @@ function testCreateNew()
       is(elementRuleEditor.rule.textProps.length,  1, "Should have created a new text property.");
       is(elementRuleEditor.propertyList.children.length, 1, "Should have created a property editor.");
       let textProp = elementRuleEditor.rule.textProps[0];
-      is(aEditor, textProp.editor.valueSpan.inplaceEditor, "Should be editing the value span now.");
+      is(aEditor, inplaceEditor(textProp.editor.valueSpan), "Should be editing the value span now.");
 
       aEditor.input.value = "purple";
       waitForEditorBlur(aEditor, function() {
@@ -137,17 +128,39 @@ function testEditProperty()
   let idRuleEditor = ruleView.element.children[1]._ruleEditor;
   let propEditor = idRuleEditor.rule.textProps[0].editor;
   waitForEditorFocus(propEditor.element, function onNewElement(aEditor) {
-    is(propEditor.nameSpan.inplaceEditor, aEditor, "Next focused editor should be the name editor.");
+    is(inplaceEditor(propEditor.nameSpan), aEditor, "Next focused editor should be the name editor.");
+
     let input = aEditor.input;
+
+    dump("SELECTION END IS: " + input.selectionEnd + "\n");
+    ok(input.selectionStart === 0 && input.selectionEnd === input.value.length, "Editor contents are selected.");
+
+    // Try clicking on the editor's input again, shouldn't cause trouble (see bug 761665).
+    EventUtils.synthesizeMouse(input, 1, 1, { }, ruleDialog);
+    input.select();
+
     waitForEditorFocus(propEditor.element, function onNewName(aEditor) {
       expectChange();
+      is(inplaceEditor(propEditor.valueSpan), aEditor, "Focus should have moved to the value.");
+
       input = aEditor.input;
-      is(propEditor.valueSpan.inplaceEditor, aEditor, "Focus should have moved to the value.");
+
+      ok(input.selectionStart === 0 && input.selectionEnd === input.value.length, "Editor contents are selected.");
+
+      // Try clicking on the editor's input again, shouldn't cause trouble (see bug 761665).
+      EventUtils.synthesizeMouse(input, 1, 1, { }, ruleDialog);
+      input.select();
 
       waitForEditorBlur(aEditor, function() {
         expectChange();
         is(idRuleEditor.rule.style.getPropertyValue("border-color"), "red",
            "border-color should have been set.");
+
+        let props = ruleView.element.querySelectorAll(".ruleview-property");
+        for (let i = 0; i < props.length; i++) {
+          is(props[i].hasAttribute("dirty"), i <= 1,
+            "props[" + i + "] marked dirty as appropriate");
+        }
         testDisableProperty();
       });
 

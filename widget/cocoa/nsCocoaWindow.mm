@@ -1,41 +1,7 @@
 /* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is 
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Josh Aas <josh@mozilla.com>
- *   Colin Barrett <cbarrett@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsCocoaWindow.h"
 
@@ -61,6 +27,8 @@
 #include "nsStyleConsts.h"
 #include "nsNativeThemeColors.h"
 #include "nsChildView.h"
+#include "nsCocoaFeatures.h"
+#include "nsIScreenManager.h"
 
 #include "gfxPlatform.h"
 #include "qcms.h"
@@ -135,10 +103,14 @@ nsCocoaWindow::nsCocoaWindow()
 , mPopupContentView(nil)
 , mShadowStyle(NS_STYLE_WINDOW_SHADOW_DEFAULT)
 , mWindowFilter(0)
+, mAnimationType(nsIWidget::eGenericWindowAnimation)
 , mWindowMadeHere(false)
 , mSheetNeedsShow(false)
 , mFullScreen(false)
+, mInFullScreenTransition(false)
 , mModal(false)
+, mUsesNativeFullScreen(false)
+, mIsAnimationSuppressed(false)
 , mInReportMoveEvent(false)
 , mNumModalDescendents(0)
 {
@@ -149,11 +121,15 @@ void nsCocoaWindow::DestroyNativeWindow()
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
+  if (!mWindow)
+    return;
+
   CleanUpWindowFilter();
   // We want to unhook the delegate here because we don't want events
   // sent to it after this object has been destroyed.
   [mWindow setDelegate:nil];
   [mWindow close];
+  mWindow = nil;
   [mDelegate autorelease];
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
@@ -303,6 +279,8 @@ nsresult nsCocoaWindow::Create(nsIWidget *aParent,
     }
     return CreatePopupContentView(newBounds, aHandleEventFunction, aContext);
   }
+
+  mIsAnimationSuppressed = aInitData->mIsAnimationSuppressed;
 
   return NS_OK;
 
@@ -510,7 +488,18 @@ NS_IMETHODIMP nsCocoaWindow::Destroy()
   nsBaseWidget::OnDestroy();
 
   if (mFullScreen) {
-    nsCocoaUtils::HideOSChromeOnScreen(false, [mWindow screen]);
+    // On Lion we don't have to mess with the OS chrome when in Full Screen
+    // mode.  But we do have to destroy the native window here (and not wait
+    // for that to happen in our destructor).  We don't switch away from the
+    // native window's space until the window is destroyed, and otherwise this
+    // might not happen for several seconds (because at least one object
+    // holding a reference to ourselves is usually waiting to be garbage-
+    // collected).  See bug 757618.
+    if (mUsesNativeFullScreen) {
+      DestroyNativeWindow();
+    } else if (mWindow) {
+      nsCocoaUtils::HideOSChromeOnScreen(false, [mWindow screen]);
+    }
   }
 
   return NS_OK;
@@ -560,7 +549,7 @@ NS_IMETHODIMP nsCocoaWindow::IsVisible(bool & aState)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  aState = ([mWindow isVisible] || mSheetNeedsShow);
+  aState = (mWindow && ([mWindow isVisible] || mSheetNeedsShow));
   return NS_OK;
 
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
@@ -568,6 +557,9 @@ NS_IMETHODIMP nsCocoaWindow::IsVisible(bool & aState)
 
 NS_IMETHODIMP nsCocoaWindow::SetModal(bool aState)
 {
+  if (!mWindow)
+    return NS_OK;
+
   // This is used during startup (outside the event loop) when creating
   // the add-ons compatibility checking dialog and the profile manager UI;
   // therefore, it needs to provide an autorelease pool to avoid cocoa
@@ -645,6 +637,9 @@ NS_IMETHODIMP nsCocoaWindow::SetModal(bool aState)
 NS_IMETHODIMP nsCocoaWindow::Show(bool bState)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+
+  if (!mWindow)
+    return NS_OK;
 
   // We need to re-execute sometimes in order to bring already-visible
   // windows forward.
@@ -745,6 +740,26 @@ NS_IMETHODIMP nsCocoaWindow::Show(bool bState)
     }
     else {
       NS_OBJC_BEGIN_TRY_LOGONLY_BLOCK;
+      if (mWindowType == eWindowType_toplevel &&
+          [mWindow respondsToSelector:@selector(setAnimationBehavior:)]) {
+        NSWindowAnimationBehavior behavior;
+        if (mIsAnimationSuppressed) {
+          behavior = NSWindowAnimationBehaviorNone;
+        } else {
+          switch (mAnimationType) {
+            case nsIWidget::eDocumentWindowAnimation:
+              behavior = NSWindowAnimationBehaviorDocumentWindow;
+              break;
+            default:
+              NS_NOTREACHED("unexpected mAnimationType value");
+              // fall through
+            case nsIWidget::eGenericWindowAnimation:
+              behavior = NSWindowAnimationBehaviorDefault;
+              break;
+          }
+        }
+        [mWindow setAnimationBehavior:behavior];
+      }
       [mWindow makeKeyAndOrderFront:nil];
       NS_OBJC_END_TRY_LOGONLY_BLOCK;
       SendSetZLevelEvent();
@@ -883,7 +898,7 @@ nsCocoaWindow::AdjustWindowShadow()
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
-  if (![mWindow isVisible] || ![mWindow hasShadow] ||
+  if (!mWindow || ![mWindow isVisible] || ![mWindow hasShadow] ||
       [mWindow canBecomeKeyWindow] || [mWindow windowNumber] == -1)
     return;
 
@@ -902,7 +917,7 @@ nsCocoaWindow::SetUpWindowFilter()
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
-  if (![mWindow isVisible] || [mWindow windowNumber] == -1)
+  if (!mWindow || ![mWindow isVisible] || [mWindow windowNumber] == -1)
     return;
 
   CleanUpWindowFilter();
@@ -931,7 +946,7 @@ nsCocoaWindow::SetUpWindowFilter()
 void
 nsCocoaWindow::CleanUpWindowFilter()
 {
-  if (!mWindowFilter || [mWindow windowNumber] == -1)
+  if (!mWindow || !mWindowFilter || [mWindow windowNumber] == -1)
     return;
 
   CGSConnection cid = _CGSDefaultConnection();
@@ -968,7 +983,7 @@ nsTransparencyMode nsCocoaWindow::GetTransparencyMode()
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
 
-  return [mWindow isOpaque] ? eTransparencyOpaque : eTransparencyTransparent;
+  return (!mWindow || [mWindow isOpaque]) ? eTransparencyOpaque : eTransparencyTransparent;
 
   NS_OBJC_END_TRY_ABORT_BLOCK_RETURN(eTransparencyOpaque);
 }
@@ -978,6 +993,9 @@ nsTransparencyMode nsCocoaWindow::GetTransparencyMode()
 void nsCocoaWindow::SetTransparencyMode(nsTransparencyMode aMode)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+
+  if (!mWindow)
+    return;
 
   BOOL isTransparent = aMode == eTransparencyTransparent;
   BOOL currentTransparency = ![mWindow isOpaque];
@@ -1010,8 +1028,23 @@ NS_IMETHODIMP nsCocoaWindow::ConstrainPosition(bool aAllowSlop,
     return NS_OK;
   }
 
-  nsIntRect screenBounds(
-    nsCocoaUtils::CocoaRectToGeckoRect([[mWindow screen] visibleFrame]));
+  nsIntRect screenBounds;
+
+  nsCOMPtr<nsIScreenManager> screenMgr = do_GetService("@mozilla.org/gfx/screenmanager;1");
+  if (screenMgr) {
+    nsCOMPtr<nsIScreen> screen;
+    PRInt32 width, height;
+
+    // zero size rects confuse the screen manager
+    width = mBounds.width > 0 ? mBounds.width : 1;
+    height = mBounds.height > 0 ? mBounds.height : 1;
+    screenMgr->ScreenForRect(*aX, *aY, width, height, getter_AddRefs(screen));
+
+    if (screen) {
+      screen->GetRect(&(screenBounds.x), &(screenBounds.y),
+                      &(screenBounds.width), &(screenBounds.height));
+    }
+  }
 
   if (aAllowSlop) {
     if (*aX < screenBounds.x - mBounds.width + kWindowPositionSlop) {
@@ -1066,6 +1099,9 @@ NS_METHOD nsCocoaWindow::SetSizeMode(PRInt32 aMode)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
+  if (!mWindow)
+    return NS_OK;
+
   // mSizeMode will be updated in DispatchSizeModeEvent, which will be called
   // from a delegate method that handles the state change during one of the
   // calls below.
@@ -1087,6 +1123,10 @@ NS_METHOD nsCocoaWindow::SetSizeMode(PRInt32 aMode)
     if (![mWindow isZoomed])
       [mWindow zoom:nil];
   }
+  else if (aMode == nsSizeMode_Fullscreen) {
+    if (!mFullScreen)
+      MakeFullScreen(true);
+  }
 
   return NS_OK;
 
@@ -1100,7 +1140,7 @@ NS_IMETHODIMP nsCocoaWindow::HideWindowChrome(bool aShouldHide)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  if (!mWindowMadeHere ||
+  if (!mWindow || !mWindowMadeHere ||
       (mWindowType != eWindowType_toplevel && mWindowType != eWindowType_dialog))
     return NS_ERROR_FAILURE;
 
@@ -1152,23 +1192,56 @@ NS_IMETHODIMP nsCocoaWindow::HideWindowChrome(bool aShouldHide)
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
+void nsCocoaWindow::EnteredFullScreen(bool aFullScreen)
+{
+  mInFullScreenTransition = false;
+  mFullScreen = aFullScreen;
+  DispatchSizeModeEvent();
+}
 
 NS_METHOD nsCocoaWindow::MakeFullScreen(bool aFullScreen)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  NS_ASSERTION(mFullScreen != aFullScreen, "Unnecessary MakeFullScreen call");
+  if (!mWindow) {
+    return NS_OK;
+  }
 
-  NSDisableScreenUpdates();
-  // The order here matters. When we exit full screen mode, we need to show the
-  // Dock first, otherwise the newly-created window won't have its minimize
-  // button enabled. See bug 526282.
-  nsCocoaUtils::HideOSChromeOnScreen(aFullScreen, [mWindow screen]);
-  nsresult rv = nsBaseWidget::MakeFullScreen(aFullScreen);
-  NSEnableScreenUpdates();
-  NS_ENSURE_SUCCESS(rv, rv);
+  // We will call into MakeFullScreen redundantly when entering/exiting
+  // fullscreen mode via OS X controls. When that happens we should just handle
+  // it gracefully - no need to ASSERT.
+  if (mFullScreen == aFullScreen) {
+    return NS_OK;
+  }
 
-  mFullScreen = aFullScreen;
+  // If we're using native fullscreen mode and our native window is invisible,
+  // our attempt to go into fullscreen mode will fail with an assertion in
+  // system code, without [WindowDelegate windowDidFailToEnterFullScreen:]
+  // ever getting called.  To pre-empt this we bail here.  See bug 752294.
+  if (mUsesNativeFullScreen && aFullScreen && ![mWindow isVisible]) {
+    EnteredFullScreen(false);
+    return NS_OK;
+  }
+
+  mInFullScreenTransition = true;
+
+  if (mUsesNativeFullScreen) {
+    // Calling toggleFullScreen will result in windowDid(FailTo)?(Enter|Exit)FullScreen
+    // to be called from the OS. We will call EnteredFullScreen from those methods,
+    // where mFullScreen will be set and a sizemode event will be dispatched.
+    [mWindow toggleFullScreen:nil];
+  } else {
+    NSDisableScreenUpdates();
+    // The order here matters. When we exit full screen mode, we need to show the
+    // Dock first, otherwise the newly-created window won't have its minimize
+    // button enabled. See bug 526282.
+    nsCocoaUtils::HideOSChromeOnScreen(aFullScreen, [mWindow screen]);
+    nsresult rv = nsBaseWidget::MakeFullScreen(aFullScreen);
+    NSEnableScreenUpdates();
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    EnteredFullScreen(aFullScreen);
+  }
 
   return NS_OK;
 
@@ -1214,6 +1287,11 @@ NS_IMETHODIMP nsCocoaWindow::GetClientBounds(nsIntRect &aRect)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
+  if (!mWindow) {
+    aRect = nsCocoaUtils::CocoaRectToGeckoRect(NSZeroRect);
+    return NS_OK;
+  }
+
   if ([mWindow isKindOfClass:[ToolbarWindow class]] &&
       [(ToolbarWindow*)mWindow drawsContentsIntoWindowFrame]) {
     aRect = nsCocoaUtils::CocoaRectToGeckoRect([mWindow frame]);
@@ -1230,14 +1308,17 @@ NS_IMETHODIMP nsCocoaWindow::GetClientBounds(nsIntRect &aRect)
 void
 nsCocoaWindow::UpdateBounds()
 {
-  mBounds = nsCocoaUtils::CocoaRectToGeckoRect([mWindow frame]);
+  NSRect frame = NSZeroRect;
+  if (mWindow)
+    frame = [mWindow frame];
+  mBounds = nsCocoaUtils::CocoaRectToGeckoRect(frame);
 }
 
 NS_IMETHODIMP nsCocoaWindow::GetScreenBounds(nsIntRect &aRect)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
-  NS_ASSERTION(mBounds == nsCocoaUtils::CocoaRectToGeckoRect([mWindow frame]),
+  NS_ASSERTION(mWindow && mBounds == nsCocoaUtils::CocoaRectToGeckoRect([mWindow frame]),
                "mBounds out of sync!");
 
   aRect = mBounds;
@@ -1267,6 +1348,9 @@ NS_IMETHODIMP nsCocoaWindow::SetTitle(const nsAString& aTitle)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
+  if (!mWindow)
+    return NS_OK;
+
   const nsString& strTitle = PromiseFlatString(aTitle);
   NSString* title = [NSString stringWithCharacters:strTitle.get() length:strTitle.Length()];
   [mWindow setTitle:title];
@@ -1276,18 +1360,10 @@ NS_IMETHODIMP nsCocoaWindow::SetTitle(const nsAString& aTitle)
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
 
-NS_IMETHODIMP nsCocoaWindow::Invalidate(const nsIntRect & aRect, bool aIsSynchronous)
+NS_IMETHODIMP nsCocoaWindow::Invalidate(const nsIntRect & aRect)
 {
   if (mPopupContentView)
-    return mPopupContentView->Invalidate(aRect, aIsSynchronous);
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP nsCocoaWindow::Update()
-{
-  if (mPopupContentView)
-    return mPopupContentView->Update();
+    return mPopupContentView->Invalidate(aRect);
 
   return NS_OK;
 }
@@ -1329,8 +1405,9 @@ NS_IMETHODIMP nsCocoaWindow::GetChildSheet(bool aShown, nsCocoaWindow** _retval)
     if (NS_SUCCEEDED(child->GetWindowType(type)) && type == eWindowType_sheet) {
       // if it's a sheet, it must be an nsCocoaWindow
       nsCocoaWindow* cocoaWindow = static_cast<nsCocoaWindow*>(child);
-      if ((aShown && [cocoaWindow->mWindow isVisible]) ||
-          (!aShown && cocoaWindow->mSheetNeedsShow)) {
+      if (cocoaWindow->mWindow &&
+          ((aShown && [cocoaWindow->mWindow isVisible]) ||
+          (!aShown && cocoaWindow->mSheetNeedsShow))) {
         *_retval = cocoaWindow;
         return NS_OK;
       }
@@ -1383,8 +1460,14 @@ nsCocoaWindow::DispatchEvent(nsGUIEvent* event, nsEventStatus& aStatus)
   return NS_OK;
 }
 
+// aFullScreen should be the window's mFullScreen. We don't have access to that
+// from here, so we need to pass it in. mFullScreen should be the canonical
+// indicator that a window is currently full screen and it makes sense to keep
+// all sizemode logic here.
 static nsSizeMode
-GetWindowSizeMode(NSWindow* aWindow) {
+GetWindowSizeMode(NSWindow* aWindow, bool aFullScreen) {
+  if (aFullScreen)
+    return nsSizeMode_Fullscreen;
   if ([aWindow isMiniaturized])
     return nsSizeMode_Minimized;
   if (([aWindow styleMask] & NSResizableWindowMask) && [aWindow isZoomed])
@@ -1424,9 +1507,18 @@ nsCocoaWindow::ReportMoveEvent()
 void
 nsCocoaWindow::DispatchSizeModeEvent()
 {
-  nsSizeMode newMode = GetWindowSizeMode(mWindow);
-  if (mSizeMode == newMode)
+  if (!mWindow) {
     return;
+  }
+
+  nsSizeMode newMode = GetWindowSizeMode(mWindow, mFullScreen);
+
+  // Don't dispatch a sizemode event if:
+  // 1. the window is transitioning to fullscreen
+  // 2. the new sizemode is the same as the current sizemode
+  if (mInFullScreenTransition || mSizeMode == newMode) {
+    return;
+  }
 
   mSizeMode = newMode;
   nsSizeModeEvent event(true, NS_SIZEMODE, this);
@@ -1463,6 +1555,10 @@ void nsCocoaWindow::SetMenuBar(nsMenuBarX *aMenuBar)
 {
   if (mMenuBar)
     mMenuBar->SetParent(nsnull);
+  if (!mWindow) {
+    mMenuBar = nsnull;
+    return;
+  }
   mMenuBar = aMenuBar;
 
   // Only paint for active windows, or paint the hidden window menu bar if no
@@ -1477,6 +1573,9 @@ void nsCocoaWindow::SetMenuBar(nsMenuBarX *aMenuBar)
 
 NS_IMETHODIMP nsCocoaWindow::SetFocus(bool aState)
 {
+  if (!mWindow)
+    return NS_OK;
+
   if (mPopupContentView) {
     mPopupContentView->SetFocus(aState);
   }
@@ -1492,7 +1591,10 @@ nsIntPoint nsCocoaWindow::WidgetToScreenOffset()
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
 
-  nsIntRect r = nsCocoaUtils::CocoaRectToGeckoRect([mWindow contentRectForFrameRect:[mWindow frame]]);
+  NSRect rect = NSZeroRect;
+  if (mWindow)
+    rect = [mWindow contentRectForFrameRect:[mWindow frame]];
+  nsIntRect r = nsCocoaUtils::CocoaRectToGeckoRect(rect);
 
   return r.TopLeft();
 
@@ -1514,6 +1616,9 @@ nsIntPoint nsCocoaWindow::GetClientOffset()
 nsIntSize nsCocoaWindow::ClientToWindowSize(const nsIntSize& aClientSize)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_RETURN;
+
+  if (!mWindow)
+    return nsIntSize(0, 0);
 
   // this is only called for popups currently. If needed, expand this to support
   // other types of windows
@@ -1596,6 +1701,9 @@ NS_IMETHODIMP nsCocoaWindow::SetWindowShadowStyle(PRInt32 aStyle)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
+  if (!mWindow)
+    return NS_OK;
+
   mShadowStyle = aStyle;
   [mWindow setHasShadow:(aStyle != NS_STYLE_WINDOW_SHADOW_NONE)];
   AdjustWindowShadow();
@@ -1610,14 +1718,59 @@ void nsCocoaWindow::SetShowsToolbarButton(bool aShow)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
-  [mWindow setShowsToolbarButton:aShow];
+  if (mWindow)
+    [mWindow setShowsToolbarButton:aShow];
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
+}
+
+void nsCocoaWindow::SetShowsFullScreenButton(bool aShow)
+{
+  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+
+  if (!mWindow || ![mWindow respondsToSelector:@selector(toggleFullScreen:)] ||
+      mUsesNativeFullScreen == aShow) {
+    return;
+  }
+
+  // If the window is currently in fullscreen mode, then we're going to
+  // transition out first, then set the collection behavior & toggle
+  // mUsesNativeFullScreen, then transtion back into fullscreen mode. This
+  // prevents us from getting into a conflicting state with MakeFullScreen
+  // where mUsesNativeFullScreen would lead us down the wrong path.
+  bool wasFullScreen = mFullScreen;
+
+  if (wasFullScreen) {
+    MakeFullScreen(false);
+  }
+
+  NSWindowCollectionBehavior newBehavior = [mWindow collectionBehavior];
+  if (aShow) {
+    newBehavior |= NSWindowCollectionBehaviorFullScreenPrimary;
+  } else {
+    newBehavior &= ~NSWindowCollectionBehaviorFullScreenPrimary;
+  }
+  [mWindow setCollectionBehavior:newBehavior];
+  mUsesNativeFullScreen = aShow;
+
+  if (wasFullScreen) {
+    MakeFullScreen(true);
+  }
+
+  NS_OBJC_END_TRY_ABORT_BLOCK;
+}
+
+void nsCocoaWindow::SetWindowAnimationType(nsIWidget::WindowAnimationType aType)
+{
+  mAnimationType = aType;
 }
 
 NS_IMETHODIMP nsCocoaWindow::SetWindowTitlebarColor(nscolor aColor, bool aActive)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+
+  if (!mWindow)
+    return NS_OK;
 
   // If they pass a color with a complete transparent alpha component, use the
   // native titlebar appearance.
@@ -1654,7 +1807,8 @@ void nsCocoaWindow::SetDrawsInTitlebar(bool aState)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
-  [mWindow setDrawsContentsIntoWindowFrame:aState];
+  if (mWindow)
+    [mWindow setDrawsContentsIntoWindowFrame:aState];
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
 }
@@ -1709,6 +1863,9 @@ NS_IMETHODIMP nsCocoaWindow::EndSecureKeyboardInput()
 
 void nsCocoaWindow::SetPopupWindowLevel()
 {
+  if (!mWindow)
+    return;
+
   // Floating popups are at the floating level and hide when the window is
   // deactivated.
   if (mPopupLevel == ePopupLevelFloating) {
@@ -1747,7 +1904,7 @@ bool nsCocoaWindow::IsChildInFailingLeftClickThrough(NSView *aChild)
 // [ChildView shouldFocusPlugin].
 bool nsCocoaWindow::ShouldFocusPlugin()
 {
-  if (IsChildInFailingLeftClickThrough([mWindow contentView]))
+  if (!mWindow || IsChildInFailingLeftClickThrough([mWindow contentView]))
     return false;
 
   return true;
@@ -1841,6 +1998,45 @@ bool nsCocoaWindow::ShouldFocusPlugin()
     return;
 
   mGeckoWindow->ReportMoveEvent();
+}
+
+// Lion's full screen mode will bypass our internal fullscreen tracking, so
+// we need to catch it when we transition and call our own methods, which in
+// turn will fire "fullscreen" events.
+- (void)windowDidEnterFullScreen:(NSNotification *)notification
+{
+  if (!mGeckoWindow) {
+    return;
+  }
+
+  mGeckoWindow->EnteredFullScreen(true);
+}
+
+- (void)windowDidExitFullScreen:(NSNotification *)notification
+{
+  if (!mGeckoWindow) {
+    return;
+  }
+
+  mGeckoWindow->EnteredFullScreen(false);
+}
+
+- (void)windowDidFailToEnterFullScreen:(NSWindow *)window
+{
+  if (!mGeckoWindow) {
+    return;
+  }
+
+  mGeckoWindow->EnteredFullScreen(false);
+}
+
+- (void)windowDidFailToExitFullScreen:(NSWindow *)window
+{
+  if (!mGeckoWindow) {
+    return;
+  }
+
+  mGeckoWindow->EnteredFullScreen(true);
 }
 
 - (void)windowDidBecomeMain:(NSNotification *)aNotification
@@ -2249,7 +2445,7 @@ static const NSString* kStateShowsToolbarButton = @"showsToolbarButton";
   // We work around this problem by only returning AXChildren that are
   // mozAccessible object or are one of the titlebar's buttons (which
   // instantiate subclasses of NSButtonCell).
-  if (nsToolkit::OnLionOrLater() && [retval isKindOfClass:[NSArray class]] &&
+  if (nsCocoaFeatures::OnLionOrLater() && [retval isKindOfClass:[NSArray class]] &&
       [attribute isEqualToString:@"AXChildren"]) {
     NSMutableArray *holder = [NSMutableArray arrayWithCapacity:10];
     [holder addObjectsFromArray:(NSArray *)retval];
@@ -2543,6 +2739,9 @@ static void
 DrawNativeTitlebar(CGContextRef aContext, CGRect aTitlebarRect,
                    float aToolbarHeight, BOOL aIsMain)
 {
+  if (aTitlebarRect.size.width * aTitlebarRect.size.height > CUIDRAW_MAX_AREA) {
+    return;
+  }
   int unifiedHeight = aTitlebarRect.size.height + aToolbarHeight;
   CUIDraw([NSWindow coreUIRenderer], aTitlebarRect, aContext,
           (CFDictionaryRef)[NSDictionary dictionaryWithObjectsAndKeys:
@@ -2554,7 +2753,7 @@ DrawNativeTitlebar(CGContextRef aContext, CGRect aTitlebarRect,
             nil],
           nil);
 
-  if (nsToolkit::OnLionOrLater()) {
+  if (nsCocoaFeatures::OnLionOrLater()) {
     // On Lion the call to CUIDraw doesn't draw the top pixel strip at some
     // window widths. We don't want to have a flickering transparent line, so
     // we overdraw it.

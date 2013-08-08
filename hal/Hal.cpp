@@ -1,41 +1,8 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set sw=2 ts=8 et ft=cpp : */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at:
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Code.
- *
- * The Initial Developer of the Original Code is
- *   The Mozilla Foundation
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Chris Jones <jones.chris.g@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Hal.h"
 #include "HalImpl.h"
@@ -52,6 +19,7 @@
 #include "nsIDocShell.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "WindowIdentifier.h"
+#include "mozilla/dom/ScreenOrientation.h"
 
 using namespace mozilla::services;
 
@@ -117,13 +85,13 @@ void InitLastIDToVibrate()
 } // anonymous namespace
 
 void
-Vibrate(const nsTArray<uint32>& pattern, nsIDOMWindow* window)
+Vibrate(const nsTArray<uint32_t>& pattern, nsIDOMWindow* window)
 {
   Vibrate(pattern, WindowIdentifier(window));
 }
 
 void
-Vibrate(const nsTArray<uint32>& pattern, const WindowIdentifier &id)
+Vibrate(const nsTArray<uint32_t>& pattern, const WindowIdentifier &id)
 {
   AssertMainThread();
 
@@ -200,7 +168,7 @@ class ObserversManager
 public:
   void AddObserver(Observer<InfoType>* aObserver) {
     if (!mObservers) {
-      mObservers = new ObserverList<InfoType>();
+      mObservers = new mozilla::ObserverList<InfoType>();
     }
 
     mObservers->AddObserver(aObserver);
@@ -211,25 +179,63 @@ public:
   }
 
   void RemoveObserver(Observer<InfoType>* aObserver) {
+    // If mObservers is null, that means there are no observers.
+    // In addition, if RemoveObserver() returns false, that means we didn't
+    // find the observer.
+    // In both cases, that is a logical error we want to make sure the developer
+    // notices.
+
     MOZ_ASSERT(mObservers);
-    mObservers->RemoveObserver(aObserver);
+
+#ifndef DEBUG
+    if (!mObservers) {
+      return;
+    }
+#endif
+
+    DebugOnly<bool> removed = mObservers->RemoveObserver(aObserver);
+    MOZ_ASSERT(removed);
 
     if (mObservers->Length() == 0) {
       DisableNotifications();
 
+      OnNotificationsDisabled();
+
       delete mObservers;
       mObservers = 0;
-
-      mHasValidCache = false;
     }
   }
 
+  void BroadcastInformation(const InfoType& aInfo) {
+    // It is possible for mObservers to be NULL here on some platforms,
+    // because a call to BroadcastInformation gets queued up asynchronously
+    // while RemoveObserver is running (and before the notifications are
+    // disabled). The queued call can then get run after mObservers has
+    // been nulled out. See bug 757025.
+    if (!mObservers) {
+      return;
+    }
+    mObservers->Broadcast(aInfo);
+  }
+
+protected:
+  virtual void EnableNotifications() = 0;
+  virtual void DisableNotifications() = 0;
+  virtual void OnNotificationsDisabled() {}
+
+private:
+  mozilla::ObserverList<InfoType>* mObservers;
+};
+
+template <class InfoType>
+class CachingObserversManager : public ObserversManager<InfoType>
+{
+public:
   InfoType GetCurrentInformation() {
     if (mHasValidCache) {
       return mInfo;
     }
 
-    mHasValidCache = true;
     GetCurrentInformationInternal(&mInfo);
     return mInfo;
   }
@@ -240,22 +246,22 @@ public:
   }
 
   void BroadcastCachedInformation() {
-    MOZ_ASSERT(mObservers);
-    mObservers->Broadcast(mInfo);
+    this->BroadcastInformation(mInfo);
   }
 
 protected:
-  virtual void EnableNotifications() = 0;
-  virtual void DisableNotifications() = 0;
   virtual void GetCurrentInformationInternal(InfoType*) = 0;
 
+  virtual void OnNotificationsDisabled() {
+    mHasValidCache = false;
+  }
+
 private:
-  ObserverList<InfoType>* mObservers;
   InfoType                mInfo;
   bool                    mHasValidCache;
 };
 
-class BatteryObserversManager : public ObserversManager<BatteryInformation>
+class BatteryObserversManager : public CachingObserversManager<BatteryInformation>
 {
 protected:
   void EnableNotifications() {
@@ -273,7 +279,7 @@ protected:
 
 static BatteryObserversManager sBatteryObservers;
 
-class NetworkObserversManager : public ObserversManager<NetworkInformation>
+class NetworkObserversManager : public CachingObserversManager<NetworkInformation>
 {
 protected:
   void EnableNotifications() {
@@ -290,6 +296,38 @@ protected:
 };
 
 static NetworkObserversManager sNetworkObservers;
+
+class WakeLockObserversManager : public ObserversManager<WakeLockInformation>
+{
+protected:
+  void EnableNotifications() {
+    PROXY_IF_SANDBOXED(EnableWakeLockNotifications());
+  }
+
+  void DisableNotifications() {
+    PROXY_IF_SANDBOXED(DisableWakeLockNotifications());
+  }
+};
+
+static WakeLockObserversManager sWakeLockObservers;
+
+class ScreenConfigurationObserversManager : public CachingObserversManager<ScreenConfiguration>
+{
+protected:
+  void EnableNotifications() {
+    PROXY_IF_SANDBOXED(EnableScreenConfigurationNotifications());
+  }
+
+  void DisableNotifications() {
+    PROXY_IF_SANDBOXED(DisableScreenConfigurationNotifications());
+  }
+
+  void GetCurrentInformationInternal(ScreenConfiguration* aInfo) {
+    PROXY_IF_SANDBOXED(GetCurrentScreenConfiguration(aInfo));
+  }
+};
+
+static ScreenConfigurationObserversManager sScreenConfigurationObservers;
 
 void
 RegisterBatteryObserver(BatteryObserver* aObserver)
@@ -332,6 +370,22 @@ void SetScreenEnabled(bool enabled)
   PROXY_IF_SANDBOXED(SetScreenEnabled(enabled));
 }
 
+bool GetCpuSleepAllowed()
+{
+  // Generally for interfaces that are accessible by normal web content
+  // we should cache the result and be notified on state changes, like
+  // what the battery API does. But since this is only used by
+  // privileged interface, the synchronous getter is OK here.
+  AssertMainThread();
+  RETURN_PROXY_IF_SANDBOXED(GetCpuSleepAllowed());
+}
+
+void SetCpuSleepAllowed(bool allowed)
+{
+  AssertMainThread();
+  PROXY_IF_SANDBOXED(SetCpuSleepAllowed(allowed));
+}
+
 double GetScreenBrightness()
 {
   AssertMainThread();
@@ -342,6 +396,100 @@ void SetScreenBrightness(double brightness)
 {
   AssertMainThread();
   PROXY_IF_SANDBOXED(SetScreenBrightness(clamped(brightness, 0.0, 1.0)));
+}
+
+bool SetLight(LightType light, const hal::LightConfiguration& aConfig)
+{
+  AssertMainThread();
+  RETURN_PROXY_IF_SANDBOXED(SetLight(light, aConfig));
+}
+
+bool GetLight(LightType light, hal::LightConfiguration* aConfig)
+{
+  AssertMainThread();
+  RETURN_PROXY_IF_SANDBOXED(GetLight(light, aConfig));
+}
+
+
+void 
+AdjustSystemClock(int32_t aDeltaMilliseconds)
+{
+  AssertMainThread();
+  PROXY_IF_SANDBOXED(AdjustSystemClock(aDeltaMilliseconds));
+}
+
+void 
+SetTimezone(const nsCString& aTimezoneSpec)
+{
+  AssertMainThread();
+  PROXY_IF_SANDBOXED(SetTimezone(aTimezoneSpec));
+}
+
+void
+EnableSensorNotifications(SensorType aSensor) {
+  AssertMainThread();
+  PROXY_IF_SANDBOXED(EnableSensorNotifications(aSensor));
+}
+
+void
+DisableSensorNotifications(SensorType aSensor) {
+  AssertMainThread();
+  PROXY_IF_SANDBOXED(DisableSensorNotifications(aSensor));
+}
+
+typedef mozilla::ObserverList<SensorData> SensorObserverList;
+static SensorObserverList* gSensorObservers = NULL;
+
+static SensorObserverList &
+GetSensorObservers(SensorType sensor_type) {
+  MOZ_ASSERT(sensor_type < NUM_SENSOR_TYPE);
+  
+  if(gSensorObservers == NULL)
+    gSensorObservers = new SensorObserverList[NUM_SENSOR_TYPE];
+  return gSensorObservers[sensor_type];
+}
+
+void
+RegisterSensorObserver(SensorType aSensor, ISensorObserver *aObserver) {
+  SensorObserverList &observers = GetSensorObservers(aSensor);
+
+  AssertMainThread();
+  
+  observers.AddObserver(aObserver);
+  if(observers.Length() == 1) {
+    EnableSensorNotifications(aSensor);
+  }
+}
+
+void
+UnregisterSensorObserver(SensorType aSensor, ISensorObserver *aObserver) {
+  SensorObserverList &observers = GetSensorObservers(aSensor);
+
+  AssertMainThread();
+  
+  observers.RemoveObserver(aObserver);
+  if (observers.Length() > 0) {
+    return;
+  }
+  DisableSensorNotifications(aSensor);
+
+  // Destroy sSensorObservers only if all observer lists are empty.
+  for (int i = 0; i < NUM_SENSOR_TYPE; i++) {
+    if (gSensorObservers[i].Length() > 0) {
+      return;
+    }
+  }
+  delete [] gSensorObservers;
+  gSensorObservers = nsnull;
+}
+
+void
+NotifySensorChange(const SensorData &aSensorData) {
+  SensorObserverList &observers = GetSensorObservers(aSensorData.sensor());
+
+  AssertMainThread();
+  
+  observers.Broadcast(aSensorData);
 }
 
 void
@@ -370,6 +518,175 @@ NotifyNetworkChange(const NetworkInformation& aInfo)
 {
   sNetworkObservers.CacheInformation(aInfo);
   sNetworkObservers.BroadcastCachedInformation();
+}
+
+void Reboot()
+{
+  AssertMainThread();
+  PROXY_IF_SANDBOXED(Reboot());
+}
+
+void PowerOff()
+{
+  AssertMainThread();
+  PROXY_IF_SANDBOXED(PowerOff());
+}
+
+void
+RegisterWakeLockObserver(WakeLockObserver* aObserver)
+{
+  AssertMainThread();
+  sWakeLockObservers.AddObserver(aObserver);
+}
+
+void
+UnregisterWakeLockObserver(WakeLockObserver* aObserver)
+{
+  AssertMainThread();
+  sWakeLockObservers.RemoveObserver(aObserver);
+}
+
+void
+ModifyWakeLock(const nsAString &aTopic,
+               hal::WakeLockControl aLockAdjust,
+               hal::WakeLockControl aHiddenAdjust)
+{
+  AssertMainThread();
+  PROXY_IF_SANDBOXED(ModifyWakeLock(aTopic, aLockAdjust, aHiddenAdjust));
+}
+
+void
+GetWakeLockInfo(const nsAString &aTopic, WakeLockInformation *aWakeLockInfo)
+{
+  AssertMainThread();
+  PROXY_IF_SANDBOXED(GetWakeLockInfo(aTopic, aWakeLockInfo));
+}
+
+void
+NotifyWakeLockChange(const WakeLockInformation& aInfo)
+{
+  AssertMainThread();
+  sWakeLockObservers.BroadcastInformation(aInfo);
+}
+
+void
+RegisterScreenConfigurationObserver(ScreenConfigurationObserver* aObserver)
+{
+  AssertMainThread();
+  sScreenConfigurationObservers.AddObserver(aObserver);
+}
+
+void
+UnregisterScreenConfigurationObserver(ScreenConfigurationObserver* aObserver)
+{
+  AssertMainThread();
+  sScreenConfigurationObservers.RemoveObserver(aObserver);
+}
+
+void
+GetCurrentScreenConfiguration(ScreenConfiguration* aScreenConfiguration)
+{
+  AssertMainThread();
+  *aScreenConfiguration = sScreenConfigurationObservers.GetCurrentInformation();
+}
+
+void
+NotifyScreenConfigurationChange(const ScreenConfiguration& aScreenConfiguration)
+{
+  sScreenConfigurationObservers.CacheInformation(aScreenConfiguration);
+  sScreenConfigurationObservers.BroadcastCachedInformation();
+}
+
+bool
+LockScreenOrientation(const dom::ScreenOrientation& aOrientation)
+{
+  AssertMainThread();
+  RETURN_PROXY_IF_SANDBOXED(LockScreenOrientation(aOrientation));
+}
+
+void
+UnlockScreenOrientation()
+{
+  AssertMainThread();
+  PROXY_IF_SANDBOXED(UnlockScreenOrientation());
+}
+
+void
+EnableSwitchNotifications(hal::SwitchDevice aDevice) {
+  AssertMainThread();
+  PROXY_IF_SANDBOXED(EnableSwitchNotifications(aDevice));
+}
+
+void
+DisableSwitchNotifications(hal::SwitchDevice aDevice) {
+  AssertMainThread();
+  PROXY_IF_SANDBOXED(DisableSwitchNotifications(aDevice));
+}
+
+hal::SwitchState GetCurrentSwitchState(hal::SwitchDevice aDevice)
+{
+  AssertMainThread();
+  RETURN_PROXY_IF_SANDBOXED(GetCurrentSwitchState(aDevice));
+}
+
+typedef mozilla::ObserverList<SwitchEvent> SwitchObserverList;
+
+static SwitchObserverList *sSwitchObserverLists = NULL;
+
+static SwitchObserverList&
+GetSwitchObserverList(hal::SwitchDevice aDevice) {
+  MOZ_ASSERT(0 <= aDevice && aDevice < NUM_SWITCH_DEVICE); 
+  if (sSwitchObserverLists == NULL) {
+    sSwitchObserverLists = new SwitchObserverList[NUM_SWITCH_DEVICE];
+  }
+  return sSwitchObserverLists[aDevice];
+}
+
+static void
+ReleaseObserversIfNeeded() {
+  for (int i = 0; i < NUM_SWITCH_DEVICE; i++) {
+    if (sSwitchObserverLists[i].Length() != 0)
+      return;
+  }
+
+  //The length of every list is 0, no observer in the list.
+  delete [] sSwitchObserverLists;
+  sSwitchObserverLists = NULL;
+}
+
+void
+RegisterSwitchObserver(hal::SwitchDevice aDevice, hal::SwitchObserver *aObserver)
+{
+  AssertMainThread();
+  SwitchObserverList& observer = GetSwitchObserverList(aDevice);
+  observer.AddObserver(aObserver);
+  if (observer.Length() == 1) {
+    EnableSwitchNotifications(aDevice);
+  }
+}
+
+void
+UnregisterSwitchObserver(hal::SwitchDevice aDevice, hal::SwitchObserver *aObserver)
+{
+  AssertMainThread();
+  SwitchObserverList& observer = GetSwitchObserverList(aDevice);
+  observer.RemoveObserver(aObserver);
+  if (observer.Length() == 0) {
+    DisableSwitchNotifications(aDevice);
+    ReleaseObserversIfNeeded();
+  }
+}
+
+void
+NotifySwitchChange(const hal::SwitchEvent& aEvent)
+{
+  // When callback this notification, main thread may call unregister function
+  // first. We should check if this pointer is valid.
+  if (!sSwitchObserverLists)
+    return;
+
+  SwitchObserverList& observer = GetSwitchObserverList(aEvent.device());
+  observer.Broadcast(aEvent);
 }
 
 } // namespace hal

@@ -1,45 +1,15 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Firefox.
- *
- * The Initial Developer of the Original Code is
- * the Mozilla Foundation <http://www.mozilla.org>.
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/HangMonitor.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Telemetry.h"
 #include "nsXULAppAPI.h"
 #include "nsThreadUtils.h"
+#include "nsStackWalk.h"
 
 #ifdef MOZ_CRASHREPORTER
 #include "nsExceptionHandler.h"
@@ -47,6 +17,10 @@
 
 #ifdef XP_WIN
 #include <windows.h>
+#endif
+
+#if defined(MOZ_ENABLE_PROFILER_SPS) && defined(MOZ_PROFILING) && defined(XP_WIN)
+  #define REPORT_CHROME_HANGS
 #endif
 
 namespace mozilla { namespace HangMonitor {
@@ -58,6 +32,8 @@ namespace mozilla { namespace HangMonitor {
 volatile bool gDebugDisableHangMonitor = false;
 
 const char kHangMonitorPrefName[] = "hangmonitor.timeout";
+
+const char kTelemetryPrefName[] = "toolkit.telemetry.enabled";
 
 // Monitor protects gShutdown and gTimeout, but not gTimestamp which rely on
 // being atomically set by the processor; synchronization doesn't really matter
@@ -74,13 +50,30 @@ bool gShutdown;
 
 // The timestamp of the last event notification, or PR_INTERVAL_NO_WAIT if
 // we're currently not processing events.
-volatile PRIntervalTime gTimestamp;
+volatile PRIntervalTime gTimestamp = PR_INTERVAL_NO_WAIT;
+
+#ifdef REPORT_CHROME_HANGS
+// Main thread ID used in reporting chrome hangs under Windows
+static HANDLE winMainThreadHandle = NULL;
+
+// Default timeout for reporting chrome hangs to Telemetry (10 seconds)
+static const PRInt32 DEFAULT_CHROME_HANG_INTERVAL = 10;
+#endif
 
 // PrefChangedFunc
 int
 PrefChanged(const char*, void*)
 {
   PRInt32 newval = Preferences::GetInt(kHangMonitorPrefName);
+#ifdef REPORT_CHROME_HANGS
+  // Monitor chrome hangs on the profiling branch if Telemetry enabled
+  if (newval == 0) {
+    bool telemetryEnabled = Preferences::GetBool(kTelemetryPrefName);
+    if (telemetryEnabled) {
+      newval = DEFAULT_CHROME_HANG_INTERVAL;
+    }
+  }
+#endif
   MonitorAutoLock lock(*gMonitor);
   if (newval != gTimeout) {
     gTimeout = newval;
@@ -111,6 +104,77 @@ Crash()
   NS_RUNTIMEABORT("HangMonitor triggered");
 }
 
+#ifdef REPORT_CHROME_HANGS
+static void
+ChromeStackWalker(void *aPC, void *aClosure)
+{
+  MOZ_ASSERT(aClosure);
+  Telemetry::HangStack *callStack =
+    reinterpret_cast< Telemetry::HangStack* >(aClosure);
+  callStack->AppendElement(reinterpret_cast<uintptr_t>(aPC));
+}
+
+static void
+GetChromeHangReport(Telemetry::HangStack &callStack, SharedLibraryInfo &moduleMap)
+{
+  MOZ_ASSERT(winMainThreadHandle);
+
+  DWORD ret = ::SuspendThread(winMainThreadHandle);
+  if (ret == -1) {
+    callStack.Clear();
+    moduleMap.Clear();
+    return;
+  }
+  NS_StackWalk(ChromeStackWalker, 0, &callStack,
+               reinterpret_cast<uintptr_t>(winMainThreadHandle));
+  ret = ::ResumeThread(winMainThreadHandle);
+  if (ret == -1) {
+    callStack.Clear();
+    moduleMap.Clear();
+    return;
+  }
+
+  moduleMap = SharedLibraryInfo::GetInfoForSelf();
+  moduleMap.SortByAddress();
+
+  // Remove all modules not referenced by a PC on the stack
+  Telemetry::HangStack sortedStack = callStack;
+  sortedStack.Sort();
+
+  size_t moduleIndex = 0;
+  size_t stackIndex = 0;
+  bool unreferencedModule = true;
+  while (stackIndex < sortedStack.Length() && moduleIndex < moduleMap.GetSize()) {
+    uintptr_t pc = sortedStack[stackIndex];
+    SharedLibrary& module = moduleMap.GetEntry(moduleIndex);
+    uintptr_t moduleStart = module.GetStart();
+    uintptr_t moduleEnd = module.GetEnd() - 1;
+    if (moduleStart <= pc && pc <= moduleEnd) {
+      // If the current PC is within the current module, mark module as used
+      unreferencedModule = false;
+      ++stackIndex;
+    } else if (pc > moduleEnd) {
+      if (unreferencedModule) {
+        // Remove module if no PCs within its address range
+        moduleMap.RemoveEntries(moduleIndex, moduleIndex + 1);
+      } else {
+        // Module was referenced on stack, but current PC belongs to later module
+        unreferencedModule = true;
+        ++moduleIndex;
+      }
+    } else {
+      // PC does not belong to any module
+      ++stackIndex;
+    }
+  }
+
+  // Clean up remaining unreferenced modules, i.e. module addresses > max(pc)
+  if (moduleIndex + 1 < moduleMap.GetSize()) {
+    moduleMap.RemoveEntries(moduleIndex + 1, moduleMap.GetSize());
+  }
+}
+#endif
+
 void
 ThreadMain(void*)
 {
@@ -121,6 +185,11 @@ ThreadMain(void*)
   // run twice to trigger hang protection.
   PRIntervalTime lastTimestamp = 0;
   int waitCount = 0;
+
+#ifdef REPORT_CHROME_HANGS
+  Telemetry::HangStack hangStack;
+  SharedLibraryInfo hangModuleMap;
+#endif
 
   while (true) {
     if (gShutdown) {
@@ -143,15 +212,27 @@ ThreadMain(void*)
         gTimeout > 0) {
       ++waitCount;
       if (waitCount == 2) {
+#ifdef REPORT_CHROME_HANGS
+        GetChromeHangReport(hangStack, hangModuleMap);
+#else
         PRInt32 delay =
           PRInt32(PR_IntervalToSeconds(now - timestamp));
         if (delay > gTimeout) {
           MonitorAutoUnlock unlock(*gMonitor);
           Crash();
         }
+#endif
       }
     }
     else {
+#ifdef REPORT_CHROME_HANGS
+      if (waitCount >= 2) {
+        PRUint32 hangDuration = PR_IntervalToSeconds(now - lastTimestamp);
+        Telemetry::RecordChromeHang(hangDuration, hangStack, hangModuleMap);
+        hangStack.Clear();
+        hangModuleMap.Clear();
+      }
+#endif
       lastTimestamp = timestamp;
       waitCount = 0;
     }
@@ -181,6 +262,14 @@ Startup()
 
   Preferences::RegisterCallback(PrefChanged, kHangMonitorPrefName, NULL);
   PrefChanged(NULL, NULL);
+
+#ifdef REPORT_CHROME_HANGS
+  Preferences::RegisterCallback(PrefChanged, kTelemetryPrefName, NULL);
+  winMainThreadHandle =
+    OpenThread(THREAD_ALL_ACCESS, FALSE, GetCurrentThreadId());
+  if (!winMainThreadHandle)
+    return;
+#endif
 
   // Don't actually start measuring hangs until we hit the main event loop.
   // This potentially misses a small class of really early startup hangs,
@@ -218,15 +307,70 @@ Shutdown()
   gMonitor = NULL;
 }
 
-void
-NotifyActivity()
+static bool
+IsUIMessageWaiting()
 {
-  NS_ASSERTION(NS_IsMainThread(), "HangMonitor::Notify called from off the main thread.");
+#ifndef XP_WIN
+  return false;
+#else
+  #define NS_WM_IMEFIRST WM_IME_SETCONTEXT
+  #define NS_WM_IMELAST  WM_IME_KEYUP
+  BOOL haveUIMessageWaiting = FALSE;
+  MSG msg;
+  haveUIMessageWaiting |= ::PeekMessageW(&msg, NULL, WM_KEYFIRST, 
+                                         WM_IME_KEYLAST, PM_NOREMOVE);
+  haveUIMessageWaiting |= ::PeekMessageW(&msg, NULL, NS_WM_IMEFIRST,
+                                         NS_WM_IMELAST, PM_NOREMOVE);
+  haveUIMessageWaiting |= ::PeekMessageW(&msg, NULL, WM_MOUSEFIRST,
+                                         WM_MOUSELAST, PM_NOREMOVE);
+  return haveUIMessageWaiting;
+#endif
+}
+
+void
+NotifyActivity(ActivityType activityType)
+{
+  NS_ASSERTION(NS_IsMainThread(),
+    "HangMonitor::Notify called from off the main thread.");
+
+  // Determine the activity type more specifically
+  if (activityType == kGeneralActivity) {
+    activityType = IsUIMessageWaiting() ? kActivityUIAVail : 
+                                          kActivityNoUIAVail;
+  }
+
+  // Calculate the cumulative amount of lag time since the last UI message
+  static PRUint32 cumulativeUILagMS = 0;
+  switch(activityType) {
+  case kActivityNoUIAVail:
+    cumulativeUILagMS = 0;
+    break;
+  case kActivityUIAVail:
+  case kUIActivity:
+    if (gTimestamp != PR_INTERVAL_NO_WAIT) {
+      cumulativeUILagMS += PR_IntervalToMilliseconds(PR_IntervalNow() -
+                                                     gTimestamp);
+    }
+    break;
+  }
 
   // This is not a locked activity because PRTimeStamp is a 32-bit quantity
   // which can be read/written atomically, and we don't want to pay locking
   // penalties here.
   gTimestamp = PR_IntervalNow();
+
+  // If we have UI activity we should reset the timer and report it if it is
+  // significant enough.
+  if (activityType == kUIActivity) {
+    // The minimum amount of lag time that we should report for telemetry data.
+    // Mozilla's UI responsiveness goal is 50ms
+    static const PRUint32 kUIResponsivenessThresholdMS = 50;
+    if (cumulativeUILagMS > kUIResponsivenessThresholdMS) {
+      mozilla::Telemetry::Accumulate(mozilla::Telemetry::EVENTLOOP_UI_LAG_EXP_MS,
+                                     cumulativeUILagMS);
+    }
+    cumulativeUILagMS = 0;
+  }
 }
 
 void

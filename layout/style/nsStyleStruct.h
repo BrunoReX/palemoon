@@ -1,44 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Mats Palmgren <matspal@gmail.com>
- *   Masayuki Nakano <masayuki@d-toybox.com>
- *   Rob Arnold <robarnold@mozilla.com>
- *   Jonathon Jongsma <jonathon.jongsma@collabora.co.uk>, Collabora Ltd.
- *   L. David Baron <dbaron@dbaron.org>, Mozilla Corporation
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * structs that contain the data provided by nsStyleContext, the
@@ -436,6 +399,26 @@ struct nsStyleBackground {
       return !(*this == aOther);
     }
   };
+  
+  struct Repeat;
+  friend struct Repeat;
+  struct Repeat {
+    PRUint8 mXRepeat, mYRepeat;
+    
+    // Initialize nothing
+    Repeat() {}
+
+    // Initialize to initial values
+    void SetInitialValues();
+
+    bool operator==(const Repeat& aOther) const {
+      return mXRepeat == aOther.mXRepeat &&
+             mYRepeat == aOther.mYRepeat;
+    }
+    bool operator!=(const Repeat& aOther) const {
+      return !(*this == aOther);
+    }
+  };
 
   struct Layer;
   friend struct Layer;
@@ -443,7 +426,7 @@ struct nsStyleBackground {
     PRUint8 mAttachment;                // [reset] See nsStyleConsts.h
     PRUint8 mClip;                      // [reset] See nsStyleConsts.h
     PRUint8 mOrigin;                    // [reset] See nsStyleConsts.h
-    PRUint8 mRepeat;                    // [reset] See nsStyleConsts.h
+    Repeat mRepeat;                     // [reset] See nsStyleConsts.h
     Position mPosition;                 // [reset]
     nsStyleImage mImage;                // [reset]
     Size mSize;                         // [reset]
@@ -704,6 +687,14 @@ class nsCSSShadowArray {
       return &mArray[i];
     }
 
+    bool HasShadowWithInset(bool aInset) {
+      for (PRUint32 i = 0; i < mLength; ++i) {
+        if (mArray[i].mInset == aInset)
+          return true;
+      }
+      return false;
+    }
+
     NS_INLINE_DECL_REFCOUNTING(nsCSSShadowArray)
 
   private:
@@ -743,18 +734,10 @@ struct nsStyleBorder {
 #ifdef DEBUG
   static nsChangeHint MaxDifference();
 #endif
-  static bool ForceCompare() { return false; }
-  bool ImageBorderDiffers() const;
-
-  nsStyleCorners mBorderRadius;    // [reset] coord, percent, calc
-  nsStyleSides  mBorderImageSplit; // [reset] integer, percent
-  PRUint8       mFloatEdge;       // [reset] see nsStyleConsts.h
-  PRUint8       mBorderImageHFill; // [reset]
-  PRUint8       mBorderImageVFill; // [reset]
-  nsBorderColors** mBorderColors; // [reset] multiple levels of color for a border.
-  nsRefPtr<nsCSSShadowArray> mBoxShadow; // [reset] NULL for 'none'
-  bool          mHaveBorderImageWidth; // [reset]
-  nsMargin      mBorderImageWidth; // [reset]
+  // ForceCompare is true, because a change to our border-style might
+  // change border-width on descendants (requiring reflow of those)
+  // but not our own border-width (thus not requiring us to reflow).
+  static bool ForceCompare() { return true; }
 
   void EnsureBorderColors() {
     if (!mBorderColors) {
@@ -792,19 +775,6 @@ struct nsStyleBorder {
       mComputedBorder.Side(aSide) = roundedWidth;
   }
 
-  void SetBorderImageWidthOverride(mozilla::css::Side aSide, nscoord aBorderWidth)
-  {
-    mBorderImageWidth.Side(aSide) =
-      NS_ROUND_BORDER_TO_PIXELS(aBorderWidth, mTwipsPerPixel);
-  }
-
-  // Get the actual border, in twips.  (If there is no border-image
-  // loaded, this is the same as GetComputedBorder.  If there is a
-  // border-image loaded, it uses the border-image width overrides if
-  // present, and otherwise mBorder, which is GetComputedBorder without
-  // considering border-style: none.)
-  const nsMargin& GetActualBorder() const;
-
   // Get the computed border (plus rounding).  This does consider the
   // effects of 'border-style: none', but does not consider
   // 'border-image'.
@@ -813,13 +783,18 @@ struct nsStyleBorder {
     return mComputedBorder;
   }
 
+  bool HasBorder() const
+  {
+    return mComputedBorder != nsMargin(0,0,0,0) || mBorderImageSource;
+  }
+
   // Get the actual border width for a particular side, in appunits.  Note that
   // this is zero if and only if there is no border to be painted for this
   // side.  That is, this value takes into account the border style and the
   // value is rounded to the nearest device pixel by NS_ROUND_BORDER_TO_PIXELS.
-  nscoord GetActualBorderWidth(mozilla::css::Side aSide) const
+  nscoord GetComputedBorderWidth(mozilla::css::Side aSide) const
   {
-    return GetActualBorder().Side(aSide);
+    return GetComputedBorder().Side(aSide);
   }
 
   PRUint8 GetBorderStyle(mozilla::css::Side aSide) const
@@ -865,10 +840,12 @@ struct nsStyleBorder {
   inline void SetBorderImage(imgIRequest* aImage);
   inline imgIRequest* GetBorderImage() const;
 
-  bool HasBorderImage() {return !!mBorderImage;}
+  bool HasBorderImage() {return !!mBorderImageSource;}
 
   void TrackImage(nsPresContext* aContext);
   void UntrackImage(nsPresContext* aContext);
+
+  nsMargin GetImageOutset() const;
 
   // These methods are used for the caller to caches the sub images created during
   // a border-image paint operation
@@ -905,39 +882,54 @@ struct nsStyleBorder {
     mBorderStyle[aSide] |= BORDER_COLOR_FOREGROUND;
   }
 
+public:
+  nsBorderColors** mBorderColors;        // [reset] composite (stripe) colors
+  nsRefPtr<nsCSSShadowArray> mBoxShadow; // [reset] NULL for 'none'
+
 #ifdef DEBUG
   bool mImageTracked;
 #endif
 
 protected:
-  // mComputedBorder holds the CSS2.1 computed border-width values.  In
-  // particular, these widths take into account the border-style for the
-  // relevant side and the values are rounded to the nearest device
-  // pixel.  They are also rounded (which is not part of the definition
-  // of computed values).  However, they do *not* take into account the
-  // presence of border-image.  See GetActualBorder above for how to
-  // really get the actual border.
+  nsCOMPtr<imgIRequest> mBorderImageSource; // [reset]
+
+public:
+  nsStyleCorners mBorderRadius;       // [reset] coord, percent
+  nsStyleSides   mBorderImageSlice;   // [reset] factor, percent
+  nsStyleSides   mBorderImageWidth;   // [reset] length, factor, percent, auto
+  nsStyleSides   mBorderImageOutset;  // [reset] length, factor
+
+  PRUint8        mBorderImageFill;    // [reset]
+  PRUint8        mBorderImageRepeatH; // [reset] see nsStyleConsts.h
+  PRUint8        mBorderImageRepeatV; // [reset]
+  PRUint8        mFloatEdge;          // [reset]
+
+protected:
+  // mComputedBorder holds the CSS2.1 computed border-width values.
+  // In particular, these widths take into account the border-style
+  // for the relevant side, and the values are rounded to the nearest
+  // device pixel (which is not part of the definition of computed
+  // values). The presence or absence of a border-image does not
+  // affect border-width values.
   nsMargin      mComputedBorder;
 
-  // mBorder holds the nscoord values for the border widths as they would be if
-  // all the border-style values were visible (not hidden or none).  This
-  // member exists so that when we create structs using the copy
-  // constructor during style resolution the new structs will know what the
-  // specified values of the border were in case they have more specific rules
-  // setting the border style.  Note that this isn't quite the CSS specified
-  // value, since this has had the enumerated border widths converted to
-  // lengths, and all lengths converted to twips.  But it's not quite the
-  // computed value either. The values are rounded to the nearest device pixel
-  // We also use these values when we have a loaded border-image that
-  // does not have width overrides.
+  // mBorder holds the nscoord values for the border widths as they
+  // would be if all the border-style values were visible (not hidden
+  // or none).  This member exists so that when we create structs
+  // using the copy constructor during style resolution the new
+  // structs will know what the specified values of the border were in
+  // case they have more specific rules setting the border style.
+  //
+  // Note that this isn't quite the CSS specified value, since this
+  // has had the enumerated border widths converted to lengths, and
+  // all lengths converted to twips.  But it's not quite the computed
+  // value either. The values are rounded to the nearest device pixel.
   nsMargin      mBorder;
 
   PRUint8       mBorderStyle[4];  // [reset] See nsStyleConsts.h
-  nscolor       mBorderColor[4];  // [reset] the colors to use for a simple border.  not used
-                                  // if -moz-border-colors is specified
+  nscolor       mBorderColor[4];  // [reset] the colors to use for a simple
+                                  // border.  not used for -moz-border-colors
 private:
-  nsCOMPtr<imgIRequest> mBorderImage; // [reset]
-
   // Cache used by callers for border-image painting
   nsCOMArray<imgIContainer> mSubImages;
 
@@ -1284,15 +1276,16 @@ struct nsStyleText {
   PRUint8 mTextAlignLast;               // [inherited] see nsStyleConsts.h
   PRUint8 mTextTransform;               // [inherited] see nsStyleConsts.h
   PRUint8 mWhiteSpace;                  // [inherited] see nsStyleConsts.h
+  PRUint8 mWordBreak;                   // [inherited] see nsStyleConsts.h
   PRUint8 mWordWrap;                    // [inherited] see nsStyleConsts.h
   PRUint8 mHyphens;                     // [inherited] see nsStyleConsts.h
   PRUint8 mTextSizeAdjust;              // [inherited] see nsStyleConsts.h
   PRInt32 mTabSize;                     // [inherited] see nsStyleConsts.h
 
+  nscoord mWordSpacing;                 // [inherited]
   nsStyleCoord  mLetterSpacing;         // [inherited] coord, normal
   nsStyleCoord  mLineHeight;            // [inherited] coord, factor, normal
   nsStyleCoord  mTextIndent;            // [inherited] coord, percent, calc
-  nscoord mWordSpacing;                 // [inherited]
 
   nsRefPtr<nsCSSShadowArray> mTextShadow; // [inherited] NULL in case of a zero-length
 
@@ -1541,7 +1534,7 @@ struct nsStyleDisplay {
   // We guarantee that if mBinding is non-null, so are mBinding->GetURI() and
   // mBinding->mOriginPrincipal.
   nsRefPtr<nsCSSValue::URL> mBinding;    // [reset]
-  nsRect    mClip;              // [reset] offsets from upper-left border edge
+  nsRect  mClip;                // [reset] offsets from upper-left border edge
   float   mOpacity;             // [reset]
   PRUint8 mDisplay;             // [reset] see nsStyleConsts.h NS_STYLE_DISPLAY_*
   PRUint8 mOriginalDisplay;     // [reset] saved mDisplay for position:absolute/fixed
@@ -1558,19 +1551,19 @@ struct nsStyleDisplay {
   PRUint8 mOverflowX;           // [reset] see nsStyleConsts.h
   PRUint8 mOverflowY;           // [reset] see nsStyleConsts.h
   PRUint8 mResize;              // [reset] see nsStyleConsts.h
-  PRUint8   mClipFlags;         // [reset] see nsStyleConsts.h
+  PRUint8 mClipFlags;           // [reset] see nsStyleConsts.h
   PRUint8 mOrient;              // [reset] see nsStyleConsts.h
 
   // mSpecifiedTransform is the list of transform functions as
   // specified, or null to indicate there is no transform.  (inherit or
   // initial are replaced by an actual list of transform functions, or
   // null, as appropriate.) (owned by the style rule)
+  PRUint8 mBackfaceVisibility;
+  PRUint8 mTransformStyle;
   const nsCSSValueList *mSpecifiedTransform; // [reset]
   nsStyleCoord mTransformOrigin[3]; // [reset] percent, coord, calc, 3rd param is coord, calc only
   nsStyleCoord mChildPerspective; // [reset] coord
   nsStyleCoord mPerspectiveOrigin[2]; // [reset] percent, coord, calc
-  PRUint8 mBackfaceVisibility;
-  PRUint8 mTransformStyle;
 
   nsAutoTArray<nsTransition, 1> mTransitions; // [reset]
   // The number of elements in mTransitions that are not from repeating
@@ -2203,6 +2196,7 @@ struct nsStyleSVGReset {
   float            mFloodOpacity;     // [reset]
 
   PRUint8          mDominantBaseline; // [reset] see nsStyleConsts.h
+  PRUint8          mVectorEffect;     // [reset] see nsStyleConsts.h
 };
 
 #endif /* nsStyleStruct_h___ */

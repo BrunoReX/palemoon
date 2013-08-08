@@ -1,39 +1,6 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2002
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Steve Meredith <smeredith@netscape.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // This source is mostly a bunch of Windows API calls. It is only compiled for
 // Windows builds.
@@ -79,9 +46,6 @@ nsAutodial::nsAutodial()
     mNumRASConnectionEntries(0),
     mAutodialServiceDialingLocation(-1)
 {
-    mOSVerInfo.dwOSVersionInfoSize = sizeof(mOSVerInfo);
-    GetVersionEx(&mOSVerInfo);
-
     // Initializations that can be made again since RAS OS settings can 
     // change.
     Init();
@@ -432,22 +396,27 @@ nsresult nsAutodial::GetDefaultEntryName(PRUnichar* entryName, int bufferSize)
     //
     // For Windows XP: HKCU/Software/Microsoft/RAS Autodial/Default/DefaultInternet.
     //              or HKLM/Software/Microsoft/RAS Autodial/Default/DefaultInternet.
-    // For Windows 2K: HKCU/RemoteAccess/InternetProfile.
 
-    const PRUnichar* key = nsnull;
-    const PRUnichar* val = nsnull;
+    const PRUnichar* key = L"Software\\Microsoft\\RAS Autodial\\Default";
+    const PRUnichar* val = L"DefaultInternet";
 
     HKEY hKey = 0;
     LONG result = 0;
 
-    // Windows 2000
-    if ((mOSVerInfo.dwMajorVersion == 5) && (mOSVerInfo.dwMinorVersion == 0)) // Windows 2000
-    {
-        key = L"RemoteAccess";
-        val = L"InternetProfile";
+    
+    // Try HKCU first.
+    result = ::RegOpenKeyExW(
+                HKEY_CURRENT_USER, 
+                key, 
+                0, 
+                KEY_READ, 
+                &hKey);
 
+    if (result != ERROR_SUCCESS)
+    {
+        // If not present, try HKLM.
         result = ::RegOpenKeyExW(
-                    HKEY_CURRENT_USER, 
+                    HKEY_LOCAL_MACHINE, 
                     key, 
                     0, 
                     KEY_READ, 
@@ -456,36 +425,6 @@ nsresult nsAutodial::GetDefaultEntryName(PRUnichar* entryName, int bufferSize)
         if (result != ERROR_SUCCESS)
         {
             return NS_ERROR_FAILURE;
-        }
-    }
-    else  // Windows XP
-    {
-        key = L"Software\\Microsoft\\RAS Autodial\\Default";
-        val = L"DefaultInternet";
-
-        
-        // Try HKCU first.
-        result = ::RegOpenKeyExW(
-                    HKEY_CURRENT_USER, 
-                    key, 
-                    0, 
-                    KEY_READ, 
-                    &hKey);
-
-        if (result != ERROR_SUCCESS)
-        {
-            // If not present, try HKLM.
-            result = ::RegOpenKeyExW(
-                        HKEY_LOCAL_MACHINE, 
-                        key, 
-                        0, 
-                        KEY_READ, 
-                        &hKey);
-
-            if (result != ERROR_SUCCESS)
-            {
-                return NS_ERROR_FAILURE;
-            }
         }
     }
 

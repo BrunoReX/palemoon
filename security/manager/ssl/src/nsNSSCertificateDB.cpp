@@ -1,40 +1,6 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is the Netscape security libraries.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2000
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Ian McGreer <mcgreer@netscape.com>
- *   Javier Delgadillo <javi@netscape.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsNSSComponent.h"
 #include "nsNSSCertificateDB.h"
@@ -142,7 +108,7 @@ nsNSSCertificateDB::FindCertByDBKey(const char *aDBkey, nsISupports *aToken,
   SECItem keyItem = {siBuffer, nsnull, 0};
   SECItem *dummy;
   CERTIssuerAndSN issuerSN;
-  unsigned long moduleID,slotID;
+  //unsigned long moduleID,slotID;
   *_cert = nsnull; 
   if (!aDBkey || !*aDBkey)
     return NS_ERROR_INVALID_ARG;
@@ -156,8 +122,8 @@ nsNSSCertificateDB::FindCertByDBKey(const char *aDBkey, nsISupports *aToken,
 
   CERTCertificate *cert;
   // someday maybe we can speed up the search using the moduleID and slotID
-  moduleID = NS_NSS_GET_LONG(keyItem.data);
-  slotID = NS_NSS_GET_LONG(&keyItem.data[NS_NSS_LONG]);
+  // moduleID = NS_NSS_GET_LONG(keyItem.data);
+  // slotID = NS_NSS_GET_LONG(&keyItem.data[NS_NSS_LONG]);
 
   // build the issuer/SN structure
   issuerSN.serialNumber.len = NS_NSS_GET_LONG(&keyItem.data[NS_NSS_LONG*2]);
@@ -1254,7 +1220,6 @@ GetOCSPResponders (CERTCertificate *aCert,
   char *serviceURL = nsnull;
   char *nickname = nsnull;
   PRUint32 i, count;
-  nsresult rv;
 
   // Are we interested in this cert //
   if (!nsOCSPResponder::IncludeCert(aCert)) {
@@ -1276,7 +1241,7 @@ GetOCSPResponders (CERTCertificate *aCert,
   nsMemory::Free(url);
 
   // Sort the items according to nickname //
-  rv = array->GetLength(&count);
+  array->GetLength(&count);
   for (i=0; i < count; ++i) {
     nsCOMPtr<nsIOCSPResponder> entry = do_QueryElementAt(array, i);
     if (nsOCSPResponder::CompareEntries(new_entry, entry) < 0) {
@@ -1340,7 +1305,6 @@ nsNSSCertificateDB::getCertNames(CERTCertList *certList,
                                  PRUnichar  ***_certNames)
 {
   nsNSSShutDownPreventionLock locker;
-  nsresult rv;
   CERTCertListNode *node;
   PRUint32 numcerts = 0, i=0;
   PRUnichar **tmpArray = NULL;
@@ -1364,7 +1328,7 @@ nsNSSCertificateDB::getCertNames(CERTCertList *certList,
       char *dbkey = NULL;
       char *namestr = NULL;
       nsAutoString certstr;
-      rv = pipCert.GetDbKey(&dbkey);
+      pipCert.GetDbKey(&dbkey);
       nsAutoString keystr = NS_ConvertASCIItoUTF16(dbkey);
       PR_FREEIF(dbkey);
       if (type == nsIX509Cert::EMAIL_CERT) {

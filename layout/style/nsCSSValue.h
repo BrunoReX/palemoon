@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* representation of simple property values within CSS declarations */
 
@@ -183,6 +151,7 @@ enum nsCSSUnit {
   eCSSUnit_Degree       = 1000,    // (float) 360 per circle
   eCSSUnit_Grad         = 1001,    // (float) 400 per circle
   eCSSUnit_Radian       = 1002,    // (float) 2*pi per circle
+  eCSSUnit_Turn         = 1003,    // (float) 1 per circle
 
   // Frequency units
   eCSSUnit_Hertz        = 2000,    // (float) 1/seconds
@@ -274,7 +243,7 @@ public:
   bool      IsPixelLengthUnit() const
     { return eCSSUnit_Point <= mUnit && mUnit <= eCSSUnit_Pixel; }
   bool      IsAngularUnit() const  
-    { return eCSSUnit_Degree <= mUnit && mUnit <= eCSSUnit_Radian; }
+    { return eCSSUnit_Degree <= mUnit && mUnit <= eCSSUnit_Turn; }
   bool      IsFrequencyUnit() const  
     { return eCSSUnit_Hertz <= mUnit && mUnit <= eCSSUnit_Kilohertz; }
   bool      IsTimeUnit() const  
@@ -311,7 +280,7 @@ public:
   float GetAngleValue() const
   {
     NS_ABORT_IF_FALSE(eCSSUnit_Degree <= mUnit &&
-                 mUnit <= eCSSUnit_Radian, "not an angle value");
+                 mUnit <= eCSSUnit_Turn, "not an angle value");
     return mValue.mFloat;
   }
 
@@ -454,6 +423,8 @@ public:
   static already_AddRefed<nsStringBuffer>
     BufferFromString(const nsString& aValue);
 
+  size_t SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
+
   struct URL {
     // Methods are not inline because using an nsIPrincipal means requiring
     // caps, which leads to REQUIRES hell, since this header is included all
@@ -480,6 +451,8 @@ public:
     bool URIEquals(const URL& aOther) const;
 
     nsIURI* GetURI() const;
+
+    size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
 
   private:
     // If mURIResolved is false, mURI stores the base URI.
@@ -544,7 +517,7 @@ protected:
     nsCSSValueList* mListDependent;
     nsCSSValuePairList_heap* mPairList;
     nsCSSValuePairList* mPairListDependent;
-  }         mValue;
+  } mValue;
 };
 
 struct nsCSSValue::Array {
@@ -642,6 +615,8 @@ private:
     }
   }
 
+  size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
+
 #undef CSSVALUE_LIST_FOR_EXTRA_VALUES
 
 private:
@@ -662,6 +637,8 @@ struct nsCSSValueList {
   bool operator!=(const nsCSSValueList& aOther) const
   { return !(*this == aOther); }
 
+  size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
+
   nsCSSValue      mValue;
   nsCSSValueList* mNext;
 
@@ -678,6 +655,8 @@ private:
 // it's an implementation detail of nsCSSValue.
 struct nsCSSValueList_heap : public nsCSSValueList {
   NS_INLINE_DECL_REFCOUNTING(nsCSSValueList_heap)
+
+  size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
 };
 
 // This has to be here so that the relationship between nsCSSValueList
@@ -727,6 +706,13 @@ struct nsCSSRect {
 
   void SetAllSidesTo(const nsCSSValue& aValue);
 
+  bool AllSidesEqualTo(const nsCSSValue& aValue) const {
+    return mTop == aValue &&
+           mRight == aValue &&
+           mBottom == aValue &&
+           mLeft == aValue;
+  }
+
   void Reset() {
     mTop.Reset();
     mRight.Reset();
@@ -756,6 +742,8 @@ struct nsCSSRect {
 // it's an implementation detail of nsCSSValue.
 struct nsCSSRect_heap : public nsCSSRect {
   NS_INLINE_DECL_REFCOUNTING(nsCSSRect_heap)
+
+  size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
 };
 
 // This has to be here so that the relationship between nsCSSRect
@@ -763,14 +751,14 @@ struct nsCSSRect_heap : public nsCSSRect {
 inline nsCSSRect&
 nsCSSValue::GetRectValue()
 {
-  NS_ABORT_IF_FALSE(mUnit == eCSSUnit_Rect, "not a pair value");
+  NS_ABORT_IF_FALSE(mUnit == eCSSUnit_Rect, "not a rect value");
   return *mValue.mRect;
 }
 
 inline const nsCSSRect&
 nsCSSValue::GetRectValue() const
 {
-  NS_ABORT_IF_FALSE(mUnit == eCSSUnit_Rect, "not a pair value");
+  NS_ABORT_IF_FALSE(mUnit == eCSSUnit_Rect, "not a rect value");
   return *mValue.mRect;
 }
 
@@ -809,6 +797,11 @@ struct nsCSSValuePair {
            mYValue != aOther.mYValue;
   }
 
+  bool BothValuesEqualTo(const nsCSSValue& aValue) const {
+    return mXValue == aValue &&
+           mYValue == aValue;
+  }
+
   void SetBothValuesTo(const nsCSSValue& aValue) {
     mXValue = aValue;
     mYValue = aValue;
@@ -826,6 +819,8 @@ struct nsCSSValuePair {
 
   void AppendToString(nsCSSProperty aProperty, nsAString& aResult) const;
 
+  size_t SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
+
   nsCSSValue mXValue;
   nsCSSValue mYValue;
 };
@@ -834,12 +829,14 @@ struct nsCSSValuePair {
 // refcounted.  It should not be necessary to use this class directly;
 // it's an implementation detail of nsCSSValue.
 struct nsCSSValuePair_heap : public nsCSSValuePair {
-    // forward constructor
-    nsCSSValuePair_heap(const nsCSSValue& aXValue, const nsCSSValue& aYValue)
-        : nsCSSValuePair(aXValue, aYValue)
-    {}
+  // forward constructor
+  nsCSSValuePair_heap(const nsCSSValue& aXValue, const nsCSSValue& aYValue)
+      : nsCSSValuePair(aXValue, aYValue)
+  {}
 
-    NS_INLINE_DECL_REFCOUNTING(nsCSSValuePair_heap)
+  NS_INLINE_DECL_REFCOUNTING(nsCSSValuePair_heap)
+
+  size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
 };
 
 struct nsCSSValueTriplet {
@@ -881,6 +878,12 @@ struct nsCSSValueTriplet {
                mZValue != aOther.mZValue;
     }
 
+    bool AllValuesEqualTo(const nsCSSValue& aValue) const {
+        return mXValue == aValue &&
+               mYValue == aValue &&
+               mZValue == aValue;
+    }
+
     void SetAllValuesTo(const nsCSSValue& aValue) {
         mXValue = aValue;
         mYValue = aValue;
@@ -916,6 +919,8 @@ struct nsCSSValueTriplet_heap : public nsCSSValueTriplet {
   {}
 
   NS_INLINE_DECL_REFCOUNTING(nsCSSValueTriplet_heap)
+
+  size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
 };
 
 // This has to be here so that the relationship between nsCSSValuePair
@@ -960,6 +965,8 @@ struct nsCSSValuePairList {
   bool operator!=(const nsCSSValuePairList& aOther) const
   { return !(*this == aOther); }
 
+  size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
+
   nsCSSValue          mXValue;
   nsCSSValue          mYValue;
   nsCSSValuePairList* mNext;
@@ -977,6 +984,8 @@ private:
 // it's an implementation detail of nsCSSValue.
 struct nsCSSValuePairList_heap : public nsCSSValuePairList {
   NS_INLINE_DECL_REFCOUNTING(nsCSSValuePairList_heap)
+
+  size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
 };
 
 // This has to be here so that the relationship between nsCSSValuePairList
@@ -1024,6 +1033,8 @@ public:
   {
     return !(*this == aOther);
   }
+
+  size_t SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
 };
 
 struct nsCSSValueGradient {
@@ -1071,6 +1082,8 @@ struct nsCSSValueGradient {
   }
 
   NS_INLINE_DECL_REFCOUNTING(nsCSSValueGradient)
+
+  size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const;
 
 private:
   nsCSSValueGradient(const nsCSSValueGradient& aOther) MOZ_DELETE;

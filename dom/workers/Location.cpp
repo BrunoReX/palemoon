@@ -1,40 +1,7 @@
 /* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 40 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Web Workers.
- *
- * The Initial Developer of the Original Code is
- *   The Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Ben Turner <bent.mozilla@gmail.com> (Original Author)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Location.h"
 
@@ -44,7 +11,7 @@
 #include "nsTraceRefcnt.h"
 
 #define PROPERTY_FLAGS \
-  JSPROP_ENUMERATE | JSPROP_SHARED
+  (JSPROP_ENUMERATE | JSPROP_SHARED)
 
 USING_WORKERS_NAMESPACE
 
@@ -89,31 +56,25 @@ public:
 
     jsval empty = JS_GetEmptyStringValue(aCx);
 
-    if (!JS_SetReservedSlot(aCx, obj, SLOT_href,
-                            aHref ? STRING_TO_JSVAL(aHref) : empty) ||
-        !JS_SetReservedSlot(aCx, obj, SLOT_protocol,
-                            aProtocol ? STRING_TO_JSVAL(aProtocol) : empty) ||
-        !JS_SetReservedSlot(aCx, obj, SLOT_host,
-                            aHost ? STRING_TO_JSVAL(aHost) : empty) ||
-        !JS_SetReservedSlot(aCx, obj, SLOT_hostname,
-                            aHostname ? STRING_TO_JSVAL(aHostname) : empty) ||
-        !JS_SetReservedSlot(aCx, obj, SLOT_port,
-                            aPort ? STRING_TO_JSVAL(aPort) : empty) ||
-        !JS_SetReservedSlot(aCx, obj, SLOT_pathname,
-                            aPathname ? STRING_TO_JSVAL(aPathname) : empty) ||
-        !JS_SetReservedSlot(aCx, obj, SLOT_search,
-                            aSearch ? STRING_TO_JSVAL(aSearch) : empty) ||
-        !JS_SetReservedSlot(aCx, obj, SLOT_hash,
-                            aHash ? STRING_TO_JSVAL(aHash) : empty)) {
-      return NULL;
-    }
+    JS_SetReservedSlot(obj, SLOT_href,
+                       aHref ? STRING_TO_JSVAL(aHref) : empty);
+    JS_SetReservedSlot(obj, SLOT_protocol,
+                       aProtocol ? STRING_TO_JSVAL(aProtocol) : empty);
+    JS_SetReservedSlot(obj, SLOT_host,
+                       aHost ? STRING_TO_JSVAL(aHost) : empty);
+    JS_SetReservedSlot(obj, SLOT_hostname,
+                       aHostname ? STRING_TO_JSVAL(aHostname) : empty);
+    JS_SetReservedSlot(obj, SLOT_port,
+                       aPort ? STRING_TO_JSVAL(aPort) : empty);
+    JS_SetReservedSlot(obj, SLOT_pathname,
+                       aPathname ? STRING_TO_JSVAL(aPathname) : empty);
+    JS_SetReservedSlot(obj, SLOT_search,
+                       aSearch ? STRING_TO_JSVAL(aSearch) : empty);
+    JS_SetReservedSlot(obj, SLOT_hash,
+                       aHash ? STRING_TO_JSVAL(aHash) : empty);
 
     Location* priv = new Location();
-
-    if (!JS_SetPrivate(aCx, obj, priv)) {
-      delete priv;
-      return NULL;
-    }
+    JS_SetPrivate(obj, priv);
 
     return obj;
   }
@@ -130,7 +91,7 @@ private:
   }
 
   static JSBool
-  Construct(JSContext* aCx, uintN aArgc, jsval* aVp)
+  Construct(JSContext* aCx, unsigned aArgc, jsval* aVp)
   {
     JS_ReportErrorNumber(aCx, js_GetErrorMessage, NULL, JSMSG_WRONG_CONSTRUCTOR,
                          sClass.name);
@@ -138,50 +99,50 @@ private:
   }
 
   static void
-  Finalize(JSContext* aCx, JSObject* aObj)
+  Finalize(JSFreeOp* aFop, JSObject* aObj)
   {
-    JS_ASSERT(JS_GET_CLASS(aCx, aObj) == &sClass);
-    delete static_cast<Location*>(JS_GetPrivate(aCx, aObj));
+    JS_ASSERT(JS_GetClass(aObj) == &sClass);
+    delete static_cast<Location*>(JS_GetPrivate(aObj));
   }
 
   static JSBool
-  ToString(JSContext* aCx, uintN aArgc, jsval* aVp)
+  ToString(JSContext* aCx, unsigned aArgc, jsval* aVp)
   {
     JSObject* obj = JS_THIS_OBJECT(aCx, aVp);
+    if (!obj) {
+      return false;
+    }
 
-    JSClass* classPtr;
-    if (!obj || ((classPtr = JS_GET_CLASS(aCx, obj)) != &sClass)) {
+    JSClass* classPtr = JS_GetClass(obj);
+    if (classPtr != &sClass) {
       JS_ReportErrorNumber(aCx, js_GetErrorMessage, NULL,
                            JSMSG_INCOMPATIBLE_PROTO, sClass.name, "toString",
-                           classPtr ? classPtr->name : "object");
+                           classPtr);
       return false;
     }
 
-
-    jsval href;
-    if (!JS_GetReservedSlot(aCx, obj, SLOT_href, &href)) {
-      return false;
-    }
+    jsval href = JS_GetReservedSlot(obj, SLOT_href);
 
     JS_SET_RVAL(aCx, aVp, href);
     return true;
   }
 
   static JSBool
-  GetProperty(JSContext* aCx, JSObject* aObj, jsid aIdval, jsval* aVp)
+  GetProperty(JSContext* aCx, JSHandleObject aObj, JSHandleId aIdval, jsval* aVp)
   {
-    JSClass* classPtr;
-    if (!aObj || ((classPtr = JS_GET_CLASS(aCx, aObj)) != &sClass)) {
+    JSClass* classPtr = JS_GetClass(aObj);
+    if (classPtr != &sClass) {
       JS_ReportErrorNumber(aCx, js_GetErrorMessage, NULL,
                            JSMSG_INCOMPATIBLE_PROTO, sClass.name, "GetProperty",
-                           classPtr ? classPtr->name : "object");
+                           classPtr->name);
       return false;
     }
 
     JS_ASSERT(JSID_IS_INT(aIdval));
     JS_ASSERT(JSID_TO_INT(aIdval) >= 0 && JSID_TO_INT(aIdval) < SLOT_COUNT);
 
-    return JS_GetReservedSlot(aCx, aObj, JSID_TO_INT(aIdval), aVp);
+    *aVp = JS_GetReservedSlot(aObj, JSID_TO_INT(aIdval));
+    return true;
   }
 };
 
@@ -189,8 +150,7 @@ JSClass Location::sClass = {
   "WorkerLocation",
   JSCLASS_HAS_PRIVATE | JSCLASS_HAS_RESERVED_SLOTS(SLOT_COUNT),
   JS_PropertyStub, JS_PropertyStub, JS_PropertyStub, JS_StrictPropertyStub,
-  JS_EnumerateStub, JS_ResolveStub, JS_ConvertStub, Finalize,
-  JSCLASS_NO_OPTIONAL_MEMBERS
+  JS_EnumerateStub, JS_ResolveStub, JS_ConvertStub, Finalize
 };
 
 JSPropertySpec Location::sProperties[] = {

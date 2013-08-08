@@ -42,6 +42,7 @@ include svg-integration/reftest.list
 == conditions-04.svg pass.svg
 == conditions-05.svg about:blank
 == conditions-06.svg pass.svg
+== conditions-07.svg pass.svg
 == currentColor-01.svg pass.svg
 == currentColor-02.svg pass.svg
 == currentColor-03.svg pass.svg
@@ -110,6 +111,8 @@ random-if(/^Windows\x20NT\x205\.1/.test(http.oscpu)) == dynamic-text-04.svg dyna
 == dynamic-use-06.svg pass.svg
 random == dynamic-use-nested-01.svg dynamic-use-nested-01-ref.svg # bug 467498
 == dynamic-use-remove-width.svg dynamic-use-remove-width-ref.svg
+== fragmentIdentifier-01.xhtml pass.svg
+== linked-filter-01.svg pass.svg
 == linked-pattern-01.svg pass.svg
 == use-01.svg pass.svg
 == use-01-extref.svg pass.svg
@@ -121,6 +124,7 @@ random == dynamic-use-nested-01.svg dynamic-use-nested-01-ref.svg # bug 467498
 == fallback-color-02a.svg fallback-color-02-ref.svg
 == fallback-color-02b.svg fallback-color-02-ref.svg
 == fallback-color-03.svg pass.svg
+== fallback-color-04.svg pass.svg
 == filter-basic-01.svg pass.svg
 == filter-basic-02.svg pass.svg
 == filter-basic-03.svg pass.svg
@@ -145,6 +149,9 @@ fails-if(Android) == filter-extref-differentOrigin-01.svg pass.svg # Bug 695385
 == foreignObject-start-hidden-01.svg pass.svg # followup from Bug 596765
 == foreignObject-start-hidden-02.svg pass.svg
 == foreignObject-style-change-01.svg pass.svg
+== foreignObject-dynamic-abspos-01.html foreignObject-dynamic-abspos-01-ref.html
+== foreignObject-fixedpos-01.html foreignObject-dynamic-abspos-01-ref.html
+== foreignObject-dynamic-fixedpos-01.html foreignObject-dynamic-abspos-01-ref.html
 == getElementById-a-element-01.svg pass.svg
 fails-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)&&!layersGPUAccelerated) == gradient-live-01a.svg gradient-live-01-ref.svg # bug 696674
 fails-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)&&!layersGPUAccelerated) == gradient-live-01b.svg gradient-live-01-ref.svg # bug 696674
@@ -152,6 +159,9 @@ fails-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)&&!layersGPUAccelerated) == gr
 fails-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)&&!layersGPUAccelerated) == gradient-live-01d.svg gradient-live-01-ref.svg # bug 696674
 fails == inline-in-xul-basic-01.xul pass.svg
 == invalid-text-01.svg pass.svg
+== lang-attribute-01.svg pass.svg
+== lang-attribute-02.svg pass.svg
+== lang-attribute-03.svg pass.svg
 == linearGradient-basic-01.svg pass.svg
 == linearGradient-basic-02.svg pass.svg
 == markers-and-group-opacity-01.svg markers-and-group-opacity-01-ref.svg
@@ -164,6 +174,8 @@ fails == inline-in-xul-basic-01.xul pass.svg
 == mask-transformed-01.svg mask-transformed-01-ref.svg
 == nested-viewBox-01.svg pass.svg
 == nesting-invalid-01.svg nesting-invalid-01-ref.svg
+== non-scaling-stroke-01.svg non-scaling-stroke-01-ref.svg 
+fuzzy-if(Android,9,38) == non-scaling-stroke-02.svg non-scaling-stroke-02-ref.svg 
 == objectBoundingBox-and-clipPath.svg pass.svg
 # Bug 588684
 random-if(gtk2Widget) == objectBoundingBox-and-fePointLight-01.svg objectBoundingBox-and-fePointLight-01-ref.svg
@@ -207,6 +219,7 @@ random-if(gtk2Widget) == objectBoundingBox-and-fePointLight-02.svg objectBoundin
 == rect-01.svg pass.svg
 == rect-02.svg pass.svg
 == rect-03.svg pass.svg
+== rect-04.svg pass.svg
 == rect-with-rx-and-ry-01.svg pass.svg
 == rect-with-rx-or-ry-01.svg rect-with-rx-or-ry-01-ref.svg
 == rootElement-null-01.svg pass.svg
@@ -217,9 +230,17 @@ random-if(gtk2Widget) == objectBoundingBox-and-fePointLight-02.svg objectBoundin
 == style-without-type-attribute.svg pass.svg
 == svg-in-foreignObject-01.xhtml svg-in-foreignObject-01-ref.xhtml
 == svg-in-foreignObject-02.xhtml svg-in-foreignObject-01-ref.xhtml # reuse -01-ref.xhtml
-random-if(gtk2Widget) == text-font-weight-01.svg text-font-weight-01-ref.svg # bug 386713
 == switch-01.svg pass.svg
+== suspend-01.svg pass.svg
+== suspend-02.svg pass.svg
+== suspend-03.svg pass.svg
+== suspend-04.svg pass.svg
+== suspend-05.svg pass.svg
+== suspend-06.svg pass.svg
+== suspend-07.svg pass.svg
+== suspend-08.svg pass.svg
 == symbol-01.svg symbol-01-ref.svg
+random-if(gtk2Widget) == text-font-weight-01.svg text-font-weight-01-ref.svg # bug 386713
 == text-gradient-01.svg text-gradient-01-ref.svg
 random-if(winWidget) == text-gradient-02.svg text-gradient-02-ref.svg # see bug 590101
 == text-gradient-03.svg pass.svg
@@ -234,6 +255,8 @@ fails-if(Android) random-if(gtk2Widget) != text-language-01.xhtml text-language-
 == text-layout-03.svg text-layout-03-ref.svg
 == text-layout-04.svg text-layout-04-ref.svg
 == text-layout-05.svg text-layout-05-ref.svg
+fuzzy-if(cocoaWidget&&layersGPUAccelerated,1,3) == text-layout-06.svg text-layout-06-ref.svg
+== text-layout-07.svg text-layout-07-ref.svg
 == text-scale-01.svg text-scale-01-ref.svg
 == text-stroke-scaling-01.svg text-stroke-scaling-01-ref.svg
 == stroke-dasharray-and-pathLength-01.svg pass.svg
@@ -242,6 +265,7 @@ fails-if(Android) random-if(gtk2Widget) != text-language-01.xhtml text-language-
 == stroke-linecap-square-w-zero-length-segs-02.svg pass.svg
 == textPath-01.svg textPath-01-ref.svg
 == textPath-02.svg pass.svg
+== textPath-03.svg pass.svg
 == text-style-01a.svg text-style-01-ref.svg
 == text-style-01b.svg text-style-01-ref.svg
 == text-style-01c.svg text-style-01-ref.svg

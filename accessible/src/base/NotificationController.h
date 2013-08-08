@@ -1,40 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Alexander Surkov <surkov.alexander@gmail.com> (original author)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef NotificationController_h_
 #define NotificationController_h_
@@ -43,17 +10,13 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsRefreshDriver.h"
 
-class nsAccessible;
-class nsDocAccessible;
-class nsIContent;
-
-// Uncomment to log notifications processing.
-//#define DEBUG_NOTIFICATIONS
-
-#ifdef DEBUG_NOTIFICATIONS
-#define DEBUG_CONTENTMUTATION
-#define DEBUG_TEXTCHANGE
+#ifdef DEBUG
+#include "Logging.h"
 #endif
+
+class Accessible;
+class DocAccessible;
+class nsIContent;
 
 /**
  * Notification interface.
@@ -120,7 +83,7 @@ private:
 class NotificationController : public nsARefreshObserver
 {
 public:
-  NotificationController(nsDocAccessible* aDocument, nsIPresShell* aPresShell);
+  NotificationController(DocAccessible* aDocument, nsIPresShell* aPresShell);
   virtual ~NotificationController();
 
   NS_IMETHOD_(nsrefcnt) AddRef(void);
@@ -141,7 +104,7 @@ public:
   /**
    * Schedule binding the child document to the tree of this document.
    */
-  void ScheduleChildDocBinding(nsDocAccessible* aDocument);
+  void ScheduleChildDocBinding(DocAccessible* aDocument);
 
   /**
    * Schedule the accessible tree update because of rendered text changes.
@@ -155,7 +118,7 @@ public:
   /**
    * Pend accessible tree update for content insertion.
    */
-  void ScheduleContentInsertion(nsAccessible* aContainer,
+  void ScheduleContentInsertion(Accessible* aContainer,
                                 nsIContent* aStartChildNode,
                                 nsIContent* aEndChildNode);
 
@@ -173,8 +136,9 @@ public:
                                  Arg* aArg)
   {
     if (!IsUpdatePending()) {
-#ifdef DEBUG_NOTIFICATIONS
-      printf("\nsync notification processing\n");
+#ifdef DEBUG
+      if (mozilla::a11y::logging::IsEnabled(mozilla::a11y::logging::eNotifications))
+        mozilla::a11y::logging::Text("sync notification processing");
 #endif
       (aInstance->*aMethod)(aArg);
       return;
@@ -287,7 +251,7 @@ private:
   /**
    * The document accessible reference owning this queue.
    */
-  nsRefPtr<nsDocAccessible> mDocument;
+  nsRefPtr<DocAccessible> mDocument;
 
   /**
    * The presshell of the document accessible.
@@ -297,7 +261,7 @@ private:
   /**
    * Child documents that needs to be bound to the tree.
    */
-  nsTArray<nsRefPtr<nsDocAccessible> > mHangingChildDocuments;
+  nsTArray<nsRefPtr<DocAccessible> > mHangingChildDocuments;
 
   /**
    * Storage for content inserted notification information.
@@ -305,7 +269,7 @@ private:
   class ContentInsertion
   {
   public:
-    ContentInsertion(nsDocAccessible* aDocument, nsAccessible* aContainer);
+    ContentInsertion(DocAccessible* aDocument, Accessible* aContainer);
     virtual ~ContentInsertion() { mDocument = nsnull; }
 
     NS_INLINE_DECL_REFCOUNTING(ContentInsertion)
@@ -322,10 +286,10 @@ private:
     // The document used to process content insertion, matched to document of
     // the notification controller that this notification belongs to, therefore
     // it's ok to keep it as weak ref.
-    nsDocAccessible* mDocument;
+    DocAccessible* mDocument;
 
     // The container accessible that content insertion occurs within.
-    nsRefPtr<nsAccessible> mContainer;
+    nsRefPtr<Accessible> mContainer;
 
     // Array of inserted contents.
     nsTArray<nsCOMPtr<nsIContent> > mInsertedContent;

@@ -1,40 +1,8 @@
 /* -*- Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 8; -*- */
 /* vim: set sw=4 ts=8 et tw=80 : */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Content App.
- *
- * The Initial Developer of the Original Code is
- *   The Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsInProcessTabChildGlobal.h"
 #include "nsContentUtils.h"
@@ -51,6 +19,7 @@
 #include "nsFrameLoader.h"
 #include "nsIPrivateDOMEvent.h"
 #include "xpcpublic.h"
+#include "nsIMozBrowserFrame.h"
 
 bool SendSyncMessageToParent(void* aCallbackData,
                              const nsAString& aMessage,
@@ -115,6 +84,15 @@ nsInProcessTabChildGlobal::nsInProcessTabChildGlobal(nsIDocShell* aShell,
 : mDocShell(aShell), mInitialized(false), mLoadingScript(false),
   mDelayedDisconnect(false), mOwner(aOwner), mChromeMessageManager(aChrome)
 {
+
+  // If owner corresponds to an <iframe mozbrowser>, we'll have to tweak our
+  // PreHandleEvent implementation.
+  nsCOMPtr<nsIMozBrowserFrame> browserFrame = do_QueryInterface(mOwner);
+  bool isBrowser = false;
+  if (browserFrame) {
+    browserFrame->GetReallyIsBrowser(&isBrowser);
+  }
+  mIsBrowserFrame = isBrowser;
 }
 
 nsInProcessTabChildGlobal::~nsInProcessTabChildGlobal()
@@ -138,19 +116,28 @@ nsInProcessTabChildGlobal::Init()
                                               this,
                                               nsnull,
                                               mCx);
+
+  // Set the location information for the new global, so that tools like
+  // about:memory may use that information.
+  JSObject *global;
+  nsIURI* docURI = mOwner->OwnerDoc()->GetDocumentURI();
+  if (mGlobal && NS_SUCCEEDED(mGlobal->GetJSObject(&global)) && docURI) {
+    xpc::SetLocationForGlobal(global, docURI);
+  }
+
   return NS_OK;
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsInProcessTabChildGlobal)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsInProcessTabChildGlobal,
-                                                nsDOMEventTargetWrapperCache)
+                                                nsDOMEventTargetHelper)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mMessageManager)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mGlobal)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsInProcessTabChildGlobal,
-                                                  nsDOMEventTargetWrapperCache)
+                                                  nsDOMEventTargetHelper)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mMessageManager)
   nsFrameScriptExecutor::Traverse(tmp, cb);
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
@@ -163,7 +150,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(nsInProcessTabChildGlobal)
   NS_INTERFACE_MAP_ENTRY(nsIScriptContextPrincipal)
   NS_INTERFACE_MAP_ENTRY(nsIScriptObjectPrincipal)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(ContentFrameMessageManager)
-NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetWrapperCache)
+NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetHelper)
 
 NS_IMPL_ADDREF_INHERITED(nsInProcessTabChildGlobal, nsDOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(nsInProcessTabChildGlobal, nsDOMEventTargetHelper)
@@ -270,7 +257,17 @@ nsresult
 nsInProcessTabChildGlobal::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
 {
   aVisitor.mCanHandle = true;
-  aVisitor.mParentTarget = mOwner;
+
+  if (mIsBrowserFrame) {
+    if (mOwner) {
+      nsPIDOMWindow* innerWindow = mOwner->OwnerDoc()->GetInnerWindow();
+      if (innerWindow) {
+        aVisitor.mParentTarget = innerWindow->GetParentTarget();
+      }
+    }
+  } else {
+    aVisitor.mParentTarget = mOwner;
+  }
 
 #ifdef DEBUG
   if (mOwner) {

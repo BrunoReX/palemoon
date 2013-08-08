@@ -1,45 +1,12 @@
 # -*- Mode: Java; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
-# ***** BEGIN LICENSE BLOCK *****
-# Version: MPL 1.1/GPL 2.0/LGPL 2.1
-#
-# The contents of this file are subject to the Mozilla Public License Version
-# 1.1 (the "License"); you may not use this file except in compliance with
-# the License. You may obtain a copy of the License at
-# http://www.mozilla.org/MPL/
-#
-# Software distributed under the License is distributed on an "AS IS" basis,
-# WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
-# for the specific language governing rights and limitations under the
-# License.
-#
-# The Original Code is the Firefox Preferences System.
-#
-# The Initial Developer of the Original Code is
-# Ben Goodger.
-# Portions created by the Initial Developer are Copyright (C) 2005
-# the Initial Developer. All Rights Reserved.
-#
-# Contributor(s):
-#   Ben Goodger <ben@mozilla.org>
-#   Jeff Walden <jwalden+code@mit.edu>
-#   Steffen Wilberg <steffen.wilberg@web.de>
-#
-# Alternatively, the contents of this file may be used under the terms of
-# either the GNU General Public License Version 2 or later (the "GPL"), or
-# the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
-# in which case the provisions of the GPL or the LGPL are applicable instead
-# of those above. If you wish to allow use of your version of this file only
-# under the terms of either the GPL or the LGPL, and not to allow others to
-# use your version of this file under the terms of the MPL, indicate your
-# decision by deleting the provisions above and replace them with the notice
-# and other provisions required by the GPL or the LGPL. If you do not delete
-# the provisions above, a recipient may use your version of this file under
-# the terms of any one of the MPL, the GPL or the LGPL.
-#
-# ***** END LICENSE BLOCK *****
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 // Load DownloadUtils module for convertByteUnits
 Components.utils.import("resource://gre/modules/DownloadUtils.jsm");
+Components.utils.import("resource://gre/modules/ctypes.jsm");
+Components.utils.import("resource://gre/modules/Services.jsm");
 
 var gAdvancedPane = {
   _inited: false,
@@ -61,6 +28,9 @@ var gAdvancedPane = {
         advancedPrefs.selectedIndex = preference.value;
     }
 
+#ifdef HAVE_SHELL_SERVICE
+    this.updateSetDefaultBrowser();
+#endif
 #ifdef MOZ_UPDATER
     this.updateReadPrefs();
 #endif
@@ -70,6 +40,9 @@ var gAdvancedPane = {
 #endif
     this.updateActualCacheSize("disk");
     this.updateActualCacheSize("offline");
+
+    // Notify observers that the UI is now ready
+    Services.obs.notifyObservers(window, "advanced-pane-loaded", null);
   },
 
   /**
@@ -84,7 +57,7 @@ var gAdvancedPane = {
     var preference = document.getElementById("browser.preferences.advanced.selectedTabIndex");
     preference.valueFromPreferences = advancedPrefs.selectedIndex;
   },
-  
+
   // GENERAL TAB
 
   /*
@@ -202,7 +175,7 @@ var gAdvancedPane = {
     document.documentElement.openSubDialog("chrome://browser/content/preferences/connection.xul",
                                            "", null);
   },
- 
+
   // Retrieves the amount of space currently used by disk or offline cache
   updateActualCacheSize: function (device)
   {
@@ -252,7 +225,7 @@ var gAdvancedPane = {
     var disabled = document.getElementById("browser.cache.disk.smart_size.enabled").value;
     this.updateCacheSizeUI(!disabled);
   },
-  
+
   /**
    * Converts the cache size from units of KB to units of MB and returns that
    * value.
@@ -483,7 +456,7 @@ var gAdvancedPane = {
    * based on the pref values and locked states.
    *
    * UI state matrix for update preference conditions
-   * 
+   *
    * UI Components:                              Preferences
    * Radiogroup                                  i   = app.update.enabled
    * Warn before disabling extensions checkbox   ii  = app.update.auto
@@ -548,6 +521,24 @@ var gAdvancedPane = {
     }
     if (installed != 1) {
       document.getElementById("useService").hidden = true;
+    }
+    try {
+      const DRIVE_FIXED = 3;
+      const LPCWSTR = ctypes.jschar.ptr;
+      const UINT = ctypes.uint32_t;
+      let kernel32 = ctypes.open("kernel32");
+      let GetDriveType = kernel32.declare("GetDriveTypeW", ctypes.default_abi, UINT, LPCWSTR);
+      var UpdatesDir = Components.classes["@mozilla.org/updates/update-service;1"].
+                       getService(Components.interfaces.nsIApplicationUpdateService);
+      let rootPath = UpdatesDir.getUpdatesDirectory();
+      while (rootPath.parent != null) {
+        rootPath = rootPath.parent;
+      }
+      if (GetDriveType(rootPath.path) != DRIVE_FIXED) {
+        document.getElementById("useService").hidden = true;
+      }
+      kernel32.close();
+    } catch(e) {
     }
 #endif
   },
@@ -667,7 +658,7 @@ var gAdvancedPane = {
    */
   showCRLs: function ()
   {
-    document.documentElement.openWindow("mozilla:crlmanager", 
+    document.documentElement.openWindow("mozilla:crlmanager",
                                         "chrome://pippki/content/crlManager.xul",
                                         "", null);
   },
@@ -704,37 +695,32 @@ var gAdvancedPane = {
    */
 
   /**
-   * Checks whether the browser is currently registered with the operating
-   * system as the default browser.  If the browser is not currently the
-   * default browser, the user is given the option of making it the default;
-   * otherwise, the user is informed that this browser already is the browser.
+   * Show button for setting browser as default browser or information that
+   * browser is already the default browser.
    */
-  checkNow: function ()
+  updateSetDefaultBrowser: function()
   {
-    var shellSvc = Components.classes["@mozilla.org/browser/shell-service;1"]
-                             .getService(Components.interfaces.nsIShellService);
-    var brandBundle = document.getElementById("bundleBrand");
-    var shellBundle = document.getElementById("bundleShell");
-    var brandShortName = brandBundle.getString("brandShortName");
-    var promptTitle = shellBundle.getString("setDefaultBrowserTitle");
-    var promptMessage;
-    const IPS = Components.interfaces.nsIPromptService;
-    var psvc = Components.classes["@mozilla.org/embedcomp/prompt-service;1"]
-                         .getService(IPS);
-    if (!shellSvc.isDefaultBrowser(false)) {
-      promptMessage = shellBundle.getFormattedString("setDefaultBrowserMessage", 
-                                                     [brandShortName]);
-      var rv = psvc.confirmEx(window, promptTitle, promptMessage, 
-                              IPS.STD_YES_NO_BUTTONS,
-                              null, null, null, null, { });
-      if (rv == 0)
-        shellSvc.setDefaultBrowser(true, false);
+    let shellSvc = getShellService();
+    let setDefaultPane = document.getElementById("setDefaultPane");
+    if (!shellSvc) {
+      setDefaultPane.hidden = true;
+      document.getElementById("alwaysCheckDefault").disabled = true;
+      return;
     }
-    else {
-      promptMessage = shellBundle.getFormattedString("alreadyDefaultBrowser",
-                                                     [brandShortName]);
-      psvc.alert(window, promptTitle, promptMessage);
-    }
+    let selectedIndex = shellSvc.isDefaultBrowser(false) ? 1 : 0;
+    setDefaultPane.selectedIndex = selectedIndex;
+  },
+
+  /**
+   * Set browser as the operating system default browser.
+   */
+  setDefaultBrowser: function()
+  {
+    let shellSvc = getShellService();
+    if (!shellSvc)
+      return;
+    shellSvc.setDefaultBrowser(true, false);
+    document.getElementById("setDefaultPane").selectedIndex = 1;
   }
 #endif
 };

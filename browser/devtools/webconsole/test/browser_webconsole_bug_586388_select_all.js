@@ -10,23 +10,16 @@
 
 const TEST_URI = "http://example.com/";
 
-registerCleanupFunction(function() {
-  Services.prefs.clearUserPref("devtools.gcli.enable");
-});
-
 function test() {
-  Services.prefs.setBoolPref("devtools.gcli.enable", false);
   addTab(TEST_URI);
-  browser.addEventListener("DOMContentLoaded",
-                           testSelectionWhenMovingBetweenBoxes, false);
+  browser.addEventListener("load", function onLoad() {
+    browser.removeEventListener("load", onLoad, true);
+    openConsole(null, testSelectionWhenMovingBetweenBoxes);
+  }, true);
 }
 
-function testSelectionWhenMovingBetweenBoxes() {
-  browser.removeEventListener("DOMContentLoaded",
-                              testSelectionWhenMovingBetweenBoxes, false);
-  openConsole();
-
-  let jsterm = HUDService.getHudByWindow(content).jsterm;
+function testSelectionWhenMovingBetweenBoxes(hud) {
+  let jsterm = hud.jsterm;
 
   // Fill the console with some output.
   jsterm.clearOutput();
@@ -34,7 +27,7 @@ function testSelectionWhenMovingBetweenBoxes() {
   jsterm.execute("3 + 4");
   jsterm.execute("5 + 6");
 
-  outputNode = jsterm.outputNode;
+  let outputNode = hud.outputNode;
 
   ok(outputNode.childNodes.length >= 3, "the output node has children after " +
      "executing some JavaScript");

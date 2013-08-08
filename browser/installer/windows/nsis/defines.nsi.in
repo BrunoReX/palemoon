@@ -1,4 +1,7 @@
 #filter substitution
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 # These defines should match application.ini settings
 !define AppName               "Pale Moon"
@@ -7,7 +10,7 @@
 !define AB_CD                 "@AB_CD@"
 
 !define FileMainEXE           "@MOZ_APP_NAME@.exe"
-!define WindowClass           "Pale MoonMessageWindow"
+!define WindowClass           "FirefoxMessageWindow"
 !define DDEApplication        "Pale Moon"
 !define AppRegName            "Pale Moon"
 
@@ -15,7 +18,7 @@
 !define PreReleaseSuffix      "@PRE_RELEASE_SUFFIX@"
 !define BrandFullName         "${BrandFullNameInternal}${PreReleaseSuffix}"
 
-!define NO_UNINSTALL_SURVEY 
+!define NO_UNINSTALL_SURVEY
 
 # !define CERTIFICATE_NAME      "Mozilla Corporation"
 # !define CERTIFICATE_ISSUER    "Thawte Code Signing CA - G2"
@@ -52,12 +55,12 @@
 
 # File details shared by both the installer and uninstaller
 VIProductVersion "1.0.0.0"
-VIAddVersionKey "ProductName"     "${BrandShortName}"
-VIAddVersionKey "CompanyName"     "${CompanyName}"
+VIAddVersionKey "ProductName"     "Pale Moon"
+VIAddVersionKey "CompanyName"     "Moonchild Productions"
 #ifdef MOZ_OFFICIAL_BRANDING
-VIAddVersionKey "LegalTrademarks" "${BrandShortName} is the intellectual property of Moonchild Productions."
+VIAddVersionKey "LegalTrademarks" "Pale Moon is the intellectual property of Moonchild Productions."
 #endif
-VIAddVersionKey "LegalCopyright"  "${CompanyName}"
+VIAddVersionKey "LegalCopyright"  "Moonchild Productions"
 VIAddVersionKey "FileVersion"     "${AppVersion}"
 VIAddVersionKey "ProductVersion"  "${AppVersion}"
 # Comments is not used but left below commented out for future reference

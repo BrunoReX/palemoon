@@ -1,58 +1,14 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:set ts=2 sw=2 sts=2 et cindent: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla code.
- *
- * The Initial Developer of the Original Code is the Mozilla Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2007
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  Chris Double <chris.double@double.co.nz>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsMediaDecoder.h"
-#include "nsMediaStream.h"
+#include "MediaResource.h"
 
-#include "prlog.h"
-#include "prmem.h"
-#include "nsIFrame.h"
-#include "nsIDocument.h"
-#include "nsThreadUtils.h"
-#include "nsIDOMHTMLMediaElement.h"
-#include "nsNetUtil.h"
 #include "nsHTMLMediaElement.h"
-#include "gfxContext.h"
-#include "nsPresContext.h"
 #include "nsDOMError.h"
-#include "nsDisplayList.h"
-#include "nsSVGEffects.h"
-#include "VideoUtils.h"
 
 using namespace mozilla;
 
@@ -72,13 +28,8 @@ static const PRInt64 CAN_PLAY_THROUGH_MARGIN = 10;
 
 nsMediaDecoder::nsMediaDecoder() :
   mElement(nsnull),
-  mRGBWidth(-1),
-  mRGBHeight(-1),
-  mVideoUpdateLock("nsMediaDecoder.mVideoUpdateLock"),
   mFrameBufferLength(0),
   mPinnedForSeek(false),
-  mSizeChanged(false),
-  mImageContainerSizeChanged(false),
   mShuttingDown(false)
 {
   MOZ_COUNT_CTOR(nsMediaDecoder);
@@ -94,6 +45,7 @@ nsMediaDecoder::~nsMediaDecoder()
 bool nsMediaDecoder::Init(nsHTMLMediaElement* aElement)
 {
   mElement = aElement;
+  mVideoFrameContainer = aElement->GetVideoFrameContainer();
   return true;
 }
 
@@ -116,47 +68,6 @@ nsresult nsMediaDecoder::RequestFrameBufferLength(PRUint32 aLength)
 
   mFrameBufferLength = aLength;
   return NS_OK;
-}
-
-void nsMediaDecoder::Invalidate()
-{
-  if (!mElement)
-    return;
-
-  nsIFrame* frame = mElement->GetPrimaryFrame();
-  bool invalidateFrame = false;
-
-  {
-    MutexAutoLock lock(mVideoUpdateLock);
-
-    // Get mImageContainerSizeChanged while holding the lock.
-    invalidateFrame = mImageContainerSizeChanged;
-    mImageContainerSizeChanged = false;
-
-    if (mSizeChanged) {
-      mElement->UpdateMediaSize(nsIntSize(mRGBWidth, mRGBHeight));
-      mSizeChanged = false;
-
-      if (frame) {
-        nsPresContext* presContext = frame->PresContext();
-        nsIPresShell *presShell = presContext->PresShell();
-        presShell->FrameNeedsReflow(frame,
-                                    nsIPresShell::eStyleChange,
-                                    NS_FRAME_IS_DIRTY);
-      }
-    }
-  }
-
-  if (frame) {
-    nsRect contentRect = frame->GetContentRect() - frame->GetPosition();
-    if (invalidateFrame) {
-      frame->Invalidate(contentRect);
-    } else {
-      frame->InvalidateLayer(contentRect, nsDisplayItem::TYPE_VIDEO);
-    }
-  }
-
-  nsSVGEffects::InvalidateDirectRenderingObservers(mElement);
 }
 
 static void ProgressCallback(nsITimer* aTimer, void* aClosure)
@@ -224,59 +135,24 @@ void nsMediaDecoder::FireTimeUpdate()
   mElement->FireTimeUpdate(true);
 }
 
-void nsMediaDecoder::SetVideoData(const gfxIntSize& aSize,
-                                  Image* aImage,
-                                  TimeStamp aTarget)
-{
-  MutexAutoLock lock(mVideoUpdateLock);
-
-  if (mRGBWidth != aSize.width || mRGBHeight != aSize.height) {
-    mRGBWidth = aSize.width;
-    mRGBHeight = aSize.height;
-    mSizeChanged = true;
-  }
-  if (mImageContainer && aImage) {
-    gfxIntSize oldFrameSize = mImageContainer->GetCurrentSize();
-
-    TimeStamp paintTime = mImageContainer->GetPaintTime();
-    if (!paintTime.IsNull() && !mPaintTarget.IsNull()) {
-      mPaintDelay = paintTime - mPaintTarget;
-    }
-
-    mImageContainer->SetCurrentImage(aImage);
-    gfxIntSize newFrameSize = mImageContainer->GetCurrentSize();
-    if (oldFrameSize != newFrameSize) {
-      mImageContainerSizeChanged = true;
-    }
-  }
-
-  mPaintTarget = aTarget;
-}
-
-double nsMediaDecoder::GetFrameDelay()
-{
-  MutexAutoLock lock(mVideoUpdateLock);
-  return mPaintDelay.ToSeconds();
-}
-
 void nsMediaDecoder::PinForSeek()
 {
-  nsMediaStream* stream = GetStream();
-  if (!stream || mPinnedForSeek) {
+  MediaResource* resource = GetResource();
+  if (!resource || mPinnedForSeek) {
     return;
   }
   mPinnedForSeek = true;
-  stream->Pin();
+  resource->Pin();
 }
 
 void nsMediaDecoder::UnpinForSeek()
 {
-  nsMediaStream* stream = GetStream();
-  if (!stream || !mPinnedForSeek) {
+  MediaResource* resource = GetResource();
+  if (!resource || !mPinnedForSeek) {
     return;
   }
   mPinnedForSeek = false;
-  stream->Unpin();
+  resource->Unpin();
 }
 
 bool nsMediaDecoder::CanPlayThrough()
@@ -314,18 +190,18 @@ namespace mozilla {
 MediaMemoryReporter* MediaMemoryReporter::sUniqueInstance;
 
 NS_MEMORY_REPORTER_IMPLEMENT(MediaDecodedVideoMemory,
-                             "explicit/media/decoded-video",
-                             KIND_HEAP,
-                             UNITS_BYTES,
-                             MediaMemoryReporter::GetDecodedVideoMemory,
-                             "Memory used by decoded video frames.")
+  "explicit/media/decoded-video",
+  KIND_HEAP,
+  UNITS_BYTES,
+  MediaMemoryReporter::GetDecodedVideoMemory,
+  "Memory used by decoded video frames.")
 
 NS_MEMORY_REPORTER_IMPLEMENT(MediaDecodedAudioMemory,
-                             "explicit/media/decoded-audio",
-                             KIND_HEAP,
-                             UNITS_BYTES,
-                             MediaMemoryReporter::GetDecodedAudioMemory,
-                             "Memory used by decoded audio chunks.")
+  "explicit/media/decoded-audio",
+  KIND_HEAP,
+  UNITS_BYTES,
+  MediaMemoryReporter::GetDecodedAudioMemory,
+  "Memory used by decoded audio chunks.")
 
 MediaMemoryReporter::MediaMemoryReporter()
   : mMediaDecodedVideoMemory(new NS_MEMORY_REPORTER_NAME(MediaDecodedVideoMemory))

@@ -57,12 +57,19 @@ function runTest() {
 
     scrollDown15PxWithPixelScrolling(scrollbox);
 
-    setTimeout(function checkThatScrollIsFinishedAlmostInstantly() {
-      is(scrollbox.scrollTop, scrollTopBefore + 15, "Pixel scrolling should have finished after waiting for one 0-interval timer. We shouldn't be scrolling smoothly, even though the pref is set.")
-      win.close();
-      clearPrefs();
-      SimpleTest.finish();
-    }, 0);
+    // wait for the next refresh driver run
+    window.mozRequestAnimationFrame(function() {
+      // actually, wait for the next one before checking results, since
+      // scrolling might not be flushed until after this code has run
+      window.mozRequestAnimationFrame(function() {
+        is(scrollbox.scrollTop, scrollTopBefore + 15,
+           "Pixel scrolling should have finished after one refresh driver iteration. " +
+           "We shouldn't be scrolling smoothly, even though the pref is set.");
+        win.close();
+        clearPrefs();
+        SimpleTest.finish();
+      });
+    });
   }, win);
 }
 
@@ -70,7 +77,7 @@ function initPrefs()
 {
   netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
   var prefSvc = Components.classes["@mozilla.org/preferences-service;1"].
-                  getService(Components.interfaces.nsIPrefBranch2);
+                  getService(Components.interfaces.nsIPrefBranch);
   // Disables the app level scroll acceleration
   prefSvc.setIntPref("mousewheel.acceleration.start", -1);
   prefSvc.setBoolPref("mousewheel.system_scroll_override_on_root_content.enabled", false);
@@ -83,7 +90,7 @@ function clearPrefs()
 {
   netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
   var prefSvc = Components.classes["@mozilla.org/preferences-service;1"].
-                  getService(Components.interfaces.nsIPrefBranch2);
+                  getService(Components.interfaces.nsIPrefBranch);
 
   if (prefSvc.prefHasUserValue("mousewheel.acceleration.start"))
     prefSvc.clearUserPref("mousewheel.acceleration.start");

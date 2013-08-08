@@ -46,12 +46,10 @@ function init()
   var ctx2d = canvas2d.getContext("2d");
 
   var wtu = WebGLTestUtils;
-  var canvas = document.getElementById("example");
-  gl = wtu.create3DContext(canvas);
+  gl = wtu.create3DContext("example");
   var program = wtu.setupProgram(
       gl,
-      [wtu.loadShaderFromScript(gl, "vshader"),
-       wtu.setupSimpleTextureFragmentShader(gl)],
+      ["vshader", wtu.setupSimpleTextureFragmentShader(gl)],
       ['vPosition', 'texCoord0']);
   wtu.setupUnitQuad(gl);
   gl.disable(gl.DEPTH_TEST);

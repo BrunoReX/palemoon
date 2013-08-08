@@ -1,48 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Hubbie Shaw
- *   Doug Turner <dougt@netscape.com>
- *   Mitch Stoltz <mstoltz@netscape.com>
- *   Brian Ryner <bryner@brianryner.com>
- *   Kai Engert <kaie@netscape.com>
- *   Vipul Gupta <vipul.gupta@sun.com>
- *   Douglas Stebila <douglas@stebila.ca>
- *   Kai Engert <kengert@redhat.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsNSSComponent.h"
 #include "nsNSSCallbacks.h"
@@ -67,7 +27,6 @@
 #include "prlog.h"
 #include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
-#include "nsIPrefBranch2.h"
 #include "nsIDateTimeFormat.h"
 #include "nsDateTimeFormatCID.h"
 #include "nsIDOMEvent.h"
@@ -125,6 +84,7 @@ extern "C" {
 }
 
 using namespace mozilla;
+using namespace mozilla::psm;
 
 #ifdef PR_LOGGING
 PRLogModuleInfo* gPIPNSSLog = nsnull;
@@ -438,6 +398,7 @@ nsNSSComponent::~nsNSSComponent()
 
   ShutdownNSS();
   nsSSLIOLayerHelpers::Cleanup();
+  RememberCertErrorsTable::Cleanup();
   --mInstanceCount;
   delete mShutdownObjectList;
 
@@ -1325,14 +1286,41 @@ nsresult nsNSSComponent::getParamsForNextCrlToDownload(nsAutoString *url, PRTime
     PRTime tempTime;
     nsCAutoString timingPrefCString(updateTimePref);
     timingPrefCString.AppendWithConversion(tempCrlKey);
+    // No PRTime/Int64 type in prefs; stored as string; parsed here as PRInt64
     rv = pref->GetCharPref(timingPrefCString.get(), &tempTimeString);
     if (NS_FAILED(rv)){
-      continue;
-    }
-    rv = PR_ParseTimeString(tempTimeString,true, &tempTime);
-    nsMemory::Free(tempTimeString);
-    if (NS_FAILED(rv)){
-      continue;
+      // Assume corrupted. Force download. Pref should be reset after download.
+      tempTime = PR_Now();
+      PR_LOG(gPIPNSSLog, PR_LOG_DEBUG,
+             ("get %s failed: forcing download\n", timingPrefCString.get()));
+    } else {
+      tempTime = (PRTime)nsCRT::atoll(tempTimeString);
+      nsMemory::Free(tempTimeString);
+      // nsCRT::atoll parses the first token in the string; three possibilities
+      //  -1- Alpha char: returns 0; change to PR_Now() and force update.
+      //  -2- Number (between epoch and PR_Now(), e.g. 0 - 1332280017 for
+      //      Tue Mar 20, 2012, 2:46pm approx): includes formatted date 
+      //      values (previous method of storing update date, e.g year, month 
+      //      or day, 2012, 1-31, 1-12 etc). Less than PR_Now() forces 
+      //      autoupdate.
+      //  -3- Number (larger than PR_Now()): no forced autoupdate
+      // Note: corrupt values within range of -2- will have an implicit 
+      // unflagged recovery. Corrupt values in range of -3- will be unflagged
+      // and unrecovered by this code.
+      if (tempTime == 0)
+        tempTime = PR_Now();
+#ifdef PR_LOGGING
+      PRExplodedTime explodedTime;
+      PR_ExplodeTime(tempTime, PR_GMTParameters, &explodedTime);
+      // Note: tm_month starts from 0 = Jan, hence +1
+      PR_LOG(gPIPNSSLog, PR_LOG_DEBUG,
+             ("%s tempTime(%lli) "
+              "(m/d/y h:m:s = %02d/%02d/%d %02d:%02d:%02d GMT\n",
+              timingPrefCString.get(), tempTime,
+              explodedTime.tm_month+1, explodedTime.tm_mday,
+              explodedTime.tm_year, explodedTime.tm_hour,
+              explodedTime.tm_min, explodedTime.tm_sec));
+#endif
     }
 
     if(nearestUpdateTime == 0 || tempTime < nearestUpdateTime){
@@ -1366,8 +1354,6 @@ nsresult nsNSSComponent::getParamsForNextCrlToDownload(nsAutoString *url, PRTime
 NS_IMETHODIMP
 nsNSSComponent::Notify(nsITimer *timer)
 {
-  nsresult rv;
-
   //Timer has fired. So set the flag accordingly
   {
     MutexAutoLock lock(mCrlTimerLock);
@@ -1375,7 +1361,7 @@ nsNSSComponent::Notify(nsITimer *timer)
   }
 
   //First, handle this download
-  rv = DownloadCrlSilently();
+  DownloadCrlSilently();
 
   //Dont Worry if successful or not
   //Set the next timer
@@ -1600,6 +1586,26 @@ nsNSSComponent::TryCFM2MachOMigration(nsIFile *cfmPath, nsIFile *machoPath)
 }
 #endif
 
+static void configureMD5(bool enabled)
+{
+  if (enabled) { // set flags
+    NSS_SetAlgorithmPolicy(SEC_OID_MD5, 
+        NSS_USE_ALG_IN_CERT_SIGNATURE | NSS_USE_ALG_IN_CMS_SIGNATURE, 0);
+    NSS_SetAlgorithmPolicy(SEC_OID_PKCS1_MD5_WITH_RSA_ENCRYPTION,
+        NSS_USE_ALG_IN_CERT_SIGNATURE | NSS_USE_ALG_IN_CMS_SIGNATURE, 0);
+    NSS_SetAlgorithmPolicy(SEC_OID_PKCS5_PBE_WITH_MD5_AND_DES_CBC,
+        NSS_USE_ALG_IN_CERT_SIGNATURE | NSS_USE_ALG_IN_CMS_SIGNATURE, 0);
+  }
+  else { // clear flags
+    NSS_SetAlgorithmPolicy(SEC_OID_MD5,
+        0, NSS_USE_ALG_IN_CERT_SIGNATURE | NSS_USE_ALG_IN_CMS_SIGNATURE);
+    NSS_SetAlgorithmPolicy(SEC_OID_PKCS1_MD5_WITH_RSA_ENCRYPTION,
+        0, NSS_USE_ALG_IN_CERT_SIGNATURE | NSS_USE_ALG_IN_CMS_SIGNATURE);
+    NSS_SetAlgorithmPolicy(SEC_OID_PKCS5_PBE_WITH_MD5_AND_DES_CBC,
+        0, NSS_USE_ALG_IN_CERT_SIGNATURE | NSS_USE_ALG_IN_CMS_SIGNATURE);
+  }
+}
+
 nsresult
 nsNSSComponent::InitializeNSS(bool showWarningBox)
 {
@@ -1608,12 +1614,11 @@ nsNSSComponent::InitializeNSS(bool showWarningBox)
 
   PR_LOG(gPIPNSSLog, PR_LOG_DEBUG, ("nsNSSComponent::InitializeNSS\n"));
 
-  // If we ever run into this assertion, we must update the values
-  // in nsINSSErrorsService.idl
-  PR_STATIC_ASSERT(nsINSSErrorsService::NSS_SEC_ERROR_BASE == SEC_ERROR_BASE
-                   && nsINSSErrorsService::NSS_SEC_ERROR_LIMIT == SEC_ERROR_LIMIT
-                   && nsINSSErrorsService::NSS_SSL_ERROR_BASE == SSL_ERROR_BASE
-                   && nsINSSErrorsService::NSS_SSL_ERROR_LIMIT == SSL_ERROR_LIMIT);
+  MOZ_STATIC_ASSERT(nsINSSErrorsService::NSS_SEC_ERROR_BASE == SEC_ERROR_BASE &&
+                    nsINSSErrorsService::NSS_SEC_ERROR_LIMIT == SEC_ERROR_LIMIT &&
+                    nsINSSErrorsService::NSS_SSL_ERROR_BASE == SSL_ERROR_BASE &&
+                    nsINSSErrorsService::NSS_SSL_ERROR_LIMIT == SSL_ERROR_LIMIT,
+                    "You must update the values in nsINSSErrorsService.idl");
 
   // variables used for flow control within this function
 
@@ -1782,8 +1787,7 @@ nsNSSComponent::InitializeNSS(bool showWarningBox)
       PK11_SetPasswordFunc(PK11PasswordPrompt);
 
       // Register an observer so we can inform NSS when these prefs change
-      nsCOMPtr<nsIPrefBranch2> pbi = do_QueryInterface(mPrefBranch);
-      pbi->AddObserver("security.", this, false);
+      mPrefBranch->AddObserver("security.", this, false);
 
       SSL_OptionSetDefault(SSL_ENABLE_SSL2, false);
       SSL_OptionSetDefault(SSL_V2_COMPATIBLE_HELLO, false);
@@ -1792,6 +1796,8 @@ nsNSSComponent::InitializeNSS(bool showWarningBox)
       SSL_OptionSetDefault(SSL_ENABLE_SSL3, enabled);
       mPrefBranch->GetBoolPref("security.enable_tls", &enabled);
       SSL_OptionSetDefault(SSL_ENABLE_TLS, enabled);
+      mPrefBranch->GetBoolPref("security.enable_md5_signatures", &enabled);
+      configureMD5(enabled);
 
       // Configure TLS session tickets
       mPrefBranch->GetBoolPref("security.enable_tls_session_tickets", &enabled);
@@ -1907,8 +1913,7 @@ nsNSSComponent::ShutdownNSS()
     UnregisterMyOCSPAIAInfoCallback();
 
     if (mPrefBranch) {
-      nsCOMPtr<nsIPrefBranch2> pbi = do_QueryInterface(mPrefBranch);
-      pbi->RemoveObserver("security.", this);
+      mPrefBranch->RemoveObserver("security.", this);
     }
 
     ShutdownSmartCardThreads();
@@ -1985,6 +1990,7 @@ nsNSSComponent::Init()
     return rv;
   }
 
+  RememberCertErrorsTable::Init();
   nsSSLIOLayerHelpers::Init();
   char *unrestricted_hosts=nsnull;
   mPrefBranch->GetCharPref("security.ssl.renego_unrestricted_hosts", &unrestricted_hosts);
@@ -2283,11 +2289,9 @@ nsNSSComponent::Observe(nsISupports *aSubject, const char *aTopic,
     // Cleanup code that requires services, it's too late in destructor.
 
     if (mPSMContentListener) {
-      nsresult rv = NS_ERROR_FAILURE;
-
       nsCOMPtr<nsIURILoader> dispatcher(do_GetService(NS_URI_LOADER_CONTRACTID));
       if (dispatcher) {
-        rv = dispatcher->UnRegisterContentListener(mPSMContentListener);
+        dispatcher->UnRegisterContentListener(mPSMContentListener);
       }
       mPSMContentListener = nsnull;
     }
@@ -2316,6 +2320,10 @@ nsNSSComponent::Observe(nsISupports *aSubject, const char *aTopic,
     } else if (prefName.Equals("security.enable_tls")) {
       mPrefBranch->GetBoolPref("security.enable_tls", &enabled);
       SSL_OptionSetDefault(SSL_ENABLE_TLS, enabled);
+      clearSessionCache = true;
+    } else if (prefName.Equals("security.enable_md5_signatures")) {
+      mPrefBranch->GetBoolPref("security.enable_md5_signatures", &enabled);
+      configureMD5(enabled);
       clearSessionCache = true;
     } else if (prefName.Equals("security.enable_tls_session_tickets")) {
       mPrefBranch->GetBoolPref("security.enable_tls_session_tickets", &enabled);

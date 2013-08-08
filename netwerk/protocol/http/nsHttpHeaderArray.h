@@ -1,41 +1,8 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* vim: set sw=4 ts=8 et tw=80 : */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications.
- * Portions created by the Initial Developer are Copyright (C) 2001
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Darin Fisher <darin@netscape.com> (original author)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef nsHttpHeaderArray_h__
 #define nsHttpHeaderArray_h__
@@ -47,13 +14,40 @@
 #include "nsCOMPtr.h"
 #include "nsString.h"
 
+namespace mozilla { namespace net {
+
+// A nsCString that aborts if it fails to successfully copy its input during
+// copy construction and/or assignment. This is useful for building classes
+// that are safely copy-constructable and safely assignable using the compiler-
+// generated copy constructor and assignment operator.
+class InfallableCopyCString : public nsCString
+{
+public:
+    InfallableCopyCString() { }
+    InfallableCopyCString(const nsACString & other)
+        : nsCString(other)
+    {
+        if (Length() != other.Length())
+            NS_RUNTIMEABORT("malloc");
+    }
+
+    InfallableCopyCString & operator=(const nsACString & other)
+    {
+        nsCString::operator=(other);
+
+        if (Length() != other.Length())
+            NS_RUNTIMEABORT("malloc");
+
+        return *this;
+    }
+};
+
+} } // namespace mozilla::net
+
 class nsHttpHeaderArray
 {
 public:
-    nsHttpHeaderArray() {}
-   ~nsHttpHeaderArray() { Clear(); }
-
-    const char *PeekHeader(nsHttpAtom header);
+    const char *PeekHeader(nsHttpAtom header) const;
 
     // Used by internal setters: to set header from network use SetHeaderFromNet
     nsresult SetHeader(nsHttpAtom header, const nsACString &value,
@@ -63,17 +57,19 @@ public:
     // needs to be thrown or 1st value kept.
     nsresult SetHeaderFromNet(nsHttpAtom header, const nsACString &value);
 
-    nsresult GetHeader(nsHttpAtom header, nsACString &value);
+    nsresult GetHeader(nsHttpAtom header, nsACString &value) const;
     void     ClearHeader(nsHttpAtom h);
 
     // Find the location of the given header value, or null if none exists.
-    const char *FindHeaderValue(nsHttpAtom header, const char *value) {
+    const char *FindHeaderValue(nsHttpAtom header, const char *value) const 
+    {
         return nsHttp::FindToken(PeekHeader(header), value,
                                  HTTP_HEADER_VALUE_SEPS);
     }
 
     // Determine if the given header value exists.
-    bool HasHeaderValue(nsHttpAtom header, const char *value) {
+    bool HasHeaderValue(nsHttpAtom header, const char *value) const
+    {
         return FindHeaderValue(header, value) != nsnull;
     }
 
@@ -87,18 +83,17 @@ public:
 
     void Flatten(nsACString &, bool pruneProxyHeaders=false);
 
-    PRUint32 Count() { return mHeaders.Length(); }
+    PRUint32 Count() const { return mHeaders.Length(); }
 
-    const char *PeekHeaderAt(PRUint32 i, nsHttpAtom &header);
+    const char *PeekHeaderAt(PRUint32 i, nsHttpAtom &header) const;
 
     void Clear();
 
+    // Must be copy-constructable and assignable
     struct nsEntry
     {
-        nsEntry() {}
-
         nsHttpAtom header;
-        nsCString  value;
+        mozilla::net::InfallableCopyCString value;
 
         struct MatchHeader {
           bool Equals(const nsEntry &entry, const nsHttpAtom &header) const {
@@ -108,6 +103,7 @@ public:
     };
 
 private:
+    PRInt32 LookupEntry(nsHttpAtom header, const nsEntry **) const;
     PRInt32 LookupEntry(nsHttpAtom header, nsEntry **);
     void MergeHeader(nsHttpAtom header, nsEntry *entry, const nsACString &value);
 
@@ -122,6 +118,7 @@ private:
     // injection)
     bool    IsSuspectDuplicateHeader(nsHttpAtom header);
 
+    // All members must be copy-constructable and assignable
     nsTArray<nsEntry> mHeaders;
 
     friend struct IPC::ParamTraits<nsHttpHeaderArray>;
@@ -131,6 +128,15 @@ private:
 //-----------------------------------------------------------------------------
 // nsHttpHeaderArray <private>: inline functions
 //-----------------------------------------------------------------------------
+
+inline PRInt32
+nsHttpHeaderArray::LookupEntry(nsHttpAtom header, const nsEntry **entry) const
+{
+    PRUint32 index = mHeaders.IndexOf(header, 0, nsEntry::MatchHeader());
+    if (index != PR_UINT32_MAX)
+        *entry = &mHeaders[index];
+    return index;
+}
 
 inline PRInt32
 nsHttpHeaderArray::LookupEntry(nsHttpAtom header, nsEntry **entry)

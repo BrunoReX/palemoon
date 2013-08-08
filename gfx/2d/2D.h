@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Corporation code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Bas Schouten <bschouten@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef _MOZILLA_GFX_2D_H
 #define _MOZILLA_GFX_2D_H
@@ -47,6 +15,10 @@
 // solution.
 #include "mozilla/RefPtr.h"
 
+#ifdef MOZ_ENABLE_FREETYPE
+#include <string>
+#endif
+
 struct _cairo_surface;
 typedef _cairo_surface cairo_surface_t;
 
@@ -55,6 +27,7 @@ typedef _cairo_scaled_font cairo_scaled_font_t;
 
 struct ID3D10Device1;
 struct ID3D10Texture2D;
+struct IDWriteRenderingParams;
 
 namespace mozilla {
 namespace gfx {
@@ -342,7 +315,7 @@ class DataSourceSurface : public SourceSurface
 public:
   virtual SurfaceType GetType() const { return SURFACE_DATA; }
   /* Get the raw bitmap data of the surface */
-  virtual unsigned char *GetData() = 0;
+  virtual uint8_t *GetData() = 0;
   /*
    * Stride of the surface, distance in bytes between the start of the image
    * data belonging to row y and row y+1. This may be negative.
@@ -484,8 +457,46 @@ public:
    */
   virtual TemporaryRef<Path> GetPathForGlyphs(const GlyphBuffer &aBuffer, const DrawTarget *aTarget) = 0;
 
+  /* This copies the path describing the glyphs into a PathBuilder. We use this
+   * API rather than a generic API to append paths because it allows easier
+   * implementation in some backends, and more efficient implementation in
+   * others.
+   */
+  virtual void CopyGlyphsToBuilder(const GlyphBuffer &aBuffer, PathBuilder *aBuilder) = 0;
+
 protected:
   ScaledFont() {}
+};
+
+#ifdef MOZ_ENABLE_FREETYPE
+/**
+ * Describes a font
+ * Used to pass the key informatin from a gfxFont into Azure
+ * XXX Should be replaced by a more long term solution, perhaps Bug 738014
+ */
+struct FontOptions
+{
+  std::string mName;
+  FontStyle mStyle;
+};
+#endif
+
+
+/* This class is designed to allow passing additional glyph rendering
+ * parameters to the glyph drawing functions. This is an empty wrapper class
+ * merely used to allow holding on to and passing around platform specific
+ * parameters. This is because different platforms have unique rendering
+ * parameters.
+ */
+class GlyphRenderingOptions : public RefCounted<GlyphRenderingOptions>
+{
+public:
+  virtual ~GlyphRenderingOptions() {}
+
+  virtual FontType GetType() const = 0;
+
+protected:
+  GlyphRenderingOptions() {}
 };
 
 /* This is the main class used for all the drawing. It is created through the
@@ -496,7 +507,7 @@ protected:
 class DrawTarget : public RefCounted<DrawTarget>
 {
 public:
-  DrawTarget() : mTransformDirty(false) {}
+  DrawTarget() : mTransformDirty(false), mPermitSubpixelAA(false) {}
   virtual ~DrawTarget() {}
 
   virtual BackendType GetType() const = 0;
@@ -640,7 +651,8 @@ public:
   virtual void FillGlyphs(ScaledFont *aFont,
                           const GlyphBuffer &aBuffer,
                           const Pattern &aPattern,
-                          const DrawOptions &aOptions = DrawOptions()) = 0;
+                          const DrawOptions &aOptions = DrawOptions(),
+                          const GlyphRenderingOptions *aRenderingOptions = NULL) = 0;
 
   /*
    * This takes a source pattern and a mask, and composites the source pattern
@@ -753,17 +765,43 @@ public:
   void *GetUserData(UserDataKey *key) {
     return mUserData.Get(key);
   }
+
+  /* Within this rectangle all pixels will be opaque by the time the result of
+   * this DrawTarget is first used for drawing. Either by the underlying surface
+   * being used as an input to external drawing, or Snapshot() being called.
+   * This rectangle is specified in device space.
+   */
+  void SetOpaqueRect(const IntRect &aRect) {
+    mOpaqueRect = aRect;
+  }
+
+  const IntRect &GetOpaqueRect() const {
+    return mOpaqueRect;
+  }
+
+  void SetPermitSubpixelAA(bool aPermitSubpixelAA) {
+    mPermitSubpixelAA = aPermitSubpixelAA;
+  }
+
+  bool GetPermitSubpixelAA() {
+    return mPermitSubpixelAA;
+  }
+
 protected:
   UserData mUserData;
   Matrix mTransform;
+  IntRect mOpaqueRect;
   bool mTransformDirty : 1;
+  bool mPermitSubpixelAA : 1;
 
   SurfaceFormat mFormat;
 };
 
-class Factory
+class GFX2D_API Factory
 {
 public:
+  static bool HasSSE2();
+
   static TemporaryRef<DrawTarget> CreateDrawTargetForCairoSurface(cairo_surface_t* aSurface);
 
   static TemporaryRef<DrawTarget>
@@ -790,7 +828,7 @@ public:
    */
   static TemporaryRef<DataSourceSurface>
     CreateDataSourceSurface(const IntSize &aSize, SurfaceFormat aFormat);
-  
+
   /*
    * This creates a simple data source surface for some existing data. It will
    * wrap this data and the data for this source surface. The caller is
@@ -798,13 +836,21 @@ public:
    * surface.
    */
   static TemporaryRef<DataSourceSurface>
-    CreateDataSourceSurfaceFromData(unsigned char *aData, int32_t aStride,
+    CreateWrappingDataSourceSurface(uint8_t *aData, int32_t aStride,
                                     const IntSize &aSize, SurfaceFormat aFormat);
 
 #ifdef WIN32
   static TemporaryRef<DrawTarget> CreateDrawTargetForD3D10Texture(ID3D10Texture2D *aTexture, SurfaceFormat aFormat);
+  static TemporaryRef<DrawTarget>
+    CreateDualDrawTargetForD3D10Textures(ID3D10Texture2D *aTextureA,
+                                         ID3D10Texture2D *aTextureB,
+                                         SurfaceFormat aFormat);
+
   static void SetDirect3D10Device(ID3D10Device1 *aDevice);
   static ID3D10Device1 *GetDirect3D10Device();
+
+  static TemporaryRef<GlyphRenderingOptions>
+    CreateDWriteGlyphRenderingOptions(IDWriteRenderingParams *aParams);
 
 private:
   static ID3D10Device1 *mD3D10Device;

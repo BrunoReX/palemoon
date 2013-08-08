@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 toolkit.jar:
 % skin global classic/1.0 %skin/classic/global/ os=WINNT osversion<6
 % skin global classic/1.0 %skin/classic/global/ os!=WINNT
@@ -54,6 +58,8 @@ toolkit.jar:
         skin/classic/global/textbox.css
 *       skin/classic/global/toolbar.css
         skin/classic/global/toolbarbutton.css
+        skin/classic/global/TopLevelImageDocument.css
+        skin/classic/global/TopLevelVideoDocument.css
         skin/classic/global/tree.css
         skin/classic/global/wizard.css
         skin/classic/global/alerts/alert.css                     (alerts/alert.css)
@@ -100,7 +106,6 @@ toolkit.jar:
         skin/classic/global/icons/Close.gif                      (icons/Close.gif)
         skin/classic/global/icons/close.png                      (icons/close.png)
         skin/classic/global/icons/collapse.png                   (icons/collapse.png)
-        skin/classic/global/icons/commandline.png                (icons/commandline.png)
         skin/classic/global/icons/Error.png                      (icons/Error.png)
         skin/classic/global/icons/error-16.png                   (icons/error-16.png)
         skin/classic/global/icons/error-24.png                   (icons/error-24.png)
@@ -166,7 +171,6 @@ toolkit.jar:
         skin/classic/global/splitter/grip-left.gif               (splitter/grip-left.gif)
         skin/classic/global/splitter/grip-right.gif              (splitter/grip-right.gif)
         skin/classic/global/toolbar/chevron.gif                  (toolbar/chevron.gif)
-        skin/classic/global/toolbar/Lighten.png                  (toolbar/Lighten.png)
         skin/classic/global/toolbar/spring.png                   (toolbar/spring.png)
         skin/classic/global/tree/columnpicker.gif                (tree/columnpicker.gif)
         skin/classic/global/tree/sort-asc.png                    (tree/sort-asc.png)
@@ -230,6 +234,8 @@ toolkit.jar:
 *       skin/classic/aero/global/textbox.css                             (textbox-aero.css)
 *       skin/classic/aero/global/toolbar.css
 *       skin/classic/aero/global/toolbarbutton.css                       (toolbarbutton-aero.css)
+        skin/classic/aero/global/TopLevelImageDocument.css
+        skin/classic/aero/global/TopLevelVideoDocument.css
 *       skin/classic/aero/global/tree.css                                (tree-aero.css)
         skin/classic/aero/global/wizard.css
         skin/classic/aero/global/alerts/alert.css                        (alerts/alert.css)
@@ -276,7 +282,6 @@ toolkit.jar:
         skin/classic/aero/global/icons/Close.gif                         (icons/Close.gif)
         skin/classic/aero/global/icons/close.png                         (icons/close.png)
         skin/classic/aero/global/icons/collapse.png                      (icons/collapse.png)
-        skin/classic/aero/global/icons/commandline.png                   (icons/commandline.png)
         skin/classic/aero/global/icons/Error.png                         (icons/Error-aero.png)
         skin/classic/aero/global/icons/error-16.png                      (icons/error-16-aero.png)
         skin/classic/aero/global/icons/error-24.png                      (icons/error-24-aero.png)
@@ -342,7 +347,6 @@ toolkit.jar:
         skin/classic/aero/global/splitter/grip-left.gif                  (splitter/grip-left.gif)
         skin/classic/aero/global/splitter/grip-right.gif                 (splitter/grip-right.gif)
         skin/classic/aero/global/toolbar/chevron.gif                     (toolbar/chevron.gif)
-        skin/classic/aero/global/toolbar/Lighten.png                     (toolbar/Lighten.png)
         skin/classic/aero/global/toolbar/spring.png                      (toolbar/spring-aero.png)
         skin/classic/aero/global/tree/columnpicker.gif                   (tree/columnpicker.gif)
         skin/classic/aero/global/tree/sort-asc.png                       (tree/sort-asc-aero.png)

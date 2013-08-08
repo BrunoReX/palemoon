@@ -1,44 +1,7 @@
 //* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla History System
- *
- * The Initial Developer of the Original Code is
- * Google Inc.
- * Portions created by the Initial Developer are Copyright (C) 2005
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Brett Wilson <brettw@gmail.com> (original author)
- *   Dietrich Ayala <dietrich@mozilla.com>
- *   Asaf Romano <mano@mozilla.com>
- *   Marco Bonardo <mak77@bonardo.net>
- *   Drew Willcoxon <adw@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <stdio.h>
 #include "nsNavHistory.h"
@@ -57,9 +20,6 @@
 #include "prprf.h"
 
 #include "nsCycleCollectionParticipant.h"
-#include "nsIClassInfo.h"
-#include "nsIProgrammingLanguage.h"
-#include "nsIXPCScriptable.h"
 
 #define TO_ICONTAINER(_node)                                                  \
     static_cast<nsINavHistoryContainerResultNode*>(_node)                      
@@ -109,111 +69,6 @@ inline PRInt32 CompareIntegers(PRUint32 a, PRUint32 b)
   return a - b;
 }
 
-namespace mozilla {
-  namespace places {
-    // Class-info and the scriptable helper are implemented in order to
-    // allow the JS frontend code to set expando properties on result nodes.
-    class ResultNodeClassInfo : public nsIClassInfo
-                              , public nsIXPCScriptable
-    {
-      NS_DECL_ISUPPORTS
-      NS_DECL_NSIXPCSCRIPTABLE
-
-      // TODO: Bug 517718.
-      NS_IMETHODIMP
-      GetInterfaces(PRUint32 *_count, nsIID ***_array)
-      {
-        *_count = 0;
-        *_array = nsnull;
-
-        return NS_OK;
-      }
-
-      NS_IMETHODIMP
-      GetHelperForLanguage(PRUint32 aLanguage, nsISupports **_helper)
-      {
-        if (aLanguage == nsIProgrammingLanguage::JAVASCRIPT) {
-          *_helper = static_cast<nsIXPCScriptable *>(this);
-          NS_ADDREF(*_helper);
-        }
-        else
-          *_helper = nsnull;
-
-        return NS_OK;
-      }
-
-      NS_IMETHODIMP
-      GetContractID(char **_contractID)
-      {
-        *_contractID = nsnull;
-        return NS_OK;
-      }
-
-      NS_IMETHODIMP
-      GetClassDescription(char **_desc)
-      {
-        *_desc = nsnull;
-        return NS_OK;
-      }
-
-      NS_IMETHODIMP
-      GetClassID(nsCID **_id)
-      {
-        *_id = nsnull;
-        return NS_OK;
-      }
-
-      NS_IMETHODIMP
-      GetImplementationLanguage(PRUint32 *_language)
-      {
-        *_language = nsIProgrammingLanguage::CPLUSPLUS;
-        return NS_OK;
-      }
-
-      NS_IMETHODIMP
-      GetFlags(PRUint32 *_flags)
-      {
-        *_flags = 0;
-        return NS_OK;
-      }
-
-      NS_IMETHODIMP
-      GetClassIDNoAlloc(nsCID *_cid)
-      {
-        return NS_ERROR_NOT_AVAILABLE;
-      }
-    };
-
-    /**
-     * As a static implementation of classinfo, we violate XPCOM rules andjust
-     * pretend to use the refcount mechanism.  See classinfo documentation at
-     * https://developer.mozilla.org/en/Using_nsIClassInfo
-     */
-    NS_IMETHODIMP_(nsrefcnt) ResultNodeClassInfo::AddRef()
-    {
-      return 2;
-    }
-    NS_IMETHODIMP_(nsrefcnt) ResultNodeClassInfo::Release()
-    {
-      return 1;
-    }
-
-    NS_IMPL_QUERY_INTERFACE2(ResultNodeClassInfo, nsIClassInfo, nsIXPCScriptable)
-
-#define XPC_MAP_CLASSNAME ResultNodeClassInfo
-#define XPC_MAP_QUOTED_CLASSNAME "ResultNodeClassInfo"
-#define XPC_MAP_FLAGS nsIXPCScriptable::USE_JSSTUB_FOR_ADDPROPERTY | \
-                      nsIXPCScriptable::USE_JSSTUB_FOR_DELPROPERTY | \
-                      nsIXPCScriptable::USE_JSSTUB_FOR_SETPROPERTY
-
-// xpc_map_end contains implementation for nsIXPCScriptable, that used the
-// constant define above
-#include "xpc_map_end.h"    
-
-    static ResultNodeClassInfo sResultNodeClassInfo;
-  } // namespace places
-} // namespace mozilla
-
 using namespace mozilla::places;
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsNavHistoryResultNode)
@@ -228,9 +83,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsNavHistoryResultNode)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsINavHistoryResultNode)
-  if (aIID.Equals(NS_GET_IID(nsIClassInfo)))
-    foundInterface = static_cast<nsIClassInfo *>(&mozilla::places::sResultNodeClassInfo);
-  else
   NS_INTERFACE_MAP_ENTRY(nsINavHistoryResultNode)
 NS_INTERFACE_MAP_END
 
@@ -3709,15 +3561,10 @@ nsNavHistoryFolderResultNode::StartIncrementalUpdate()
 {
   // if any items are excluded, we can not do incremental updates since the
   // indices from the bookmark service will not be valid
-  nsCAutoString parentAnnotationToExclude;
-  nsresult rv = mOptions->GetExcludeItemIfParentHasAnnotation(parentAnnotationToExclude);
-  NS_ENSURE_SUCCESS(rv, false);
 
-  if (!mOptions->ExcludeItems() && 
-      !mOptions->ExcludeQueries() && 
-      !mOptions->ExcludeReadOnlyFolders() && 
-      parentAnnotationToExclude.IsEmpty()) {
-
+  if (!mOptions->ExcludeItems() &&
+      !mOptions->ExcludeQueries() &&
+      !mOptions->ExcludeReadOnlyFolders()) {
     // easy case: we are visible, always do incremental update
     if (mExpanded || AreChildrenVisible())
       return true;
@@ -4352,8 +4199,7 @@ nsNavHistoryResult::Init(nsINavHistoryQuery** aQueries,
   rv = aOptions->GetSortingAnnotation(mSortingAnnotation);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (!mBookmarkFolderObservers.Init(128))
-    return NS_ERROR_OUT_OF_MEMORY;
+  mBookmarkFolderObservers.Init(128);
 
   NS_ASSERTION(mRootNode->mIndentLevel == -1,
                "Root node's indent level initialized wrong");

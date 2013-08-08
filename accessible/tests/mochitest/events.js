@@ -27,6 +27,10 @@ const EVENT_TEXT_INSERTED = nsIAccessibleEvent.EVENT_TEXT_INSERTED;
 const EVENT_TEXT_REMOVED = nsIAccessibleEvent.EVENT_TEXT_REMOVED;
 const EVENT_TEXT_SELECTION_CHANGED = nsIAccessibleEvent.EVENT_TEXT_SELECTION_CHANGED;
 const EVENT_VALUE_CHANGE = nsIAccessibleEvent.EVENT_VALUE_CHANGE;
+const EVENT_VIRTUALCURSOR_CHANGED = nsIAccessibleEvent.EVENT_VIRTUALCURSOR_CHANGED;
+
+const kNotFromUserInput = 0;
+const kFromUserInput = 1;
 
 ////////////////////////////////////////////////////////////////////////////////
 // General
@@ -47,6 +51,11 @@ var gA11yEventDumpToConsole = false;
  * Set up this variable to dump event processing into error console.
  */
 var gA11yEventDumpToAppConsole = false;
+
+/**
+ * Semicolon separated set of logging features.
+ */
+var gA11yEventDumpFeature = "";
 
 /**
  * Executes the function when requested event is handled.
@@ -303,12 +312,20 @@ function eventQueue(aEventType)
     // Start processing of next invoker.
     invoker = this.getNextInvoker();
 
+    this.setEventHandler(invoker);
+
     if (gLogger.isEnabled()) {
       gLogger.logToConsole("Event queue: \n  invoke: " + invoker.getID());
       gLogger.logToDOM("EQ: invoke: " + invoker.getID(), true);
     }
 
-    this.setEventHandler(invoker);
+    var infoText = "Invoke the '" + invoker.getID() + "' test { ";
+    for (var idx = 0; idx < this.mEventSeq.length; idx++) {
+      infoText += this.isEventUnexpected(idx) ? "un" : "";
+      infoText += "expected '" + this.getEventTypeAsString(idx) + "' event; ";
+    }
+    infoText += " }";
+    info(infoText);
 
     if (invoker.invoke() == INVOKER_ACTION_FAILED) {
       // Invoker failed to prepare action, fail and finish tests.
@@ -528,6 +545,8 @@ function eventQueue(aEventType)
           var msg = "registered";
           if (this.isEventUnexpected(idx))
             msg += " unexpected";
+          if (this.mEventSeq[idx].async)
+            msg += " async";
 
           msg += ": event type: " + this.getEventTypeAsString(idx) +
             ", target: " + this.getEventTargetDescr(idx, true);
@@ -1220,6 +1239,33 @@ function synthSelectAll(aNodeOrID, aCheckerOrEventSeq)
   }
 }
 
+/**
+ * Set caret offset in text accessible.
+ */
+function setCaretOffset(aID, aOffset, aFocusTargetID)
+{
+  this.target = getAccessible(aID, [nsIAccessibleText]);
+  this.offset = aOffset == -1 ? this.target.characterCount: aOffset;
+  this.focus = aFocusTargetID ? getAccessible(aFocusTargetID) : null;
+
+  this.invoke = function setCaretOffset_invoke()
+  {
+    this.target.caretOffset = this.offset;
+  }
+
+  this.getID = function setCaretOffset_getID()
+  {
+   return "Set caretOffset on " + prettyName(aID) + " at " + this.offset;
+  }
+
+  this.eventSeq = [
+    new caretMoveChecker(this.offset, this.target)
+  ];
+
+  if (this.focus)
+    this.eventSeq.push(new asyncInvokerChecker(EVENT_FOCUS, this.focus));
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Event queue checkers
@@ -1296,8 +1342,9 @@ function nofocusChecker(aID)
 
 /**
  * Text inserted/removed events checker.
+ * @param aFromUser  [in, optional] kNotFromUserInput or kFromUserInput
  */
-function textChangeChecker(aID, aStart, aEnd, aTextOrFunc, aIsInserted)
+function textChangeChecker(aID, aStart, aEnd, aTextOrFunc, aIsInserted, aFromUser)
 {
   this.target = getNode(aID);
   this.type = aIsInserted ? EVENT_TEXT_INSERTED : EVENT_TEXT_REMOVED;
@@ -1317,6 +1364,9 @@ function textChangeChecker(aID, aStart, aEnd, aTextOrFunc, aIsInserted)
        "Text was " + changeInfo + " for " + prettyName(aID));
     is(aEvent.modifiedText, modifiedText,
        "Wrong " + changeInfo + " text for " + prettyName(aID));
+    if (typeof aFromUser != "undefined")
+      is(aEvent.isFromUserInput, aFromUser,
+         "wrong value of isFromUserInput() for " + prettyName(aID));
   }
 }
 
@@ -1478,6 +1528,15 @@ var gA11yEventObserver =
         if (listenersArray)
           info += ". Listeners count: " + listenersArray.length;
 
+        if (gLogger.hasFeature("parentchain:" + type)) {
+          info += "\nParent chain:\n";
+          var acc = event.accessible;
+          while (acc) {
+            info += "  " + prettyName(acc) + "\n";
+            acc = acc.parent;
+          }
+        }
+
         eventFromDumpArea = false;
         gLogger.log(info);
       }
@@ -1620,6 +1679,20 @@ var gLogger =
   {
     if (gA11yEventDumpToAppConsole)
       Services.console.logStringMessage("events: " + aMsg);
+  },
+
+  /**
+   * Return true if logging feature is enabled.
+   */
+  hasFeature: function logger_hasFeature(aFeature)
+  {
+    var startIdx = gA11yEventDumpFeature.indexOf(aFeature);
+    if (startIdx == - 1)
+      return false;
+
+    var endIdx = startIdx + aFeature.length;
+    return endIdx == gA11yEventDumpFeature.length ||
+      gA11yEventDumpFeature[endIdx] == ";";
   }
 };
 

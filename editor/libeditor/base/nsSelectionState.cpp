@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsSelectionState.h"
 #include "nsIDOMCharacterData.h"
@@ -61,13 +29,13 @@ nsSelectionState::DoTraverse(nsCycleCollectionTraversalCallback &cb)
 {
   for (PRUint32 i = 0, iEnd = mArray.Length(); i < iEnd; ++i)
   {
-    nsRangeStore &item = mArray[i];
+    nsRangeStore* item = mArray[i];
     NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb,
                                        "selection state mArray[i].startNode");
-    cb.NoteXPCOMChild(item.startNode);
+    cb.NoteXPCOMChild(item->startNode);
     NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb,
                                        "selection state mArray[i].endNode");
-    cb.NoteXPCOMChild(item.endNode);
+    cb.NoteXPCOMChild(item->endNode);
   }
 }
 
@@ -81,10 +49,9 @@ nsSelectionState::SaveSelection(nsISelection *aSel)
   // if we need more items in the array, new them
   if (arrayCount<rangeCount)
   {
-    PRInt32 count = rangeCount-arrayCount;
-    for (i=0; i<count; i++)
-    {
+    for (i = arrayCount; i < rangeCount; i++) {
       mArray.AppendElement();
+      mArray[i] = new nsRangeStore();
     }
   }
   
@@ -103,7 +70,7 @@ nsSelectionState::SaveSelection(nsISelection *aSel)
   {
     nsCOMPtr<nsIDOMRange> range;
     res = aSel->GetRangeAt(i, getter_AddRefs(range));
-    mArray[i].StoreRange(range);
+    mArray[i]->StoreRange(range);
   }
   
   return res;
@@ -123,7 +90,7 @@ nsSelectionState::RestoreSelection(nsISelection *aSel)
   for (i=0; i<arrayCount; i++)
   {
     nsRefPtr<nsRange> range;
-    mArray[i].GetRange(getter_AddRefs(range));
+    mArray[i]->GetRange(getter_AddRefs(range));
     NS_ENSURE_TRUE(range, NS_ERROR_UNEXPECTED);
    
     res = aSel->AddRange(range);
@@ -138,7 +105,7 @@ nsSelectionState::IsCollapsed()
 {
   if (1 != mArray.Length()) return false;
   nsRefPtr<nsRange> range;
-  mArray[0].GetRange(getter_AddRefs(range));
+  mArray[0]->GetRange(getter_AddRefs(range));
   NS_ENSURE_TRUE(range, false);
   bool bIsCollapsed = false;
   range->GetCollapsed(&bIsCollapsed);
@@ -156,8 +123,8 @@ nsSelectionState::IsEqual(nsSelectionState *aSelState)
   for (i=0; i<myCount; i++)
   {
     nsRefPtr<nsRange> myRange, itsRange;
-    mArray[i].GetRange(getter_AddRefs(myRange));
-    aSelState->mArray[i].GetRange(getter_AddRefs(itsRange));
+    mArray[i]->GetRange(getter_AddRefs(myRange));
+    aSelState->mArray[i]->GetRange(getter_AddRefs(itsRange));
     NS_ENSURE_TRUE(myRange && itsRange, false);
   
     PRInt16 compResult;
@@ -222,7 +189,7 @@ nsRangeUpdater::RegisterSelectionState(nsSelectionState &aSelState)
 
   for (i=0; i<theCount; i++)
   {
-    RegisterRangeItem(&aSelState.mArray[i]);
+    RegisterRangeItem(aSelState.mArray[i]);
   }
 
   return NS_OK;
@@ -236,7 +203,7 @@ nsRangeUpdater::DropSelectionState(nsSelectionState &aSelState)
 
   for (i=0; i<theCount; i++)
   {
-    DropRangeItem(&aSelState.mArray[i]);
+    DropRangeItem(aSelState.mArray[i]);
   }
 
   return NS_OK;

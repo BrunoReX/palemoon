@@ -1,40 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is the Mozilla SVG project.
- *
- * The Initial Developer of the Original Code is Crocodile Clips Ltd..
- * Portions created by the Initial Developer are Copyright (C) 2001
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Alex Fritze <alex.fritze@crocodile-clips.com> (original author)
- *   Jonathan Watt <jonathan.watt@strath.ac.uk>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Util.h"
 
@@ -307,8 +274,17 @@ nsSVGLength2::GetUnitScaleFactor(nsIFrame *aFrame, PRUint8 aUnitType) const
 
 void
 nsSVGLength2::SetBaseValueInSpecifiedUnits(float aValue,
-                                           nsSVGElement *aSVGElement)
+                                           nsSVGElement *aSVGElement,
+                                           bool aDoSetAttr)
 {
+  if (mIsBaseSet && mBaseVal == aValue) {
+    return;
+  }
+
+  nsAttrValue emptyOrOldValue;
+  if (aDoSetAttr) {
+    emptyOrOldValue = aSVGElement->WillChangeLength(mAttrEnum);
+  }
   mBaseVal = aValue;
   mIsBaseSet = true;
   if (!mIsAnimated) {
@@ -317,7 +293,9 @@ nsSVGLength2::SetBaseValueInSpecifiedUnits(float aValue,
   else {
     aSVGElement->AnimationNeedsResample();
   }
-  aSVGElement->DidChangeLength(mAttrEnum, true);
+  if (aDoSetAttr) {
+    aSVGElement->DidChangeLength(mAttrEnum, emptyOrOldValue);
+  }
 }
 
 nsresult
@@ -327,10 +305,23 @@ nsSVGLength2::ConvertToSpecifiedUnits(PRUint16 unitType,
   if (!IsValidUnitType(unitType))
     return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
 
-  float valueInUserUnits = 
+  if (mIsBaseSet && mSpecifiedUnitType == PRUint8(unitType))
+    return NS_OK;
+
+  // Even though we're not changing the visual effect this length will have
+  // on the document, we still need to send out notifications in case we have
+  // mutation listeners, since the actual string value of the attribute will
+  // change.
+  nsAttrValue emptyOrOldValue = aSVGElement->WillChangeLength(mAttrEnum);
+
+  float valueInUserUnits =
     mBaseVal / GetUnitScaleFactor(aSVGElement, mSpecifiedUnitType);
   mSpecifiedUnitType = PRUint8(unitType);
-  SetBaseValue(valueInUserUnits, aSVGElement);
+  // Setting aDoSetAttr to false here will ensure we don't call
+  // Will/DidChangeAngle a second time (and dispatch duplicate notifications).
+  SetBaseValue(valueInUserUnits, aSVGElement, false);
+
+  aSVGElement->DidChangeLength(mAttrEnum, emptyOrOldValue);
 
   return NS_OK;
 }
@@ -345,6 +336,12 @@ nsSVGLength2::NewValueSpecifiedUnits(PRUint16 unitType,
   if (!IsValidUnitType(unitType))
     return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
 
+  if (mIsBaseSet && mBaseVal == valueInSpecifiedUnits &&
+      mSpecifiedUnitType == PRUint8(unitType)) {
+    return NS_OK;
+  }
+
+  nsAttrValue emptyOrOldValue = aSVGElement->WillChangeLength(mAttrEnum);
   mBaseVal = valueInSpecifiedUnits;
   mIsBaseSet = true;
   mSpecifiedUnitType = PRUint8(unitType);
@@ -354,7 +351,7 @@ nsSVGLength2::NewValueSpecifiedUnits(PRUint16 unitType,
   else {
     aSVGElement->AnimationNeedsResample();
   }
-  aSVGElement->DidChangeLength(mAttrEnum, true);
+  aSVGElement->DidChangeLength(mAttrEnum, emptyOrOldValue);
   return NS_OK;
 }
 
@@ -407,12 +404,21 @@ nsSVGLength2::SetBaseValueString(const nsAString &aValueAsString,
 {
   float value;
   PRUint16 unitType;
-  
+
   nsresult rv = GetValueFromString(aValueAsString, &value, &unitType);
   if (NS_FAILED(rv)) {
     return rv;
   }
-  
+
+  if (mIsBaseSet && mBaseVal == value &&
+      mSpecifiedUnitType == PRUint8(unitType)) {
+    return NS_OK;
+  }
+
+  nsAttrValue emptyOrOldValue;
+  if (aDoSetAttr) {
+    emptyOrOldValue = aSVGElement->WillChangeLength(mAttrEnum);
+  }
   mBaseVal = value;
   mIsBaseSet = true;
   mSpecifiedUnitType = PRUint8(unitType);
@@ -423,34 +429,40 @@ nsSVGLength2::SetBaseValueString(const nsAString &aValueAsString,
     aSVGElement->AnimationNeedsResample();
   }
 
-  aSVGElement->DidChangeLength(mAttrEnum, aDoSetAttr);
+  if (aDoSetAttr) {
+    aSVGElement->DidChangeLength(mAttrEnum, emptyOrOldValue);
+  }
   return NS_OK;
 }
 
 void
-nsSVGLength2::GetBaseValueString(nsAString & aValueAsString)
+nsSVGLength2::GetBaseValueString(nsAString & aValueAsString) const
 {
   GetValueString(aValueAsString, mBaseVal, mSpecifiedUnitType);
 }
 
 void
-nsSVGLength2::GetAnimValueString(nsAString & aValueAsString)
+nsSVGLength2::GetAnimValueString(nsAString & aValueAsString) const
 {
   GetValueString(aValueAsString, mAnimVal, mSpecifiedUnitType);
 }
 
 void
-nsSVGLength2::SetBaseValue(float aValue, nsSVGElement *aSVGElement)
+nsSVGLength2::SetBaseValue(float aValue, nsSVGElement *aSVGElement,
+                           bool aDoSetAttr)
 {
   SetBaseValueInSpecifiedUnits(aValue * GetUnitScaleFactor(aSVGElement,
                                                            mSpecifiedUnitType),
-                               aSVGElement);
+                               aSVGElement, aDoSetAttr);
 }
 
 void
 nsSVGLength2::SetAnimValueInSpecifiedUnits(float aValue,
                                            nsSVGElement* aSVGElement)
 {
+  if (mAnimVal == aValue && mIsAnimated) {
+    return;
+  }
   mAnimVal = aValue;
   mIsAnimated = true;
   aSVGElement->DidAnimateLength(mAttrEnum);
@@ -528,8 +540,9 @@ void
 nsSVGLength2::SMILLength::ClearAnimValue()
 {
   if (mVal->mIsAnimated) {
-    mVal->SetAnimValueInSpecifiedUnits(mVal->mBaseVal, mSVGElement);
     mVal->mIsAnimated = false;
+    mVal->mAnimVal = mVal->mBaseVal;
+    mSVGElement->DidAnimateLength(mVal->mAttrEnum);
   }  
 }
 

@@ -1,41 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla code.
- *
- * The Initial Developer of the Original Code is 
- *   Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  Brad Lassey <blassey@mozilla.com>
- *  Kyle Huey <me@kylehuey.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsBuiltinDecoderStateMachine.h"
 #include "nsBuiltinDecoder.h"
@@ -71,11 +37,11 @@ nsresult nsRawReader::ReadMetadata(nsVideoInfo* aInfo)
   NS_ASSERTION(mDecoder->OnDecodeThread(),
                "Should be on decode thread.");
 
-  nsMediaStream* stream = mDecoder->GetStream();
-  NS_ASSERTION(stream, "Decoder has no media stream");
+  MediaResource* resource = mDecoder->GetResource();
+  NS_ASSERTION(resource, "Decoder has no media resource");
 
-  if (!ReadFromStream(stream, reinterpret_cast<PRUint8*>(&mMetadata),
-                      sizeof(mMetadata)))
+  if (!ReadFromResource(resource, reinterpret_cast<PRUint8*>(&mMetadata),
+                        sizeof(mMetadata)))
     return NS_ERROR_FAILURE;
 
   // Validate the header
@@ -85,10 +51,9 @@ nsresult nsRawReader::ReadMetadata(nsVideoInfo* aInfo)
         mMetadata.minorVersion == 1))
     return NS_ERROR_FAILURE;
 
-  PRUint32 dummy;
-  if (!MulOverflow32(mMetadata.frameWidth, mMetadata.frameHeight, dummy))
-    return NS_ERROR_FAILURE;
-
+  CheckedUint32 dummy = CheckedUint32(static_cast<PRUint32>(mMetadata.frameWidth)) *
+                          static_cast<PRUint32>(mMetadata.frameHeight);
+  NS_ENSURE_TRUE(dummy.isValid(), NS_ERROR_FAILURE);
 
   if (mMetadata.aspectDenominator == 0 ||
       mMetadata.framerateDenominator == 0)
@@ -128,7 +93,7 @@ nsresult nsRawReader::ReadMetadata(nsVideoInfo* aInfo)
     (mMetadata.lumaChannelBpp + mMetadata.chromaChannelBpp) / 8.0 +
     sizeof(nsRawPacketHeader);
 
-  PRInt64 length = stream->GetLength();
+  PRInt64 length = resource->GetLength();
   if (length != -1) {
     mozilla::ReentrantMonitorAutoEnter autoMonitor(mDecoder->GetReentrantMonitor());
     mDecoder->GetStateMachine()->SetDuration(USECS_PER_S *
@@ -150,14 +115,14 @@ nsresult nsRawReader::ReadMetadata(nsVideoInfo* aInfo)
 
 // Helper method that either reads until it gets aLength bytes 
 // or returns false
-bool nsRawReader::ReadFromStream(nsMediaStream *aStream, PRUint8* aBuf,
+bool nsRawReader::ReadFromResource(MediaResource *aResource, PRUint8* aBuf,
                                    PRUint32 aLength)
 {
   while (aLength > 0) {
     PRUint32 bytesRead = 0;
     nsresult rv;
 
-    rv = aStream->Read(reinterpret_cast<char*>(aBuf), aLength, &bytesRead);
+    rv = aResource->Read(reinterpret_cast<char*>(aBuf), aLength, &bytesRead);
     NS_ENSURE_SUCCESS(rv, false);
 
     if (bytesRead == 0) {
@@ -189,21 +154,21 @@ bool nsRawReader::DecodeVideoFrame(bool &aKeyframeSkip,
   PRUint32 length = mFrameSize - sizeof(nsRawPacketHeader);
 
   nsAutoArrayPtr<PRUint8> buffer(new PRUint8[length]);
-  nsMediaStream* stream = mDecoder->GetStream();
-  NS_ASSERTION(stream, "Decoder has no media stream");
+  MediaResource* resource = mDecoder->GetResource();
+  NS_ASSERTION(resource, "Decoder has no media resource");
 
   // We're always decoding one frame when called
   while(true) {
     nsRawPacketHeader header;
 
     // Read in a packet header and validate
-    if (!(ReadFromStream(stream, reinterpret_cast<PRUint8*>(&header),
-                         sizeof(header))) ||
+    if (!(ReadFromResource(resource, reinterpret_cast<PRUint8*>(&header),
+                           sizeof(header))) ||
         !(header.packetID == 0xFF && header.codecID == RAW_ID /* "YUV" */)) {
       return false;
     }
 
-    if (!ReadFromStream(stream, buffer, length)) {
+    if (!ReadFromResource(resource, buffer, length)) {
       return false;
     }
 
@@ -221,6 +186,7 @@ bool nsRawReader::DecodeVideoFrame(bool &aKeyframeSkip,
   b.mPlanes[0].mStride = mMetadata.frameWidth * mMetadata.lumaChannelBpp / 8.0;
   b.mPlanes[0].mHeight = mMetadata.frameHeight;
   b.mPlanes[0].mWidth = mMetadata.frameWidth;
+  b.mPlanes[0].mOffset = b.mPlanes[0].mSkip = 0;
 
   PRUint32 cbcrStride = mMetadata.frameWidth * mMetadata.chromaChannelBpp / 8.0;
 
@@ -228,11 +194,13 @@ bool nsRawReader::DecodeVideoFrame(bool &aKeyframeSkip,
   b.mPlanes[1].mStride = cbcrStride;
   b.mPlanes[1].mHeight = mMetadata.frameHeight / 2;
   b.mPlanes[1].mWidth = mMetadata.frameWidth / 2;
+  b.mPlanes[1].mOffset = b.mPlanes[1].mSkip = 0;
 
   b.mPlanes[2].mData = b.mPlanes[1].mData + mMetadata.frameHeight * cbcrStride / 2;
   b.mPlanes[2].mStride = cbcrStride;
   b.mPlanes[2].mHeight = mMetadata.frameHeight / 2;
   b.mPlanes[2].mWidth = mMetadata.frameWidth / 2;
+  b.mPlanes[2].mOffset = b.mPlanes[2].mSkip = 0;
 
   VideoData *v = VideoData::Create(mInfo,
                                    mDecoder->GetImageContainer(),
@@ -259,21 +227,19 @@ nsresult nsRawReader::Seek(PRInt64 aTime, PRInt64 aStartTime, PRInt64 aEndTime, 
   NS_ASSERTION(mDecoder->OnDecodeThread(),
                "Should be on decode thread.");
 
-  nsMediaStream *stream = mDecoder->GetStream();
-  NS_ASSERTION(stream, "Decoder has no media stream");
+  MediaResource *resource = mDecoder->GetResource();
+  NS_ASSERTION(resource, "Decoder has no media resource");
 
   PRUint32 frame = mCurrentFrame;
   if (aTime >= UINT_MAX)
     return NS_ERROR_FAILURE;
   mCurrentFrame = aTime * mFrameRate / USECS_PER_S;
 
-  PRUint32 offset;
-  if (!MulOverflow32(mCurrentFrame, mFrameSize, offset))
-    return NS_ERROR_FAILURE;
-
+  CheckedUint32 offset = CheckedUint32(mCurrentFrame) * mFrameSize;
   offset += sizeof(nsRawVideoHeader);
+  NS_ENSURE_TRUE(offset.isValid(), NS_ERROR_FAILURE);
 
-  nsresult rv = stream->Seek(nsISeekableStream::NS_SEEK_SET, offset);
+  nsresult rv = resource->Seek(nsISeekableStream::NS_SEEK_SET, offset.value());
   NS_ENSURE_SUCCESS(rv, rv);
 
   mVideoQueue.Erase();

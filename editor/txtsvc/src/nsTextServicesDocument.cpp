@@ -1,41 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Pierre Phaneuf <pp@ludusdesign.com>
- *   Neil Deakin <neil@mozdevgroup.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Util.h"
 
@@ -59,7 +25,6 @@
 #include "nsIDOMHTMLElement.h"
 #include "nsIDOMHTMLDocument.h"
 
-#include "nsLWBrkCIID.h"
 #include "nsIWordBreaker.h"
 #include "nsIServiceManager.h"
 
@@ -134,7 +99,7 @@ nsTextServicesDocument::RegisterAtoms()
 #undef TS_ATOM
   };
 
-  NS_RegisterStaticAtoms(ts_atoms, ArrayLength(ts_atoms));
+  NS_RegisterStaticAtoms(ts_atoms);
 }
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsTextServicesDocument)
@@ -770,7 +735,7 @@ nsTextServicesDocument::LastSelectedBlock(TSDBlockSelectionStatus *aSelStatus,
   // If we get here, we have an uncollapsed selection!
   // Look backwards through each range in the selection till you
   // find the first text node. If you find one, find the
-  // beginning of it's text block, and make it the current
+  // beginning of its text block, and make it the current
   // block.
 
   result = selection->GetRangeCount(&rangeCount);
@@ -950,7 +915,7 @@ nsTextServicesDocument::LastSelectedBlock(TSDBlockSelectionStatus *aSelStatus,
     if (IsTextNode(content))
     {
       // We found a text node! Adjust the document's iterator to point
-      // to the beginning of it's text block, then get the current selection.
+      // to the beginning of its text block, then get the current selection.
 
       result = mIterator->PositionAt(content);
 
@@ -1229,7 +1194,7 @@ nsTextServicesDocument::DeleteSelection()
   // PrintOffsetTable();
   //**** KDEBUG ****
 
-  // If we have an mExtent, save off it's current set of
+  // If we have an mExtent, save off its current set of
   // end points so we can compare them against mExtent's
   // set after the deletion of the content.
 
@@ -1378,7 +1343,7 @@ nsTextServicesDocument::DeleteSelection()
 
   // Now delete the actual content!
 
-  result = editor->DeleteSelection(nsIEditor::ePrevious);
+  result = editor->DeleteSelection(nsIEditor::ePrevious, nsIEditor::eStrip);
 
   if (NS_FAILED(result))
   {
@@ -1415,7 +1380,7 @@ nsTextServicesDocument::DeleteSelection()
       if (mIteratorStatus != nsTextServicesDocument::eIsDone)
       {
         // The old iterator is still pointing to something valid,
-        // so get it's current node so we can restore it after we
+        // so get its current node so we can restore it after we
         // create the new iterator!
 
         curContent = do_QueryInterface(mIterator->GetCurrentNode());
@@ -1616,7 +1581,7 @@ nsTextServicesDocument::InsertText(const nsString *aText)
   {
     // We are inserting text at the end of the current offset entry.
     // Look at the next valid entry in the table. If it's an inserted
-    // text entry, add to it's length and adjust it's node offset. If
+    // text entry, add to its length and adjust its node offset. If
     // it isn't, add a new inserted text entry.
 
     i       = mSelStartIndex + 1;
@@ -1664,7 +1629,7 @@ nsTextServicesDocument::InsertText(const nsString *aText)
       }
     }
 
-    // We have a valid inserted text offset entry. Update it's
+    // We have a valid inserted text offset entry. Update its
     // length, adjust the selection indexes, and make sure the
     // caret is properly placed!
 
@@ -1893,26 +1858,18 @@ nsTextServicesDocument::DidJoinNodes(nsIDOMNode  *aLeftNode,
   // fflush(stdout);
   //**** KDEBUG ****
 
-  // Make sure that both nodes are text nodes!
+  // Make sure that both nodes are text nodes -- otherwise we don't care.
 
   result = aLeftNode->GetNodeType(&type);
-
   NS_ENSURE_SUCCESS(result, false);
-
-  if (nsIDOMNode::TEXT_NODE != type)
-  {
-    NS_ERROR("JoinNode called with a non-text left node!");
-    return NS_ERROR_FAILURE;
+  if (nsIDOMNode::TEXT_NODE != type) {
+    return NS_OK;
   }
 
   result = aRightNode->GetNodeType(&type);
-
   NS_ENSURE_SUCCESS(result, false);
-
-  if (nsIDOMNode::TEXT_NODE != type)
-  {
-    NS_ERROR("JoinNode called with a non-text right node!");
-    return NS_ERROR_FAILURE;
+  if (nsIDOMNode::TEXT_NODE != type) {
+    return NS_OK;
   }
 
   // Note: The editor merges the contents of the left node into the
@@ -2148,23 +2105,12 @@ nsTextServicesDocument::CreateDocumentContentRootToNodeOffsetRange(nsIDOMNode *a
     // The range should begin at (aParent, aOffset) and
     // extend to the end of the document.
 
-    nsCOMPtr<nsIDOMNodeList> nodeList;
-    PRUint32 nodeListLength;
-
     startNode   = aParent;
     startOffset = aOffset;
     endNode     = bodyNode;
-    endOffset   = 0;
 
-    rv = bodyNode->GetChildNodes(getter_AddRefs(nodeList));
-    NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
-
-    if (nodeList) {
-      rv = nodeList->GetLength(&nodeListLength);
-      NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
-
-      endOffset = (PRInt32)nodeListLength;
-    }
+    nsCOMPtr<nsINode> body = do_QueryInterface(bodyNode);
+    endOffset = body ? PRInt32(body->GetChildCount()) : 0;
   }
 
   return nsRange::CreateRange(startNode, startOffset, endNode, endOffset,
@@ -2676,7 +2622,7 @@ nsTextServicesDocument::GetCollapsedSelection(nsITextServicesDocument::TSDBlockS
   {
     // Good news, the caret is in a text node. Look
     // through the offset table for the entry that
-    // matches it's parent and offset.
+    // matches its parent and offset.
 
     for (i = 0; i < tableCount; i++)
     {
@@ -2704,7 +2650,7 @@ nsTextServicesDocument::GetCollapsedSelection(nsITextServicesDocument::TSDBlockS
   // The caret is in our text block, but it's positioned in some
   // non-text node (ex. <b>). Create a range based on the start
   // and end of the text block, then create an iterator based on
-  // this range, with it's initial position set to the closest
+  // this range, with its initial position set to the closest
   // child of this non-text node. Then look for the closest text
   // node.
 
@@ -3736,7 +3682,7 @@ nsTextServicesDocument::FindWordBounds(nsTArray<OffsetEntry*> *aOffsetTable,
   bool hasEntry = false;
 
   // It's assumed that aNode is a text node. The first thing
-  // we do is get it's index in the offset table so we can
+  // we do is get its index in the offset table so we can
   // calculate the dom point's string offset.
 
   nsresult result = NodeHasOffsetEntry(aOffsetTable, aNode, &hasEntry, &entryIndex);
@@ -3754,19 +3700,10 @@ nsTextServicesDocument::FindWordBounds(nsTArray<OffsetEntry*> *aOffsetTable,
   const PRUnichar *str = aBlockStr->get();
   PRUint32 strLen = aBlockStr->Length();
 
-  nsIWordBreaker *aWordBreaker;
-
-  result = CallGetService(NS_WBRK_CONTRACTID, &aWordBreaker);
-  NS_ENSURE_SUCCESS(result, result);
-
-  nsWordRange res = aWordBreaker->FindWord(str, strLen, strOffset);
-  NS_IF_RELEASE(aWordBreaker);
-  if(res.mBegin > strLen)
-  {
-    if(!str)
-      return NS_ERROR_NULL_POINTER;
-    else
-      return NS_ERROR_ILLEGAL_VALUE;
+  nsIWordBreaker* wordBreaker = nsContentUtils::WordBreaker();
+  nsWordRange res = wordBreaker->FindWord(str, strLen, strOffset);
+  if (res.mBegin > strLen) {
+    return str ? NS_ERROR_ILLEGAL_VALUE : NS_ERROR_NULL_POINTER;
   }
 
   // Strip out the NBSPs at the ends

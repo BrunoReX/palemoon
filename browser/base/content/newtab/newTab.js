@@ -30,13 +30,10 @@ XPCOMUtils.defineLazyGetter(this, "gStringBundle", function() {
 function newTabString(name) gStringBundle.GetStringFromName('newtab.' + name);
 
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
-const THUMB_WIDTH = 201;
-const THUMB_HEIGHT = 127;
 
 #include batch.js
 #include transformations.js
 #include page.js
-#include toolbar.js
 #include grid.js
 #include cells.js
 #include sites.js
@@ -45,3 +42,6 @@ const THUMB_HEIGHT = 127;
 #include dropTargetShim.js
 #include dropPreview.js
 #include updater.js
+
+// Everything is loaded. Initialize the New Tab Page.
+gPage.init();

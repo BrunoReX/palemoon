@@ -1,51 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set sw=2 ts=2 et tw=78: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Travis Bogard <travis@netscape.com>
- *   Brendan Eich <brendan@mozilla.org>
- *   David Hyatt (hyatt@netscape.com)
- *   Dan Rosen <dr@netscape.com>
- *   Vidur Apparao <vidur@netscape.com>
- *   Johnny Stenback <jst@netscape.com>
- *   Mark Hammond <mhammond@skippinet.com.au>
- *   Ryan Jones <sciguyryan@gmail.com>
- *   Jeff Walden <jwalden+code@mit.edu>
- *   Ben Bucksch <ben.bucksch  beonex.com>
- *   Emanuele Costa <emanuele.costa@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Needs to be first.
 #include "base/basictypes.h"
@@ -56,6 +13,7 @@
 #include "nsMimeTypeArray.h"
 #include "nsDesktopNotification.h"
 #include "nsGeolocation.h"
+#include "nsDeviceStorage.h"
 #include "nsIHttpProtocolHandler.h"
 #include "nsICachingChannel.h"
 #include "nsIDocShell.h"
@@ -69,15 +27,26 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Telemetry.h"
 #include "BatteryManager.h"
+#include "PowerManager.h"
+#include "nsIDOMWakeLock.h"
+#include "nsIPowerManagerService.h"
 #include "SmsManager.h"
 #include "nsISmsService.h"
 #include "mozilla/Hal.h"
 #include "nsIWebNavigation.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "Connection.h"
+#include "MobileConnection.h"
 
+#ifdef MOZ_MEDIA_NAVIGATOR
+#include "MediaManager.h"
+#endif
 #ifdef MOZ_B2G_RIL
 #include "TelephonyFactory.h"
+#endif
+#ifdef MOZ_B2G_BT
+#include "nsIDOMBluetoothManager.h"
+#include "BluetoothManager.h"
 #endif
 
 // This should not be in the namespace.
@@ -124,14 +93,21 @@ NS_INTERFACE_MAP_BEGIN(Navigator)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMNavigator)
   NS_INTERFACE_MAP_ENTRY(nsIDOMNavigator)
   NS_INTERFACE_MAP_ENTRY(nsIDOMClientInformation)
+  NS_INTERFACE_MAP_ENTRY(nsIDOMNavigatorDeviceStorage)
   NS_INTERFACE_MAP_ENTRY(nsIDOMNavigatorGeolocation)
   NS_INTERFACE_MAP_ENTRY(nsIDOMMozNavigatorBattery)
   NS_INTERFACE_MAP_ENTRY(nsIDOMNavigatorDesktopNotification)
   NS_INTERFACE_MAP_ENTRY(nsIDOMMozNavigatorSms)
+#ifdef MOZ_MEDIA_NAVIGATOR
+  NS_INTERFACE_MAP_ENTRY(nsIDOMNavigatorUserMedia)
+#endif
 #ifdef MOZ_B2G_RIL
   NS_INTERFACE_MAP_ENTRY(nsIDOMNavigatorTelephony)
 #endif
   NS_INTERFACE_MAP_ENTRY(nsIDOMMozNavigatorNetwork)
+#ifdef MOZ_B2G_BT
+  NS_INTERFACE_MAP_ENTRY(nsIDOMNavigatorBluetooth)
+#endif
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(Navigator)
 NS_INTERFACE_MAP_END
 
@@ -164,6 +140,11 @@ Navigator::Invalidate()
     mBatteryManager = nsnull;
   }
 
+  if (mPowerManager) {
+    mPowerManager->Shutdown();
+    mPowerManager = nsnull;
+  }
+
   if (mSmsManager) {
     mSmsManager->Shutdown();
     mSmsManager = nsnull;
@@ -179,6 +160,17 @@ Navigator::Invalidate()
     mConnection->Shutdown();
     mConnection = nsnull;
   }
+
+  if (mMobileConnection) {
+    mMobileConnection->Shutdown();
+    mMobileConnection = nsnull;
+  }
+
+#ifdef MOZ_B2G_BT
+  if (mBluetooth) {
+    mBluetooth = nsnull;
+  }
+#endif
 }
 
 nsPIDOMWindow *
@@ -650,10 +642,10 @@ VibrateWindowListener::RemoveListener()
  */
 bool
 GetVibrationDurationFromJsval(const jsval& aJSVal, JSContext* cx,
-                              PRInt32 *aOut)
+                              int32_t* aOut)
 {
   return JS_ValueToInt32(cx, aJSVal, aOut) &&
-         *aOut >= 0 && static_cast<PRUint32>(*aOut) <= sMaxVibrateMS;
+         *aOut >= 0 && static_cast<uint32_t>(*aOut) <= sMaxVibrateMS;
 }
 
 } // anonymous namespace
@@ -674,7 +666,7 @@ Navigator::MozVibrate(const jsval& aPattern, JSContext* cx)
     return NS_OK;
   }
 
-  nsAutoTArray<PRUint32, 8> pattern;
+  nsAutoTArray<uint32_t, 8> pattern;
 
   // null or undefined pattern is an error.
   if (JSVAL_IS_NULL(aPattern) || JSVAL_IS_VOID(aPattern)) {
@@ -682,7 +674,7 @@ Navigator::MozVibrate(const jsval& aPattern, JSContext* cx)
   }
 
   if (JSVAL_IS_PRIMITIVE(aPattern)) {
-    PRInt32 p;
+    int32_t p;
     if (GetVibrationDurationFromJsval(aPattern, cx, &p)) {
       pattern.AppendElement(p);
     }
@@ -700,7 +692,7 @@ Navigator::MozVibrate(const jsval& aPattern, JSContext* cx)
 
     for (PRUint32 i = 0; i < length; ++i) {
       jsval v;
-      PRInt32 pv;
+      int32_t pv;
       if (JS_GetElement(cx, obj, i, &v) &&
           GetVibrationDurationFromJsval(v, cx, &pv)) {
         pattern[i] = pv;
@@ -856,6 +848,26 @@ Navigator::MozIsLocallyAvailable(const nsAString &aURI,
 }
 
 //*****************************************************************************
+//    Navigator::nsIDOMNavigatorDeviceStorage
+//*****************************************************************************
+
+NS_IMETHODIMP Navigator::GetDeviceStorage(const nsAString &aType, nsIVariant** _retval)
+{
+  if (!Preferences::GetBool("device.storage.enabled", false)) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsPIDOMWindow> win(do_QueryReferent(mWindow));
+
+  if (!win || !win->GetOuterWindow() || !win->GetDocShell()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsDOMDeviceStorage::CreateDeviceStoragesFor(win, aType, _retval);
+  return NS_OK;
+}
+
+//*****************************************************************************
 //    Navigator::nsIDOMNavigatorGeolocation
 //*****************************************************************************
 
@@ -894,6 +906,31 @@ NS_IMETHODIMP Navigator::GetGeolocation(nsIDOMGeoGeolocation** _retval)
 }
 
 //*****************************************************************************
+//    Navigator::nsIDOMNavigatorUserMedia (mozGetUserMedia)
+//*****************************************************************************
+#ifdef MOZ_MEDIA_NAVIGATOR
+NS_IMETHODIMP
+Navigator::MozGetUserMedia(nsIMediaStreamOptions* aParams,
+                           nsIDOMGetUserMediaSuccessCallback* onSuccess,
+                           nsIDOMGetUserMediaErrorCallback* onError)
+{
+  if (!Preferences::GetBool("media.navigator.enabled", false)) {
+    return NS_OK;
+  }
+
+  MediaManager *manager = MediaManager::Get();
+  nsCOMPtr<nsPIDOMWindow> win = do_QueryReferent(mWindow);
+
+  if (!win || !win->GetOuterWindow() ||
+      win->GetOuterWindow()->GetCurrentInnerWindow() != win) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  return manager->GetUserMedia(win, aParams, onSuccess, onError);
+}
+#endif
+
+//*****************************************************************************
 //    Navigator::nsIDOMNavigatorDesktopNotification
 //*****************************************************************************
 
@@ -908,13 +945,9 @@ NS_IMETHODIMP Navigator::GetMozNotification(nsIDOMDesktopNotificationCenter** aR
   }
 
   nsCOMPtr<nsPIDOMWindow> win(do_QueryReferent(mWindow));
-  nsCOMPtr<nsIScriptGlobalObject> sgo(do_QueryInterface(win));
-  NS_ENSURE_TRUE(sgo && win->GetDocShell(), NS_ERROR_FAILURE);
+  NS_ENSURE_TRUE(win && win->GetDocShell(), NS_ERROR_FAILURE);
 
-  nsIScriptContext* scx = sgo->GetContext();
-  NS_ENSURE_TRUE(scx, NS_ERROR_FAILURE);
-
-  mNotification = new nsDesktopNotificationCenter(win, scx);
+  mNotification = new nsDesktopNotificationCenter(win);
 
   NS_ADDREF(*aRetVal = mNotification);
   return NS_OK;
@@ -931,19 +964,49 @@ Navigator::GetMozBattery(nsIDOMMozBatteryManager** aBattery)
     *aBattery = nsnull;
 
     nsCOMPtr<nsPIDOMWindow> win(do_QueryReferent(mWindow));
-    nsCOMPtr<nsIScriptGlobalObject> sgo(do_QueryInterface(win));
-    NS_ENSURE_TRUE(sgo && win->GetDocShell(), NS_OK);
-
-    nsIScriptContext* scx = sgo->GetContext();
-    NS_ENSURE_TRUE(scx, NS_OK);
+    NS_ENSURE_TRUE(win && win->GetDocShell(), NS_OK);
 
     mBatteryManager = new battery::BatteryManager();
-    mBatteryManager->Init(win, scx);
+    mBatteryManager->Init(win);
   }
 
   NS_ADDREF(*aBattery = mBatteryManager);
 
   return NS_OK;
+}
+
+NS_IMETHODIMP
+Navigator::GetMozPower(nsIDOMMozPowerManager** aPower)
+{
+  *aPower = nsnull;
+
+  if (!mPowerManager) {
+    nsCOMPtr<nsPIDOMWindow> win = do_QueryReferent(mWindow);
+    NS_ENSURE_TRUE(win, NS_OK);
+
+    mPowerManager = new power::PowerManager();
+    mPowerManager->Init(win);
+  }
+
+  nsCOMPtr<nsIDOMMozPowerManager> power(mPowerManager);
+  power.forget(aPower);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+Navigator::RequestWakeLock(const nsAString &aTopic, nsIDOMMozWakeLock **aWakeLock)
+{
+  *aWakeLock = nsnull;
+
+  nsCOMPtr<nsPIDOMWindow> win = do_QueryReferent(mWindow);
+  NS_ENSURE_TRUE(win, NS_OK);
+
+  nsCOMPtr<nsIPowerManagerService> pmService =
+    do_GetService(POWERMANAGERSERVICE_CONTRACTID);
+  NS_ENSURE_TRUE(pmService, NS_OK);
+
+  return pmService->NewWakeLock(aTopic, win, aWakeLock);
 }
 
 //*****************************************************************************
@@ -1034,14 +1097,8 @@ Navigator::GetMozSms(nsIDOMMozSmsManager** aSmsManager)
     nsCOMPtr<nsPIDOMWindow> window = do_QueryReferent(mWindow);
     NS_ENSURE_TRUE(window && window->GetDocShell(), NS_OK);
 
-    nsCOMPtr<nsIScriptGlobalObject> sgo = do_QueryInterface(window);
-    NS_ENSURE_TRUE(sgo, NS_OK);
-
-    nsIScriptContext* scx = sgo->GetContext();
-    NS_ENSURE_TRUE(scx, NS_OK);
-
     mSmsManager = new sms::SmsManager();
-    mSmsManager->Init(window, scx);
+    mSmsManager->Init(window);
   }
 
   NS_ADDREF(*aSmsManager = mSmsManager);
@@ -1090,35 +1147,81 @@ Navigator::GetMozConnection(nsIDOMMozConnection** aConnection)
     nsCOMPtr<nsPIDOMWindow> window = do_QueryReferent(mWindow);
     NS_ENSURE_TRUE(window && window->GetDocShell(), NS_OK);
 
-    nsCOMPtr<nsIScriptGlobalObject> sgo = do_QueryInterface(window);
-    NS_ENSURE_TRUE(sgo, NS_OK);
-
-    nsIScriptContext* scx = sgo->GetContext();
-    NS_ENSURE_TRUE(scx, NS_OK);
-
     mConnection = new network::Connection();
-    mConnection->Init(window, scx);
+    mConnection->Init(window);
   }
 
   NS_ADDREF(*aConnection = mConnection);
   return NS_OK;
 }
 
-PRInt64
-Navigator::SizeOf() const
+NS_IMETHODIMP
+Navigator::GetMozMobileConnection(nsIDOMMozMobileConnection** aMobileConnection)
 {
-  PRInt64 size = sizeof(*this);
+  *aMobileConnection = nsnull;
 
-  // TODO: add SizeOf() to nsMimeTypeArray, bug 674113.
-  size += mMimeTypes ? sizeof(*mMimeTypes.get()) : 0;
-  // TODO: add SizeOf() to nsPluginArray, bug 674114.
-  size += mPlugins ? sizeof(*mPlugins.get()) : 0;
-  // TODO: add SizeOf() to nsGeolocation, bug 674115.
-  size += mGeolocation ? sizeof(*mGeolocation.get()) : 0;
-  // TODO: add SizeOf() to nsDesktopNotificationCenter, bug 674116.
-  size += mNotification ? sizeof(*mNotification.get()) : 0;
+  if (!mMobileConnection) {
+    nsCOMPtr<nsPIDOMWindow> window = do_QueryReferent(mWindow);
+    NS_ENSURE_TRUE(window && window->GetDocShell(), NS_OK);
 
-  return size;
+    // Chrome is always allowed access, so do the permission check only
+    // for non-chrome pages.
+    if (!nsContentUtils::IsCallerChrome()) {
+      nsCOMPtr<nsIDocument> doc = do_QueryInterface(window->GetExtantDocument());
+      NS_ENSURE_TRUE(doc, NS_OK);
+
+      nsCOMPtr<nsIURI> uri;
+      doc->NodePrincipal()->GetURI(getter_AddRefs(uri));
+
+      if (!nsContentUtils::URIIsChromeOrInPref(uri, "dom.mobileconnection.whitelist")) {
+        return NS_OK;
+      }
+    }
+
+    mMobileConnection = new network::MobileConnection();
+    mMobileConnection->Init(window);
+  }
+
+  NS_ADDREF(*aMobileConnection = mMobileConnection);
+  return NS_OK;
+}
+
+#ifdef MOZ_B2G_BT
+//*****************************************************************************
+//    nsNavigator::nsIDOMNavigatorBluetooth
+//*****************************************************************************
+
+NS_IMETHODIMP
+Navigator::GetMozBluetooth(nsIDOMBluetoothManager** aBluetooth)
+{
+  nsCOMPtr<nsIDOMBluetoothManager> bluetooth = mBluetooth;
+
+  if (!bluetooth) {
+    nsCOMPtr<nsPIDOMWindow> window = do_QueryReferent(mWindow);
+    NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
+
+    nsresult rv = NS_NewBluetoothManager(window, getter_AddRefs(mBluetooth));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    bluetooth = mBluetooth;
+  }
+
+  bluetooth.forget(aBluetooth);
+  return NS_OK;
+}
+#endif //MOZ_B2G_BT
+
+size_t
+Navigator::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = aMallocSizeOf(this);
+
+  // TODO: add SizeOfIncludingThis() to nsMimeTypeArray, bug 674113.
+  // TODO: add SizeOfIncludingThis() to nsPluginArray, bug 674114.
+  // TODO: add SizeOfIncludingThis() to nsGeolocation, bug 674115.
+  // TODO: add SizeOfIncludingThis() to nsDesktopNotificationCenter, bug 674116.
+
+  return n;
 }
 
 void
@@ -1127,6 +1230,17 @@ Navigator::SetWindow(nsPIDOMWindow *aInnerWindow)
   NS_ASSERTION(aInnerWindow->IsInnerWindow(),
                "Navigator must get an inner window!");
   mWindow = do_GetWeakReference(aInnerWindow);
+}
+
+void
+Navigator::OnNavigation()
+{
+  // Inform MediaManager in case there are live streams or pending callbacks.
+#ifdef MOZ_MEDIA_NAVIGATOR
+  MediaManager *manager = MediaManager::Get();
+  nsCOMPtr<nsPIDOMWindow> win = do_QueryReferent(mWindow);
+  return manager->OnNavigation(win->WindowID());
+#endif
 }
 
 } // namespace dom

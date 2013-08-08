@@ -1,40 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 // vim:set et cin sw=2 sts=2:
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla <object> loading code.
- *
- * The Initial Developer of the Original Code is
- * Christian Biesinger <cbiesinger@web.de>.
- * Portions created by the Initial Developer are Copyright (C) 2005
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * A base class implementing nsIObjectLoadingContent for use by
@@ -53,11 +21,15 @@
 #include "nsIObjectLoadingContent.h"
 #include "nsIRunnable.h"
 #include "nsIFrame.h"
+#include "nsPluginInstanceOwner.h"
+#include "nsIThreadInternal.h"
 
 class nsAsyncInstantiateEvent;
+class nsStopPluginRunnable;
 class AutoNotifier;
 class AutoFallback;
 class AutoSetInstantiatingToFalse;
+class nsObjectFrame;
 
 enum PluginSupportState {
   ePluginUnsupported,  // The plugin is not supported (e.g. not installed)
@@ -97,6 +69,8 @@ class nsObjectLoadingContent : public nsImageLoadingContent
   friend class AutoNotifier;
   friend class AutoFallback;
   friend class AutoSetInstantiatingToFalse;
+  friend class nsStopPluginRunnable;
+  friend class nsAsyncInstantiateEvent;
 
   public:
     // This enum's values must be the same as the constants on
@@ -139,6 +113,14 @@ class nsObjectLoadingContent : public nsImageLoadingContent
     {
       mNetworkCreated = aNetworkCreated;
     }
+
+    // Can flush layout.
+    nsresult InstantiatePluginInstance(const char* aMimeType, nsIURI* aURI);
+
+    void NotifyOwnerDocumentActivityChanged();
+
+    bool SrcStreamLoading() { return mSrcStreamLoading; };
+
   protected:
     /**
      * Load the object from the given URI.
@@ -227,7 +209,20 @@ class nsObjectLoadingContent : public nsImageLoadingContent
                          nsCycleCollectionTraversalCallback &cb);
 
     void CreateStaticClone(nsObjectLoadingContent* aDest) const;
+
+    void DoStopPlugin(nsPluginInstanceOwner* aInstanceOwner, bool aDelayedStop,
+                      bool aForcedReentry = false);
+
+    nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
+                        nsIContent* aBindingParent,
+                        bool aCompileEventHandler);
+    void UnbindFromTree(bool aDeep = true,
+                        bool aNullParent = true);
+
   private:
+
+    void NotifyContentObjectWrapper();
+
     /**
      * Check whether the given request represents a successful load.
      */
@@ -288,25 +283,10 @@ class nsObjectLoadingContent : public nsImageLoadingContent
 
 
     /**
-     * Gets the frame that's associated with this content node in
-     * presentation 0. Always returns null if the node doesn't currently
-     * have a frame.
-     *
-     * @param aFlush When eFlushContent will flush content notifications
-     *               before returning a non-null value.
-     *               When eFlushLayout will flush layout and content
-     *               notifications before returning a non-null value.
-     *               When eDontFlush will never flush.
-     *         
-     *   eFlushLayout is needed in some cases by plug-ins to ensure
-     *   that NPP_SetWindow() gets called (from nsObjectFrame::DidReflow).
+     * Gets the frame that's associated with this content node.
+     * Does not flush.
      */
-    enum FlushType {
-      eFlushContent,
-      eFlushLayout,
-      eDontFlush
-    };
-    nsIObjectFrame* GetExistingFrame(FlushType aFlushType);
+    nsObjectFrame* GetExistingFrame();
 
     /**
      * Handle being blocked by a content policy.  aStatus is the nsresult
@@ -317,31 +297,13 @@ class nsObjectLoadingContent : public nsImageLoadingContent
                                            PRInt16 aRetval);
 
     /**
-     * Checks if we have a frame that's ready for instantiation, and
-     * if so, calls Instantiate(). Note that this can cause the frame
-     * to be deleted while we're instantiating the plugin.
-     */
-    nsresult TryInstantiate(const nsACString& aMIMEType, nsIURI* aURI);
-
-    /**
-     * Instantiates the plugin. This differs from
-     * GetFrame()->Instantiate() in that it ensures that the URI will
-     * be non-null, and that a MIME type will be passed. Note that
-     * this can cause the frame to be deleted while we're
-     * instantiating the plugin.
-     */
-    nsresult Instantiate(nsIObjectFrame* aFrame, const nsACString& aMIMEType, nsIURI* aURI);
-
-    /**
      * Get the plugin support state for the given content node and MIME type.
      * This is used for purposes of determining whether to fire PluginNotFound
      * events etc.  aContentType is the MIME type we ended up with.
      *
      * This should only be called if the type of this content is eType_Null.
      */
-    static PluginSupportState
-      GetPluginSupportState(nsIContent* aContent,
-                            const nsCString& aContentType);
+    PluginSupportState GetPluginSupportState(nsIContent* aContent, const nsCString& aContentType);
 
     /**
      * If the plugin for aContentType is disabled, return ePluginDisabled.
@@ -350,17 +312,17 @@ class nsObjectLoadingContent : public nsImageLoadingContent
      *
      * This should only be called if the type of this content is eType_Null.
      */
-    static PluginSupportState
-      GetPluginDisabledState(const nsCString& aContentType);
+    PluginSupportState GetPluginDisabledState(const nsCString& aContentType);
 
     /**
      * When there is no usable plugin available this will send UI events and
      * update the AutoFallback object appropriate to the reason for there being
      * no plugin available.
      */
-    static void
-      UpdateFallbackState(nsIContent* aContent, AutoFallback& fallback,
-                          const nsCString& aTypeHint);
+    void UpdateFallbackState(nsIContent* aContent, AutoFallback& fallback, const nsCString& aTypeHint);
+
+    nsresult IsPluginEnabledForType(const nsCString& aMIMEType);
+    bool IsPluginEnabledByExtension(nsIURI* uri, nsCString& mimeType);
 
     /**
      * The final listener to ship the data to (imagelib, uriloader, etc)
@@ -383,10 +345,10 @@ class nsObjectLoadingContent : public nsImageLoadingContent
     nsCString                   mContentType;
 
     /**
-     * The channel that's currently being loaded. This is a weak reference.
+     * The channel that's currently being loaded.
      * Non-null between asyncOpen and onStopRequest.
      */
-    nsIChannel*                 mChannel;
+    nsCOMPtr<nsIChannel>        mChannel;
 
     // The data we were last asked to load
     nsCOMPtr<nsIURI>            mURI;
@@ -414,13 +376,26 @@ class nsObjectLoadingContent : public nsImageLoadingContent
     // This is used for click-to-play plugins.
     bool                        mShouldPlay : 1;
 
+    // Used to keep track of whether or not a plugin has been played.
+    // This is used for click-to-play plugins.
+    bool                        mActivated : 1;
+
+    // Protects DoStopPlugin from reentry (bug 724781).
+    bool                        mIsStopping : 1;
+
+    // Used to track when we might try to instantiate a plugin instance based on
+    // a src data stream being delivered to this object. When this is true we don't
+    // want plugin instance instantiation code to attempt to load src data again or
+    // we'll deliver duplicate streams. Should be cleared when we are not loading
+    // src data.
+    bool mSrcStreamLoading;
+
     // A specific state that caused us to fallback
     PluginSupportState          mFallbackReason;
 
     nsWeakFrame                 mPrintFrame;
 
-    friend class nsAsyncInstantiateEvent;
+    nsRefPtr<nsPluginInstanceOwner> mInstanceOwner;
 };
-
 
 #endif

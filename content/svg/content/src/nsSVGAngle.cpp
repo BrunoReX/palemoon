@@ -1,38 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is the Mozilla SVG project.
- *
- * The Initial Developer of the Original Code is IBM Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2004
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Util.h"
 
@@ -72,7 +41,7 @@ public:
   NS_IMETHOD SetValue(float aValue)
     {
       NS_ENSURE_FINITE(aValue, NS_ERROR_ILLEGAL_VALUE);
-      mVal.SetBaseValue(aValue, nsnull);
+      mVal.SetBaseValue(aValue, nsnull, false);
       return NS_OK;
     }
 
@@ -258,6 +227,11 @@ void
 nsSVGAngle::SetBaseValueInSpecifiedUnits(float aValue,
                                          nsSVGElement *aSVGElement)
 {
+  if (mBaseVal == aValue) {
+    return;
+  }
+
+  nsAttrValue emptyOrOldValue = aSVGElement->WillChangeAngle(mAttrEnum);
   mBaseVal = aValue;
   if (!mIsAnimated) {
     mAnimVal = mBaseVal;
@@ -265,7 +239,7 @@ nsSVGAngle::SetBaseValueInSpecifiedUnits(float aValue,
   else {
     aSVGElement->AnimationNeedsResample();
   }
-  aSVGElement->DidChangeAngle(mAttrEnum, true);
+  aSVGElement->DidChangeAngle(mAttrEnum, emptyOrOldValue);
 }
 
 nsresult
@@ -275,9 +249,24 @@ nsSVGAngle::ConvertToSpecifiedUnits(PRUint16 unitType,
   if (!IsValidUnitType(unitType))
     return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
 
+  if (mBaseValUnit == PRUint8(unitType))
+    return NS_OK;
+
+  nsAttrValue emptyOrOldValue;
+  if (aSVGElement) {
+    emptyOrOldValue = aSVGElement->WillChangeAngle(mAttrEnum);
+  }
+
   float valueInUserUnits = mBaseVal * GetDegreesPerUnit(mBaseValUnit);
   mBaseValUnit = PRUint8(unitType);
-  SetBaseValue(valueInUserUnits, aSVGElement);
+  // Setting aDoSetAttr to false here will ensure we don't call
+  // Will/DidChangeAngle a second time (and dispatch duplicate notifications).
+  SetBaseValue(valueInUserUnits, aSVGElement, false);
+
+  if (aSVGElement) {
+    aSVGElement->DidChangeAngle(mAttrEnum, emptyOrOldValue);
+  }
+
   return NS_OK;
 }
 
@@ -291,6 +280,13 @@ nsSVGAngle::NewValueSpecifiedUnits(PRUint16 unitType,
   if (!IsValidUnitType(unitType))
     return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
 
+  if (mBaseVal == valueInSpecifiedUnits && mBaseValUnit == PRUint8(unitType))
+    return NS_OK;
+
+  nsAttrValue emptyOrOldValue;
+  if (aSVGElement) {
+    emptyOrOldValue = aSVGElement->WillChangeAngle(mAttrEnum);
+  }
   mBaseVal = valueInSpecifiedUnits;
   mBaseValUnit = PRUint8(unitType);
   if (!mIsAnimated) {
@@ -301,7 +297,7 @@ nsSVGAngle::NewValueSpecifiedUnits(PRUint16 unitType,
     aSVGElement->AnimationNeedsResample();
   }
   if (aSVGElement) {
-    aSVGElement->DidChangeAngle(mAttrEnum, true);
+    aSVGElement->DidChangeAngle(mAttrEnum, emptyOrOldValue);
   }
   return NS_OK;
 }
@@ -342,7 +338,14 @@ nsSVGAngle::SetBaseValueString(const nsAString &aValueAsString,
   if (NS_FAILED(rv)) {
     return rv;
   }
+  if (mBaseVal == value && mBaseValUnit == PRUint8(unitType)) {
+    return NS_OK;
+  }
 
+  nsAttrValue emptyOrOldValue;
+  if (aDoSetAttr) {
+    emptyOrOldValue = aSVGElement->WillChangeAngle(mAttrEnum);
+  }
   mBaseVal = value;
   mBaseValUnit = PRUint8(unitType);
   if (!mIsAnimated) {
@@ -353,27 +356,36 @@ nsSVGAngle::SetBaseValueString(const nsAString &aValueAsString,
     aSVGElement->AnimationNeedsResample();
   }
 
-  // We don't need to call DidChange* here - we're only called by
-  // nsSVGElement::ParseAttribute under nsGenericElement::SetAttr,
-  // which takes care of notifying.
+  if (aDoSetAttr) {
+    aSVGElement->DidChangeAngle(mAttrEnum, emptyOrOldValue);
+  }
   return NS_OK;
 }
 
 void
-nsSVGAngle::GetBaseValueString(nsAString & aValueAsString)
+nsSVGAngle::GetBaseValueString(nsAString & aValueAsString) const
 {
   GetValueString(aValueAsString, mBaseVal, mBaseValUnit);
 }
 
 void
-nsSVGAngle::GetAnimValueString(nsAString & aValueAsString)
+nsSVGAngle::GetAnimValueString(nsAString & aValueAsString) const
 {
   GetValueString(aValueAsString, mAnimVal, mAnimValUnit);
 }
 
 void
-nsSVGAngle::SetBaseValue(float aValue, nsSVGElement *aSVGElement)
+nsSVGAngle::SetBaseValue(float aValue, nsSVGElement *aSVGElement,
+                         bool aDoSetAttr)
 {
+  if (mBaseVal == aValue * GetDegreesPerUnit(mBaseValUnit)) {
+    return;
+  }
+  nsAttrValue emptyOrOldValue;
+  if (aSVGElement && aDoSetAttr) {
+    emptyOrOldValue = aSVGElement->WillChangeAngle(mAttrEnum);
+  }
+
   mBaseVal = aValue / GetDegreesPerUnit(mBaseValUnit);
   if (!mIsAnimated) {
     mAnimVal = mBaseVal;
@@ -381,14 +393,17 @@ nsSVGAngle::SetBaseValue(float aValue, nsSVGElement *aSVGElement)
   else {
     aSVGElement->AnimationNeedsResample();
   }
-  if (aSVGElement) {
-    aSVGElement->DidChangeAngle(mAttrEnum, true);
+  if (aSVGElement && aDoSetAttr) {
+    aSVGElement->DidChangeAngle(mAttrEnum, emptyOrOldValue);
   }
 }
 
 void
 nsSVGAngle::SetAnimValue(float aValue, PRUint8 aUnit, nsSVGElement *aSVGElement)
 {
+  if (mIsAnimated && mAnimVal == aValue && mAnimValUnit == aUnit) {
+    return;
+  }
   mAnimVal = aValue;
   mAnimValUnit = aUnit;
   mIsAnimated = true;
@@ -472,8 +487,10 @@ nsSVGAngle::SMILOrient::ClearAnimValue()
 {
   if (mAngle->mIsAnimated) {
     mOrientType->SetAnimValue(mOrientType->GetBaseValue());
-    mAngle->SetAnimValue(mAngle->mBaseVal, mAngle->mBaseValUnit, mSVGElement);
     mAngle->mIsAnimated = false;
+    mAngle->mAnimVal = mAngle->mBaseVal;
+    mAngle->mAnimValUnit = mAngle->mBaseValUnit;
+    mSVGElement->DidAnimateAngle(mAngle->mAttrEnum);
   }
 }
 

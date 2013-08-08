@@ -1,41 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *    Robert O'Callahan (robert@ocallahan.org)
- *    Michael Ventnor (m.ventnor@gmail.com)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsISystemProxySettings.h"
 #include "mozilla/ModuleUtils.h"
@@ -50,6 +16,7 @@
 #include "nsNetUtil.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIGSettingsService.h"
+#include "nsInterfaceHashtable.h"
 
 class nsUnixSystemProxySettings : public nsISystemProxySettings {
 public:
@@ -64,6 +31,8 @@ private:
   
   nsCOMPtr<nsIGConfService> mGConf;
   nsCOMPtr<nsIGSettingsService> mGSettings;
+  nsCOMPtr<nsIGSettingsCollection> mProxySettings;
+  nsInterfaceHashtable<nsCStringHashKey, nsIGSettingsCollection> mSchemeProxySettings;
   bool IsProxyMode(const char* aMode);
   nsresult SetProxyResultFromGConf(const char* aKeyBase, const char* aType, nsACString& aResult);
   nsresult GetProxyFromGConf(const nsACString& aScheme, const nsACString& aHost, PRInt32 aPort, nsACString& aResult);
@@ -76,8 +45,14 @@ NS_IMPL_ISUPPORTS1(nsUnixSystemProxySettings, nsISystemProxySettings)
 nsresult
 nsUnixSystemProxySettings::Init()
 {
+  mSchemeProxySettings.Init(5);
   mGConf = do_GetService(NS_GCONFSERVICE_CONTRACTID);
   mGSettings = do_GetService(NS_GSETTINGSSERVICE_CONTRACTID);
+  if (mGSettings) {
+    mGSettings->GetCollectionForSchema(NS_LITERAL_CSTRING("org.gnome.system.proxy"),
+                                       getter_AddRefs(mProxySettings));
+  }
+
   return NS_OK;
 }
 
@@ -92,22 +67,17 @@ nsUnixSystemProxySettings::IsProxyMode(const char* aMode)
 nsresult
 nsUnixSystemProxySettings::GetPACURI(nsACString& aResult)
 {
-  if (mGSettings) {
-    nsCOMPtr<nsIGSettingsCollection> proxy_settings;
-    mGSettings->GetCollectionForSchema(NS_LITERAL_CSTRING("org.gnome.system.proxy"), 
-                                       getter_AddRefs(proxy_settings));
-    if (proxy_settings) {
-      nsCString proxyMode;
-      // Check if mode is auto
-      nsresult rv = proxy_settings->GetString(NS_LITERAL_CSTRING("mode"), proxyMode);
-      if (rv == NS_OK && proxyMode.Equals("auto")) {
-        return proxy_settings->GetString(NS_LITERAL_CSTRING("autoconfig-url"), aResult);
-      }
-      /* The org.gnome.system.proxy schema has been found, but auto mode is not set.
-       * Don't try the GConf and return empty string. */
-      aResult.Truncate();
-      return NS_OK;
+  if (mProxySettings) {
+    nsCString proxyMode;
+    // Check if mode is auto
+    nsresult rv = mProxySettings->GetString(NS_LITERAL_CSTRING("mode"), proxyMode);
+    if (rv == NS_OK && proxyMode.Equals("auto")) {
+      return mProxySettings->GetString(NS_LITERAL_CSTRING("autoconfig-url"), aResult);
     }
+    /* The org.gnome.system.proxy schema has been found, but auto mode is not set.
+     * Don't try the GConf and return empty string. */
+    aResult.Truncate();
+    return NS_OK;
   }
 
   if (mGConf && IsProxyMode("auto")) {
@@ -266,10 +236,16 @@ nsresult
 nsUnixSystemProxySettings::SetProxyResultFromGSettings(const char* aKeyBase, const char* aType,
                                                        nsACString& aResult)
 {
-  nsCOMPtr<nsIGSettingsCollection> proxy_settings;
-  nsresult rv = mGSettings->GetCollectionForSchema(nsDependentCString(aKeyBase),
-                                                   getter_AddRefs(proxy_settings));
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsDependentCString key(aKeyBase);
+
+  nsCOMPtr<nsIGSettingsCollection> proxy_settings = mSchemeProxySettings.Get(key);
+  nsresult rv;
+  if (!proxy_settings) {
+    rv = mGSettings->GetCollectionForSchema(key, getter_AddRefs(proxy_settings));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    mSchemeProxySettings.Put(key, proxy_settings);
+  }
 
   nsCAutoString host;
   rv = proxy_settings->GetString(NS_LITERAL_CSTRING("host"), host);
@@ -451,16 +427,8 @@ nsUnixSystemProxySettings::GetProxyFromGSettings(const nsACString& aScheme,
                                                  PRInt32 aPort,
                                                  nsACString& aResult)
 {
-  nsCOMPtr<nsIGSettingsCollection> proxy_settings;
-  nsresult rv;
-
-  rv = mGSettings->GetCollectionForSchema(NS_LITERAL_CSTRING("org.gnome.system.proxy"),
-                                          getter_AddRefs(proxy_settings));
-  if (NS_FAILED(rv))
-    return rv;
-
   nsCString proxyMode; 
-  rv = proxy_settings->GetString(NS_LITERAL_CSTRING("mode"), proxyMode);
+  nsresult rv = mProxySettings->GetString(NS_LITERAL_CSTRING("mode"), proxyMode);
   NS_ENSURE_SUCCESS(rv, rv);
   
   if (!proxyMode.Equals("manual")) {
@@ -469,7 +437,7 @@ nsUnixSystemProxySettings::GetProxyFromGSettings(const nsACString& aScheme,
   }
 
   nsCOMPtr<nsIArray> ignoreList;
-  if (NS_SUCCEEDED(proxy_settings->GetStringList(NS_LITERAL_CSTRING("ignore-hosts"),
+  if (NS_SUCCEEDED(mProxySettings->GetStringList(NS_LITERAL_CSTRING("ignore-hosts"),
                                                  getter_AddRefs(ignoreList))) && ignoreList) {
     PRUint32 len = 0;
     ignoreList->GetLength(&len);
@@ -526,7 +494,7 @@ nsUnixSystemProxySettings::GetProxyForURI(nsIURI* aURI, nsACString& aResult)
   rv = aURI->GetPort(&port);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (mGSettings) {
+  if (mProxySettings) {
     rv = GetProxyFromGSettings(scheme, host, port, aResult);
     if (rv == NS_OK)
       return rv;

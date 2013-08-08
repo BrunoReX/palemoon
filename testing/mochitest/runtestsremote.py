@@ -1,44 +1,12 @@
-# ***** BEGIN LICENSE BLOCK *****
-# Version: MPL 1.1/GPL 2.0/LGPL 2.1
-#
-# The contents of this file are subject to the Mozilla Public License Version
-# 1.1 (the "License"); you may not use this file except in compliance with
-# the License. You may obtain a copy of the License at
-# http://www.mozilla.org/MPL/
-#
-# Software distributed under the License is distributed on an "AS IS" basis,
-# WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
-# for the specific language governing rights and limitations under the
-# License.
-#
-# The Original Code is mozilla.org code.
-#
-# The Initial Developer of the Original Code is Joel Maher.
-#
-# Portions created by the Initial Developer are Copyright (C) 2010
-# the Initial Developer. All Rights Reserved.
-#
-# Contributor(s):
-# Joel Maher <joel.maher@gmail.com> (Original Developer)
-#
-# Alternatively, the contents of this file may be used under the terms of
-# either the GNU General Public License Version 2 or later (the "GPL"), or
-# the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
-# in which case the provisions of the GPL or the LGPL are applicable instead
-# of those above. If you wish to allow use of your version of this file only
-# under the terms of either the GPL or the LGPL, and not to allow others to
-# use your version of this file under the terms of the MPL, indicate your
-# decision by deleting the provisions above and replace them with the notice
-# and other provisions required by the GPL or the LGPL. If you do not delete
-# the provisions above, a recipient may use your version of this file under
-# the terms of any one of the MPL, the GPL or the LGPL.
-#
-# ***** END LICENSE BLOCK *****
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import sys
 import os
 import time
 import tempfile
+import re
 
 sys.path.insert(0, os.path.abspath(os.path.realpath(os.path.dirname(sys.argv[0]))))
 
@@ -94,12 +62,12 @@ class RemoteOptions(MochitestOptions):
 
         self.add_option("--http-port", action = "store",
                     type = "string", dest = "httpPort",
-                    help = "ip address where the remote web server is hosted at")
+                    help = "http port of the remote web server")
         defaults["httpPort"] = automation.DEFAULT_HTTP_PORT
 
         self.add_option("--ssl-port", action = "store",
                     type = "string", dest = "sslPort",
-                    help = "ip address where the remote web server is hosted at")
+                    help = "ssl port of the remote web server")
         defaults["sslPort"] = automation.DEFAULT_SSL_PORT
 
         self.add_option("--pidfile", action = "store",
@@ -221,6 +189,7 @@ class MochiRemote(Mochitest):
     _automation = None
     _dm = None
     localProfile = None
+    logLines = []
 
     def __init__(self, automation, devmgr, options):
         self._automation = automation
@@ -346,17 +315,73 @@ class MochiRemote(Mochitest):
     def getLogFilePath(self, logFile):             
         return logFile
 
+    # In the future we could use LogParser: http://hg.mozilla.org/automation/logparser/
+    def addLogData(self):
+        with open(self.localLog) as currentLog:
+            data = currentLog.readlines()
+
+        restart = re.compile('0 INFO SimpleTest START.*')
+        reend = re.compile('([0-9]+) INFO TEST-START . Shutdown.*')
+        start_found = False
+        end_found = False
+        for line in data:
+            if reend.match(line):
+                end_found = True
+                start_found = False
+                return
+
+            if start_found and not end_found:
+                # Append the line without the number to increment
+                self.logLines.append(' '.join(line.split(' ')[1:]))
+
+            if restart.match(line):
+                start_found = True
+
+    def printLog(self):
+        passed = 0
+        failed = 0
+        todo = 0
+        incr = 1
+        logFile = [] 
+        logFile.append("0 INFO SimpleTest START")
+        for line in self.logLines:
+            if line.startswith("INFO TEST-PASS"):
+                passed += 1
+            elif line.startswith("INFO TEST-UNEXPECTED"):
+                failed += 1
+            elif line.startswith("INFO TEST-KNOWN"):
+                todo += 1
+            incr += 1
+
+        logFile.append("%s INFO TEST-START | Shutdown" % incr)
+        incr += 1
+        logFile.append("%s INFO Passed: %s" % (incr, passed))
+        incr += 1
+        logFile.append("%s INFO Failed: %s" % (incr, failed))
+        incr += 1
+        logFile.append("%s INFO Todo: %s" % (incr, todo))
+        incr += 1
+        logFile.append("%s INFO SimpleTest FINISHED" % incr)
+
+        # TODO: Consider not printing to stdout because we might be duplicating output
+        print '\n'.join(logFile)
+        with open(self.localLog, 'w') as localLog:
+            localLog.write('\n'.join(logFile))
+
+        if failed > 0:
+            return 1
+        return 0
+        
 def main():
     scriptdir = os.path.abspath(os.path.realpath(os.path.dirname(__file__)))
-    dm_none = devicemanagerADB.DeviceManagerADB()
-    auto = RemoteAutomation(dm_none, "fennec")
+    auto = RemoteAutomation(None, "fennec")
     parser = RemoteOptions(auto, scriptdir)
     options, args = parser.parse_args()
     if (options.dm_trans == "adb"):
         if (options.deviceIP):
             dm = devicemanagerADB.DeviceManagerADB(options.deviceIP, options.devicePort)
         else:
-            dm = dm_none
+            dm = devicemanagerADB.DeviceManagerADB()
     else:
          dm = devicemanagerSUT.DeviceManagerSUT(options.deviceIP, options.devicePort)
     auto.setDeviceManager(dm)
@@ -395,6 +420,8 @@ def main():
         fHandle = open("robotium.config", "w")
         fHandle.write("profile=%s\n" % (mochitest.remoteProfile))
         fHandle.write("logfile=%s\n" % (options.remoteLogFile))
+        fHandle.write("host=http://mochi.test:8888/tests\n")
+        fHandle.write("rawhost=http://%s:%s/tests\n" % (options.remoteWebServer, options.httpPort))
         fHandle.close()
         deviceRoot = dm.getDeviceRoot()
       
@@ -424,6 +451,7 @@ def main():
 
             try:
                 retVal = mochitest.runTests(options)
+                mochitest.addLogData()
             except:
                 print "TEST-UNEXPECTED-FAIL | %s | Exception caught while running robocop tests." % sys.exc_info()[1]
                 mochitest.stopWebServer(options)
@@ -435,7 +463,9 @@ def main():
                 sys.exit(1)
         if retVal is None:
             print "No tests run. Did you pass an invalid TEST_PATH?"
-            retVal = 1         
+            retVal = 1
+
+        retVal = mochitest.printLog() 
     else:
       try:
         retVal = mochitest.runTests(options)

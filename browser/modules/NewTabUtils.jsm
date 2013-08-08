@@ -27,6 +27,9 @@ const PREF_NEWTAB_ENABLED = "browser.newtabpage.enabled";
 // The maximum number of results we want to retrieve from history.
 const HISTORY_RESULTS_LIMIT = 100;
 
+// The gather telemetry topic.
+const TOPIC_GATHER_TELEMETRY = "gather-telemetry";
+
 /**
  * Singleton that provides storage functionality.
  */
@@ -384,6 +387,15 @@ let BlockedLinks = {
   },
 
   /**
+   * Unblocks a given link.
+   * @param aLink The link to unblock.
+   */
+  unblock: function BlockedLinks_unblock(aLink) {
+    if (this.isBlocked(aLink))
+      delete this.links[aLink.url];
+  },
+
+  /**
    * Returns whether a given link is blocked.
    * @param aLink The link to check.
    */
@@ -422,9 +434,6 @@ let PlacesProvider = {
 
     // Sort by frecency, descending.
     options.sortingMode = Ci.nsINavHistoryQueryOptions.SORT_BY_FRECENCY_DESCENDING
-
-    // We don't want source redirects for this query.
-    options.redirectsMode = Ci.nsINavHistoryQueryOptions.REDIRECTS_MODE_TARGET;
 
     let links = [];
 
@@ -550,7 +559,7 @@ let Links = {
    * Resets the links cache.
    */
   resetCache: function Links_resetCache() {
-    this._links = [];
+    this._links = null;
   },
 
   /**
@@ -580,17 +589,62 @@ let Links = {
 };
 
 /**
+ * Singleton used to collect telemetry data.
+ *
+ */
+let Telemetry = {
+  /**
+   * Initializes object.
+   */
+  init: function Telemetry_init() {
+    Services.obs.addObserver(this, TOPIC_GATHER_TELEMETRY, false);
+  },
+
+  /**
+   * Collects data.
+   */
+  _collect: function Telemetry_collect() {
+    let probes = [
+      { histogram: "NEWTAB_PAGE_ENABLED",
+        value: AllPages.enabled },
+      { histogram: "NEWTAB_PAGE_PINNED_SITES_COUNT",
+        value: PinnedLinks.links.length },
+      { histogram: "NEWTAB_PAGE_BLOCKED_SITES_COUNT",
+        value: Object.keys(BlockedLinks.links).length }
+    ];
+
+    probes.forEach(function Telemetry_collect_forEach(aProbe) {
+      Services.telemetry.getHistogramById(aProbe.histogram)
+        .add(aProbe.value);
+    });
+  },
+
+  /**
+   * Listens for gather telemetry topic.
+   */
+  observe: function Telemetry_observe(aSubject, aTopic, aData) {
+    this._collect();
+  }
+};
+
+Telemetry.init();
+
+/**
  * Singleton that provides the public API of this JSM.
  */
 let NewTabUtils = {
   /**
-   * Resets the NewTabUtils module, its links and its storage.
+   * Restores all sites that have been removed from the grid.
    */
-  reset: function NewTabUtils_reset() {
+  restore: function NewTabUtils_restore() {
     Storage.clear();
     Links.resetCache();
     PinnedLinks.resetCache();
     BlockedLinks.resetCache();
+
+    Links.populateCache(function () {
+      AllPages.update();
+    }, true);
   },
 
   allPages: AllPages,

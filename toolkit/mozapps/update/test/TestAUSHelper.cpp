@@ -30,7 +30,11 @@
 # define NS_tstrcmp wcscmp
 # define NS_ttoi _wtoi
 # define NS_tstat _wstat
+# define NS_tgetcwd _wgetcwd
 # define LOG_S "%S"
+
+#include "../common/updatehelper.h"
+
 #else
 # include <unistd.h>
 # define NS_main main
@@ -43,6 +47,8 @@
 # define NS_tstrcmp strcmp
 # define NS_ttoi atoi
 # define NS_tstat stat
+# define NS_tgetcwd getcwd
+# define NS_tfputs fputs
 # define LOG_S "%s"
 #endif
 
@@ -153,214 +159,6 @@ VerifyCertificateTrustForFile(LPCWSTR filePath)
   return WinVerifyTrust(NULL, &policyGUID, &trustData);
 }
 
-/**
- * Waits for a service to enter a stopped state.
- * This function does not stop the service, it just blocks until the service
- * is stopped.
- *
- * @param  serviceName     The service to wait for.
- * @param  maxWaitSeconds  The maximum number of seconds to wait
- * @return state of the service after a timeout or when stopped.
- *         A value of 255 is returned for an error. Typical values are:
- *         SERVICE_STOPPED 0x00000001
- *         SERVICE_START_PENDING 0x00000002
- *         SERVICE_STOP_PENDING 0x00000003
- *         SERVICE_RUNNING 0x00000004
- *         SERVICE_CONTINUE_PENDING 0x00000005
- *         SERVICE_PAUSE_PENDING 0x00000006
- *         SERVICE_PAUSED 0x00000007
- *         last status not set 0x000000CF
- *         Could no query status 0x000000DF
- *         Could not open service, access denied 0x000000EB
- *         Could not open service, invalid handle 0x000000EC
- *         Could not open service, invalid name 0x000000ED
- *         Could not open service, does not exist 0x000000EE
- *         Could not open service, other error 0x000000EF
- *         Could not open SCM, access denied 0x000000FD
- *         Could not open SCM, database does not exist 0x000000FE;
- *         Could not open SCM, other error 0x000000FF;
- * Note: The strange choice of error codes above SERVICE_PAUSED are chosen
- * in case Windows comes out with other service stats higher than 7, they
- * would likely call it 8 and above.  JS code that uses this in TestAUSHelper
- * only handles values up to 255 so that's why we don't use GetLastError 
- * directly.
- */
-DWORD
-WaitForServiceStop(LPCWSTR serviceName, DWORD maxWaitSeconds)
-{
-  // 0x000000CF is defined above to be not set
-  DWORD lastServiceState = 0x000000CF;
-
-  // Get a handle to the SCM database.
-  SC_HANDLE serviceManager = OpenSCManager(NULL, NULL, 
-                                           SC_MANAGER_CONNECT | 
-                                           SC_MANAGER_ENUMERATE_SERVICE);
-  if (!serviceManager)  {
-    DWORD lastError = GetLastError();
-    switch(lastError) {
-    case ERROR_ACCESS_DENIED:
-      return 0x000000FD;
-    case ERROR_DATABASE_DOES_NOT_EXIST:
-      return 0x000000FE;
-    default:
-      return 0x000000FF;
-    }
-  }
-
-  // Get a handle to the service.
-  SC_HANDLE service = OpenServiceW(serviceManager, 
-                                   serviceName, 
-                                   SERVICE_QUERY_STATUS);
-  if (!service) {
-    DWORD lastError = GetLastError();
-    CloseServiceHandle(serviceManager);
-    switch(lastError) {
-    case ERROR_ACCESS_DENIED:
-      return 0x000000EB;
-    case ERROR_INVALID_HANDLE:
-      return 0x000000EC;
-    case ERROR_INVALID_NAME:
-      return 0x000000ED;
-    // If the service does not exist, keep trying in case it does exist soon.
-    // I think there might be an issue with the TALOS machines and some of 
-    // the machines having an old maintenanceservice.exe that used to 
-    // uninstall when upgrading.  Those should already be upgraded but this 
-    // is safer.
-    case ERROR_SERVICE_DOES_NOT_EXIST:
-      if (maxWaitSeconds == 0) {
-        return 0x000000EE;
-      } else {
-        Sleep(1000);
-        return WaitForServiceStop(serviceName, maxWaitSeconds - 1);
-      }
-    default:
-      return 0x000000EF;
-    } 
-  }
-
-  DWORD currentWaitMS = 0;
-  SERVICE_STATUS_PROCESS ssp;
-  ssp.dwCurrentState = lastServiceState;
-  while (currentWaitMS < maxWaitSeconds * 1000) {
-    DWORD bytesNeeded;
-    if (!QueryServiceStatusEx(service, SC_STATUS_PROCESS_INFO, (LPBYTE)&ssp,
-                              sizeof(SERVICE_STATUS_PROCESS), &bytesNeeded)) {
-      DWORD lastError = GetLastError();
-      switch (lastError) {
-      case ERROR_INVALID_HANDLE:
-        ssp.dwCurrentState = 0x000000D9;
-        break;
-      case ERROR_ACCESS_DENIED:
-        ssp.dwCurrentState = 0x000000DA;
-        break;
-      case ERROR_INSUFFICIENT_BUFFER:
-        ssp.dwCurrentState = 0x000000DB;
-        break;
-      case ERROR_INVALID_PARAMETER:
-        ssp.dwCurrentState = 0x000000DC;
-        break;
-      case ERROR_INVALID_LEVEL:
-        ssp.dwCurrentState = 0x000000DD;
-        break;
-      case ERROR_SHUTDOWN_IN_PROGRESS:
-        ssp.dwCurrentState = 0x000000DE;
-        break;
-      // These 3 errors can occur when the service is not yet stopped but
-      // it is stopping.
-      case ERROR_INVALID_SERVICE_CONTROL:
-      case ERROR_SERVICE_CANNOT_ACCEPT_CTRL:
-      case ERROR_SERVICE_NOT_ACTIVE:
-        currentWaitMS += 50;
-        Sleep(50);
-        continue;
-      default:
-        ssp.dwCurrentState = 0x000000DF;
-      }
-
-      // We couldn't query the status so just break out
-      break;
-    }
-
-    // The service is already in use.
-    if (ssp.dwCurrentState == SERVICE_STOPPED) {
-      break;
-    }
-    currentWaitMS += 50;
-    Sleep(50);
-  }
-
-  lastServiceState = ssp.dwCurrentState;
-  CloseServiceHandle(service);
-  CloseServiceHandle(serviceManager);
-  return lastServiceState;
-}
-
-/**
- * Determines if there is at least one process running for the specified
- * application. A match will be found across any session for any user.
- *
- * @param process The process to check for existance
- * @return ERROR_NOT_FOUND if the process was not found
- * @       ERROR_SUCCESS if the process was found and there were no errors
- * @       Other Win32 system error code for other errors
-**/
-DWORD
-IsProcessRunning(LPCWSTR filename)
-{
-  // Take a snapshot of all processes in the system.
-  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-  if (INVALID_HANDLE_VALUE == snapshot) {
-    return GetLastError();
-  }
-  
-  PROCESSENTRY32W processEntry;
-  processEntry.dwSize = sizeof(PROCESSENTRY32W);
-  if (!Process32FirstW(snapshot, &processEntry)) {
-    DWORD lastError = GetLastError();
-    CloseHandle(snapshot);
-    return lastError;
-  }
-
-  do {
-    if (wcsicmp(filename, processEntry.szExeFile) == 0) {
-      CloseHandle(snapshot);
-      return ERROR_SUCCESS;
-    }
-  } while (Process32NextW(snapshot, &processEntry));
-  CloseHandle(snapshot);
-  return ERROR_NOT_FOUND;
-}
-
-/**
- * Waits for the specified applicaiton to exit.
- *
- * @param filename   The application to wait for.
- * @param maxSeconds The maximum amount of seconds to wait for all
- *                   instances of the application to exit.
- * @return  ERROR_SUCCESS if no instances of the application exist
- *          WAIT_TIMEOUT if the process is still running after maxSeconds.
- *          Any other Win32 system error code.
-*/
-DWORD
-WaitForProcessExit(LPCWSTR filename, DWORD maxSeconds)
-{
-  DWORD applicationRunningError = WAIT_TIMEOUT;
-  for(DWORD i = 0; i < maxSeconds; i++) {
-    DWORD applicationRunningError = IsProcessRunning(filename);
-    if (ERROR_NOT_FOUND == applicationRunningError) {
-      return ERROR_SUCCESS;
-    }
-    Sleep(1000);
-  }
-
-  if (ERROR_SUCCESS == applicationRunningError) {
-    return WAIT_TIMEOUT;
-  }
-
-  return applicationRunningError;
-}
-
-
 #endif
 
 int NS_main(int argc, NS_tchar **argv)
@@ -374,6 +172,9 @@ int NS_main(int argc, NS_tchar **argv)
             "Usage: WORKINGDIR INFILE OUTFILE -s SECONDS [FILETOLOCK]\n"  \
             "   or: WORKINGDIR LOGFILE [ARG2 ARG3...]\n" \
             "   or: signature-check filepath\n" \
+            "   or: setup-symlink dir1 dir2 file symlink\n" \
+            "   or: remove-symlink dir1 dir2 file symlink\n" \
+            "   or: check-symlink symlink\n" \
             "\n" \
             "  WORKINGDIR  \tThe relative path to the working directory to use.\n" \
             "  INFILE      \tThe relative path from the working directory for the file to\n" \
@@ -404,6 +205,68 @@ int NS_main(int argc, NS_tchar **argv)
     }
 #else 
     // Not implemented on non-Windows platforms
+    return 1;
+#endif
+  }
+
+  if (!NS_tstrcmp(argv[1], NS_T("setup-symlink"))) {
+#ifdef XP_UNIX
+    NS_tchar path[MAXPATHLEN];
+    NS_tsnprintf(path, sizeof(path)/sizeof(path[0]),
+                 NS_T("%s/%s"), NS_T("/tmp"), argv[2]);
+    mkdir(path, 0755);
+    NS_tsnprintf(path, sizeof(path)/sizeof(path[0]),
+                 NS_T("%s/%s/%s"), NS_T("/tmp"), argv[2], argv[3]);
+    mkdir(path, 0755);
+    NS_tsnprintf(path, sizeof(path)/sizeof(path[0]),
+                 NS_T("%s/%s/%s/%s"), NS_T("/tmp"), argv[2], argv[3], argv[4]);
+    FILE * file = NS_tfopen(path, NS_T("w"));
+    if (file) {
+      NS_tfputs(NS_T("test"), file);
+      fclose(file);
+    }
+    symlink(path, argv[5]);
+    NS_tsnprintf(path, sizeof(path)/sizeof(path[0]),
+                 NS_T("%s/%s"), NS_T("/tmp"), argv[2]);
+    if (argc > 6 && !NS_tstrcmp(argv[6], NS_T("change-perm"))) {
+      chmod(path, 0644);
+    }
+    return 0;
+#else
+    // Not implemented on non-Unix platforms
+    return 1;
+#endif
+  }
+
+  if (!NS_tstrcmp(argv[1], NS_T("remove-symlink"))) {
+#ifdef XP_UNIX
+    NS_tchar path[MAXPATHLEN];
+    NS_tsnprintf(path, sizeof(path)/sizeof(path[0]),
+                 NS_T("%s/%s"), NS_T("/tmp"), argv[2]);
+    chmod(path, 0755);
+    NS_tsnprintf(path, sizeof(path)/sizeof(path[0]),
+                 NS_T("%s/%s/%s/%s"), NS_T("/tmp"), argv[2], argv[3], argv[4]);
+    unlink(path);
+    NS_tsnprintf(path, sizeof(path)/sizeof(path[0]),
+                 NS_T("%s/%s/%s"), NS_T("/tmp"), argv[2], argv[3]);
+    rmdir(path);
+    NS_tsnprintf(path, sizeof(path)/sizeof(path[0]),
+                 NS_T("%s/%s"), NS_T("/tmp"), argv[2]);
+    rmdir(path);
+    return 0;
+#else
+    // Not implemented on non-Unix platforms
+    return 1;
+#endif
+  }
+
+  if (!NS_tstrcmp(argv[1], NS_T("check-symlink"))) {
+#ifdef XP_UNIX
+    struct stat ss;
+    lstat(argv[2], &ss);
+    return S_ISLNK(ss.st_mode) ? 0 : 1;
+#else
+    // Not implemented on non-Unix platforms
     return 1;
 #endif
   }
@@ -450,12 +313,13 @@ int NS_main(int argc, NS_tchar **argv)
 
   // File in use test helper section
   if (!NS_tstrcmp(argv[4], NS_T("-s"))) {
+    NS_tchar *cwd = NS_tgetcwd(NULL, 0);
     NS_tchar inFilePath[MAXPATHLEN];
     NS_tsnprintf(inFilePath, sizeof(inFilePath)/sizeof(inFilePath[0]),
-                 NS_T("%s"), argv[2]);
+                 NS_T("%s/%s"), cwd, argv[2]);
     NS_tchar outFilePath[MAXPATHLEN];
     NS_tsnprintf(outFilePath, sizeof(outFilePath)/sizeof(outFilePath[0]),
-                 NS_T("%s"), argv[3]);
+                 NS_T("%s/%s"), cwd, argv[3]);
 
     int seconds = NS_ttoi(argv[5]);
 #ifdef XP_WIN

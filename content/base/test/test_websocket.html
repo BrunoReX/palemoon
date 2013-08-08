@@ -25,8 +25,8 @@
  *  5. client uses an invalid protocol value;
  *  6. counter and encoding check;
  *  7. onmessage event origin property check
- *  8. client calls close() and the server sends the close frame in
- *     acknowledgement;
+ *  8. client calls close() and the server sends the close frame (with no code
+ *     or reason) in acknowledgement;
  *  9. client closes the connection before the ws connection is established;
  * 10. client sends a message before the ws connection is established;
  * 11. a simple hello echo;
@@ -55,7 +55,7 @@
  * 31. ctor using valid 2 element sub-protocol array with 1 element server
  *     will reject and one server will accept.
  * 32. ctor using invalid sub-protocol array that contains duplicate items
- * 33. default close code test
+ * 33. test for sending/receiving custom close code (but no close reason)
  * 34. test for receiving custom close code and reason
  * 35. test for sending custom close code and reason
  * 36. negative test for sending out of range close code
@@ -74,8 +74,21 @@
 var first_test = 1;
 var last_test = 46;
 
-var current_test = first_test;
 
+// Set this to >1 if you want to run the suite multiple times to probe for
+// random orange failures. 
+// - Do NOT check into mozilla-central with a value != 1.
+// - Too large a count will wind up causing tryserver to timeout the test (which
+//   is ok, but means all testruns will be orange).  If I set first_test to >22
+//   (i.e don't run any of the tests that require waiting) I can get ~250-300
+//   iterations of the remaining tests w/o a timeout.
+var testsuite_iterations = 1;   
+
+
+var current_test = first_test;
+var testsuite_iteration = 1;
+
+var test_started = new Array(last_test);
 var all_ws = [];
 
 function shouldNotOpen(e)
@@ -176,16 +189,21 @@ function doTest(number)
     return;
   }
 
-  $("feedback").innerHTML = "executing test: " + number + " of " + last_test + " tests.";
+  if (testsuite_iteration > 1) {
+    $("feedback").innerHTML = "test suite iteration #" + testsuite_iteration + " of " + testsuite_iterations + 
+      ": executing test: " + number + " of " + last_test + " tests.";
+  } else {
+    $("feedback").innerHTML = "executing test: " + number + " of " + last_test + " tests.";
+  }
 
   var fnTest = eval("test" + number + "");
 
-  if (fnTest._started === true) {
+  if (test_started[number] === true) {
     doTest(number + 1);
     return;
   }
 
-  fnTest._started = true;
+  test_started[number] = true;
   fnTest();
 }
 doTest.timeoutId = null;
@@ -321,14 +339,17 @@ function test6()
     if (counter == 5) {
       ok(e.data == "あいうえお", "test-6 counter 5 data ok");
       ws.close();
-      doTest(7);
     } else {
       ok(e.data == counter+1, "bad counter");
       counter += 2;
       ws.send(counter);
     }
   }
-  ws.onclose = shouldCloseCleanly;
+  ws.onclose = function(e)
+  {
+    shouldCloseCleanly(e);
+    doTest(7);
+  };
 }
 
 function test7()
@@ -366,6 +387,10 @@ function test8()
   ws.onclose = function(e)
   {
     shouldCloseCleanly(e);
+    // We called close() with no close code: so pywebsocket will also send no
+    // close code, which translates to code 1005 
+    ok(e.code == 1005, "test-8 close code has wrong value:" + e.code);
+    ok(e.reason == "", "test-8 close reason has wrong value:" + e.reason);
     doTest(9);
   };
 }
@@ -440,7 +465,7 @@ function test11()
   ws.onmessage = function(e)
   {
     ok(e.data == "server data", "bad received message in test-11!");
-    ws.close();
+    ws.close(1000, "Have a nice day");
 
 // this ok() is disabled due to a race condition - it state may have
 // advanced through 2 (closing) and into 3 (closed) before it is evald
@@ -450,6 +475,8 @@ function test11()
   {
     ok(ws.readyState == 3, "onclose bad readyState in test-11!");
     shouldCloseCleanly(e);
+    ok(e.code == 1000, "test 11 got wrong close code: " + e.code);
+    ok(e.reason == "Have a nice day", "test 11 got wrong close reason: " + e.reason);
     doTest(12);
   }
 }
@@ -561,7 +588,7 @@ var status_test17 = "not started";
 
 var waitTest17 = false;
 
-window._test17 = function()
+var test17func = function()
 {
   waitTest17 = true;
 
@@ -611,6 +638,7 @@ window._test17 = function()
 
 function test17()
 {
+  window._test17 = test17func;
   window._test17();
 }
 
@@ -644,7 +672,7 @@ function test19()
 
 var waitTest20 = false;
 
-window._test20 = function()
+var test20func = function()
 {
   waitTest20 = true;
 
@@ -674,12 +702,13 @@ window._test20 = function()
 
 function test20()
 {
+  window._test20 = test20func;
   window._test20();
 }
 
 var waitTest21 = false;
 
-window._test21 = function()
+test21func = function()
 {
   waitTest21 = true;
 
@@ -727,6 +756,7 @@ window._test21 = function()
 
 function test21()
 {
+  window._test21 = test21func;
   window._test21();
 }
 
@@ -918,14 +948,15 @@ function test33()
   ws.onopen = function(e)
   {
     ok(true, "test 33 open");
-    ws.close();
+    ws.close(3131);   // pass code but not reason
   };
 
   ws.onclose = function(e)
   {
     ok(true, "test 33 close");
-    ok(e.wasClean, "test 33 closed cleanly");
-    ok(e.code == 1000, "test 33 had normal 1000 error code");
+    shouldCloseCleanly(e);
+    ok(e.code == 3131, "test 33 got wrong close code: " + e.code);
+    ok(e.reason === "", "test 33 got wrong close reason: " + e.reason);
     doTest(34);
   };
 }
@@ -1422,7 +1453,15 @@ function maybeFinished()
     }
   }
 
-  SimpleTest.finish();
+  if (testsuite_iteration++ < testsuite_iterations) {
+    // play it again, Sam...
+    ok(1, "starting testsuite iteration " + testsuite_iteration);
+    test_started = new Array(last_test);
+    doTest(current_test = first_test);
+  } else {
+    // all done
+    SimpleTest.finish();
+  }
 }
 
 function testWebSocket ()

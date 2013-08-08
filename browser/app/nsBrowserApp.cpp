@@ -1,41 +1,9 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2002
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  Brian Ryner <bryner@brianryner.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsXULAppAPI.h"
 #include "application.ini.h"
 #include "nsXPCOMGlue.h"
 #if defined(XP_WIN)
@@ -52,11 +20,6 @@
 
 #include <stdio.h>
 #include <stdarg.h>
-#include <string.h>
-
-#include "plstr.h"
-#include "prprf.h"
-#include "prenv.h"
 
 #include "nsCOMPtr.h"
 #include "nsILocalFile.h"
@@ -141,7 +104,7 @@ static const nsDynamicFunctionLoad kXULFuncs[] = {
     { nsnull, nsnull }
 };
 
-static int do_main(const char *exePath, int argc, char* argv[])
+static int do_main(int argc, char* argv[])
 {
   nsCOMPtr<nsILocalFile> appini;
   nsresult rv;
@@ -179,7 +142,6 @@ static int do_main(const char *exePath, int argc, char* argv[])
     argc -= 2;
   }
 
-  int result;
   if (appini) {
     nsXREAppData *appData;
     rv = XRE_CreateAppData(appini, &appData);
@@ -187,26 +149,45 @@ static int do_main(const char *exePath, int argc, char* argv[])
       Output("Couldn't read application.ini");
       return 255;
     }
-    result = XRE_main(argc, argv, appData);
+    int result = XRE_main(argc, argv, appData, 0);
     XRE_FreeAppData(appData);
-  } else {
-#ifdef XP_WIN
-    // exePath comes from mozilla::BinaryPath::Get, which returns a UTF-8
-    // encoded path, so it is safe to convert it
-    rv = NS_NewLocalFile(NS_ConvertUTF8toUTF16(exePath), PR_FALSE,
-                         getter_AddRefs(appini));
-#else
-    rv = NS_NewNativeLocalFile(nsDependentCString(exePath), PR_FALSE,
-                               getter_AddRefs(appini));
-#endif
-    if (NS_FAILED(rv)) {
-      return 255;
-    }
-    result = XRE_main(argc, argv, &sAppData);
+    return result;
   }
 
-  return result;
+  return XRE_main(argc, argv, &sAppData, 0);
 }
+
+#ifdef XP_WIN
+/**
+ * Determines if the registry is disabled via the service or not.
+ * 
+ * @return true if prefetch is disabled
+ *         false if prefetch is not disabled or an error occurred.
+*/
+bool IsPrefetchDisabledViaService()
+{
+  // We don't need to return false when we don't have MOZ_MAINTENANCE_SERVICE
+  // defined.  The reason is because another product installed that has it
+  // defined may have cleared our prefetch for us.  There is no known way
+  // to figure out which prefetch files are associated with which apps
+  // because of the prefetch hash.  So we disable all of them that start
+  // with FIREFOX.
+  HKEY baseKey;
+  LONG retCode = RegOpenKeyExW(HKEY_LOCAL_MACHINE, 
+                               L"SOFTWARE\\Mozilla\\MaintenanceService", 0,
+                               KEY_READ | KEY_WOW64_64KEY, &baseKey);
+  if (retCode != ERROR_SUCCESS) {
+    return false;
+  }
+  DWORD disabledValue = 0;
+  DWORD disabledValueSize = sizeof(DWORD);
+  RegQueryValueExW(baseKey, L"FFPrefetchDisabled", 0, NULL,
+                   reinterpret_cast<LPBYTE>(&disabledValue),
+                   &disabledValueSize);
+  RegCloseKey(baseKey);
+  return disabledValue == 1;
+}
+#endif
 
 int main(int argc, char* argv[])
 {
@@ -223,7 +204,7 @@ int main(int argc, char* argv[])
   }
 
   char *lastSlash = strrchr(exePath, XPCOM_FILE_PATH_SEPARATOR[0]);
-  if (!lastSlash || (lastSlash - exePath > MAXPATHLEN - sizeof(XPCOM_DLL) - 1))
+  if (!lastSlash || (size_t(lastSlash - exePath) > MAXPATHLEN - sizeof(XPCOM_DLL) - 1))
     return 255;
 
   strcpy(++lastSlash, XPCOM_DLL);
@@ -233,19 +214,34 @@ int main(int argc, char* argv[])
   struct rusage initialRUsage;
   gotCounters = !getrusage(RUSAGE_SELF, &initialRUsage);
 #elif defined(XP_WIN)
+  // Don't change the order of these enumeration constants, the order matters
+  // for reporting telemetry data.  If new values are added adjust the
+  // STARTUP_USING_PRELOAD histogram.
+  enum PreloadReason { PRELOAD_NONE, PRELOAD_SERVICE, PRELOAD_IOCOUNT };
+  PreloadReason preloadReason = PRELOAD_NONE;
+
   // GetProcessIoCounters().ReadOperationCount seems to have little to
   // do with actual read operations. It reports 0 or 1 at this stage
   // in the program. Luckily 1 coincides with when prefetch is
   // enabled. If Windows prefetch didn't happen we can do our own
   // faster dll preloading.
+  // The MozillaMaintenance service issues a command to disable the
+  // prefetch by replacing all found .pf files with 0 byte read only
+  // files.
   IO_COUNTERS ioCounters;
   gotCounters = GetProcessIoCounters(GetCurrentProcess(), &ioCounters);
-  if (gotCounters && !ioCounters.ReadOperationCount)
+
+  if (IsPrefetchDisabledViaService()) {
+    preloadReason = PRELOAD_SERVICE;
+  } else if ((gotCounters && !ioCounters.ReadOperationCount)) {
+    preloadReason = PRELOAD_IOCOUNT;
+  }
+
+  if (preloadReason != PRELOAD_NONE)
 #endif
   {
       XPCOMGlueEnablePreload();
   }
-
 
   rv = XPCOMGlueStartup(exePath);
   if (NS_FAILED(rv)) {
@@ -263,6 +259,11 @@ int main(int argc, char* argv[])
 
 #ifdef XRE_HAS_DLL_BLOCKLIST
   XRE_SetupDllBlocklist();
+#endif
+
+#if defined(XP_WIN)
+  XRE_TelemetryAccumulate(mozilla::Telemetry::STARTUP_USING_PRELOAD,
+                          preloadReason);
 #endif
 
   if (gotCounters) {
@@ -292,7 +293,7 @@ int main(int argc, char* argv[])
   int result;
   {
     ScopedLogging log;
-    result = do_main(exePath, argc, argv);
+    result = do_main(argc, argv);
   }
 
   XPCOMGlueShutdown();

@@ -29,18 +29,23 @@ function test() {
       let consoleListener = {
         observe: function (m) {
           if (m.message.indexOf("NS_ERROR_DOM_BAD_URI") > -1) {
-            Services.console.unregisterListener(consoleListener);
             ok(true, "drop was blocked");
             executeSoon(finish);
           }
         }
       }
       Services.console.registerListener(consoleListener);
+      registerCleanupFunction(function () {
+        Services.console.unregisterListener(consoleListener);
+      });
 
-      // The drop handler throws an exception when dragging URIs that inherit
-      // principal, e.g. javascript:
-      expectUncaughtException();
-      chromeUtils.synthesizeDrop(homeButton, homeButton, [[{type: "text/plain", data: "javascript:8888"}]], "copy", window, EventUtils);
+      executeSoon(function () {
+        info("Attempting second drop, of a javascript: URI");
+        // The drop handler throws an exception when dragging URIs that inherit
+        // principal, e.g. javascript:
+        expectUncaughtException();
+        chromeUtils.synthesizeDrop(homeButton, homeButton, [[{type: "text/plain", data: "javascript:8888"}]], "copy", window, EventUtils);
+      });
     })
   });
 

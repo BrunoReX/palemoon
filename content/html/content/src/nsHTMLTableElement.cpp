@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Util.h"
 
@@ -54,7 +22,6 @@
 #include "nsIDocument.h"
 #include "nsContentUtils.h"
 #include "nsIDOMElement.h"
-#include "nsGenericHTMLElement.h"
 #include "nsIHTMLCollection.h"
 #include "nsHTMLStyleSheet.h"
 #include "dombindings.h"
@@ -86,7 +53,7 @@ public:
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(TableRowsCollection)
 
   // nsWrapperCache
-  virtual JSObject* WrapObject(JSContext *cx, XPCWrappedNativeScope *scope,
+  virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
                                bool *triedToWrap)
   {
     return mozilla::dom::binding::HTMLCollection::create(cx, scope, this,
@@ -108,8 +75,7 @@ TableRowsCollection::TableRowsCollection(nsHTMLTableElement *aParent)
                                   nsGkAtoms::tr,
                                   false))
 {
-  // Mark ourselves as a proxy
-  SetIsProxy();
+  SetIsDOMBinding();
 }
 
 TableRowsCollection::~TableRowsCollection()
@@ -901,7 +867,7 @@ nsHTMLTableElement::ParseAttribute(PRInt32 aNamespaceID,
   if (aNamespaceID == kNameSpaceID_None) {
     if (aAttribute == nsGkAtoms::cellspacing ||
         aAttribute == nsGkAtoms::cellpadding) {
-      return aResult.ParseSpecialIntValue(aValue);
+      return aResult.ParseNonNegativeIntValue(aValue);
     }
     if (aAttribute == nsGkAtoms::cols ||
         aAttribute == nsGkAtoms::border) {
@@ -971,19 +937,10 @@ MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
     // cellspacing
     const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::cellspacing);
     nsCSSValue* borderSpacing = aData->ValueForBorderSpacing();
-    if (value && value->Type() == nsAttrValue::eInteger) {
-      if (borderSpacing->GetUnit() == eCSSUnit_Null) {
-        borderSpacing->
-          SetFloatValue((float)value->GetIntegerValue(), eCSSUnit_Pixel);
-      }
-    }
-    else if (value && value->Type() == nsAttrValue::ePercent &&
-             eCompatibility_NavQuirks == mode) {
-      // in quirks mode, treat a % cellspacing value a pixel value.
-      if (borderSpacing->GetUnit() == eCSSUnit_Null) {
-        borderSpacing->
-         SetFloatValue(100.0f * value->GetPercentValue(), eCSSUnit_Pixel);
-      }
+    if (value && value->Type() == nsAttrValue::eInteger &&
+        borderSpacing->GetUnit() == eCSSUnit_Null) {
+      borderSpacing->
+        SetFloatValue(float(value->GetIntegerValue()), eCSSUnit_Pixel);
     }
   }
   if (aData->mSIDs & NS_STYLE_INHERIT_BIT(Table)) {
@@ -1159,39 +1116,29 @@ MapInheritedTableAttributesIntoRule(const nsMappedAttributes* aAttributes,
 {
   if (aData->mSIDs & NS_STYLE_INHERIT_BIT(Padding)) {
     const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::cellpadding);
-    if (value) {
-      nsAttrValue::ValueType valueType = value->Type();
-      if (valueType == nsAttrValue::eInteger ||
-          valueType == nsAttrValue::ePercent) {
-        // We have cellpadding.  This will override our padding values if we
-        // don't have any set.
-        nsCSSValue padVal;
-        if (valueType == nsAttrValue::eInteger)
-          padVal.SetFloatValue((float)value->GetIntegerValue(), eCSSUnit_Pixel);
-        else {
-          // when we support % cellpadding in standard mode, uncomment the
-          // following
-          float pctVal = value->GetPercentValue();
-          //if (eCompatibility_NavQuirks == mode) {
-          // in quirks mode treat a pct cellpadding value as a pixel value
-          padVal.SetFloatValue(100.0f * pctVal, eCSSUnit_Pixel);
-          //}
-          //else {
-          //  padVal.SetPercentValue(pctVal);
-          //}
-        }
-        nsCSSValue* paddingLeft = aData->ValueForPaddingLeftValue();
-        if (paddingLeft->GetUnit() == eCSSUnit_Null)
-          *paddingLeft = padVal;
-        nsCSSValue* paddingRight = aData->ValueForPaddingRightValue();
-        if (paddingRight->GetUnit() == eCSSUnit_Null)
-          *paddingRight = padVal;
-        nsCSSValue* paddingTop = aData->ValueForPaddingTop();
-        if (paddingTop->GetUnit() == eCSSUnit_Null)
-          *paddingTop = padVal;
-        nsCSSValue* paddingBottom = aData->ValueForPaddingBottom();
-        if (paddingBottom->GetUnit() == eCSSUnit_Null)
-          *paddingBottom = padVal;
+    if (value && value->Type() == nsAttrValue::eInteger) {
+      // We have cellpadding.  This will override our padding values if we
+      // don't have any set.
+      nsCSSValue padVal(float(value->GetIntegerValue()), eCSSUnit_Pixel);
+
+      nsCSSValue* paddingLeft = aData->ValueForPaddingLeftValue();
+      if (paddingLeft->GetUnit() == eCSSUnit_Null) {
+        *paddingLeft = padVal;
+      }
+
+      nsCSSValue* paddingRight = aData->ValueForPaddingRightValue();
+      if (paddingRight->GetUnit() == eCSSUnit_Null) {
+        *paddingRight = padVal;
+      }
+
+      nsCSSValue* paddingTop = aData->ValueForPaddingTop();
+      if (paddingTop->GetUnit() == eCSSUnit_Null) {
+        *paddingTop = padVal;
+      }
+
+      nsCSSValue* paddingBottom = aData->ValueForPaddingBottom();
+      if (paddingBottom->GetUnit() == eCSSUnit_Null) {
+        *paddingBottom = padVal;
       }
     }
   }
@@ -1265,7 +1212,7 @@ nsHTMLTableElement::UnbindFromTree(bool aDeep, bool aNullParent)
 
 nsresult
 nsHTMLTableElement::BeforeSetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
-                                  const nsAString* aValue,
+                                  const nsAttrValueOrString* aValue,
                                   bool aNotify)
 {
   if (aName == nsGkAtoms::cellpadding && aNameSpaceID == kNameSpaceID_None) {
@@ -1277,7 +1224,7 @@ nsHTMLTableElement::BeforeSetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
 
 nsresult
 nsHTMLTableElement::AfterSetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
-                                 const nsAString* aValue,
+                                 const nsAttrValue* aValue,
                                  bool aNotify)
 {
   if (aName == nsGkAtoms::cellpadding && aNameSpaceID == kNameSpaceID_None) {

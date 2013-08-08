@@ -1,48 +1,13 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set sw=2 ts=2 et tw=79: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Pierre Phaneuf <pp@ludusdesign.com>
- *   Henri Sivonen <hsivonen@iki.fi>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsCompatibility.h"
 #include "nsScriptLoader.h"
 #include "nsNetUtil.h"
 #include "nsIStyleSheetLinkingElement.h"
-#include "nsICharsetAlias.h"
 #include "nsIWebShellServices.h"
 #include "nsIDocShell.h"
 #include "nsEncoderDecoderUtils.h"
@@ -246,12 +211,12 @@ nsHtml5Parser::Parse(const nsAString& aSourceBuffer,
                      bool aLastCall,
                      nsDTDMode aMode) // ignored
 {
-  if (mExecutor->IsBroken()) {
-    return NS_ERROR_OUT_OF_MEMORY;
+  nsresult rv;
+  if (NS_FAILED(rv = mExecutor->IsBroken())) {
+    return rv;
   }
   if (aSourceBuffer.Length() > PR_INT32_MAX) {
-    mExecutor->MarkAsBroken();
-    return NS_ERROR_OUT_OF_MEMORY;
+    return mExecutor->MarkAsBroken(NS_ERROR_OUT_OF_MEMORY);
   }
 
   // Maintain a reference to ourselves so we don't go away
@@ -385,22 +350,14 @@ nsHtml5Parser::Parse(const nsAString& aSourceBuffer,
     // prevSearchBuf is the previous buffer before the keyholder or null if
     // there isn't one.
   } else {
-    // We have a first-level write in the document.open() case. We insert
-    // before mLastBuffer. We need to put a marker there, because otherwise
-    // additional document.writes from nested event loops would insert in the
-    // wrong place. Sigh.
-    firstLevelMarker = new nsHtml5OwningUTF16Buffer((void*)nsnull);
-    if (mFirstBuffer == mLastBuffer) {
-      firstLevelMarker->next = mLastBuffer;
-      mFirstBuffer = firstLevelMarker;
-    } else {
-      prevSearchBuf = mFirstBuffer;
-      while (prevSearchBuf->next != mLastBuffer) {
-        prevSearchBuf = prevSearchBuf->next;
-      }
-      firstLevelMarker->next = mLastBuffer;
-      prevSearchBuf->next = firstLevelMarker;
-    }
+    // We have a first-level write in the document.open() case. We insert before
+    // mLastBuffer, effectively, by making mLastBuffer be a new sentinel object
+    // and redesignating the previous mLastBuffer as our firstLevelMarker.  We
+    // need to put a marker there, because otherwise additional document.writes
+    // from nested event loops would insert in the wrong place. Sigh.
+    mLastBuffer->next = new nsHtml5OwningUTF16Buffer((void*)nsnull);
+    firstLevelMarker = mLastBuffer;
+    mLastBuffer = mLastBuffer->next;
   }
 
   nsHtml5DependentUTF16Buffer stackBuffer(aSourceBuffer);
@@ -447,8 +404,7 @@ nsHtml5Parser::Parse(const nsAString& aSourceBuffer,
     heapBuffer = stackBuffer.FalliblyCopyAsOwningBuffer();
     if (!heapBuffer) {
       // Allocation failed. The parser is now broken.
-      mExecutor->MarkAsBroken();
-      return NS_ERROR_OUT_OF_MEMORY;
+      return mExecutor->MarkAsBroken(NS_ERROR_OUT_OF_MEMORY);
     }
   }
 

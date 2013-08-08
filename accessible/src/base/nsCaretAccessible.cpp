@@ -1,46 +1,16 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsCaretAccessible.h"
 
+#include "DocAccessible-inl.h"
 #include "nsAccessibilityService.h"
 #include "nsAccUtils.h"
 #include "nsCoreUtils.h"
 #include "nsIAccessibleEvent.h"
+#include "RootAccessible.h"
 
 #include "nsCaret.h"
 #include "nsIDOMDocument.h"
@@ -49,15 +19,16 @@
 #include "nsIDOMHTMLTextAreaElement.h"
 #include "nsIFrame.h"
 #include "nsIPresShell.h"
-#include "nsRootAccessible.h"
 #include "nsISelectionPrivate.h"
 #include "nsServiceManagerUtils.h"
 
 class nsIWidget;
 
+using namespace mozilla::a11y;
+
 NS_IMPL_ISUPPORTS1(nsCaretAccessible, nsISelectionListener)
   
-nsCaretAccessible::nsCaretAccessible( nsRootAccessible *aRootAccessible):
+nsCaretAccessible::nsCaretAccessible(RootAccessible* aRootAccessible) :
 mLastCaretOffset(-1), mRootAccessible(aRootAccessible)
 {
 }
@@ -68,8 +39,8 @@ nsCaretAccessible::~nsCaretAccessible()
 
 void nsCaretAccessible::Shutdown()
 {
-  // The caret accessible isn't shut down until the nsRootAccessible owning it is shut down
-  // Each nsDocAccessible, including the nsRootAccessible, is responsible for clearing the
+  // The caret accessible isn't shut down until the RootAccessible owning it is shut down
+  // Each DocAccessible, including the RootAccessible, is responsible for clearing the
   // doc selection listeners they registered in this nsCaretAccessible
 
   ClearControlSelectionListener(); // Clear the selection listener for the currently focused control
@@ -208,29 +179,11 @@ nsCaretAccessible::NotifySelectionChanged(nsIDOMDocument* aDOMDocument,
   NS_ENSURE_STATE(mRootAccessible);
 
   nsCOMPtr<nsIDocument> documentNode(do_QueryInterface(aDOMDocument));
-  nsDocAccessible* document = GetAccService()->GetDocAccessible(documentNode);
+  DocAccessible* document = GetAccService()->GetDocAccessible(documentNode);
 
-#ifdef DEBUG_NOTIFICATIONS
-  nsCOMPtr<nsISelectionPrivate> privSel(do_QueryInterface(aSelection));
-
-  PRInt16 type = 0;
-  privSel->GetType(&type);
-
-  if (type == nsISelectionController::SELECTION_NORMAL ||
-      type == nsISelectionController::SELECTION_SPELLCHECK) {
-
-    bool isNormalSelection =
-      (type == nsISelectionController::SELECTION_NORMAL);
-
-    bool isIgnored = !document || !document->IsContentLoaded();
-    printf("\nSelection changed, selection type: %s, notification %s\n",
-           (isNormalSelection ? "normal" : "spellcheck"),
-           (isIgnored ? "ignored" : "pending"));
-  } else {
-    bool isIgnored = !document || !document->IsContentLoaded();
-    printf("\nSelection changed, selection type: unknown, notification %s\n",
-               (isIgnored ? "ignored" : "pending"));
-  }
+#ifdef DEBUG
+  if (logging::IsEnabled(logging::eSelection))
+    logging::SelChange(aSelection, document);
 #endif
 
   // Don't fire events until document is loaded.
@@ -273,7 +226,7 @@ nsCaretAccessible::NormalSelectionChanged(nsISelection* aSelection)
     return; // No selection
   }
 
-  nsHyperTextAccessible* textAcc =
+  HyperTextAccessible* textAcc =
     nsAccUtils::GetTextAccessibleFromSelection(aSelection);
   if (!textAcc)
     return;
@@ -296,7 +249,7 @@ nsCaretAccessible::NormalSelectionChanged(nsISelection* aSelection)
   nsRefPtr<AccEvent> event =
     new AccCaretMoveEvent(mLastTextAccessible->GetNode());
   if (event)
-    mLastTextAccessible->GetDocAccessible()->FireDelayedAccessibleEvent(event);
+    mLastTextAccessible->Document()->FireDelayedAccessibleEvent(event);
 }
 
 void
@@ -308,7 +261,7 @@ nsCaretAccessible::SpellcheckSelectionChanged(nsISelection* aSelection)
   // misspelled word). If spellchecking is disabled (for example,
   // @spellcheck="false" on html:body) then we won't fire any event.
 
-  nsHyperTextAccessible* textAcc =
+  HyperTextAccessible* textAcc =
     nsAccUtils::GetTextAccessibleFromSelection(aSelection);
   if (!textAcc)
     return;
@@ -316,7 +269,7 @@ nsCaretAccessible::SpellcheckSelectionChanged(nsISelection* aSelection)
   nsRefPtr<AccEvent> event =
     new AccEvent(nsIAccessibleEvent::EVENT_TEXT_ATTRIBUTE_CHANGED, textAcc);
   if (event)
-    textAcc->GetDocAccessible()->FireDelayedAccessibleEvent(event);
+    textAcc->Document()->FireDelayedAccessibleEvent(event);
 }
 
 nsIntRect

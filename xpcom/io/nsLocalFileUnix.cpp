@@ -1,49 +1,7 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */ 
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998-1999
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Mike Shaver            <shaver@mozilla.org>
- *   Christopher Blizzard   <blizzard@mozilla.org>
- *   Jason Eager            <jce2@po.cwru.edu>
- *   Stuart Parmenter       <pavlov@netscape.com>
- *   Brendan Eich           <brendan@mozilla.org>
- *   Pete Collins           <petejc@mozdev.org>
- *   Paul Ashford           <arougthopher@lizardland.net>
- *   Fredrik Holmqvist      <thesuckiestemail@yahoo.se>
- *   Josh Aas               <josh@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /**
  * Implementation of nsIFile for "unixy" systems.
@@ -121,6 +79,7 @@ static nsresult MacErrorMapper(OSErr inErr);
 
 #include "nsNativeCharsetUtils.h"
 #include "nsTraceRefcntImpl.h"
+#include "nsHashKeys.h"
 
 using namespace mozilla;
 
@@ -333,7 +292,7 @@ nsLocalFile::Clone(nsIFile **file)
 NS_IMETHODIMP
 nsLocalFile::InitWithNativePath(const nsACString &filePath)
 {
-    if (Substring(filePath, 0, 2).EqualsLiteral("~/")) {
+    if (filePath.Equals("~") || Substring(filePath, 0, 2).EqualsLiteral("~/")) {
         nsCOMPtr<nsIFile> homeDir;
         nsCAutoString homePath;
         if (NS_FAILED(NS_GetSpecialDirectory(NS_OS_HOME_DIR,
@@ -341,8 +300,10 @@ nsLocalFile::InitWithNativePath(const nsACString &filePath)
             NS_FAILED(homeDir->GetNativePath(homePath))) {
             return NS_ERROR_FAILURE;
         }
-        
-        mPath = homePath + Substring(filePath, 1, filePath.Length() - 1);
+ 
+        mPath = homePath;
+        if (filePath.Length() > 2)
+          mPath.Append(Substring(filePath, 1, filePath.Length() - 1));
     } else {
         if (filePath.IsEmpty() || filePath.First() != '/')
             return NS_ERROR_FILE_UNRECOGNIZED_PATH;
@@ -1295,8 +1256,15 @@ nsLocalFile::GetDiskSpaceAvailable(PRInt64 *aDiskSpaceAvailable)
     }
 
     struct dqblk dq;
-    if(!quotactl(QCMD(Q_GETQUOTA, USRQUOTA), deviceName.get(), getuid(), (caddr_t)&dq)) {
-        PRInt64 QuotaSpaceAvailable = PRInt64(fs_buf.f_bsize * dq.dqb_bhardlimit);
+    if(!quotactl(QCMD(Q_GETQUOTA, USRQUOTA), deviceName.get(), getuid(), (caddr_t)&dq)
+#ifdef QIF_BLIMITS
+       && dq.dqb_valid & QIF_BLIMITS
+#endif
+       && dq.dqb_bhardlimit)
+    {
+        PRInt64 QuotaSpaceAvailable = 0;
+        if (dq.dqb_bhardlimit > dq.dqb_curspace)
+            QuotaSpaceAvailable = PRInt64(fs_buf.f_bsize * (dq.dqb_bhardlimit - dq.dqb_curspace));
         if(QuotaSpaceAvailable < *aDiskSpaceAvailable) {
             *aDiskSpaceAvailable = QuotaSpaceAvailable;
         }
@@ -2030,7 +1998,7 @@ nsLocalFile::Equals(nsIHashable* aOther, bool *aResult)
 NS_IMETHODIMP
 nsLocalFile::GetHashCode(PRUint32 *aResult)
 {
-    *aResult = nsCRT::HashCode(mPath.get());
+    *aResult = HashString(mPath);
     return NS_OK;
 }
 
@@ -2467,7 +2435,7 @@ nsLocalFile::GetBundleContentsLastModifiedTime(PRInt64 *aLastModTime)
   return NS_OK;
 }
 
-NS_IMETHODIMP nsLocalFile::InitWithFile(nsILocalFile *aFile)
+NS_IMETHODIMP nsLocalFile::InitWithFile(nsIFile *aFile)
 {
   NS_ENSURE_ARG(aFile);
 

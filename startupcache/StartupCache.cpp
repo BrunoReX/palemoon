@@ -1,45 +1,12 @@
 /* -*-  Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Startup Cache.
- *
- * The Initial Developer of the Original Code is
- * The Mozilla Foundation <http://www.mozilla.org/>.
- * Portions created by the Initial Developer are Copyright (C) 2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  Benedict Hsieh <bhsieh@mozilla.com>
- *  Taras Glek <tglek@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "prio.h"
 #include "prtypes.h"
 #include "pldhash.h"
+#include "nsXPCOMStrings.h"
 #include "mozilla/scache/StartupCache.h"
 
 #include "nsAutoPtr.h"
@@ -66,6 +33,7 @@
 #include "mozilla/Omnijar.h"
 #include "prenv.h"
 #include "mozilla/FunctionTimer.h"
+#include "mozilla/Telemetry.h"
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
 #include "nsIProtocolHandler.h"
@@ -93,13 +61,12 @@ GetStartupCacheMappingSize()
 }
 
 NS_MEMORY_REPORTER_IMPLEMENT(StartupCacheMapping,
-                             "explicit/startup-cache/mapping",
-                             KIND_NONHEAP,
-                             nsIMemoryReporter::UNITS_BYTES,
-                             GetStartupCacheMappingSize,
-                             "Memory used to hold the mapping of the startup "
-                             "cache from file.  This memory is likely to be "
-                             "swapped out shortly after start-up.")
+    "explicit/startup-cache/mapping",
+    KIND_NONHEAP,
+    nsIMemoryReporter::UNITS_BYTES,
+    GetStartupCacheMappingSize,
+    "Memory used to hold the mapping of the startup cache from file.  This "
+    "memory is likely to be swapped out shortly after start-up.")
 
 NS_MEMORY_REPORTER_MALLOC_SIZEOF_FUN(StartupCacheDataMallocSizeOf, "startup-cache/data")
 
@@ -111,12 +78,11 @@ GetStartupCacheDataSize()
 }
 
 NS_MEMORY_REPORTER_IMPLEMENT(StartupCacheData,
-                             "explicit/startup-cache/data",
-                             KIND_HEAP,
-                             nsIMemoryReporter::UNITS_BYTES,
-                             GetStartupCacheDataSize,
-                             "Memory used by the startup cache for things "
-                             "other than the file mapping.")
+    "explicit/startup-cache/data",
+    KIND_HEAP,
+    nsIMemoryReporter::UNITS_BYTES,
+    GetStartupCacheDataSize,
+    "Memory used by the startup cache for things other than the file mapping.")
 
 static const char sStartupCacheName[] = "startupCache." SC_WORDSIZE "." SC_ENDIAN;
 static NS_DEFINE_CID(kZipReaderCID, NS_ZIPREADER_CID);
@@ -152,6 +118,7 @@ StartupCache::InitSingleton()
 
 StartupCache* StartupCache::gStartupCache;
 bool StartupCache::gShutdownInitiated;
+enum StartupCache::TelemetrifyAge StartupCache::gPostFlushAgeAction = StartupCache::IGNORE_AGE;
 
 StartupCache::StartupCache() 
   : mArchive(NULL), mStartupWriteInitiated(false), mWriteThread(NULL),
@@ -237,7 +204,7 @@ StartupCache::Init()
                                      false);
   NS_ENSURE_SUCCESS(rv, rv);
   
-  rv = LoadArchive();
+  rv = LoadArchive(RECORD_AGE);
   
   // Sometimes we don't have a cache yet, that's ok.
   // If it's corrupted, just remove it and start over.
@@ -258,7 +225,7 @@ StartupCache::Init()
  * LoadArchive can be called from the main thread or while reloading cache on write thread.
  */
 nsresult
-StartupCache::LoadArchive() 
+StartupCache::LoadArchive(enum TelemetrifyAge flag)
 {
   bool exists;
   mArchive = NULL;
@@ -267,7 +234,34 @@ StartupCache::LoadArchive()
     return NS_ERROR_FILE_NOT_FOUND;
   
   mArchive = new nsZipArchive();
-  return mArchive->OpenArchive(mFile);
+  rv = mArchive->OpenArchive(mFile);
+  if (NS_FAILED(rv) || flag == IGNORE_AGE)
+    return rv;
+
+  nsCString comment;
+  if (!mArchive->GetComment(comment)) {
+    return rv;
+  }
+
+  const char *data;
+  size_t len = NS_CStringGetData(comment, &data);
+  PRTime creationStamp;
+  // We might not have a comment if the startup cache file was created
+  // before we started recording creation times in the comment.
+  if (len == sizeof(creationStamp)) {
+    memcpy(&creationStamp, data, len);
+    PRTime current = PR_Now();
+    PRInt64 diff = current - creationStamp;
+
+    // We can't use AccumulateTimeDelta here because we have no way of
+    // reifying a TimeStamp from creationStamp.
+    PRInt64 usec_per_hour = PR_USEC_PER_SEC * PRInt64(3600);
+    PRInt64 hour_diff = (diff + usec_per_hour - 1) / usec_per_hour;
+    mozilla::Telemetry::Accumulate(Telemetry::STARTUP_CACHE_AGE_HOURS,
+                                   hour_diff);
+  }
+
+  return rv;
 }
 
 namespace {
@@ -435,6 +429,17 @@ StartupCache::WriteToDisk()
     return;
   } 
 
+  // If we didn't have an mArchive member, that means that we failed to
+  // open the startup cache for reading.  Therefore, we need to record
+  // the time of creation in a zipfile comment; this will be useful for
+  // Telemetry statistics.
+  PRTime now = PR_Now();
+  if (!mArchive) {
+    nsCString comment;
+    comment.Assign((char *)&now, sizeof(now));
+    zipW->SetComment(comment);
+  }
+
   nsCOMPtr<nsIStringInputStream> stream 
     = do_CreateInstance("@mozilla.org/io/string-input-stream;1", &rv);
   if (NS_FAILED(rv)) {
@@ -445,7 +450,7 @@ StartupCache::WriteToDisk()
   CacheWriteHolder holder;
   holder.stream = stream;
   holder.writer = zipW;
-  holder.time = PR_Now();
+  holder.time = now;
 
   mTable.Enumerate(CacheCloseHelper, &holder);
 
@@ -453,8 +458,8 @@ StartupCache::WriteToDisk()
   mArchive = NULL;
   zipW->Close();
 
-  // our reader's view of the archive is outdated now, reload it.
-  LoadArchive();
+  // Our reader's view of the archive is outdated now, reload it.
+  LoadArchive(gPostFlushAgeAction);
   
   return;
 }
@@ -466,7 +471,7 @@ StartupCache::InvalidateCache()
   mTable.Clear();
   mArchive = NULL;
   mFile->Remove(false);
-  LoadArchive();
+  LoadArchive(gPostFlushAgeAction);
 }
 
 /*
@@ -559,6 +564,13 @@ StartupCache::ResetStartupWriteTimer()
   // Wait for 10 seconds, then write out the cache.
   mTimer->InitWithFuncCallback(StartupCache::WriteTimeout, this, 60000,
                                nsITimer::TYPE_ONE_SHOT);
+  return NS_OK;
+}
+
+nsresult
+StartupCache::RecordAgesAlways()
+{
+  gPostFlushAgeAction = RECORD_AGE;
   return NS_OK;
 }
 
@@ -739,6 +751,12 @@ StartupCacheWrapper::GetObserver(nsIObserver** obv) {
   }
   NS_ADDREF(*obv = sc->mListener);
   return NS_OK;
+}
+
+nsresult
+StartupCacheWrapper::RecordAgesAlways() {
+  StartupCache *sc = StartupCache::GetSingleton();
+  return sc ? sc->RecordAgesAlways() : NS_ERROR_NOT_INITIALIZED;
 }
 
 } // namespace scache

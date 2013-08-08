@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * Base class for DOM Core's nsIDOMComment, nsIDOMDocumentType, nsIDOMText,
@@ -307,10 +275,7 @@ nsGenericDOMDataNode::SetTextInternal(PRUint32 aOffset, PRUint32 aCount,
 
   // Make sure the text fragment can hold the new data.
   if (aLength > aCount && !mText.CanGrowBy(aLength - aCount)) {
-    // This exception isn't per spec, but the spec doesn't actually
-    // say what to do here.
-
-    return NS_ERROR_DOM_DOMSTRING_SIZE_ERR;
+    return NS_ERROR_OUT_OF_MEMORY;
   }
 
   nsIDocument *document = GetCurrentDoc();
@@ -670,10 +635,9 @@ nsGenericDOMDataNode::InsertChildAt(nsIContent* aKid, PRUint32 aIndex,
   return NS_OK;
 }
 
-nsresult
+void
 nsGenericDOMDataNode::RemoveChildAt(PRUint32 aIndex, bool aNotify)
 {
-  return NS_OK;
 }
 
 nsIContent *
@@ -751,6 +715,9 @@ nsGenericDOMDataNode::SplitData(PRUint32 aOffset, nsIContent** aReturn,
   if (NS_FAILED(rv)) {
     return rv;
   }
+
+  nsIDocument* document = GetCurrentDoc();
+  mozAutoDocUpdate updateBatch(document, UPDATE_CONTENT_MODEL, true);
 
   // Use Clone for creating the new node so that the new node is of same class
   // as this node!
@@ -861,7 +828,7 @@ nsGenericDOMDataNode::GetText()
 }
 
 PRUint32
-nsGenericDOMDataNode::TextLength()
+nsGenericDOMDataNode::TextLength() const
 {
   return mText.GetLength();
 }
@@ -940,40 +907,6 @@ nsGenericDOMDataNode::WalkContentStyleRules(nsRuleWalker* aRuleWalker)
   return NS_OK;
 }
 
-nsIDOMCSSStyleDeclaration*
-nsGenericDOMDataNode::GetSMILOverrideStyle()
-{
-  return nsnull;
-}
-
-css::StyleRule*
-nsGenericDOMDataNode::GetSMILOverrideStyleRule()
-{
-  return nsnull;
-}
-
-nsresult
-nsGenericDOMDataNode::SetSMILOverrideStyleRule(css::StyleRule* aStyleRule,
-                                               bool aNotify)
-{
-  NS_NOTREACHED("How come we're setting SMILOverrideStyle on a non-element?");
-  return NS_ERROR_UNEXPECTED;
-}
-
-css::StyleRule*
-nsGenericDOMDataNode::GetInlineStyleRule()
-{
-  return nsnull;
-}
-
-NS_IMETHODIMP
-nsGenericDOMDataNode::SetInlineStyleRule(css::StyleRule* aStyleRule,
-                                         bool aNotify)
-{
-  NS_NOTREACHED("How come we're setting inline style on a non-element?");
-  return NS_ERROR_UNEXPECTED;
-}
-
 NS_IMETHODIMP_(bool)
 nsGenericDOMDataNode::IsAttributeMapped(const nsIAtom* aAttribute) const
 {
@@ -994,12 +927,11 @@ nsGenericDOMDataNode::GetClassAttributeName() const
   return nsnull;
 }
 
-PRInt64
-nsGenericDOMDataNode::SizeOf() const
+size_t
+nsGenericDOMDataNode::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const
 {
-  PRInt64 size = dom::MemoryReporter::GetBasicSize<nsGenericDOMDataNode,
-                                                   nsIContent>(this);
-  size += mText.SizeOf() - sizeof(mText);
-  return size;
+  size_t n = nsIContent::SizeOfExcludingThis(aMallocSizeOf);
+  n += mText.SizeOfExcludingThis(aMallocSizeOf);
+  return n;
 }
 

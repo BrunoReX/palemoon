@@ -1,42 +1,9 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sw=4 et tw=80:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * The Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Ben Newman <b{enjam,newma}n@mozilla.com> (original author)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "base/basictypes.h"
 
@@ -411,15 +378,21 @@ static const PRUint32 sNextIdIndexSlot = 0;
 static const PRUint32 sNumNewEnumerateStateSlots = 1;
 
 static void
-CPOW_NewEnumerateState_Finalize(JSContext* cx, JSObject* state)
+CPOW_NewEnumerateState_FreeIds(JSObject* state)
 {
     nsTArray<nsString>* strIds =
-        static_cast<nsTArray<nsString>*>(JS_GetPrivate(cx, state));
+        static_cast<nsTArray<nsString>*>(JS_GetPrivate(state));
 
     if (strIds) {
         delete strIds;
-        JS_SetPrivate(cx, state, NULL);
+        JS_SetPrivate(state, NULL);
     }
+}
+
+static void
+CPOW_NewEnumerateState_Finalize(JSFreeOp* fop, JSObject* state)
+{
+    CPOW_NewEnumerateState_FreeIds(state);
 }
 
 // Similar to IteratorClass in XPCWrapper.cpp
@@ -430,8 +403,7 @@ static const JSClass sCPOW_NewEnumerateState_JSClass = {
     JS_PropertyStub,  JS_PropertyStub,
     JS_PropertyStub,  JS_StrictPropertyStub,
     JS_EnumerateStub, JS_ResolveStub,
-    JS_ConvertStub,   CPOW_NewEnumerateState_Finalize,
-    JSCLASS_NO_OPTIONAL_MEMBERS
+    JS_ConvertStub,   CPOW_NewEnumerateState_Finalize
 };
 
 bool
@@ -452,7 +424,7 @@ ObjectWrapperChild::AnswerNewEnumerateInit(/* no in-parameters */
 
     for (JSObject* proto = mObj;
          proto;
-         proto = JS_GetPrototype(cx, proto))
+         proto = JS_GetPrototype(proto))
     {
         AutoIdArray ids(cx, JS_Enumerate(cx, proto));
         for (size_t i = 0; i < ids.length(); ++i)
@@ -474,10 +446,10 @@ ObjectWrapperChild::AnswerNewEnumerateInit(/* no in-parameters */
     }
     *idp = strIds->Length();
 
-    *status = (JS_SetPrivate(cx, state, strIds) &&
-               JS_SetReservedSlot(cx, state, sNextIdIndexSlot,
-                                  JSVAL_ZERO) &&
-               JSObject_to_JSVariant(cx, state, statep));
+    JS_SetPrivate(state, strIds);
+    JS_SetReservedSlot(state, sNextIdIndexSlot, JSVAL_ZERO);
+               
+    *status = JSObject_to_JSVariant(cx, state, statep);
 
     return true;
 }
@@ -487,7 +459,6 @@ ObjectWrapperChild::AnswerNewEnumerateNext(const JSVariant& in_state,
                                            OperationStatus* status, JSVariant* statep, nsString* idp)
 {
     JSObject* state;
-    jsval v;
 
     *statep = in_state;
     idp->Truncate();
@@ -500,23 +471,25 @@ ObjectWrapperChild::AnswerNewEnumerateNext(const JSVariant& in_state,
         return false;
 
     InfallibleTArray<nsString>* strIds =
-        static_cast<InfallibleTArray<nsString>*>(JS_GetPrivate(cx, state));
+        static_cast<InfallibleTArray<nsString>*>(JS_GetPrivate(state));
 
-    if (!strIds || !JS_GetReservedSlot(cx, state, sNextIdIndexSlot, &v))
+    if (!strIds)
         return false;
 
-    jsuint i = JSVAL_TO_INT(v);
+    jsval v = JS_GetReservedSlot(state, sNextIdIndexSlot);
+
+    int32_t i = JSVAL_TO_INT(v);
     NS_ASSERTION(i >= 0, "Index of next jsid negative?");
     NS_ASSERTION(i <= strIds->Length(), "Index of next jsid too large?");
 
-    if (jsuint(i) == strIds->Length()) {
+    if (size_t(i) == strIds->Length()) {
         *status = JS_TRUE;
         return JSObject_to_JSVariant(cx, NULL, statep);
     }
 
     *idp = strIds->ElementAt(i);
-    *status = JS_SetReservedSlot(cx, state, sNextIdIndexSlot,
-                                 INT_TO_JSVAL(i + 1));
+    JS_SetReservedSlot(state, sNextIdIndexSlot, INT_TO_JSVAL(i + 1));
+    *status = JS_TRUE;
     return true;
 }
     
@@ -531,7 +504,7 @@ ObjectWrapperChild::RecvNewEnumerateDestroy(const JSVariant& in_state)
     if (!JSObject_from_JSVariant(cx, in_state, &state))
         return false;
 
-    CPOW_NewEnumerateState_Finalize(cx, state);
+    CPOW_NewEnumerateState_FreeIds(state);
 
     return true;
 }

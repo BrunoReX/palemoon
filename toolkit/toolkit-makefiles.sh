@@ -1,40 +1,7 @@
 #! /bin/sh
-# ***** BEGIN LICENSE BLOCK *****
-# Version: MPL 1.1/GPL 2.0/LGPL 2.1
-#
-# The contents of this file are subject to the Mozilla Public License Version
-# 1.1 (the "License"); you may not use this file except in compliance with
-# the License. You may obtain a copy of the License at
-# http://www.mozilla.org/MPL/
-#
-# Software distributed under the License is distributed on an "AS IS" basis,
-# WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
-# for the specific language governing rights and limitations under the
-# License.
-#
-# The Original Code is the Mozilla build system
-#
-# The Initial Developer of the Original Code is
-# Ben Turner <mozilla@songbirdnest.com>
-#
-# Portions created by the Initial Developer are Copyright (C) 2007
-# the Initial Developer. All Rights Reserved.
-#
-# Contributor(s):
-#
-# Alternatively, the contents of this file may be used under the terms of
-# either the GNU General Public License Version 2 or later (the "GPL"), or
-# the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
-# in which case the provisions of the GPL or the LGPL are applicable instead
-# of those above. If you wish to allow use of your version of this file only
-# under the terms of either the GPL or the LGPL, and not to allow others to
-# use your version of this file under the terms of the MPL, indicate your
-# decision by deleting the provisions above and replace them with the notice
-# and other provisions required by the GPL or the LGPL. If you do not delete
-# the provisions above, a recipient may use your version of this file under
-# the terms of any one of the MPL, the GPL or the LGPL.
-#
-# ***** END LICENSE BLOCK *****
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 # This file contains makefiles that will be generated for every XUL app.
 
@@ -51,6 +18,7 @@ MAKEFILES_dom="
   dom/interfaces/canvas/Makefile
   dom/interfaces/core/Makefile
   dom/interfaces/css/Makefile
+  dom/interfaces/devicestorage/Makefile
   dom/interfaces/events/Makefile
   dom/interfaces/geolocation/Makefile
   dom/interfaces/html/Makefile
@@ -67,10 +35,18 @@ MAKEFILES_dom="
   dom/interfaces/xbl/Makefile
   dom/interfaces/xpath/Makefile
   dom/interfaces/xul/Makefile
-  dom/ipc/Makefile
   dom/base/Makefile
   dom/battery/Makefile
+  dom/file/Makefile
   dom/indexedDB/Makefile
+  dom/ipc/Makefile
+  dom/locales/Makefile
+  dom/network/Makefile
+  dom/network/interfaces/Makefile
+  dom/network/src/Makefile
+  dom/plugins/base/Makefile
+  dom/plugins/ipc/Makefile
+  dom/power/Makefile
   dom/sms/Makefile
   dom/sms/interfaces/Makefile
   dom/sms/src/Makefile
@@ -84,9 +60,6 @@ MAKEFILES_dom="
   dom/src/storage/Makefile
   dom/system/Makefile
   dom/workers/Makefile
-  dom/locales/Makefile
-  dom/plugins/base/Makefile
-  dom/plugins/ipc/Makefile
 "
 
 MAKEFILES_editor="
@@ -255,6 +228,7 @@ MAKEFILES_layout="
   layout/ipc/Makefile
   layout/inspector/public/Makefile
   layout/inspector/src/Makefile
+  layout/media/Makefile
   layout/style/Makefile
   layout/style/xbl-marquee/Makefile
   layout/tables/Makefile
@@ -468,7 +442,6 @@ MAKEFILES_xulapp="
   toolkit/components/filepicker/Makefile
   toolkit/components/find/Makefile
   toolkit/components/intl/Makefile
-  toolkit/components/maintenanceservice/Makefile
   toolkit/components/microformats/Makefile
   toolkit/components/parentalcontrols/Makefile
   toolkit/components/passwordmgr/Makefile
@@ -484,6 +457,7 @@ MAKEFILES_xulapp="
   toolkit/components/urlformatter/Makefile
   toolkit/components/viewconfig/Makefile
   toolkit/components/viewsource/Makefile
+  toolkit/devtools/Makefile
   toolkit/locales/Makefile
   toolkit/mozapps/downloads/Makefile
   toolkit/mozapps/extensions/Makefile
@@ -496,6 +470,10 @@ MAKEFILES_xulapp="
   toolkit/profile/Makefile
   toolkit/themes/Makefile
   toolkit/xre/Makefile
+"
+
+MAKEFILES_debugger="
+  toolkit/devtools/debugger/Makefile
 "
 
 MAKEFILES_jsreflect="
@@ -549,6 +527,7 @@ add_makefiles "
   $MAKEFILES_intl
   $MAKEFILES_xpconnect
   $MAKEFILES_jsipc
+  $MAKEFILES_debugger
   $MAKEFILES_jsreflect
   $MAKEFILES_jsductwork
   $MAKEFILES_content
@@ -708,6 +687,7 @@ if [ "$ENABLE_TESTS" ]; then
     chrome/test/Makefile
     content/base/test/Makefile
     content/base/test/chrome/Makefile
+    content/base/test/websocket_hybi/Makefile
     content/canvas/test/Makefile
     content/canvas/test/crossorigin/Makefile
     content/canvas/test/webgl/Makefile
@@ -730,8 +710,11 @@ if [ "$ENABLE_TESTS" ]; then
     docshell/test/navigation/Makefile
     dom/battery/test/Makefile
     dom/indexedDB/test/Makefile
+    dom/indexedDB/test/unit/Makefile
+    dom/network/tests/Makefile
     dom/plugins/test/Makefile
     dom/plugins/test/testplugin/Makefile
+    dom/power/test/Makefile
     dom/sms/tests/Makefile
     dom/src/foo/Makefile
     dom/src/json/test/Makefile
@@ -778,7 +761,6 @@ if [ "$ENABLE_TESTS" ]; then
     dom/tests/mochitest/dom-level2-html/files/Makefile
     dom/tests/mochitest/general/Makefile
     dom/tests/mochitest/geolocation/Makefile
-    dom/tests/mochitest/globalstorage/Makefile
     dom/tests/mochitest/localstorage/Makefile
     dom/tests/mochitest/orientation/Makefile
     dom/tests/mochitest/sessionstorage/Makefile
@@ -820,7 +802,6 @@ if [ "$ENABLE_TESTS" ]; then
     layout/style/test/Makefile
     layout/style/test/chrome/Makefile
     layout/tables/test/Makefile
-    layout/tools/pageloader/Makefile
     layout/tools/reftest/Makefile
     layout/xul/base/test/Makefile
     layout/xul/test/Makefile
@@ -888,6 +869,7 @@ if [ "$ENABLE_TESTS" ]; then
     toolkit/content/tests/chrome/rtlchrome/Makefile
     toolkit/content/tests/chrome/rtltest/Makefile
     toolkit/content/tests/widgets/Makefile
+    toolkit/devtools/debugger/tests/Makefile
     toolkit/mozapps/downloads/tests/Makefile
     toolkit/mozapps/downloads/tests/chrome/Makefile
     toolkit/mozapps/extensions/test/Makefile
@@ -920,11 +902,13 @@ if [ "$ENABLE_TESTS" ]; then
       accessible/tests/mochitest/hyperlink/Makefile
       accessible/tests/mochitest/hypertext/Makefile
       accessible/tests/mochitest/name/Makefile
+      accessible/tests/mochitest/pivot/Makefile
       accessible/tests/mochitest/relations/Makefile
       accessible/tests/mochitest/selectable/Makefile
       accessible/tests/mochitest/states/Makefile
       accessible/tests/mochitest/table/Makefile
       accessible/tests/mochitest/text/Makefile
+      accessible/tests/mochitest/textcaret/Makefile
       accessible/tests/mochitest/textselection/Makefile
       accessible/tests/mochitest/tree/Makefile
       accessible/tests/mochitest/treeupdate/Makefile
@@ -1001,6 +985,11 @@ if [ "$ENABLE_TESTS" ]; then
         toolkit/mozapps/update/test/chrome/Makefile
       "
     fi
+    if [ "$MOZ_MAINTENANCE_SERVICE" ]; then
+      add_makefiles "
+        toolkit/mozapps/update/test_svc/Makefile
+      "
+    fi
   fi
   if [ "$MOZ_URL_CLASSIFIER" ]; then
     add_makefiles "
@@ -1032,7 +1021,7 @@ if [ "$ENABLE_TESTS" ]; then
       toolkit/components/downloads/test/browser/Makefile
       toolkit/components/passwordmgr/test/browser/Makefile
       toolkit/components/places/tests/browser/Makefile
-      toolkit/components/startup/tests/Makefile
+      toolkit/components/startup/tests/browser/Makefile
       toolkit/content/tests/browser/Makefile
       toolkit/content/tests/browser/common/Makefile
       toolkit/content/tests/browser/data/Makefile
@@ -1063,6 +1052,11 @@ if [ "$ENABLE_TESTS" ]; then
       toolkit/xre/test/win/Makefile
       widget/windows/tests/Makefile
       xpcom/tests/windows/Makefile
+    "
+  fi
+  if [ "$MOZ_BUILD_APP" = "mobile/android" ]; then
+    add_makefiles "
+      testing/mochitest/roboextender/Makefile
     "
   fi
 fi
@@ -1136,6 +1130,7 @@ if [ "$MOZ_B2G_RIL" ]; then
   add_makefiles "
     dom/system/b2g/Makefile
     dom/telephony/Makefile
+    dom/wifi/Makefile
     ipc/ril/Makefile
   "
 fi
@@ -1151,10 +1146,9 @@ if [ "$MOZ_CRASHREPORTER" ]; then
   "
   if [ "$OS_ARCH" = "WINNT" ]; then
     add_makefiles "
-      toolkit/crashreporter/google-breakpad/src/client/windows/crash_generation/Makefile
-      toolkit/crashreporter/google-breakpad/src/client/windows/handler/Makefile
-      toolkit/crashreporter/google-breakpad/src/client/windows/sender/Makefile
-      toolkit/crashreporter/google-breakpad/src/common/windows/Makefile
+      toolkit/crashreporter/breakpad-windows-libxul/Makefile
+      toolkit/crashreporter/breakpad-windows-standalone/Makefile
+      toolkit/crashreporter/injector/Makefile
     "
   elif [ "$OS_ARCH" = "Darwin" ]; then
     add_makefiles "
@@ -1244,6 +1238,12 @@ if [ "$MOZ_FEEDS" ]; then
   "
 fi
 
+if [ "$MOZ_GRAPHITE" ]; then
+  add_makefiles "
+    gfx/graphite2/src/Makefile
+  "
+fi
+
 if [ "$MOZ_HELP_VIEWER" ]; then
   add_makefiles "
     toolkit/components/help/Makefile
@@ -1277,6 +1277,12 @@ if [ "$MOZ_JSDEBUGGER" ]; then
   add_makefiles "
     js/jsd/Makefile
     js/jsd/idl/Makefile
+  "
+fi
+
+if [ "$MOZ_MAINTENANCE_SERVICE" ]; then
+  add_makefiles "
+    toolkit/components/maintenanceservice/Makefile
   "
 fi
 
@@ -1324,7 +1330,6 @@ if [ "$MOZ_UPDATER" ]; then
     modules/libmar/Makefile
     modules/libmar/src/Makefile
     modules/libmar/tool/Makefile
-    toolkit/mozapps/readstrings/Makefile
   "
   if [ ! "$SYSTEM_BZ2" ]; then
     add_makefiles "
@@ -1494,12 +1499,6 @@ if [ "$MOZ_JPROF" ]; then
   "
 fi
 
-if [ "$MOZ_LEAKY" ]; then
-  add_makefiles "
-    tools/leaky/Makefile
-  "
-fi
-
 if [ "$NS_TRACE_MALLOC" ]; then
   add_makefiles "
     tools/trace-malloc/Makefile
@@ -1544,6 +1543,12 @@ if [ "$MOZ_TREMOR" ]; then
   "
 fi
 
+if [ "$MOZ_OPUS" ]; then
+ add_makefiles "
+   media/libopus/Makefile
+ "
+fi
+
 if [ "$MOZ_OGG" ]; then
   add_makefiles "
     content/media/ogg/Makefile
@@ -1578,10 +1583,30 @@ if [ "$MOZ_WEBM" ]; then
   fi
 fi
 
+if [ "$MOZ_MEDIA_PLUGINS" ]; then
+  add_makefiles "
+    content/media/plugins/Makefile
+  "
+fi
+
+if [ "$MOZ_OMX_PLUGIN" ]; then
+  add_makefiles "
+    media/omx-plugin/Makefile
+  "
+fi
+
 if [ "$MOZ_WAVE" ]; then
  add_makefiles "
    content/media/wave/Makefile
  "
+fi
+
+if [ "$MOZ_CUBEB" ]; then
+  add_makefiles "
+    media/libcubeb/Makefile
+    media/libcubeb/include/Makefile
+    media/libcubeb/src/Makefile
+  "
 fi
 
 if [ "$MOZ_SYDNEYAUDIO" ]; then
@@ -1589,5 +1614,12 @@ if [ "$MOZ_SYDNEYAUDIO" ]; then
     media/libsydneyaudio/Makefile
     media/libsydneyaudio/include/Makefile
     media/libsydneyaudio/src/Makefile
+  "
+fi
+
+if [ "$MOZ_SPEEX_RESAMPLER" ]; then
+  add_makefiles "
+    media/libspeex_resampler/Makefile
+    media/libspeex_resampler/src/Makefile
   "
 fi

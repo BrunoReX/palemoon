@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 @namespace html url("http://www.w3.org/1999/xhtml");
 
@@ -21,9 +25,9 @@ tabbrowser {
   visibility: collapse;
 }
 
-#alltabs-button {
+#alltabs-button { /* Pale Moon: Always show this button! (less jumpy UI) */
   visibility: visible !important;
-}
+} 
 
 #tabbrowser-tabs:not([overflow="true"])[using-closing-tabs-spacer] ~ #alltabs-button {
   visibility: hidden; /* temporary space to keep a tab's close button under the cursor */
@@ -56,15 +60,8 @@ tabbrowser {
 .tab-label:not([fadein]):not([pinned]),
 .tab-icon-image:not([fadein]):not([pinned]),
 .tab-close-button:not([fadein]):not([pinned]) {
-  opacity: 0 !important;
+  display: none;
 }
-
-.tab-throbber,
-.tab-label,
-.tab-icon-image,
-.tab-close-button {
-  -moz-transition: opacity 100ms;
-} 
 
 .tabbrowser-tabs[positionpinnedtabs] > .tabbrowser-tab[pinned] {
   position: fixed !important;
@@ -266,6 +263,14 @@ panel[noactions] > richlistbox > richlistitem[type~="action"] > .ac-url-box > .a
   visibility: collapse;
 }
 
+#urlbar[pageproxystate="invalid"] > #identity-box > #identity-box-inner > #identity-icon-labels {
+  visibility: collapse;
+}
+
+#urlbar[pageproxystate="invalid"] > #identity-box {
+  pointer-events: none;
+}
+
 #identity-icon-labels {
   max-width: 18em;
 }
@@ -340,12 +345,12 @@ window[chromehidden~="toolbar"] toolbar:not(.toolbar-primary):not(.chromeclass-m
 %ifdef MOZ_SERVICES_SYNC
 /* Sync notification UI */
 #sync-notifications {
-  -moz-binding: url("chrome://browser/content/syncNotification.xml#notificationbox");
+  -moz-binding: url("chrome://browser/content/sync/notification.xml#notificationbox");
   overflow-y: visible !important;
 }
 
 #sync-notifications notification {
-  -moz-binding: url("chrome://browser/content/syncNotification.xml#notification");
+  -moz-binding: url("chrome://browser/content/sync/notification.xml#notification");
 }
 %endif
 
@@ -377,12 +382,22 @@ window[chromehidden~="toolbar"] toolbar:not(.toolbar-primary):not(.chromeclass-m
 
 #full-screen-warning-container[fade-warning-out] {
   -moz-transition-property: opacity !important;
-  -moz-transition-duration: 300ms !important;
+  -moz-transition-duration: 500ms !important;
   opacity: 0.0;
 }
 
 #full-screen-warning-message {
   pointer-events: auto;
+  /* We must specify a max-width, otherwise word-wrap:break-word doesn't
+     work in descendant <description> and <label> elements. Bug 630864. */
+  max-width: 800px;  
+}
+
+#full-screen-domain-text,
+#full-screen-remember-decision > .checkbox-label-box > .checkbox-label {
+  word-wrap: break-word;
+  /* We must specify a min-width, otherwise word-wrap:break-word doesn't work. Bug 630864. */
+  min-width: 1px;
 }
 
 #nav-bar[mode="text"] > #window-controls > toolbarbutton > .toolbarbutton-icon {
@@ -441,18 +456,11 @@ window[chromehidden~="toolbar"] toolbar:not(.toolbar-primary):not(.chromeclass-m
 /* notification anchors should only be visible when their associated
    notifications are */
 .notification-anchor-icon {
-  display: none;
   -moz-user-focus: normal;
 }
 
-/* We use the iconBox as the notification anchor when a popup notification is
-   created with a null anchorID, so in that case use a default anchor icon. */
-#notification-popup-box[anchorid="notification-popup-box"] > #default-notification-icon,
-#notification-popup-box[anchorid="geo-notification-icon"] > #geo-notification-icon,
-#notification-popup-box[anchorid="indexedDB-notification-icon"] > #indexedDB-notification-icon,
-#notification-popup-box[anchorid="addons-notification-icon"] > #addons-notification-icon,
-#notification-popup-box[anchorid="password-notification-icon"] > #password-notification-icon {
-  display: -moz-box;
+.notification-anchor-icon:not([showing]) {
+  display: none;
 }
 
 #invalid-form-popup > description {
@@ -489,7 +497,7 @@ statuspanel {
   position: fixed;
   margin-top: -3em;
   left: 0;
-  max-width: 50%;
+  max-width: -moz-calc(100% - 5px);
   pointer-events: none;
 }
 
@@ -497,6 +505,10 @@ statuspanel:-moz-locale-dir(ltr)[mirror],
 statuspanel:-moz-locale-dir(rtl):not([mirror]) {
   left: auto;
   right: 0;
+}
+
+statuspanel[sizelimit] {
+  max-width: 50%;
 }
 
 statuspanel[type=status] {
@@ -520,7 +532,7 @@ statuspanel[inactive] {
 }
 
 statuspanel[inactive][previoustype=overLink] {
-  -moz-transition: opacity 0ms ease-out;
+  -moz-transition: opacity 200ms ease-out;
 }
 
 .statuspanel-inner {
@@ -537,5 +549,48 @@ statuspanel[inactive][previoustype=overLink] {
   -moz-binding: url("chrome://browser/content/urlbarBindings.xml#promobox");
 }
 
+/* tabview menus */
+.tabview-menuitem {
+  max-width: 32em;
+}
+
 /* highlighter */
 %include highlighter.css
+
+/* gcli */
+
+html|*#gcli-tooltip-frame,
+html|*#gcli-output-frame,
+#gcli-output,
+#gcli-tooltip {
+  overflow-x: hidden;
+}
+
+.gclitoolbar-input-node,
+.gclitoolbar-complete-node,
+.gclitoolbar-prompt {
+  direction: ltr;
+}
+
+/* Responsive Mode */
+
+vbox[anonid=browserContainer][responsivemode] {
+  overflow: auto;
+}
+
+.devtools-responsiveui-toolbar:-moz-locale-dir(rtl) {
+  -moz-box-pack: end;
+}
+
+stack[anonid=browserStack][responsivemode] {
+  -moz-transition-duration: 200ms;
+  -moz-transition-timing-function: linear;
+}
+
+stack[anonid=browserStack][responsivemode] {
+  -moz-transition-property: min-width, max-width, min-height, max-height;
+}
+
+stack[anonid=browserStack][responsivemode][notransition] {
+  -moz-transition: none;
+}

@@ -1,42 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is the Update Service.
- *
- * The Initial Developer of the Original Code is Google Inc.
- * Portions created by the Initial Developer are Copyright (C) 2005
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  Ben Goodger <ben@mozilla.org> (Original Author)
- *  Asaf Romano <mozilla.mano@sent.com>
- *  Jeff Walden <jwalden+code@mit.edu>
- *  Robert Strong <robert.bugzilla@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 Components.utils.import("resource://gre/modules/DownloadUtils.jsm");
 Components.utils.import("resource://gre/modules/AddonManager.jsm");
@@ -70,6 +35,8 @@ const STATE_DOWNLOADING       = "downloading";
 const STATE_PENDING           = "pending";
 const STATE_PENDING_SVC       = "pending-service";
 const STATE_APPLYING          = "applying";
+const STATE_APPLIED           = "applied";
+const STATE_APPLIED_SVC       = "applied-service";
 const STATE_SUCCEEDED         = "succeeded";
 const STATE_DOWNLOAD_FAILED   = "download-failed";
 const STATE_FAILED            = "failed";
@@ -445,6 +412,8 @@ var gUpdates = {
           switch (state) {
           case STATE_PENDING:
           case STATE_PENDING_SVC:
+          case STATE_APPLIED:
+          case STATE_APPLIED_SVC:
             this.sourceEvent = SRCEVT_BACKGROUND;
             aCallback("finishedBackground");
             return;
@@ -1249,6 +1218,11 @@ var gDownloadingPage = {
   _hiding: false,
 
   /**
+   * Have we registered an observer for a background update being staged
+   */
+  _updateApplyingObserver: false,
+
+  /**
    * Initialize
    */
   onPageShow: function() {
@@ -1295,7 +1269,7 @@ var gDownloadingPage = {
         // we fell back from a partial patch to a complete patch and even
         // then we couldn't validate. Show a validation error with instructions
         // on how to manually update.
-        this.removeDownloadListener();
+        this.cleanUp();
         gUpdates.wiz.goTo("errors");
         return;
       }
@@ -1383,12 +1357,30 @@ var gDownloadingPage = {
   },
 
   /**
-   * Removes the download listener.
+   * Wait for an update being staged in the background.
    */
-  removeDownloadListener: function() {
+  _setUpdateApplying: function() {
+    this._downloadProgress.mode = "undetermined";
+    this._pauseButton.hidden = true;
+    let applyingStatus = gUpdates.getAUSString("applyingUpdate");
+    this._setStatus(applyingStatus);
+
+    Services.obs.addObserver(this, "update-staged", false);
+    this._updateApplyingObserver = true;
+  },
+
+  /**
+   * Clean up the listener and observer registered for the wizard.
+   */
+  cleanUp: function() {
     var aus = CoC["@mozilla.org/updates/update-service;1"].
               getService(CoI.nsIApplicationUpdateService);
     aus.removeDownloadListener(this);
+
+    if (this._updateApplyingObserver) {
+      Services.obs.removeObserver(this, "update-staged");
+      this._updateApplyingObserver = false;
+    }
   },
 
   /**
@@ -1419,7 +1411,7 @@ var gDownloadingPage = {
     if (this._hiding)
       return;
 
-    this.removeDownloadListener();
+    this.cleanUp();
   },
 
   /**
@@ -1433,7 +1425,7 @@ var gDownloadingPage = {
     // Remove ourself as a download listener so that we don't continue to be
     // fed progress and state notifications after the UI we're updating has
     // gone away.
-    this.removeDownloadListener();
+    this.cleanUp();
 
     var aus = CoC["@mozilla.org/updates/update-service;1"].
               getService(CoI.nsIApplicationUpdateService);
@@ -1567,7 +1559,7 @@ var gDownloadingPage = {
           (u.isCompleteUpdate || u.patchCount != 2)) {
         // Verification error of complete patch, informational text is held in
         // the update object.
-        this.removeDownloadListener();
+        this.cleanUp();
         gUpdates.wiz.goTo("errors");
         break;
       }
@@ -1586,15 +1578,48 @@ var gDownloadingPage = {
       break;
     case CoR.NS_OK:
       LOG("gDownloadingPage", "onStopRequest - patch verification succeeded");
-      this.removeDownloadListener();
-      gUpdates.wiz.goTo("finished");
+      // If the background update pref is set, we should wait until the update
+      // is actually staged in the background.
+      var aus = CoC["@mozilla.org/updates/update-service;1"].
+                getService(CoI.nsIApplicationUpdateService);
+      if (aus.canStageUpdates) {
+        this._setUpdateApplying();
+      } else {
+        this.cleanUp();
+        gUpdates.wiz.goTo("finished");
+      }
       break;
     default:
       LOG("gDownloadingPage", "onStopRequest - transfer failed");
       // Some kind of transfer error, die.
-      this.removeDownloadListener();
+      this.cleanUp();
       gUpdates.wiz.goTo("errors");
       break;
+    }
+  },
+
+  /**
+   * See nsIObserver.idl
+   */
+  observe: function(aSubject, aTopic, aData) {
+    if (aTopic == "update-staged") {
+      if (aData == STATE_DOWNLOADING) {
+        // We've fallen back to downloding the full update because the
+        // partial update failed to get staged in the background.
+        this._setStatus("downloading");
+        return;
+      }
+      this.cleanUp();
+      if (aData == STATE_APPLIED ||
+          aData == STATE_APPLIED_SVC ||
+          aData == STATE_PENDING ||
+          aData == STATE_PENDING_SVC) {
+        // If the update is successfully applied, or if the updater has
+        // fallen back to non-staged updates, go to the finish page.
+        gUpdates.wiz.goTo("finished");
+      } else {
+        gUpdates.wiz.goTo("errors");
+      }
     }
   },
 
@@ -1604,6 +1629,7 @@ var gDownloadingPage = {
   QueryInterface: function(iid) {
     if (!iid.equals(CoI.nsIRequestObserver) &&
         !iid.equals(CoI.nsIProgressEventSink) &&
+        !iid.equals(CoI.nsIObserver) &&
         !iid.equals(CoI.nsISupports))
       throw CoR.NS_ERROR_NO_INTERFACE;
     return this;

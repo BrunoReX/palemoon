@@ -1,42 +1,8 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=4 sw=2 et tw=78: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Pierre Phaneuf <pp@ludusdesign.com>
- *   Masayuki Nakano <masayuki@d-toybox.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "nsEditorEventListener.h"
 #include "nsEditor.h"
 
@@ -61,8 +27,6 @@
 // Drag & Drop, Clipboard
 #include "nsIServiceManager.h"
 #include "nsIClipboard.h"
-#include "nsIDragService.h"
-#include "nsIDragSession.h"
 #include "nsIContent.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIDOMRange.h"
@@ -73,22 +37,10 @@
 #include "nsIDOMWindow.h"
 #include "nsContentUtils.h"
 #include "nsIBidiKeyboard.h"
+#include "mozilla/dom/Element.h"
+#include "nsIFormControl.h"
 
 using namespace mozilla;
-
-class nsAutoEditorKeypressOperation {
-public:
-  nsAutoEditorKeypressOperation(nsEditor *aEditor, nsIDOMNSEvent *aEvent)
-    : mEditor(aEditor) {
-    mEditor->BeginKeypressHandling(aEvent);
-  }
-  ~nsAutoEditorKeypressOperation() {
-    mEditor->EndKeypressHandling();
-  }
-
-private:
-  nsEditor *mEditor;
-};
 
 nsEditorEventListener::nsEditorEventListener() :
   mEditor(nsnull), mCommitText(false),
@@ -156,11 +108,6 @@ nsEditorEventListener::InstallToEditor()
 #endif
   elmP->AddEventListenerByType(this,
                                NS_LITERAL_STRING("keypress"),
-                               NS_EVENT_FLAG_BUBBLE |
-                               NS_EVENT_FLAG_SYSTEM_EVENT);
-  // See bug 455215, we cannot use the standard dragstart event yet
-  elmP->AddEventListenerByType(this,
-                               NS_LITERAL_STRING("draggesture"),
                                NS_EVENT_FLAG_BUBBLE |
                                NS_EVENT_FLAG_SYSTEM_EVENT);
   elmP->AddEventListenerByType(this,
@@ -256,10 +203,6 @@ nsEditorEventListener::UninstallFromEditor()
                                   NS_EVENT_FLAG_BUBBLE |
                                   NS_EVENT_FLAG_SYSTEM_EVENT);
   elmP->RemoveEventListenerByType(this,
-                                  NS_LITERAL_STRING("draggesture"),
-                                  NS_EVENT_FLAG_BUBBLE |
-                                  NS_EVENT_FLAG_SYSTEM_EVENT);
-  elmP->RemoveEventListenerByType(this,
                                   NS_LITERAL_STRING("dragenter"),
                                   NS_EVENT_FLAG_BUBBLE |
                                   NS_EVENT_FLAG_SYSTEM_EVENT);
@@ -332,8 +275,6 @@ nsEditorEventListener::HandleEvent(nsIDOMEvent* aEvent)
 
   nsCOMPtr<nsIDOMDragEvent> dragEvent = do_QueryInterface(aEvent);
   if (dragEvent) {
-    if (eventType.EqualsLiteral("draggesture"))
-      return DragGesture(dragEvent);
     if (eventType.EqualsLiteral("dragenter"))
       return DragEnter(dragEvent);
     if (eventType.EqualsLiteral("dragover"))
@@ -494,7 +435,7 @@ nsEditorEventListener::KeyPress(nsIDOMEvent* aKeyEvent)
 
   // Transfer the event's trusted-ness to our editor
   nsCOMPtr<nsIDOMNSEvent> NSEvent = do_QueryInterface(aKeyEvent);
-  nsAutoEditorKeypressOperation operation(mEditor, NSEvent);
+  nsEditor::HandlingTrustedAction operation(mEditor, NSEvent);
 
   // DOM event handling happens in two passes, the client pass and the system
   // pass.  We do all of our processing in the system pass, to allow client
@@ -649,7 +590,7 @@ nsEditorEventListener::HandleText(nsIDOMEvent* aTextEvent)
 
   // Transfer the event's trusted-ness to our editor
   nsCOMPtr<nsIDOMNSEvent> NSEvent = do_QueryInterface(aTextEvent);
-  nsAutoEditorKeypressOperation operation(mEditor, NSEvent);
+  nsEditor::HandlingTrustedAction operation(mEditor, NSEvent);
 
   return mEditor->UpdateIMEComposition(composedText, textRangeList);
 }
@@ -657,18 +598,6 @@ nsEditorEventListener::HandleText(nsIDOMEvent* aTextEvent)
 /**
  * Drag event implementation
  */
-
-nsresult
-nsEditorEventListener::DragGesture(nsIDOMDragEvent* aDragEvent)
-{
-  // ...figure out if a drag should be started...
-  bool canDrag;
-  nsresult rv = mEditor->CanDrag(aDragEvent, &canDrag);
-  if ( NS_SUCCEEDED(rv) && canDrag )
-    rv = mEditor->DoDrag(aDragEvent);
-
-  return rv;
-}
 
 nsresult
 nsEditorEventListener::DragEnter(nsIDOMDragEvent* aDragEvent)
@@ -701,11 +630,7 @@ nsEditorEventListener::DragOver(nsIDOMDragEvent* aDragEvent)
   nsCOMPtr<nsIContent> dropParent = do_QueryInterface(parent);
   NS_ENSURE_TRUE(dropParent, NS_ERROR_FAILURE);
 
-  if (!dropParent->IsEditable()) {
-    return NS_OK;
-  }
-
-  if (CanDrop(aDragEvent)) {
+  if (dropParent->IsEditable() && CanDrop(aDragEvent)) {
     aDragEvent->PreventDefault(); // consumed
 
     if (mCaret) {
@@ -723,6 +648,12 @@ nsEditorEventListener::DragOver(nsIDOMDragEvent* aDragEvent)
   }
   else
   {
+    if (!IsFileControlTextBox()) {
+      // This is needed when dropping on an input, to prevent the editor for
+      // the editable parent from receiving the event.
+      aDragEvent->StopPropagation();
+    }
+
     if (mCaret)
     {
       mCaret->EraseCaret();
@@ -775,14 +706,10 @@ nsEditorEventListener::Drop(nsIDOMDragEvent* aMouseEvent)
   nsCOMPtr<nsIContent> dropParent = do_QueryInterface(parent);
   NS_ENSURE_TRUE(dropParent, NS_ERROR_FAILURE);
 
-  if (!dropParent->IsEditable()) {
-    return NS_OK;
-  }
-
-  if (!CanDrop(aMouseEvent)) {
+  if (!dropParent->IsEditable() || !CanDrop(aMouseEvent)) {
     // was it because we're read-only?
-    if (mEditor->IsReadonly() || mEditor->IsDisabled())
-    {
+    if ((mEditor->IsReadonly() || mEditor->IsDisabled()) &&
+        !IsFileControlTextBox()) {
       // it was decided to "eat" the event as this is the "least surprise"
       // since someone else handling it might be unintentional and the 
       // user could probably re-drag to be not over the disabled/readonly 
@@ -794,8 +721,6 @@ nsEditorEventListener::Drop(nsIDOMDragEvent* aMouseEvent)
 
   aMouseEvent->StopPropagation();
   aMouseEvent->PreventDefault();
-  // Beware! This may flush notifications via synchronous
-  // ScrollSelectionIntoView.
   return mEditor->InsertFromDrop(aMouseEvent);
 }
 
@@ -831,26 +756,22 @@ nsEditorEventListener::CanDrop(nsIDOMDragEvent* aEvent)
 
   NS_ENSURE_TRUE(typeSupported, false);
 
-  nsCOMPtr<nsIDOMNSDataTransfer> dataTransferNS(do_QueryInterface(dataTransfer));
-  NS_ENSURE_TRUE(dataTransferNS, false);
-
   // If there is no source node, this is probably an external drag and the
   // drop is allowed. The later checks rely on checking if the drag target
   // is the same as the drag source.
   nsCOMPtr<nsIDOMNode> sourceNode;
-  dataTransferNS->GetMozSourceNode(getter_AddRefs(sourceNode));
+  dataTransfer->GetMozSourceNode(getter_AddRefs(sourceNode));
   if (!sourceNode)
     return true;
 
   // There is a source node, so compare the source documents and this document.
   // Disallow drops on the same document.
 
-  nsCOMPtr<nsIDOMDocument> domdoc;
-  nsresult rv = mEditor->GetDocument(getter_AddRefs(domdoc));
-  NS_ENSURE_SUCCESS(rv, false);
+  nsCOMPtr<nsIDOMDocument> domdoc = mEditor->GetDOMDocument();
+  NS_ENSURE_TRUE(domdoc, false);
 
   nsCOMPtr<nsIDOMDocument> sourceDoc;
-  rv = sourceNode->GetOwnerDocument(getter_AddRefs(sourceDoc));
+  nsresult rv = sourceNode->GetOwnerDocument(getter_AddRefs(sourceDoc));
   NS_ENSURE_SUCCESS(rv, false);
   if (domdoc == sourceDoc)      // source and dest are the same document; disallow drops within the selection
   {
@@ -859,13 +780,8 @@ nsEditorEventListener::CanDrop(nsIDOMDragEvent* aEvent)
     if (NS_FAILED(rv) || !selection)
       return false;
     
-    bool isCollapsed;
-    rv = selection->GetIsCollapsed(&isCollapsed);
-    NS_ENSURE_SUCCESS(rv, false);
-  
     // Don't bother if collapsed - can always drop
-    if (!isCollapsed)
-    {
+    if (!selection->Collapsed()) {
       nsCOMPtr<nsIDOMNode> parent;
       rv = aEvent->GetRangeParent(getter_AddRefs(parent));
       if (NS_FAILED(rv) || !parent) return false;
@@ -916,7 +832,7 @@ nsEditorEventListener::HandleEndComposition(nsIDOMEvent* aCompositionEvent)
 
   // Transfer the event's trusted-ness to our editor
   nsCOMPtr<nsIDOMNSEvent> NSEvent = do_QueryInterface(aCompositionEvent);
-  nsAutoEditorKeypressOperation operation(mEditor, NSEvent);
+  nsEditor::HandlingTrustedAction operation(mEditor, NSEvent);
 
   return mEditor->EndIMEComposition();
 }
@@ -940,7 +856,7 @@ nsEditorEventListener::Focus(nsIDOMEvent* aEvent)
   nsCOMPtr<nsINode> node = do_QueryInterface(target);
   NS_ENSURE_TRUE(node, NS_ERROR_UNEXPECTED);
 
-  // If the traget is a document node but it's not editable, we should ignore
+  // If the target is a document node but it's not editable, we should ignore
   // it because actual focused element's event is going to come.
   if (node->IsNodeOfType(nsINode::eDOCUMENT) &&
       !node->HasFlag(NODE_IS_EDITABLE)) {
@@ -1042,5 +958,20 @@ nsEditorEventListener::SpellCheckIfNeeded() {
     currentFlags ^= nsIPlaintextEditor::eEditorSkipSpellCheck;
     mEditor->SetFlags(currentFlags);
   }
+}
+
+bool
+nsEditorEventListener::IsFileControlTextBox()
+{
+  dom::Element* root = mEditor->GetRoot();
+  if (root && root->IsInNativeAnonymousSubtree()) {
+    nsIContent* parent = root->FindFirstNonNativeAnonymous();
+    if (parent && parent->IsHTML(nsGkAtoms::input)) {
+      nsCOMPtr<nsIFormControl> formControl = do_QueryInterface(parent);
+      MOZ_ASSERT(formControl);
+      return formControl->GetType() == NS_FORM_INPUT_FILE;
+    }
+  }
+  return false;
 }
 

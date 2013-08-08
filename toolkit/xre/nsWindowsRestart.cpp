@@ -1,41 +1,6 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla XULRunner bootstrap.
- *
- * The Initial Developer of the Original Code is
- * Benjamin Smedberg <benjamin@smedbergs.us>.
- *
- * Portions created by the Initial Developer are Copyright (C) 2005
- * the Mozilla Foundation. All Rights Reserved.
- *
- * Contributor(s):
- *   Robert Strong <robert.bugzilla@gmail.com>
- *   Brian R. Bondy <netzen@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // This file is not build directly. Instead, it is included in multiple
 // shared objects.
@@ -213,6 +178,8 @@ FreeAllocStrings(int argc, PRUnichar **argv)
   delete [] argv;
 }
 
+
+
 /**
  * Launch a child process with the specified arguments.
  * @note argv[0] is ignored
@@ -222,12 +189,14 @@ FreeAllocStrings(int argc, PRUnichar **argv)
 BOOL
 WinLaunchChild(const PRUnichar *exePath, 
                int argc, PRUnichar **argv, 
-               HANDLE userToken = NULL);
+               HANDLE userToken = NULL,
+               HANDLE *hProcess = NULL);
 
 BOOL
 WinLaunchChild(const PRUnichar *exePath, 
                int argc, char **argv, 
-               HANDLE userToken)
+               HANDLE userToken,
+               HANDLE *hProcess)
 {
   PRUnichar** argvConverted = new PRUnichar*[argc];
   if (!argvConverted)
@@ -241,7 +210,7 @@ WinLaunchChild(const PRUnichar *exePath,
     }
   }
 
-  BOOL ok = WinLaunchChild(exePath, argc, argvConverted, userToken);
+  BOOL ok = WinLaunchChild(exePath, argc, argvConverted, userToken, hProcess);
   FreeAllocStrings(argc, argvConverted);
   return ok;
 }
@@ -250,7 +219,8 @@ BOOL
 WinLaunchChild(const PRUnichar *exePath, 
                int argc, 
                PRUnichar **argv, 
-               HANDLE userToken)
+               HANDLE userToken,
+               HANDLE *hProcess)
 {
   PRUnichar *cl;
   BOOL ok;
@@ -302,7 +272,11 @@ WinLaunchChild(const PRUnichar *exePath,
   }
 
   if (ok) {
-    CloseHandle(pi.hProcess);
+    if (hProcess) {
+      *hProcess = pi.hProcess; // the caller now owns the HANDLE
+    } else {
+      CloseHandle(pi.hProcess);
+    }
     CloseHandle(pi.hThread);
   } else {
     LPVOID lpMsgBuf = NULL;
@@ -324,4 +298,3 @@ WinLaunchChild(const PRUnichar *exePath,
 
   return ok;
 }
-

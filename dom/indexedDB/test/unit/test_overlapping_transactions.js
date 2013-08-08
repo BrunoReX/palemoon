@@ -7,8 +7,6 @@ var testGenerator = testSteps();
 
 function testSteps()
 {
-  const READ_WRITE = Components.interfaces.nsIIDBTransaction.READ_WRITE;
-
   const name = this.window ? window.location.pathname : "Splendid Test";
   const description = "My Test Database";
   const objectStores = [ "foo", "bar" ];
@@ -33,43 +31,47 @@ function testSteps()
   for (let i = 0; i < 50; i++) {
     let stepNumber = 0;
 
-    request = db.transaction(["foo"], READ_WRITE)
+    request = db.transaction(["foo"], "readwrite")
                 .objectStore("foo")
                 .add({});
     request.onerror = errorHandler;
     request.onsuccess = function(event) {
       is(stepNumber, 1, "This callback came first");
       stepNumber++;
+      event.target.transaction.oncomplete = grabEventAndContinueHandler;
     }
 
-    request = db.transaction(["foo"], READ_WRITE)
+    request = db.transaction(["foo"], "readwrite")
                 .objectStore("foo")
                 .add({});
     request.onerror = errorHandler;
     request.onsuccess = function(event) {
       is(stepNumber, 2, "This callback came second");
       stepNumber++;
+      event.target.transaction.oncomplete = grabEventAndContinueHandler;      
     }
 
-    request = db.transaction(["foo", "bar"], READ_WRITE)
+    request = db.transaction(["foo", "bar"], "readwrite")
                 .objectStore("bar")
                 .add({});
     request.onerror = errorHandler;
     request.onsuccess = function(event) {
       is(stepNumber, 3, "This callback came third");
       stepNumber++;
+      event.target.transaction.oncomplete = grabEventAndContinueHandler;      
     }
 
-    request = db.transaction(["foo", "bar"], READ_WRITE)
+    request = db.transaction(["foo", "bar"], "readwrite")
                 .objectStore("bar")
                 .add({});
     request.onerror = errorHandler;
     request.onsuccess = function(event) {
       is(stepNumber, 4, "This callback came fourth");
       stepNumber++;
+      event.target.transaction.oncomplete = grabEventAndContinueHandler;
     }
 
-    request = db.transaction(["bar"], READ_WRITE)
+    request = db.transaction(["bar"], "readwrite")
                 .objectStore("bar")
                 .add({});
     request.onerror = errorHandler;
@@ -80,7 +82,7 @@ function testSteps()
     }
 
     stepNumber++;
-    yield;
+    yield; yield; yield; yield; yield;
 
     is(stepNumber, 6, "All callbacks received");
   }

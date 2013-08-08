@@ -1,43 +1,7 @@
 /* vim:set ts=2 sw=2 sts=2 et: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is DevTools test code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  David Dahl <ddahl@mozilla.com>
- *  Patrick Walton <pcwalton@mozilla.com>
- *  Julian Viereck <jviereck@mozilla.com>
- *  Mihai Sucan <mihai.sucan@gmail.com>
- *  Rob Campbell <rcampbell@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Tests that the network panel works.
 
@@ -49,14 +13,13 @@ let testDriver;
 
 function test() {
   addTab(TEST_URI);
-  browser.addEventListener("DOMContentLoaded", testNetworkPanel, false);
+  browser.addEventListener("load", function onLoad() {
+    browser.removeEventListener("load", onLoad, true);
+    openConsole(null, testNetworkPanel);
+  }, true);
 }
 
 function testNetworkPanel() {
-  browser.removeEventListener("DOMContentLoaded", testNetworkPanel,
-                              false);
-  openConsole();
-
   testDriver = testGen();
   testDriver.next();
 }
@@ -100,31 +63,52 @@ function checkNodeKeyValue(aPanel, aId, aKey, aValue) {
 function testGen() {
   let filterBox = HUDService.getHudByWindow(content).filterBox;
 
-  var httpActivity = {
-    url: "http://www.testpage.com",
-    method: "GET",
+  let tempScope  = {};
+  Cu.import("resource:///modules/WebConsoleUtils.jsm", tempScope);
+  let l10n = tempScope.WebConsoleUtils.l10n;
+  tempScope = null;
 
-    panels: [],
-    request: {
-      header: {
-        foo: "bar"
-      }
+  let httpActivity = {
+    meta: {
+      stages: [],
+      discardRequestBody: true,
+      discardResponseBody: true,
     },
-    response: { },
-    timing: {
-      "REQUEST_HEADER": 0
-    }
+    log: {
+      entries: [{
+        startedDateTime: (new Date()).toISOString(),
+        request: {
+          url: "http://www.testpage.com",
+          method: "GET",
+          cookies: [],
+          headers: [
+            { name: "foo", value: "bar" },
+          ],
+        },
+        response: {
+          headers: [],
+          content: {},
+        },
+        timings: {},
+      }],
+    },
   };
+
+  let entry = httpActivity.log.entries[0];
 
   let networkPanel = HUDService.openNetworkPanel(filterBox, httpActivity);
 
-  is (networkPanel, httpActivity.panels[0].get(), "Network panel stored on httpActivity object");
+  is(filterBox._netPanel, networkPanel,
+     "Network panel stored on the anchor object");
+
   networkPanel.panel.addEventListener("load", function onLoad() {
     networkPanel.panel.removeEventListener("load", onLoad, true);
     testDriver.next();
   }, true);
 
   yield;
+
+  info("test 1");
 
   checkIsVisible(networkPanel, {
     requestCookie: false,
@@ -142,8 +126,11 @@ function testGen() {
   checkNodeKeyValue(networkPanel, "requestHeadersContent", "foo", "bar");
 
   // Test request body.
-  httpActivity.request.body = "hello world";
+  info("test 2: request body");
+  httpActivity.meta.discardRequestBody = false;
+  entry.request.postData = { text: "hello world" };
   networkPanel.update();
+
   checkIsVisible(networkPanel, {
     requestBody: true,
     requestFormData: false,
@@ -157,13 +144,19 @@ function testGen() {
   checkNodeContent(networkPanel, "requestBodyContent", "hello world");
 
   // Test response header.
-  httpActivity.timing.RESPONSE_HEADER = 1000;
-  httpActivity.response.status = "999 earthquake win";
-  httpActivity.response.header = {
-    "Content-Type": "text/html",
-    leaveHouses: "true"
-  }
+  info("test 3: response header");
+  entry.timings.wait = 10;
+  entry.response.httpVersion = "HTTP/3.14";
+  entry.response.status = 999;
+  entry.response.statusText = "earthquake win";
+  entry.response.content.mimeType = "text/html";
+  entry.response.headers.push(
+    { name: "Content-Type", value: "text/html" },
+    { name: "leaveHouses", value: "true" }
+  );
+
   networkPanel.update();
+
   checkIsVisible(networkPanel, {
     requestBody: true,
     requestFormData: false,
@@ -175,13 +168,14 @@ function testGen() {
     responseImageCached: false
   });
 
-  checkNodeContent(networkPanel, "header", "999 earthquake win");
+  checkNodeContent(networkPanel, "header", "HTTP/3.14 999 earthquake win");
   checkNodeKeyValue(networkPanel, "responseHeadersContent", "leaveHouses", "true");
-  checkNodeContent(networkPanel, "responseHeadersInfo", "1ms");
+  checkNodeContent(networkPanel, "responseHeadersInfo", "10ms");
 
-  httpActivity.timing.RESPONSE_COMPLETE = 2500;
-  // This is necessary to show that the request is done.
-  httpActivity.timing.TRANSACTION_CLOSE = 2500;
+  info("test 4");
+
+  httpActivity.meta.discardResponseBody = false;
+  entry.timings.receive = 2;
   networkPanel.update();
 
   checkIsVisible(networkPanel, {
@@ -195,7 +189,9 @@ function testGen() {
     responseImageCached: false
   });
 
-  httpActivity.response.isDone = true;
+  info("test 5");
+
+  httpActivity.meta.stages.push("REQUEST_STOP", "TRANSACTION_CLOSE");
   networkPanel.update();
 
   checkNodeContent(networkPanel, "responseNoBodyInfo", "2ms");
@@ -212,18 +208,23 @@ function testGen() {
   networkPanel.panel.hidePopup();
 
   // Second run: Test for cookies and response body.
-  httpActivity.request.header.Cookie = "foo=bar;  hello=world";
-  httpActivity.response.body = "get out here";
+  info("test 6: cookies and response body");
+  entry.request.cookies.push(
+    { name: "foo", value: "bar" },
+    { name: "hello", value: "world" }
+  );
+  entry.response.content.text = "get out here";
 
   networkPanel = HUDService.openNetworkPanel(filterBox, httpActivity);
-  is (networkPanel, httpActivity.panels[1].get(), "Network panel stored on httpActivity object");
+  is(filterBox._netPanel, networkPanel,
+     "Network panel stored on httpActivity object");
+
   networkPanel.panel.addEventListener("load", function onLoad() {
     networkPanel.panel.removeEventListener("load", onLoad, true);
     testDriver.next();
   }, true);
 
   yield;
-
 
   checkIsVisible(networkPanel, {
     requestBody: true,
@@ -244,8 +245,10 @@ function testGen() {
   networkPanel.panel.hidePopup();
 
   // Check image request.
-  httpActivity.response.header["Content-Type"] = "image/png";
-  httpActivity.url = TEST_IMG;
+  info("test 7: image request");
+  entry.response.headers[1].value = "image/png";
+  entry.response.content.mimeType = "image/png";
+  entry.request.url = TEST_IMG;
 
   networkPanel = HUDService.openNetworkPanel(filterBox, httpActivity);
   networkPanel.panel.addEventListener("load", function onLoad() {
@@ -291,7 +294,10 @@ function testGen() {
   }
 
   // Check cached image request.
-  httpActivity.response.status = "HTTP/1.1 304 Not Modified";
+  info("test 8: cached image request");
+  entry.response.httpVersion = "HTTP/1.1";
+  entry.response.status = 304;
+  entry.response.statusText = "Not Modified";
 
   networkPanel = HUDService.openNetworkPanel(filterBox, httpActivity);
   networkPanel.panel.addEventListener("load", function onLoad() {
@@ -318,11 +324,12 @@ function testGen() {
   networkPanel.panel.hidePopup();
 
   // Test sent form data.
-  httpActivity.request.body = [
-    "Content-Type:      application/x-www-form-urlencoded\n" +
-    "Content-Length: 59\n" +
+  info("test 9: sent form data");
+  entry.request.postData.text = [
+    "Content-Type:      application/x-www-form-urlencoded",
+    "Content-Length: 59",
     "name=rob&age=20"
-  ].join("");
+  ].join("\n");
 
   networkPanel = HUDService.openNetworkPanel(filterBox, httpActivity);
   networkPanel.panel.addEventListener("load", function onLoad() {
@@ -348,7 +355,8 @@ function testGen() {
   networkPanel.panel.hidePopup();
 
   // Test no space after Content-Type:
-  httpActivity.request.body = "Content-Type:application/x-www-form-urlencoded\n";
+  info("test 10: no space after Content-Type header in post data");
+  entry.request.postData.text = "Content-Type:application/x-www-form-urlencoded\n";
 
   networkPanel = HUDService.openNetworkPanel(filterBox, httpActivity);
   networkPanel.panel.addEventListener("load", function onLoad() {
@@ -373,25 +381,18 @@ function testGen() {
 
   // Test cached data.
 
-  // Load a Latin-1 encoded page.
-  browser.addEventListener("load", function onLoad () {
-    browser.removeEventListener("load", onLoad, true);
-    httpActivity.charset = content.document.characterSet;
-    testDriver.next();
-  }, true);
-  browser.contentWindow.wrappedJSObject.document.location = TEST_ENCODING_ISO_8859_1;
+  info("test 11: cached data");
 
-  yield;
-
-  httpActivity.url = TEST_ENCODING_ISO_8859_1;
-  httpActivity.response.header["Content-Type"] = "application/json";
-  httpActivity.response.body = "";
+  entry.request.url = TEST_ENCODING_ISO_8859_1;
+  entry.response.headers[1].value = "application/json";
+  entry.response.content.mimeType = "application/json";
+  entry.response.content.text = "my cached data is here!";
 
   networkPanel = HUDService.openNetworkPanel(filterBox, httpActivity);
-  networkPanel.isDoneCallback = function NP_doneCallback() {
-    networkPanel.isDoneCallback = null;
+  networkPanel.panel.addEventListener("load", function onLoad() {
+    networkPanel.panel.removeEventListener("load", onLoad, true);
     testDriver.next();
-  }
+  }, true);
 
   yield;
 
@@ -407,21 +408,22 @@ function testGen() {
     responseImageCached: false
   });
 
-  checkNodeContent(networkPanel, "responseBodyCachedContent", "<body>\u00fc\u00f6\u00E4</body>");
+  checkNodeContent(networkPanel, "responseBodyCachedContent",
+                   "my cached data is here!");
+
   networkPanel.panel.hidePopup();
 
   // Test a response with a content type that can't be displayed in the
   // NetworkPanel.
-  httpActivity.response.header["Content-Type"] = "application/x-shockwave-flash";
+  info("test 12: unknown content type");
+  entry.response.headers[1].value = "application/x-shockwave-flash";
+  entry.response.content.mimeType = "application/x-shockwave-flash";
 
   networkPanel = HUDService.openNetworkPanel(filterBox, httpActivity);
-  networkPanel.isDoneCallback = function NP_doneCallback() {
-    networkPanel.isDoneCallback = null;
-    try {
-      testDriver.next();
-    } catch (e if e instanceof StopIteration) {
-    }
-  }
+  networkPanel.panel.addEventListener("load", function onLoad() {
+    networkPanel.panel.removeEventListener("load", onLoad, true);
+    testDriver.next();
+  }, true);
 
   yield;
 
@@ -438,7 +440,9 @@ function testGen() {
     responseImageCached: false
   });
 
-  let responseString = HUDService.getFormatStr("NetworkPanel.responseBodyUnableToDisplay.content", ["application/x-shockwave-flash"]);
+  let responseString =
+    l10n.getFormatStr("NetworkPanel.responseBodyUnableToDisplay.content",
+                      ["application/x-shockwave-flash"]);
   checkNodeContent(networkPanel, "responseBodyUnknownTypeContent", responseString);
   networkPanel.panel.hidePopup();
 
@@ -481,5 +485,8 @@ function testGen() {
   networkPanel.panel.hidePopup(); */
 
   // All done!
-  finish();
+  testDriver = null;
+  executeSoon(finishTest);
+
+  yield;
 }

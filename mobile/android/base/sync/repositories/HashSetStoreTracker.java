@@ -1,10 +1,11 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.gecko.sync.repositories;
 
 import java.util.HashSet;
+import java.util.Iterator;
 
 import org.mozilla.gecko.sync.repositories.domain.Record;
 
@@ -51,5 +52,10 @@ public class HashSetStoreTracker implements StoreTracker {
         return isTrackedForExclusion(r.guid);
       }
     };
+  }
+
+  @Override
+  public Iterator<String> recordsTrackedForExclusion() {
+    return this.guids.iterator();
   }
 }

@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
 #highlighter-container {
   pointer-events: none;
 }
@@ -10,6 +14,11 @@
 
 #highlighter-veil-container {
   overflow: hidden;
+}
+
+#highlighter-veil-container:not([dim]) > .highlighter-veil,
+#highlighter-veil-container:not([dim]) > hbox > .highlighter-veil {
+  visibility: hidden;
 }
 
 #highlighter-veil-container:not([disable-transitions]) > .highlighter-veil,
@@ -34,20 +43,13 @@
   direction: ltr;
 }
 
-#inspector-top-resizer {
-  display: none;
-}
-
-#inspector-toolbar[treepanel-open] > vbox > #inspector-top-resizer {
-  display: -moz-box;
-}
-
 /*
  * Node Infobar
  */
 
 #highlighter-nodeinfobar-container {
   position: absolute;
+  max-width: 95%;
 }
 
 #highlighter-nodeinfobar-container:not([disable-transitions]) {
@@ -56,19 +58,30 @@
   -moz-transition-timing-function: linear;
 }
 
-#highlighter-nodeinfobar {
-  display: block;
+#highlighter-nodeinfobar-text {
+  overflow: hidden;
   white-space: nowrap;
+  text-overflow: ellipsis;
   direction: ltr;
 }
 
-#highlighter-nodeinfobar-container[locked] > #highlighter-nodeinfobar {
+.highlighter-nodeinfobar-button > .toolbarbutton-text {
+  display: none;
+}
+
+#highlighter-nodeinfobar-container:not([locked]):not(:hover) > #highlighter-nodeinfobar > .highlighter-nodeinfobar-button {
+  visibility: hidden;
+}
+
+#highlighter-nodeinfobar-container[locked] > #highlighter-nodeinfobar,
+#highlighter-nodeinfobar-container:not([locked]):hover > #highlighter-nodeinfobar {
   pointer-events: auto;
 }
 
-#highlighter-nodeinfobar-id,
-.highlighter-nodeinfobar-class,
-#highlighter-nodeinfobar-tagname {
+html|*#highlighter-nodeinfobar-id,
+html|*#highlighter-nodeinfobar-classes,
+html|*#highlighter-nodeinfobar-pseudo-classes,
+html|*#highlighter-nodeinfobar-tagname {
   -moz-user-select: text;
   cursor: text;
 }
@@ -89,10 +102,29 @@
   visibility: hidden;
 }
 
-#highlighter-nodeinfobar-id:empty {
+html|*#highlighter-nodeinfobar-tagname {
+  text-transform: lowercase;
+}
+
+.devtools-toolbarbutton:not([label]) > .toolbarbutton-text {
   display: none;
 }
 
-#highlighter-nodeinfobar-tagname {
-  text-transform: lowercase;
+#inspector-option-toolbarbutton > .toolbarbutton-menu-dropmarker {
+  display: none;
+}
+
+#inspector-layoutview-container > iframe {
+  /* header size */
+  height: 28px;
+}
+
+#inspector-layoutview-container:not([disable-transitions]) > iframe {
+  -moz-transition-property: height;
+  -moz-transition-duration: 0.2s;
+}
+
+#inspector-layoutview-container > iframe[open] {
+  /* header size + layout view size: 28px + 145px */
+  height: 173px;
 }

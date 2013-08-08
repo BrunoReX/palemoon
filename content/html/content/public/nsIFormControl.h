@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef nsIFormControl_h___
 #define nsIFormControl_h___
 
@@ -58,7 +26,6 @@ enum FormControlsTypes {
   NS_FORM_SELECT,
   NS_FORM_TEXTAREA,
   NS_FORM_OBJECT,
-  NS_FORM_PROGRESS,
   eFormControlsWithoutSubTypesMax,
   // After this, all types will have sub-types which introduce new enum lists.
   // eFormControlsWithoutSubTypesMax let us know if the previous types values
@@ -102,8 +69,8 @@ PR_STATIC_ASSERT((PRUint32)eButtonElementTypesMax < (PRUint32)NS_FORM_INPUT_ELEM
 PR_STATIC_ASSERT((PRUint32)eInputElementTypesMax  < 1<<8);
 
 #define NS_IFORMCONTROL_IID   \
-{ 0x671ef379, 0x7ac0, 0x414c, \
- { 0xa2, 0x2b, 0xc1, 0x9e, 0x0b, 0x61, 0x4e, 0x83 } }
+{ 0xbc53dcf5, 0xbd4f, 0x4991, \
+ { 0xa1, 0x87, 0xc4, 0x57, 0x98, 0x54, 0xda, 0x6e } }
 
 /**
  * Interface which all form controls (e.g. buttons, checkboxes, text,
@@ -203,12 +170,6 @@ public:
   inline bool IsSingleLineTextControl(bool aExcludePassword) const;
 
   /**
-   * Returns whether this is a labelable form control.
-   * @return whether this is a labelable form control.
-   */
-  inline bool IsLabelableControl() const;
-
-  /**
    * Returns whether this is a submittable form control.
    * @return whether this is a submittable form control.
    */
@@ -270,23 +231,6 @@ nsIFormControl::IsSingleLineTextControl(bool aExcludePassword, PRUint32 aType)
          aType == NS_FORM_INPUT_TEL ||
          aType == NS_FORM_INPUT_URL ||
          (!aExcludePassword && aType == NS_FORM_INPUT_PASSWORD);
-}
-
-bool
-nsIFormControl::IsLabelableControl() const
-{
-  // TODO: keygen should be in that list, see bug 101019.
-  // TODO: meter should be added, see bug 555985.
-  // TODO: NS_FORM_INPUT_HIDDEN should be removed, see bug 597650.
-  PRUint32 type = GetType();
-  return type & NS_FORM_INPUT_ELEMENT ||
-         type & NS_FORM_BUTTON_ELEMENT ||
-         // type == NS_FORM_KEYGEN ||
-         // type == NS_FORM_METER ||
-         type == NS_FORM_OUTPUT ||
-         type == NS_FORM_PROGRESS ||
-         type == NS_FORM_SELECT ||
-         type == NS_FORM_TEXTAREA;
 }
 
 bool

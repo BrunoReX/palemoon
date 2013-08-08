@@ -1,40 +1,7 @@
 /* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Android code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Gian-Carlo Pascutto <gpascutto@mozilla.com>
- *   Sriram Ramasubramanian <sriram@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.gecko;
 
@@ -43,9 +10,12 @@ import java.util.HashMap;
 import android.content.Context;
 import android.graphics.drawable.BitmapDrawable;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.ViewGroup;
+import android.view.View;
 import android.widget.PopupWindow;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 
@@ -59,24 +29,40 @@ public class DoorHangerPopup extends PopupWindow {
     private Context mContext;
     private LinearLayout mContent;
 
+    private boolean mInflated; 
+    private ImageView mArrow;
+    private int mArrowWidth;
+
     public DoorHangerPopup(Context aContext) {
         super(aContext);
         mContext = aContext;
 
+        mInflated = false;
+        mArrowWidth = aContext.getResources().getDimensionPixelSize(R.dimen.doorhanger_arrow_width);
+   }
+
+    private void init() {
         setBackgroundDrawable(new BitmapDrawable());
         setOutsideTouchable(true);
-        setWindowLayoutMode(ViewGroup.LayoutParams.FILL_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        setFocusable(true);
+        setWindowLayoutMode(GeckoApp.mAppContext.isTablet() ? ViewGroup.LayoutParams.WRAP_CONTENT : ViewGroup.LayoutParams.FILL_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT);
 
         LayoutInflater inflater = LayoutInflater.from(mContext);
         RelativeLayout layout = (RelativeLayout) inflater.inflate(R.layout.doorhangerpopup, null);
+        mArrow = (ImageView) layout.findViewById(R.id.doorhanger_arrow);
         mContent = (LinearLayout) layout.findViewById(R.id.doorhanger_container);
         
         setContentView(layout);
+        mInflated = true;
     }
 
     public void addDoorHanger(String message, String value, JSONArray buttons,
-                              Tab tab, JSONObject options) {
+                              Tab tab, JSONObject options, View v) {
         Log.i(LOGTAG, "Adding a DoorHanger to Tab: " + tab.getId());
+
+        if (!mInflated)
+            init();
 
         // Replace the doorhanger if it already exists
         DoorHanger dh = tab.getDoorHanger(value);
@@ -103,11 +89,17 @@ public class DoorHangerPopup extends PopupWindow {
         tab.addDoorHanger(value, dh);
         mContent.addView(dh);
 
-        updatePopup();
+        // Only update the popup if we're adding a notifcation to the selected tab
+        if (tab.equals(Tabs.getInstance().getSelectedTab()))
+            updatePopup(v);
     }
 
     // Updates popup contents to show doorhangers for the selected tab
     public void updatePopup() {
+      updatePopup(null);
+    }
+
+    public void updatePopup(View v) {
         Tab tab = Tabs.getInstance().getSelectedTab();
         if (tab == null) {
             hidePopup();
@@ -123,6 +115,9 @@ public class DoorHangerPopup extends PopupWindow {
             return;
         }
 
+        if (!mInflated)
+            init();
+
         // Hide old doorhangers
         for (int i = 0; i < mContent.getChildCount(); i++) {
             DoorHanger dh = (DoorHanger) mContent.getChildAt(i);
@@ -134,24 +129,33 @@ public class DoorHangerPopup extends PopupWindow {
             dh.show();
         }
 
-        showPopup();
+        if (v == null)
+            showAtLocation(((GeckoApp)mContext).getView(), Gravity.TOP, 0, 0);
+        else
+            showPopup(v);
     }
 
     public void hidePopup() {
         if (isShowing()) {
-            Log.i(LOGTAG, "Hiding the DoorHangerPopup");
             dismiss();
         }
     }
 
-    public void showPopup() {
-        Log.i(LOGTAG, "Showing the DoorHangerPopup");
+    public void showPopup(View v) {
         fixBackgroundForFirst();
 
-        if (isShowing())
+        if (isShowing()) {
             update();
-        else
-            showAsDropDown(GeckoApp.mBrowserToolbar.mFavicon);
+            return;
+        }
+
+        // On tablets, we need to position the popup so that the center of the arrow points to the
+        // center of the anchor view. On phones the popup stretches across the entire screen, so the
+        // arrow position is determined by its left margin.
+        int offset = GeckoApp.mAppContext.isTablet() ? v.getWidth()/2 - mArrowWidth/2 -
+                     ((RelativeLayout.LayoutParams) mArrow.getLayoutParams()).leftMargin : 0;
+
+        showAsDropDown(v, offset, 0);
     }
 
     private void fixBackgroundForFirst() {

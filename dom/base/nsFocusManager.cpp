@@ -1,38 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozila.org code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation
- * Portions created by the Initial Developer are Copyright (C) 2008
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/TabParent.h"
 
@@ -75,6 +44,7 @@
 #include "nsIBaseWindow.h"
 #include "nsIViewManager.h"
 #include "nsFrameSelection.h"
+#include "nsTypedSelection.h"
 #include "nsXULPopupManager.h"
 #include "nsIDOMNodeFilter.h"
 #include "nsIScriptObjectPrincipal.h"
@@ -527,8 +497,9 @@ nsFocusManager::MoveFocus(nsIDOMWindow* aWindow, nsIDOMElement* aStartElement,
 
   NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
+  bool noParentTraversal = aFlags & FLAG_NOPARENTFRAME;
   nsCOMPtr<nsIContent> newFocus;
-  nsresult rv = DetermineElementToMoveFocus(window, startContent, aType,
+  nsresult rv = DetermineElementToMoveFocus(window, startContent, aType, noParentTraversal,
                                             getter_AddRefs(newFocus));
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -854,7 +825,7 @@ nsFocusManager::ContentRemoved(nsIDocument* aDocument, nsIContent* aContent)
       }
     }
 
-    NotifyFocusStateChange(aContent, shouldShowFocusRing, false);
+    NotifyFocusStateChange(content, shouldShowFocusRing, false);
   }
 
   return NS_OK;
@@ -953,8 +924,7 @@ nsFocusManager::WindowHidden(nsIDOMWindow* aWindow)
   // window, or an ancestor of the focused window. Either way, the focus is no
   // longer valid, so it needs to be updated.
 
-  nsIContent* oldFocusedContent = mFocusedContent;
-  mFocusedContent = nsnull;
+  nsCOMPtr<nsIContent> oldFocusedContent = mFocusedContent.forget();
 
   if (oldFocusedContent && oldFocusedContent->IsInDoc()) {
     NotifyFocusStateChange(oldFocusedContent,
@@ -1959,8 +1929,12 @@ nsFocusManager::ScrollIntoView(nsIPresShell* aPresShell,
   // if the noscroll flag isn't set, scroll the newly focused element into view
   if (!(aFlags & FLAG_NOSCROLL))
     aPresShell->ScrollContentIntoView(aContent,
-                                      NS_PRESSHELL_SCROLL_IF_NOT_VISIBLE,
-                                      NS_PRESSHELL_SCROLL_IF_NOT_VISIBLE,
+                                      nsIPresShell::ScrollAxis(
+                                        nsIPresShell::SCROLL_MINIMUM,
+                                        nsIPresShell::SCROLL_IF_NOT_VISIBLE),
+                                      nsIPresShell::ScrollAxis(
+                                        nsIPresShell::SCROLL_MINIMUM,
+                                        nsIPresShell::SCROLL_IF_NOT_VISIBLE),
                                       nsIPresShell::SCROLL_OVERFLOW_HIDDEN);
 }
 
@@ -2332,7 +2306,7 @@ nsFocusManager::GetSelectionLocation(nsIDocument* aDocument,
 nsresult
 nsFocusManager::DetermineElementToMoveFocus(nsPIDOMWindow* aWindow,
                                             nsIContent* aStartContent,
-                                            PRInt32 aType,
+                                            PRInt32 aType, bool aNoParentTraversal,
                                             nsIContent** aNextContent)
 {
   *aNextContent = nsnull;
@@ -2342,8 +2316,17 @@ nsFocusManager::DetermineElementToMoveFocus(nsPIDOMWindow* aWindow,
     return NS_OK;
 
   nsCOMPtr<nsIContent> startContent = aStartContent;
-  if (!startContent && aType != MOVEFOCUS_CARET)
-    startContent = aWindow->GetFocusedNode();
+  if (!startContent && aType != MOVEFOCUS_CARET) {
+    if (aType == MOVEFOCUS_FORWARDDOC || aType == MOVEFOCUS_BACKWARDDOC) {
+      // When moving between documents, make sure to get the right
+      // starting content in a descendant.
+      nsCOMPtr<nsPIDOMWindow> focusedWindow;
+      startContent = GetFocusedDescendant(aWindow, true, getter_AddRefs(focusedWindow));
+    }
+    else {
+      startContent = aWindow->GetFocusedNode();
+    }
+  }
 
   nsCOMPtr<nsIDocument> doc;
   if (startContent)
@@ -2361,11 +2344,11 @@ nsFocusManager::DetermineElementToMoveFocus(nsPIDOMWindow* aWindow,
     return NS_OK;
   }
   if (aType == MOVEFOCUS_FORWARDDOC) {
-    NS_IF_ADDREF(*aNextContent = GetNextTabbableDocument(true));
+    NS_IF_ADDREF(*aNextContent = GetNextTabbableDocument(startContent, true));
     return NS_OK;
   }
   if (aType == MOVEFOCUS_BACKWARDDOC) {
-    NS_IF_ADDREF(*aNextContent = GetNextTabbableDocument(false));
+    NS_IF_ADDREF(*aNextContent = GetNextTabbableDocument(startContent, false));
     return NS_OK;
   }
   
@@ -2449,11 +2432,13 @@ nsFocusManager::DetermineElementToMoveFocus(nsPIDOMWindow* aWindow,
   }
   else {
 #ifdef MOZ_XUL
-    // if there is no focus, yet a panel is open, focus the first item in
-    // the panel
-    nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
-    if (pm)
-      popupFrame = pm->GetTopPopup(ePopupTypePanel);
+    if (aType != MOVEFOCUS_CARET) {
+      // if there is no focus, yet a panel is open, focus the first item in
+      // the panel
+      nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
+      if (pm)
+        popupFrame = pm->GetTopPopup(ePopupTypePanel);
+    }
 #endif
     if (popupFrame) {
       rootContent = popupFrame->GetContent();
@@ -2561,6 +2546,12 @@ nsFocusManager::DetermineElementToMoveFocus(nsPIDOMWindow* aWindow,
     doNavigation = true;
     skipOriginalContentCheck = false;
     ignoreTabIndex = false;
+
+    if (aNoParentTraversal) {
+      startContent = rootContent;
+      tabIndex = forward ? 1 : 0;
+      continue;
+    }
 
     // reached the beginning or end of the document. Traverse up to the parent
     // document and try again.
@@ -3129,66 +3120,192 @@ nsFocusManager::GetPreviousDocShell(nsIDocShellTreeItem* aItem,
 }
 
 nsIContent*
-nsFocusManager::GetNextTabbableDocument(bool aForward)
+nsFocusManager::GetNextTabbablePanel(nsIDocument* aDocument, nsIFrame* aCurrentPopup, bool aForward)
 {
+  nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
+  if (!pm)
+    return nsnull;
+
+  // Iterate through the array backwards if aForward is false.
+  nsTArray<nsIFrame *> popups = pm->GetVisiblePopups();
+  PRInt32 i = aForward ? 0 : popups.Length() - 1;
+  PRInt32 end = aForward ? popups.Length() : -1;
+
+  for (; i != end; aForward ? i++ : i--) {
+    nsIFrame* popupFrame = popups[i];
+    if (aCurrentPopup) {
+      // If the current popup is set, then we need to skip over this popup and
+      // wait until the currently focused popup is found. Once found, the
+      // current popup will be cleared so that the next popup is used.
+      if (aCurrentPopup == popupFrame)
+        aCurrentPopup = nsnull;
+      continue;
+    }
+
+    // Skip over non-panels
+    if (popupFrame->GetContent()->Tag() != nsGkAtoms::panel ||
+        (aDocument && popupFrame->GetContent()->GetCurrentDoc() != aDocument)) {
+      continue;
+    }
+
+    // Find the first focusable content within the popup. If there isn't any
+    // focusable content in the popup, skip to the next popup.
+    nsIPresShell* presShell = popupFrame->PresContext()->GetPresShell();
+    if (presShell) {
+      nsCOMPtr<nsIContent> nextFocus;
+      nsIContent* popup = popupFrame->GetContent();
+      nsresult rv = GetNextTabbableContent(presShell, popup,
+                                           nsnull, popup,
+                                           true, 1, false,
+                                           getter_AddRefs(nextFocus));
+      if (NS_SUCCEEDED(rv) && nextFocus) {
+        return nextFocus.get();
+      }
+    }
+  }
+
+  return nsnull;
+}
+
+nsIContent*
+nsFocusManager::GetNextTabbableDocument(nsIContent* aStartContent, bool aForward)
+{
+  // If currentPopup is set, then the starting content is in a panel.
+  nsIFrame* currentPopup = nsnull;
+  nsCOMPtr<nsIDocument> doc;
   nsCOMPtr<nsIDocShellTreeItem> startItem;
-  if (mFocusedWindow) {
+
+  if (aStartContent) {
+    doc = aStartContent->GetCurrentDoc();
+    if (doc) {
+      startItem = do_QueryInterface(doc->GetWindow()->GetDocShell());
+    }
+
+    // Check if the starting content is inside a panel. Document navigation
+    // must start from this panel instead of the document root.
+    nsIContent* content = aStartContent;
+    while (content) {
+      if (content->NodeInfo()->Equals(nsGkAtoms::panel, kNameSpaceID_XUL)) {
+        currentPopup = content->GetPrimaryFrame();
+        break;
+      }
+      content = content->GetParent();
+    }
+  }
+  else if (mFocusedWindow) {
     startItem = do_QueryInterface(mFocusedWindow->GetDocShell());
+    doc = do_QueryInterface(mFocusedWindow->GetExtantDocument());
   }
   else {
     nsCOMPtr<nsIWebNavigation> webnav = do_GetInterface(mActiveWindow);
     startItem = do_QueryInterface(webnav);
+
+    if (mActiveWindow) {
+      doc = do_QueryInterface(mActiveWindow->GetExtantDocument());
+    }
   }
+
   if (!startItem)
     return nsnull;
 
   // perform a depth first search (preorder) of the docshell tree
   // looking for an HTML Frame or a chrome document
-  nsIContent* content = nsnull;
+  nsIContent* content = aStartContent;
   nsCOMPtr<nsIDocShellTreeItem> curItem = startItem;
   nsCOMPtr<nsIDocShellTreeItem> nextItem;
   do {
-    if (aForward) {
-      GetNextDocShell(curItem, getter_AddRefs(nextItem));
-      if (!nextItem) {
-        // wrap around to the beginning, which is the top of the tree
-        startItem->GetRootTreeItem(getter_AddRefs(nextItem));
-      }
-    }
-    else {
-      GetPreviousDocShell(curItem, getter_AddRefs(nextItem));
-      if (!nextItem) {
-        // wrap around to the end, which is the last item in the tree
-        nsCOMPtr<nsIDocShellTreeItem> rootItem;
-        startItem->GetRootTreeItem(getter_AddRefs(rootItem));
-        GetLastDocShell(rootItem, getter_AddRefs(nextItem));
+    // If moving forward, check for a panel in the starting document. If one
+    // exists with focusable content, return that content instead of the next
+    // document. If currentPopup is set, then, another panel may exist. If no
+    // such panel exists, then continue on to check the next document.
+    // When moving backwards, and the starting content is in a panel, then
+    // check for additional panels in the starting document. If the starting
+    // content is not in a panel, move back to the previous document and check
+    // for panels there.
+
+    bool checkPopups = false;
+    nsCOMPtr<nsPIDOMWindow> nextFrame = nsnull;
+
+    if (doc && (aForward || currentPopup)) {
+      nsIContent* popupContent = GetNextTabbablePanel(doc, currentPopup, aForward);
+      if (popupContent)
+        return popupContent;
+
+      if (!aForward && currentPopup) {
+        // The starting content was in a popup, yet no other popups were
+        // found. Move onto the starting content's document.
+        nextFrame = doc->GetWindow();
       }
     }
 
-    curItem = nextItem;
-    nsCOMPtr<nsPIDOMWindow> nextFrame = do_GetInterface(nextItem);
+    // Look for the next or previous document.
+    if (!nextFrame) {
+      if (aForward) {
+        GetNextDocShell(curItem, getter_AddRefs(nextItem));
+        if (!nextItem) {
+          // wrap around to the beginning, which is the top of the tree
+          startItem->GetRootTreeItem(getter_AddRefs(nextItem));
+        }
+      }
+      else {
+        GetPreviousDocShell(curItem, getter_AddRefs(nextItem));
+        if (!nextItem) {
+          // wrap around to the end, which is the last item in the tree
+          nsCOMPtr<nsIDocShellTreeItem> rootItem;
+          startItem->GetRootTreeItem(getter_AddRefs(rootItem));
+          GetLastDocShell(rootItem, getter_AddRefs(nextItem));
+        }
+
+        // When going back to the previous document, check for any focusable
+        // popups in that previous document first.
+        checkPopups = true;
+      }
+
+      curItem = nextItem;
+      nextFrame = do_GetInterface(nextItem);
+    }
+
     if (!nextFrame)
       return nsnull;
 
-    nsCOMPtr<nsIDocument> doc = do_QueryInterface(nextFrame->GetExtantDocument());
-    if (doc && !doc->EventHandlingSuppressed()) {
-      content = GetRootForFocus(nextFrame, doc, true, true);
-      if (content && !GetRootForFocus(nextFrame, doc, false, false)) {
-        // if the found content is in a chrome shell or a frameset, navigate
-        // forward one tabbable item so that the first item is focused. Note
-        // that we always go forward and not back here.
-        nsCOMPtr<nsIContent> nextFocus;
-        Element* rootElement = doc->GetRootElement();
-        nsIPresShell* presShell = doc->GetShell();
-        if (presShell) {
-          nsresult rv = GetNextTabbableContent(presShell, rootElement,
-                                               nsnull, rootElement,
-                                               true, 1, false,
-                                               getter_AddRefs(nextFocus));
-          return NS_SUCCEEDED(rv) ? nextFocus.get() : nsnull;
-        }
+    // Clear currentPopup for the next iteration
+    currentPopup = nsnull;
+
+    // If event handling is suppressed, move on to the next document. Set
+    // content to null so that the popup check will be skipped on the next
+    // loop iteration.
+    doc = do_QueryInterface(nextFrame->GetExtantDocument());
+    if (!doc || doc->EventHandlingSuppressed()) {
+      content = nsnull;
+      continue;
+    }
+
+    if (checkPopups) {
+      // When iterating backwards, check the panels of the previous document
+      // first. If a panel exists that has focusable content, focus that.
+      // Otherwise, continue on to focus the document.
+      nsIContent* popupContent = GetNextTabbablePanel(doc, nsnull, false);
+      if (popupContent)
+        return popupContent;
+    }
+
+    content = GetRootForFocus(nextFrame, doc, true, true);
+    if (content && !GetRootForFocus(nextFrame, doc, false, false)) {
+      // if the found content is in a chrome shell or a frameset, navigate
+      // forward one tabbable item so that the first item is focused. Note
+      // that we always go forward and not back here.
+      nsCOMPtr<nsIContent> nextFocus;
+      Element* rootElement = doc->GetRootElement();
+      nsIPresShell* presShell = doc->GetShell();
+      if (presShell) {
+        nsresult rv = GetNextTabbableContent(presShell, rootElement,
+                                             nsnull, rootElement,
+                                             true, 1, false,
+                                             getter_AddRefs(nextFocus));
+        return NS_SUCCEEDED(rv) ? nextFocus.get() : nsnull;
       }
     }
+
   } while (!content);
 
   return content;

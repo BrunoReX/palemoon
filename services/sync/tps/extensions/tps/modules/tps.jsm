@@ -1,39 +1,6 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is TPS.
- *
- * The Initial Developer of the Original Code is Mozilla.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Jonathan Griffin <jgriffin@mozilla.com>
- *   Philipp von Weitershausen <philipp@weitershausen.de>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
  /* This is a JavaScript module (JSM) to be imported via
   * Components.utils.import() and acts as a singleton. Only the following
@@ -47,7 +14,7 @@ const {classes: CC, interfaces: CI, utils: CU} = Components;
 CU.import("resource://services-sync/service.js");
 CU.import("resource://services-sync/constants.js");
 CU.import("resource://services-sync/engines.js");
-CU.import("resource://services-sync/async.js");
+CU.import("resource://services-common/async.js");
 CU.import("resource://services-sync/util.js");
 CU.import("resource://gre/modules/XPCOMUtils.jsm");
 CU.import("resource://gre/modules/Services.jsm");
@@ -90,9 +57,17 @@ const SYNC_WIPE_SERVER  = "wipe-server";
 const SYNC_RESET_CLIENT = "reset-client";
 const SYNC_START_OVER   = "start-over";
 
+const OBSERVER_TOPICS = ["weave:engine:start-tracking",
+                         "weave:engine:stop-tracking",
+                         "weave:service:sync:finish",
+                         "weave:service:sync:error",
+                         "sessionstore-windows-restored",
+                         "private-browsing"];
+
 let TPS =
 {
   _waitingForSync: false,
+  _isTracking: false,
   _test: null,
   _currentAction: -1,
   _currentPhase: -1,
@@ -148,6 +123,15 @@ let TPS =
             }, 1000, this, "postsync");
           }
           break;
+
+        case "weave:engine:start-tracking":
+          this._isTracking = true;
+          break;
+
+        case "weave:engine:stop-tracking":
+          this._isTracking = false;
+          break;
+
         case "sessionstore-windows-restored":
           Utils.nextTick(this.RunNextTestAction, this);
           break;
@@ -174,6 +158,9 @@ let TPS =
   },
 
   quit: function () {
+    OBSERVER_TOPICS.forEach(function(topic) {
+      Services.obs.removeObserver(this, topic);
+    }, this);
     Logger.close();
     this.goQuitApplication();
   },
@@ -533,11 +520,31 @@ let TPS =
         return;
       }
 
-      // setup observers
-      Services.obs.addObserver(this, "weave:service:sync:finish", true);
-      Services.obs.addObserver(this, "weave:service:sync:error", true);
-      Services.obs.addObserver(this, "sessionstore-windows-restored", true);
-      Services.obs.addObserver(this, "private-browsing", true);
+      // Wait for Sync service to become ready.
+      if (!Weave.Status.ready) {
+        this.waitForEvent("weave:service:ready");
+      }
+
+      // Always give Sync an extra tick to initialize. If we waited for the
+      // service:ready event, this is required to ensure all handlers have
+      // executed.
+      Utils.nextTick(this._executeTestPhase.bind(this, file, phase, settings));
+    } catch(e) {
+      this.DumpError("Exception caught: " + Utils.exceptionStr(e));
+      return;
+    }
+  },
+
+  /**
+   * Executes a single test phase.
+   *
+   * This is called by RunTestPhase() after the environment is validated.
+   */
+  _executeTestPhase: function _executeTestPhase(file, phase, settings) {
+    try {
+      OBSERVER_TOPICS.forEach(function(topic) {
+        Services.obs.addObserver(this, topic, true);
+      }, this);
 
       // parse the test file
       Services.scriptloader.loadSubScript(file, this);
@@ -670,6 +677,41 @@ let TPS =
   },
 
   /**
+   * Synchronously wait for the named event to be observed.
+   *
+   * When the event is observed, the function will wait an extra tick before
+   * returning.
+   *
+   * @param name
+   *        String event to wait for.
+   */
+  waitForEvent:function waitForEvent(name) {
+    Logger.logInfo("Waiting for " + name + "...");
+    let cb = Async.makeSpinningCallback();
+    Svc.Obs.add(name, cb);
+    cb.wait();
+    Svc.Obs.remove(name, cb);
+    Logger.logInfo(name + " observed!");
+
+    let cb = Async.makeSpinningCallback();
+    Utils.nextTick(cb);
+    cb.wait();
+  },
+
+  /**
+   * Waits for Sync to start tracking before returning.
+   */
+  waitForTracking: function waitForTracking() {
+    if (!this._isTracking) {
+      this.waitForEvent("weave:engine:start-tracking");
+    }
+
+    let cb = Async.makeSyncCallback();
+    Utils.nextTick(cb);
+    Async.waitForSyncCallback(cb);
+  },
+
+  /**
    * Reset the client and server to an empty/pure state.
    *
    * All data on the server is wiped and replaced with new keys and local
@@ -689,6 +731,8 @@ let TPS =
     Service.wipeServer();
     Service.resetClient();
     Service.login();
+
+    this.waitForTracking();
   },
 
   Login: function Login(force) {
@@ -713,17 +757,17 @@ let TPS =
       // a new sync account
       Weave.Svc.Prefs.set("admin-secret", account["admin-secret"]);
       let suffix = account["account-suffix"];
-      Service.account = "tps" + suffix + "@mozilla.com";
-      Service.password = "tps" + suffix + "tps" + suffix;
-      Service.passphrase = Weave.Utils.generatePassphrase();
-      Service.createAccount(Service.account,
-                            Service.password,
+      Weave.Identity.account = "tps" + suffix + "@mozilla.com";
+      Weave.Identity.basicPassword = "tps" + suffix + "tps" + suffix;
+      Weave.Identity.syncKey = Weave.Utils.generatePassphrase();
+      Service.createAccount(Weave.Identity.account,
+                            Weave.Identity.basicPassword,
                             "dummy1", "dummy2");
     } else if (account["username"] && account["password"] &&
                account["passphrase"]) {
-      Service.account = account["username"];
-      Service.password = account["password"];
-      Service.passphrase = account["passphrase"];
+      Weave.Identity.account = account["username"];
+      Weave.Identity.basicPassword = account["password"];
+      Weave.Identity.syncKey = account["passphrase"];
     } else {
       this.DumpError("Must specify admin-secret, or " +
                      "username/password/passphrase in the config file");
@@ -734,6 +778,8 @@ let TPS =
     Logger.AssertEqual(Weave.Status.service, Weave.STATUS_OK, "Weave status not OK");
     Weave.Svc.Obs.notify("weave:service:setup-complete");
     this._loggedIn = true;
+
+    this.waitForTracking();
   },
 
   Sync: function TPS__Sync(options) {
@@ -767,6 +813,14 @@ let TPS =
     this.Login();
     Weave.Service.wipeServer();
   },
+
+  /**
+   * Action which ensures changes are being tracked before returning.
+   */
+  EnsureTracking: function EnsureTracking() {
+    this.Login(false);
+    this.waitForTracking();
+  }
 };
 
 var Addons = {

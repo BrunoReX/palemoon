@@ -1,40 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Josh Aas <josh@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsMenuItemX.h"
 #include "nsMenuBarX.h"
@@ -87,6 +54,159 @@ nsMenuItemX::~nsMenuItemX()
   MOZ_COUNT_DTOR(nsMenuItemX);
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
+}
+
+struct macKeyCodeData {
+  const char* str;
+  size_t strlength;
+  PRUint32 keycode;
+};
+
+static const macKeyCodeData gMacKeyCodes[] = {
+
+#define KEYCODE_ENTRY(str, code) {#str, sizeof(#str) - 1, code}
+
+  KEYCODE_ENTRY(VK_CANCEL, 0x001B),
+  KEYCODE_ENTRY(VK_DELETE, NSBackspaceCharacter),
+  KEYCODE_ENTRY(VK_BACK, NSBackspaceCharacter),
+  KEYCODE_ENTRY(VK_BACK_SPACE, NSBackspaceCharacter),
+  KEYCODE_ENTRY(VK_TAB, NSTabCharacter),
+  KEYCODE_ENTRY(VK_CLEAR, NSClearLineFunctionKey),
+  KEYCODE_ENTRY(VK_RETURN, NSEnterCharacter),
+  KEYCODE_ENTRY(VK_ENTER, NSEnterCharacter),
+  KEYCODE_ENTRY(VK_SHIFT, 0),
+  KEYCODE_ENTRY(VK_CONTROL, 0),
+  KEYCODE_ENTRY(VK_ALT, 0),
+  KEYCODE_ENTRY(VK_PAUSE, NSPauseFunctionKey),
+  KEYCODE_ENTRY(VK_CAPS_LOCK, 0),
+  KEYCODE_ENTRY(VK_ESCAPE, 0),
+  KEYCODE_ENTRY(VK_SPACE, ' '),
+  KEYCODE_ENTRY(VK_PAGE_UP, NSPageUpFunctionKey),
+  KEYCODE_ENTRY(VK_PAGE_DOWN, NSPageDownFunctionKey),
+  KEYCODE_ENTRY(VK_END, NSEndFunctionKey),
+  KEYCODE_ENTRY(VK_HOME, NSHomeFunctionKey),
+  KEYCODE_ENTRY(VK_LEFT, NSLeftArrowFunctionKey),
+  KEYCODE_ENTRY(VK_UP, NSUpArrowFunctionKey),
+  KEYCODE_ENTRY(VK_RIGHT, NSRightArrowFunctionKey),
+  KEYCODE_ENTRY(VK_DOWN, NSDownArrowFunctionKey),
+  KEYCODE_ENTRY(VK_PRINTSCREEN, NSPrintScreenFunctionKey),
+  KEYCODE_ENTRY(VK_INSERT, NSInsertFunctionKey),
+  KEYCODE_ENTRY(VK_HELP, NSHelpFunctionKey),
+  KEYCODE_ENTRY(VK_0, '0'),
+  KEYCODE_ENTRY(VK_1, '1'),
+  KEYCODE_ENTRY(VK_2, '2'),
+  KEYCODE_ENTRY(VK_3, '3'),
+  KEYCODE_ENTRY(VK_4, '4'),
+  KEYCODE_ENTRY(VK_5, '5'),
+  KEYCODE_ENTRY(VK_6, '6'),
+  KEYCODE_ENTRY(VK_7, '7'),
+  KEYCODE_ENTRY(VK_8, '8'),
+  KEYCODE_ENTRY(VK_9, '9'),
+  KEYCODE_ENTRY(VK_SEMICOLON, ':'),
+  KEYCODE_ENTRY(VK_EQUALS, '='),
+  KEYCODE_ENTRY(VK_A, 'A'),
+  KEYCODE_ENTRY(VK_B, 'B'),
+  KEYCODE_ENTRY(VK_C, 'C'),
+  KEYCODE_ENTRY(VK_D, 'D'),
+  KEYCODE_ENTRY(VK_E, 'E'),
+  KEYCODE_ENTRY(VK_F, 'F'),
+  KEYCODE_ENTRY(VK_G, 'G'),
+  KEYCODE_ENTRY(VK_H, 'H'),
+  KEYCODE_ENTRY(VK_I, 'I'),
+  KEYCODE_ENTRY(VK_J, 'J'),
+  KEYCODE_ENTRY(VK_K, 'K'),
+  KEYCODE_ENTRY(VK_L, 'L'),
+  KEYCODE_ENTRY(VK_M, 'M'),
+  KEYCODE_ENTRY(VK_N, 'N'),
+  KEYCODE_ENTRY(VK_O, 'O'),
+  KEYCODE_ENTRY(VK_P, 'P'),
+  KEYCODE_ENTRY(VK_Q, 'Q'),
+  KEYCODE_ENTRY(VK_R, 'R'),
+  KEYCODE_ENTRY(VK_S, 'S'),
+  KEYCODE_ENTRY(VK_T, 'T'),
+  KEYCODE_ENTRY(VK_U, 'U'),
+  KEYCODE_ENTRY(VK_V, 'V'),
+  KEYCODE_ENTRY(VK_W, 'W'),
+  KEYCODE_ENTRY(VK_X, 'X'),
+  KEYCODE_ENTRY(VK_Y, 'Y'),
+  KEYCODE_ENTRY(VK_Z, 'Z'),
+  KEYCODE_ENTRY(VK_CONTEXT_MENU, NSMenuFunctionKey),
+  KEYCODE_ENTRY(VK_NUMPAD0, '0'),
+  KEYCODE_ENTRY(VK_NUMPAD1, '1'),
+  KEYCODE_ENTRY(VK_NUMPAD2, '2'),
+  KEYCODE_ENTRY(VK_NUMPAD3, '3'),
+  KEYCODE_ENTRY(VK_NUMPAD4, '4'),
+  KEYCODE_ENTRY(VK_NUMPAD5, '5'),
+  KEYCODE_ENTRY(VK_NUMPAD6, '6'),
+  KEYCODE_ENTRY(VK_NUMPAD7, '7'),
+  KEYCODE_ENTRY(VK_NUMPAD8, '8'),
+  KEYCODE_ENTRY(VK_NUMPAD9, '9'),
+  KEYCODE_ENTRY(VK_MULTIPLY, '*'),
+  KEYCODE_ENTRY(VK_ADD, '+'),
+  KEYCODE_ENTRY(VK_SEPARATOR, 0),
+  KEYCODE_ENTRY(VK_SUBTRACT, '-'),
+  KEYCODE_ENTRY(VK_DECIMAL, '.'),
+  KEYCODE_ENTRY(VK_DIVIDE, '/'),
+  KEYCODE_ENTRY(VK_F1, NSF1FunctionKey),
+  KEYCODE_ENTRY(VK_F2, NSF2FunctionKey),
+  KEYCODE_ENTRY(VK_F3, NSF3FunctionKey),
+  KEYCODE_ENTRY(VK_F4, NSF4FunctionKey),
+  KEYCODE_ENTRY(VK_F5, NSF5FunctionKey),
+  KEYCODE_ENTRY(VK_F6, NSF6FunctionKey),
+  KEYCODE_ENTRY(VK_F7, NSF7FunctionKey),
+  KEYCODE_ENTRY(VK_F8, NSF8FunctionKey),
+  KEYCODE_ENTRY(VK_F9, NSF9FunctionKey),
+  KEYCODE_ENTRY(VK_F10, NSF10FunctionKey),
+  KEYCODE_ENTRY(VK_F11, NSF11FunctionKey),
+  KEYCODE_ENTRY(VK_F12, NSF12FunctionKey),
+  KEYCODE_ENTRY(VK_F13, NSF13FunctionKey),
+  KEYCODE_ENTRY(VK_F14, NSF14FunctionKey),
+  KEYCODE_ENTRY(VK_F15, NSF15FunctionKey),
+  KEYCODE_ENTRY(VK_F16, NSF16FunctionKey),
+  KEYCODE_ENTRY(VK_F17, NSF17FunctionKey),
+  KEYCODE_ENTRY(VK_F18, NSF18FunctionKey),
+  KEYCODE_ENTRY(VK_F19, NSF19FunctionKey),
+  KEYCODE_ENTRY(VK_F20, NSF20FunctionKey),
+  KEYCODE_ENTRY(VK_F21, NSF21FunctionKey),
+  KEYCODE_ENTRY(VK_F22, NSF22FunctionKey),
+  KEYCODE_ENTRY(VK_F23, NSF23FunctionKey),
+  KEYCODE_ENTRY(VK_F24, NSF24FunctionKey),
+  KEYCODE_ENTRY(VK_NUM_LOCK, NSClearLineFunctionKey),
+  KEYCODE_ENTRY(VK_SCROLL_LOCK, NSScrollLockFunctionKey),
+  KEYCODE_ENTRY(VK_COMMA, ','),
+  KEYCODE_ENTRY(VK_PERIOD, '.'),
+  KEYCODE_ENTRY(VK_SLASH, '/'),
+  KEYCODE_ENTRY(VK_BACK_QUOTE, '`'),
+  KEYCODE_ENTRY(VK_OPEN_BRACKET, '['),
+  KEYCODE_ENTRY(VK_BACK_SLASH, '\\'),
+  KEYCODE_ENTRY(VK_CLOSE_BRACKET, ']'),
+  KEYCODE_ENTRY(VK_QUOTE, '\'')
+
+#undef KEYCODE_ENTRY
+
+};
+
+PRUint32 nsMenuItemX::ConvertGeckoToMacKeyCode(nsAString& aKeyCodeName)
+{
+  if (aKeyCodeName.IsEmpty()) {
+    return 0;
+  }
+
+  nsCAutoString keyCodeName;
+  keyCodeName.AssignWithConversion(aKeyCodeName);
+  // We want case-insensitive comparison with data stored as uppercase.
+  ToUpperCase(keyCodeName);
+
+  PRUint32 keyCodeNameLength = keyCodeName.Length();
+  const char* keyCodeNameStr = keyCodeName.get();
+  for (PRUint16 i = 0; i < (sizeof(gMacKeyCodes) / sizeof(gMacKeyCodes[0])); ++i) {
+    if (keyCodeNameLength == gMacKeyCodes[i].strlength &&
+        nsCRT::strcmp(gMacKeyCodes[i].str, keyCodeNameStr) == 0) {
+      return gMacKeyCodes[i].keycode;
+    }
+  }
+
+  return 0;
 }
 
 nsresult nsMenuItemX::Create(nsMenuX* aParent, const nsString& aLabel, EMenuItemType aItemType,
@@ -274,8 +394,20 @@ void nsMenuItemX::SetKeyEquiv()
   if (!keyValue.IsEmpty() && mContent->GetCurrentDoc()) {
     nsIContent *keyContent = mContent->GetCurrentDoc()->GetElementById(keyValue);
     if (keyContent) {
-      nsAutoString keyChar(NS_LITERAL_STRING(" "));
-      keyContent->GetAttr(kNameSpaceID_None, nsGkAtoms::key, keyChar);
+      nsAutoString keyChar;
+      bool hasKey = keyContent->GetAttr(kNameSpaceID_None, nsGkAtoms::key, keyChar);
+
+      if (!hasKey || keyChar.IsEmpty()) {
+        nsAutoString keyCodeName;
+        keyContent->GetAttr(kNameSpaceID_None, nsGkAtoms::keycode, keyCodeName);
+        PRUint32 keycode = ConvertGeckoToMacKeyCode(keyCodeName);
+        if (keycode) {
+          keyChar.Assign(keycode);
+        }
+        else {
+          keyChar.Assign(NS_LITERAL_STRING(" "));
+        }
+      }
 
       nsAutoString modifiersStr;
       keyContent->GetAttr(kNameSpaceID_None, nsGkAtoms::modifiers, modifiersStr);

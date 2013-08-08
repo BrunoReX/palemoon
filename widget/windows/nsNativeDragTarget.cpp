@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <stdio.h>
 #include "nsIDragService.h"
@@ -72,10 +40,6 @@ nsNativeDragTarget::nsNativeDragTarget(nsIWidget * aWnd)
    * Create/Get the DragService that we have implemented
    */
   CallGetService(kCDragServiceCID, &mDragService);
-
-  // Drag target helper for drag image support
-  CoCreateInstance(CLSID_DragDropHelper, NULL, CLSCTX_INPROC_SERVER,
-                   IID_IDropTargetHelper, (LPVOID*)&mDropTargetHelper);
 }
 
 nsNativeDragTarget::~nsNativeDragTarget()
@@ -205,10 +169,9 @@ nsNativeDragTarget::DispatchDragDropEvent(PRUint32 aEventType, POINTL aPT)
     event.refPoint.y = 0;
   }
 
-  event.isShift   = IsKeyDown(NS_VK_SHIFT);
-  event.isControl = IsKeyDown(NS_VK_CONTROL);
-  event.isMeta    = false;
-  event.isAlt     = IsKeyDown(NS_VK_ALT);
+  nsModifierKeyState modifierKeyState;
+  modifierKeyState.InitInputEvent(event);
+
   event.inputSource = static_cast<nsBaseDragService*>(mDragService)->GetInputSource();
 
   mWindow->DispatchEvent(&event, status);
@@ -265,9 +228,9 @@ nsNativeDragTarget::DragEnter(LPDATAOBJECT pIDataSource,
   AddLinkSupportIfCanBeGenerated(pIDataSource);
 
   // Drag and drop image helper
-  if (mDropTargetHelper) {
+  if (GetDropTargetHelper()) {
     POINT pt = { ptl.x, ptl.y };
-    mDropTargetHelper->DragEnter(mHWnd, pIDataSource, &pt, *pdwEffect);
+    GetDropTargetHelper()->DragEnter(mHWnd, pIDataSource, &pt, *pdwEffect);
   }
 
   // save a ref to this, in case the window is destroyed underneath us
@@ -341,9 +304,9 @@ nsNativeDragTarget::DragOver(DWORD   grfKeyState,
   this->AddRef();
 
   // Drag and drop image helper
-  if (mDropTargetHelper) {
+  if (GetDropTargetHelper()) {
     POINT pt = { ptl.x, ptl.y };
-    mDropTargetHelper->DragOver(&pt, *pdwEffect);
+    GetDropTargetHelper()->DragOver(&pt, *pdwEffect);
   }
 
   mDragService->FireDragEventAtSource(NS_DRAGDROP_DRAG);
@@ -363,8 +326,8 @@ nsNativeDragTarget::DragLeave()
   }
 
   // Drag and drop image helper
-  if (mDropTargetHelper) {
-    mDropTargetHelper->DragLeave();
+  if (GetDropTargetHelper()) {
+    GetDropTargetHelper()->DragLeave();
   }
 
   // dispatch the event into Gecko
@@ -401,8 +364,8 @@ nsNativeDragTarget::DragCancel()
 {
   // Cancel the drag session if we did DragEnter.
   if (mTookOwnRef) {
-    if (mDropTargetHelper) {
-      mDropTargetHelper->DragLeave();
+    if (GetDropTargetHelper()) {
+      GetDropTargetHelper()->DragLeave();
     }
     if (mDragService) {
       mDragService->EndDragSession(false);
@@ -426,9 +389,9 @@ nsNativeDragTarget::Drop(LPDATAOBJECT pData,
   AddLinkSupportIfCanBeGenerated(pData);
 
   // Drag and drop image helper
-  if (mDropTargetHelper) {
+  if (GetDropTargetHelper()) {
     POINT pt = { aPT.x, aPT.y };
-    mDropTargetHelper->Drop(pData, &pt, *pdwEffect);
+    GetDropTargetHelper()->Drop(pData, &pt, *pdwEffect);
   }
 
   // Set the native data object into the drag service
@@ -476,4 +439,19 @@ nsNativeDragTarget::Drop(LPDATAOBJECT pData,
   }
 
   return S_OK;
+}
+
+/**
+ * By lazy loading mDropTargetHelper we save 50-70ms of startup time
+ * which is ~5% of startup time.
+*/
+IDropTargetHelper*
+nsNativeDragTarget::GetDropTargetHelper()
+{
+  if (!mDropTargetHelper) { 
+    CoCreateInstance(CLSID_DragDropHelper, NULL, CLSCTX_INPROC_SERVER,
+                     IID_IDropTargetHelper, (LPVOID*)&mDropTargetHelper);
+  }
+
+  return mDropTargetHelper;
 }

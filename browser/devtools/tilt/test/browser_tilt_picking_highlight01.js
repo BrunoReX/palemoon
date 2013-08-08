@@ -2,6 +2,7 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
+let nodeHighlighted = false;
 let presenter;
 
 function test() {
@@ -23,13 +24,18 @@ function test() {
         presenter = instance.presenter;
         Services.obs.addObserver(whenHighlighting, HIGHLIGHTING, false);
 
-        presenter.onSetupMesh = function() {
+        presenter._onInitializationFinished = function() {
           let contentDocument = presenter.contentWindow.document;
           let div = contentDocument.getElementById("first-law");
 
-          presenter.highlightNode(div);
+          nodeHighlighted = true;
+          presenter.highlightNode(div, "moveIntoView");
         };
       }
+    }, false, function suddenDeath()
+    {
+      info("Tilt could not be initialized properly.");
+      cleanup();
     });
   });
 }
@@ -37,10 +43,13 @@ function test() {
 function whenHighlighting() {
   ok(presenter._currentSelection > 0,
     "Highlighting a node didn't work properly.");
-  ok(!presenter.highlight.disabled,
+  ok(!presenter._highlight.disabled,
     "After highlighting a node, it should be highlighted. D'oh.");
+  ok(!presenter.controller.arcball._resetInProgress,
+    "Highlighting a node that's already visible shouldn't trigger a reset.");
 
   executeSoon(function() {
+    Services.obs.removeObserver(whenHighlighting, HIGHLIGHTING);
     Services.obs.addObserver(whenUnhighlighting, UNHIGHLIGHTING, false);
     presenter.highlightNode(null);
   });
@@ -49,19 +58,18 @@ function whenHighlighting() {
 function whenUnhighlighting() {
   ok(presenter._currentSelection < 0,
     "Unhighlighting a should remove the current selection.");
-  ok(presenter.highlight.disabled,
+  ok(presenter._highlight.disabled,
     "After unhighlighting a node, it shouldn't be highlighted anymore. D'oh.");
 
   executeSoon(function() {
+    Services.obs.removeObserver(whenUnhighlighting, UNHIGHLIGHTING);
     Services.obs.addObserver(cleanup, DESTROYED, false);
     InspectorUI.closeInspectorUI();
   });
 }
 
 function cleanup() {
-  Services.obs.removeObserver(whenHighlighting, HIGHLIGHTING);
-  Services.obs.removeObserver(whenUnhighlighting, UNHIGHLIGHTING);
-  Services.obs.removeObserver(cleanup, DESTROYED);
+  if (nodeHighlighted) { Services.obs.removeObserver(cleanup, DESTROYED); }
   gBrowser.removeCurrentTab();
   finish();
 }

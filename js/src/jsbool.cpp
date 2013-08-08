@@ -1,45 +1,15 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * JS boolean implementation.
  */
+
+#include "mozilla/FloatingPoint.h"
+
 #include "jstypes.h"
 #include "jsutil.h"
 #include "jsapi.h"
@@ -53,12 +23,14 @@
 #include "jsobj.h"
 #include "jsstr.h"
 
-#include "vm/BooleanObject-inl.h"
 #include "vm/GlobalObject.h"
+#include "vm/StringBuffer.h"
 
 #include "jsinferinlines.h"
 #include "jsobjinlines.h"
-#include "jsstrinlines.h"
+
+#include "vm/BooleanObject-inl.h"
+#include "vm/MethodGuard-inl.h"
 
 using namespace js;
 using namespace js::types;
@@ -76,7 +48,7 @@ Class js::BooleanClass = {
 
 #if JS_HAS_TOSOURCE
 static JSBool
-bool_toSource(JSContext *cx, uintN argc, Value *vp)
+bool_toSource(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -97,7 +69,7 @@ bool_toSource(JSContext *cx, uintN argc, Value *vp)
 #endif
 
 static JSBool
-bool_toString(JSContext *cx, uintN argc, Value *vp)
+bool_toString(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -110,7 +82,7 @@ bool_toString(JSContext *cx, uintN argc, Value *vp)
 }
 
 static JSBool
-bool_valueOf(JSContext *cx, uintN argc, Value *vp)
+bool_valueOf(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -132,7 +104,7 @@ static JSFunctionSpec boolean_methods[] = {
 };
 
 static JSBool
-Boolean(JSContext *cx, uintN argc, Value *vp)
+Boolean(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -140,6 +112,8 @@ Boolean(JSContext *cx, uintN argc, Value *vp)
 
     if (IsConstructing(vp)) {
         JSObject *obj = BooleanObject::create(cx, b);
+        if (!obj)
+            return false;
         args.rval().setObject(*obj);
     } else {
         args.rval().setBoolean(b);
@@ -152,15 +126,15 @@ js_InitBooleanClass(JSContext *cx, JSObject *obj)
 {
     JS_ASSERT(obj->isNative());
 
-    GlobalObject *global = &obj->asGlobal();
+    Rooted<GlobalObject*> global(cx, &obj->asGlobal());
 
-    JSObject *booleanProto = global->createBlankPrototype(cx, &BooleanClass);
+    RootedObject booleanProto (cx, global->createBlankPrototype(cx, &BooleanClass));
     if (!booleanProto)
         return NULL;
-    booleanProto->setPrimitiveThis(BooleanValue(false));
+    booleanProto->setFixedSlot(BooleanObject::PRIMITIVE_VALUE_SLOT, BooleanValue(false));
 
-    JSFunction *ctor = global->createConstructor(cx, Boolean, &BooleanClass,
-                                                 CLASS_ATOM(cx, Boolean), 1);
+    RootedFunction ctor(cx);
+    ctor = global->createConstructor(cx, Boolean, CLASS_NAME(cx, Boolean), 1);
     if (!ctor)
         return NULL;
 
@@ -180,13 +154,6 @@ JSString *
 js_BooleanToString(JSContext *cx, JSBool b)
 {
     return cx->runtime->atomState.booleanAtoms[b ? 1 : 0];
-}
-
-/* This function implements E-262-3 section 9.8, toString. */
-bool
-js::BooleanToStringBuffer(JSContext *cx, JSBool b, StringBuffer &sb)
-{
-    return b ? sb.append("true") : sb.append("false");
 }
 
 namespace js {
@@ -228,10 +195,10 @@ js_ValueToBoolean(const Value &v)
     if (v.isNullOrUndefined())
         return JS_FALSE;
     if (v.isDouble()) {
-        jsdouble d;
+        double d;
 
         d = v.toDouble();
-        return !JSDOUBLE_IS_NaN(d) && d != 0;
+        return !MOZ_DOUBLE_IS_NaN(d) && d != 0;
     }
     JS_ASSERT(v.isBoolean());
     return v.toBoolean();

@@ -1,41 +1,8 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=2 et sw=2 tw=80: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Indexed Database.
- *
- * The Initial Developer of the Original Code is
- * The Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Ben Turner <bent.mozilla@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DatabaseInfo.h"
 
@@ -73,10 +40,7 @@ CloneObjectStoreInfo(const nsAString& aKey,
 
   nsRefPtr<ObjectStoreInfo> newInfo(new ObjectStoreInfo(*aData));
 
-  if (!hash->Put(aKey, newInfo)) {
-    NS_WARNING("Out of memory?");
-    return PL_DHASH_STOP;
-  }
+  hash->Put(aKey, newInfo);
 
   return PL_DHASH_NEXT;
 }
@@ -92,13 +56,12 @@ DatabaseInfo::~DatabaseInfo()
 }
 
 ObjectStoreInfo::ObjectStoreInfo(ObjectStoreInfo& aOther)
-: name(aOther.name),
-  id(aOther.id),
-  keyPath(aOther.keyPath),
-  indexes(aOther.indexes),
-  nextAutoIncrementId(aOther.nextAutoIncrementId),
+: nextAutoIncrementId(aOther.nextAutoIncrementId),
   comittedAutoIncrementId(aOther.comittedAutoIncrementId)
 {
+  *static_cast<ObjectStoreInfoGuts*>(this) =
+    static_cast<ObjectStoreInfoGuts&>(aOther);
+
   // Doesn't copy the refcount
   MOZ_COUNT_CTOR(ObjectStoreInfo);
 }
@@ -114,8 +77,8 @@ IndexInfo::IndexInfo()
 }
 
 IndexInfo::IndexInfo(const IndexInfo& aOther)
-: id(aOther.id),
-  name(aOther.name),
+: name(aOther.name),
+  id(aOther.id),
   keyPath(aOther.keyPath),
   keyPathArray(aOther.keyPathArray),
   unique(aOther.unique),
@@ -130,8 +93,7 @@ IndexInfo::~IndexInfo()
 }
 
 ObjectStoreInfo::ObjectStoreInfo()
-: id(0),
-  nextAutoIncrementId(0),
+: nextAutoIncrementId(0),
   comittedAutoIncrementId(0)
 {
   MOZ_COUNT_CTOR(ObjectStoreInfo);
@@ -178,11 +140,7 @@ DatabaseInfo::Put(DatabaseInfo* aInfo)
 
   if (!gDatabaseHash) {
     nsAutoPtr<DatabaseHash> databaseHash(new DatabaseHash());
-    if (!databaseHash->Init()) {
-      NS_ERROR("Failed to initialize hashtable!");
-      return false;
-    }
-
+    databaseHash->Init();
     gDatabaseHash = databaseHash.forget();
   }
 
@@ -191,10 +149,7 @@ DatabaseInfo::Put(DatabaseInfo* aInfo)
     return false;
   }
 
-  if (!gDatabaseHash->Put(aInfo->id, aInfo)) {
-    NS_ERROR("Put failed!");
-    return false;
-  }
+  gDatabaseHash->Put(aInfo->id, aInfo);
 
   return true;
 }
@@ -280,10 +235,7 @@ DatabaseInfo::PutObjectStore(ObjectStoreInfo* aInfo)
 
   if (!objectStoreHash) {
     nsAutoPtr<ObjectStoreInfoHash> hash(new ObjectStoreInfoHash());
-    if (!hash->Init()) {
-      NS_ERROR("Failed to initialize hashtable!");
-      return false;
-    }
+    hash->Init();
     objectStoreHash = hash.forget();
   }
 
@@ -292,7 +244,8 @@ DatabaseInfo::PutObjectStore(ObjectStoreInfo* aInfo)
     return false;
   }
 
-  return objectStoreHash->Put(aInfo->name, aInfo);
+  objectStoreHash->Put(aInfo->name, aInfo);
+  return true;
 }
 
 void
@@ -315,6 +268,7 @@ DatabaseInfo::Clone()
 
   dbInfo->cloned = true;
   dbInfo->name = name;
+  dbInfo->origin = origin;
   dbInfo->version = version;
   dbInfo->id = id;
   dbInfo->filePath = filePath;
@@ -323,10 +277,7 @@ DatabaseInfo::Clone()
 
   if (objectStoreHash) {
     dbInfo->objectStoreHash = new ObjectStoreInfoHash();
-    if (!dbInfo->objectStoreHash->Init()) {
-      return nsnull;
-    }
-
+    dbInfo->objectStoreHash->Init();
     objectStoreHash->EnumerateRead(CloneObjectStoreInfo,
                                    dbInfo->objectStoreHash);
   }

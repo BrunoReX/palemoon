@@ -13,22 +13,6 @@ const Ci = Components.interfaces;
 const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 
 /**
- * The default width for page thumbnails.
- *
- * Hint: This is the default value because the 'New Tab Page' is the only
- *       client for now.
- */
-const THUMBNAIL_WIDTH = 201;
-
-/**
- * The default height for page thumbnails.
- *
- * Hint: This is the default value because the 'New Tab Page' is the only
- *       client for now.
- */
-const THUMBNAIL_HEIGHT = 127;
-
-/**
  * The default background color for page thumbnails.
  */
 const THUMBNAIL_BG_COLOR = "#fff";
@@ -46,6 +30,13 @@ XPCOMUtils.defineLazyModuleGetter(this, "Services",
  * accessing them if already cached.
  */
 let PageThumbs = {
+
+  /**
+   * The calculated width and height of the thumbnails.
+   */
+  _thumbnailWidth : 0,
+  _thumbnailHeight : 0,
+
   /**
    * The scheme to use for thumbnail urls.
    */
@@ -72,11 +63,18 @@ let PageThumbs = {
   },
 
   /**
-   * Creates a canvas containing a thumbnail depicting the given window.
+   * Captures a thumbnail for the given window.
    * @param aWindow The DOM window to capture a thumbnail from.
-   * @return The newly created canvas containing the image data.
+   * @param aCallback The function to be called when the thumbnail has been
+   *                  captured. The first argument will be the data stream
+   *                  containing the image data.
    */
-  capture: function PageThumbs_capture(aWindow) {
+  capture: function PageThumbs_capture(aWindow, aCallback) {
+    if (!this._prefEnabled()) {
+      return;
+    }
+
+    let telemetryCaptureTime = new Date();
     let [sw, sh, scale] = this._determineCropSize(aWindow);
 
     let canvas = this._createCanvas();
@@ -93,38 +91,65 @@ let PageThumbs = {
       // We couldn't draw to the canvas for some reason.
     }
 
-    return canvas;
+    let telemetry = Services.telemetry;
+    telemetry.getHistogramById("FX_THUMBNAILS_CAPTURE_TIME_MS")
+      .add(new Date() - telemetryCaptureTime);
+
+    canvas.mozFetchAsStream(aCallback, this.contentType);
   },
 
   /**
-   * Stores the image data contained in the given canvas to the underlying
-   * storage.
-   * @param aKey The key to use for the storage.
-   * @param aCanvas The canvas containing the thumbnail's image data.
-   * @param aCallback The function to be called when the canvas data has been
-   *                  stored (optional).
+   * Captures a thumbnail for the given browser and stores it to the cache.
+   * @param aBrowser The browser to capture a thumbnail for.
+   * @param aCallback The function to be called when finished (optional).
    */
-  store: function PageThumbs_store(aKey, aCanvas, aCallback) {
-    let self = this;
-
-    function finish(aSuccessful) {
-      if (aCallback)
-        aCallback(aSuccessful);
+  captureAndStore: function PageThumbs_captureAndStore(aBrowser, aCallback) {
+    if (!this._prefEnabled()) {
+      return;
     }
 
-    // Get a writeable cache entry.
-    PageThumbsCache.getWriteEntry(aKey, function (aEntry) {
-      if (!aEntry) {
-        finish(false);
-        return;
+    let url = aBrowser.currentURI.spec;
+    let channel = aBrowser.docShell.currentDocumentChannel;
+    let originalURL = channel.originalURI.spec;
+
+    this.capture(aBrowser.contentWindow, function (aInputStream) {
+      let telemetryStoreTime = new Date();
+
+      function finish(aSuccessful) {
+        if (aSuccessful) {
+          Services.telemetry.getHistogramById("FX_THUMBNAILS_STORE_TIME_MS")
+            .add(new Date() - telemetryStoreTime);
+
+          // We've been redirected. Create a copy of the current thumbnail for
+          // the redirect source. We need to do this because:
+          //
+          // 1) Users can drag any kind of links onto the newtab page. If those
+          //    links redirect to a different URL then we want to be able to
+          //    provide thumbnails for both of them.
+          //
+          // 2) The newtab page should actually display redirect targets, only.
+          //    Because of bug 559175 this information can get lost when using
+          //    Sync and therefore also redirect sources appear on the newtab
+          //    page. We also want thumbnails for those.
+          if (url != originalURL)
+            PageThumbsCache._copy(url, originalURL);
+        }
+
+        if (aCallback)
+          aCallback(aSuccessful);
       }
 
-      // Extract image data from the canvas.
-      self._readImageData(aCanvas, function (aData) {
+      // Get a writeable cache entry.
+      PageThumbsCache.getWriteEntry(url, function (aEntry) {
+        if (!aEntry) {
+          finish(false);
+          return;
+        }
+
         let outputStream = aEntry.openOutputStream(0);
 
         // Write the image data to the cache entry.
-        NetUtil.asyncCopy(aData, outputStream, function (aResult) {
+        NetUtil.asyncCopy(aInputStream, outputStream, function (aResult) {
           let success = Components.isSuccessCode(aResult);
           if (success)
             aEntry.markValid();
@@ -137,21 +162,6 @@ let PageThumbs = {
   },
 
   /**
-   * Reads the image data from a given canvas and passes it to the callback.
-   * @param aCanvas The canvas to read the image data from.
-   * @param aCallback The function that the image data is passed to.
-   */
-  _readImageData: function PageThumbs_readImageData(aCanvas, aCallback) {
-    let dataUri = aCanvas.toDataURL(PageThumbs.contentType, "");
-    let uri = Services.io.newURI(dataUri, "UTF8", null);
-
-    NetUtil.asyncFetch(uri, function (aData, aResult) {
-      if (Components.isSuccessCode(aResult) && aData && aData.available())
-        aCallback(aData);
-    });
-  },
-
-  /**
    * Determines the crop size for a given content window.
    * @param aWindow The content window.
    * @return An array containing width, height and scale.
@@ -160,15 +170,16 @@ let PageThumbs = {
     let sw = aWindow.innerWidth;
     let sh = aWindow.innerHeight;
 
-    let scale = Math.max(THUMBNAIL_WIDTH / sw, THUMBNAIL_HEIGHT / sh);
+    let [thumbnailWidth, thumbnailHeight] = this._getThumbnailSize();
+    let scale = Math.max(thumbnailWidth / sw, thumbnailHeight / sh);
     let scaledWidth = sw * scale;
     let scaledHeight = sh * scale;
 
-    if (scaledHeight > THUMBNAIL_HEIGHT)
-      sh -= Math.floor(Math.abs(scaledHeight - THUMBNAIL_HEIGHT) * scale);
+    if (scaledHeight > thumbnailHeight)
+      sh -= Math.floor(Math.abs(scaledHeight - thumbnailHeight) * scale);
 
-    if (scaledWidth > THUMBNAIL_WIDTH)
-      sw -= Math.floor(Math.abs(scaledWidth - THUMBNAIL_WIDTH) * scale);
+    if (scaledWidth > thumbnailWidth)
+      sw -= Math.floor(Math.abs(scaledWidth - thumbnailWidth) * scale);
 
     return [sw, sh, scale];
   },
@@ -182,10 +193,36 @@ let PageThumbs = {
     let canvas = doc.createElementNS(HTML_NAMESPACE, "canvas");
     canvas.mozOpaque = true;
     canvas.mozImageSmoothingEnabled = true;
-    canvas.width = THUMBNAIL_WIDTH;
-    canvas.height = THUMBNAIL_HEIGHT;
+    let [thumbnailWidth, thumbnailHeight] = this._getThumbnailSize();
+    canvas.width = thumbnailWidth;
+    canvas.height = thumbnailHeight;
     return canvas;
-  }
+  },
+
+  /**
+   * Calculates the thumbnail size based on current desktop's dimensions.
+   * @return The calculated thumbnail size or a default if unable to calculate.
+   */
+  _getThumbnailSize: function PageThumbs_getThumbnailSize() {
+    if (!this._thumbnailWidth || !this._thumbnailHeight) {
+      let screenManager = Cc["@mozilla.org/gfx/screenmanager;1"]
+                            .getService(Ci.nsIScreenManager);
+      let left = {}, top = {}, width = {}, height = {};
+      screenManager.primaryScreen.GetRect(left, top, width, height);
+      this._thumbnailWidth = Math.round(width.value / 3);
+      this._thumbnailHeight = Math.round(height.value / 3);
+    }
+    return [this._thumbnailWidth, this._thumbnailHeight];
+  },
+
+  _prefEnabled: function PageThumbs_prefEnabled() {
+    try {
+      return Services.prefs.getBoolPref("browser.pageThumbs.enabled");
+    }
+    catch (e) {
+      return true;
+    }
+  },
 };
 
 /**
@@ -210,6 +247,54 @@ let PageThumbsCache = {
   getWriteEntry: function Cache_getWriteEntry(aKey, aCallback) {
     // Try to open the desired cache entry.
     this._openCacheEntry(aKey, Ci.nsICache.ACCESS_WRITE, aCallback);
+  },
+
+  /**
+   * Copies an existing cache entry's data to a new cache entry.
+   * @param aSourceKey The key that contains the data to copy.
+   * @param aTargetKey The key that will be the copy of aSourceKey's data.
+   */
+  _copy: function Cache_copy(aSourceKey, aTargetKey) {
+    let sourceEntry, targetEntry, waitingCount = 2;
+
+    function finish() {
+      if (sourceEntry)
+        sourceEntry.close();
+
+      if (targetEntry)
+        targetEntry.close();
+    }
+
+    function copyDataWhenReady() {
+      if (--waitingCount > 0)
+        return;
+
+      if (!sourceEntry || !targetEntry) {
+        finish();
+        return;
+      }
+
+      let inputStream = sourceEntry.openInputStream(0);
+      let outputStream = targetEntry.openOutputStream(0);
+
+      // Copy the image data to a new entry.
+      NetUtil.asyncCopy(inputStream, outputStream, function (aResult) {
+        if (Components.isSuccessCode(aResult))
+          targetEntry.markValid();
+
+        finish();
+      });
+    }
+
+    this.getReadEntry(aSourceKey, function (aSourceEntry) {
+      sourceEntry = aSourceEntry;
+      copyDataWhenReady();
+    });
+
+    this.getWriteEntry(aTargetKey, function (aTargetEntry) {
+      targetEntry = aTargetEntry;
+      copyDataWhenReady();
+    });
   },
 
   /**

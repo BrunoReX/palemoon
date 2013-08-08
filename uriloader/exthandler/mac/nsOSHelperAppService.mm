@@ -1,43 +1,8 @@
 /* -*- Mode: C++; tab-width: 3; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is the Mozilla browser.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications, Inc.
- * Portions created by the Initial Developer are Copyright (C) 1999
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Scott MacGregor <mscott@netscape.com>
- *   Dan Mosedale <dmose@mozilla.org>
- *   Stan Shebs <stanshebs@earthlink.net>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -64,13 +29,6 @@
 // chrome URL's
 #define HELPERAPPLAUNCHER_BUNDLE_URL "chrome://global/locale/helperAppLauncher.properties"
 #define BRAND_BUNDLE_URL "chrome://branding/locale/brand.properties"
-
-extern "C" {
-  // Returns the CFURL for application currently set as the default opener for
-  // the given URL scheme. appURL must be released by the caller.
-  extern OSStatus _LSCopyDefaultSchemeHandlerURL(CFStringRef scheme,
-                                                 CFURLRef *appURL);
-}
 
 /* This is an undocumented interface (in the Foundation framework) that has
  * been stable since at least 10.2.8 and is still present on SnowLeopard.
@@ -148,33 +106,46 @@ NS_IMETHODIMP nsOSHelperAppService::GetApplicationDescription(const nsACString& 
                               aScheme.Length(),
                               kCFStringEncodingUTF8,
                               false);
+
   if (schemeCFString) {
-    // Since the public API (LSGetApplicationForURL) fails every now and then,
-    // we're using undocumented _LSCopyDefaultSchemeHandlerURL
-    CFURLRef handlerBundleURL;
-    OSStatus err = ::_LSCopyDefaultSchemeHandlerURL(schemeCFString,
-                                                    &handlerBundleURL);
-    if (err == noErr) {
-      CFBundleRef handlerBundle = ::CFBundleCreate(NULL, handlerBundleURL);
-      if (handlerBundle) {
-        // Get the human-readable name of the default handler bundle
-        CFStringRef bundleName =
-          (CFStringRef)::CFBundleGetValueForInfoDictionaryKey(handlerBundle,
-                                                              kCFBundleNameKey);
-        if (bundleName) {
-          nsAutoTArray<UniChar, 255> buffer;
-          CFIndex bundleNameLength = ::CFStringGetLength(bundleName);
-          buffer.SetLength(bundleNameLength);
-          ::CFStringGetCharacters(bundleName, CFRangeMake(0, bundleNameLength),
-                                  buffer.Elements());
-          _retval.Assign(buffer.Elements(), bundleNameLength);
-          rv = NS_OK;
+    CFStringRef lookupCFString = ::CFStringCreateWithFormat(NULL, NULL, CFSTR("%@:"), schemeCFString);
+
+    if (lookupCFString) {
+      CFURLRef lookupCFURL = ::CFURLCreateWithString(NULL, lookupCFString, NULL);
+
+      if (lookupCFURL) {
+        CFURLRef appCFURL = NULL;
+        OSStatus theErr = ::LSGetApplicationForURL(lookupCFURL, kLSRolesAll, NULL, &appCFURL);
+
+        if (theErr == noErr) {
+          CFBundleRef handlerBundle = ::CFBundleCreate(NULL, appCFURL);
+
+          if (handlerBundle) {
+            // Get the human-readable name of the default handler bundle
+            CFStringRef bundleName =
+            (CFStringRef)::CFBundleGetValueForInfoDictionaryKey(handlerBundle,
+                                                                kCFBundleNameKey);
+
+            if (bundleName) {
+              nsAutoTArray<UniChar, 255> buffer;
+              CFIndex bundleNameLength = ::CFStringGetLength(bundleName);
+              buffer.SetLength(bundleNameLength);
+              ::CFStringGetCharacters(bundleName, CFRangeMake(0, bundleNameLength),
+                                      buffer.Elements());
+              _retval.Assign(buffer.Elements(), bundleNameLength);
+              rv = NS_OK;
+            }
+
+            ::CFRelease(handlerBundle);
+          }
+
+          ::CFRelease(appCFURL);
         }
 
-        ::CFRelease(handlerBundle);
+        ::CFRelease(lookupCFURL);
       }
 
-      ::CFRelease(handlerBundleURL);
+      ::CFRelease(lookupCFString);
     }
 
     ::CFRelease(schemeCFString);
@@ -196,7 +167,7 @@ nsresult nsOSHelperAppService::GetFileTokenForPath(const PRUnichar * aPlatformAp
   CFURLRef pathAsCFURL;
   CFStringRef pathAsCFString = ::CFStringCreateWithCharacters(NULL,
                                                               aPlatformAppPath,
-                                                              nsCRT::strlen(aPlatformAppPath));
+                                                              NS_strlen(aPlatformAppPath));
   if (!pathAsCFString)
     return NS_ERROR_OUT_OF_MEMORY;
 

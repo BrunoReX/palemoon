@@ -1,46 +1,15 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Author: Aaron Leventhal (aaronl@netscape.com)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef _nsHTMLTableAccessible_H_
 #define _nsHTMLTableAccessible_H_
 
-#include "nsHyperTextAccessibleWrap.h"
+#include "HyperTextAccessibleWrap.h"
 #include "nsIAccessibleTable.h"
+#include "TableAccessible.h"
+#include "xpcAccessibleTable.h"
 
 class nsITableLayout;
 class nsITableCellLayout;
@@ -48,11 +17,11 @@ class nsITableCellLayout;
 /**
  * HTML table cell accessible (html:td).
  */
-class nsHTMLTableCellAccessible : public nsHyperTextAccessibleWrap,
+class nsHTMLTableCellAccessible : public HyperTextAccessibleWrap,
                                   public nsIAccessibleTableCell
 {
 public:
-  nsHTMLTableCellAccessible(nsIContent *aContent, nsIWeakReference *aShell);
+  nsHTMLTableCellAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
@@ -60,9 +29,10 @@ public:
   // nsIAccessibleTableCell
   NS_DECL_NSIACCESSIBLETABLECELL
 
-  // nsAccessible
+  // Accessible
   virtual mozilla::a11y::role NativeRole();
   virtual PRUint64 NativeState();
+  virtual PRUint64 NativeInteractiveState() const;
   virtual nsresult GetAttributesInternal(nsIPersistentProperties *aAttributes);
 
 protected:
@@ -70,7 +40,7 @@ protected:
    * Return host table accessible.
    */
   already_AddRefed<nsIAccessibleTable> GetTableAccessible();
-  
+
   /**
    * Return nsITableCellLayout of the table cell frame.
    */
@@ -80,7 +50,7 @@ protected:
    * Return row and column indices of the cell.
    */
   nsresult GetCellIndexes(PRInt32& aRowIdx, PRInt32& aColIdx);
-  
+
   /**
    * Return an array of row or column header cells.
    */
@@ -95,10 +65,10 @@ protected:
 class nsHTMLTableHeaderCellAccessible : public nsHTMLTableCellAccessible
 {
 public:
-  nsHTMLTableHeaderCellAccessible(nsIContent *aContent,
-                                  nsIWeakReference *aShell);
+  nsHTMLTableHeaderCellAccessible(nsIContent* aContent,
+                                  DocAccessible* aDoc);
 
-  // nsAccessible
+  // Accessible
   virtual mozilla::a11y::role NativeRole();
 };
 
@@ -112,38 +82,43 @@ public:
 // data vs. layout heuristic
 // #define SHOW_LAYOUT_HEURISTIC
 
-#define NS_TABLEACCESSIBLE_IMPL_CID                     \
-{  /* 8d6d9c40-74bd-47ac-88dc-4a23516aa23d */           \
-  0x8d6d9c40,                                           \
-  0x74bd,                                               \
-  0x47ac,                                               \
-  { 0x88, 0xdc, 0x4a, 0x23, 0x51, 0x6a, 0xa2, 0x3d }    \
-}
-
-class nsHTMLTableAccessible : public nsAccessibleWrap,
-                              public nsIAccessibleTable
+class nsHTMLTableAccessible : public AccessibleWrap,
+                              public xpcAccessibleTable,
+                              public nsIAccessibleTable,
+                              public mozilla::a11y::TableAccessible
 {
 public:
-  nsHTMLTableAccessible(nsIContent *aContent, nsIWeakReference *aShell);
+  nsHTMLTableAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_NSIACCESSIBLETABLE
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_TABLEACCESSIBLE_IMPL_CID)
 
-  // nsAccessible
+  // nsIAccessible Table
+  NS_DECL_OR_FORWARD_NSIACCESSIBLETABLE_WITH_XPCACCESSIBLETABLE
+
+  // TableAccessible
+  virtual Accessible* Caption();
+  virtual void Summary(nsString& aSummary);
+  virtual PRUint32 ColCount();
+  virtual PRUint32 RowCount();
+  virtual Accessible* CellAt(PRUint32 aRowIndex, PRUint32 aColumnIndex);
+  virtual PRInt32 CellIndexAt(PRUint32 aRowIdx, PRUint32 aColIdx);
+  virtual PRUint32 ColExtentAt(PRUint32 aRowIdx, PRUint32 aColIdx);
+  virtual PRUint32 RowExtentAt(PRUint32 aRowIdx, PRUint32 aColIdx);
+  virtual void UnselectCol(PRUint32 aColIdx);
+  virtual void UnselectRow(PRUint32 aRowIdx);
+  virtual bool IsProbablyLayoutTable();
+
+  // nsAccessNode
+  virtual void Shutdown();
+
+  // Accessible
+  virtual mozilla::a11y::TableAccessible* AsTable() { return this; }
   virtual void Description(nsString& aDescription);
   virtual nsresult GetNameInternal(nsAString& aName);
   virtual mozilla::a11y::role NativeRole();
   virtual PRUint64 NativeState();
   virtual nsresult GetAttributesInternal(nsIPersistentProperties *aAttributes);
   virtual Relation RelationByType(PRUint32 aRelationType);
-
-  // TableAccessible
-  inline nsAccessible* Caption() const
-  {
-    nsAccessible* child = mChildren.SafeElementAt(0, nsnull);
-    return child && child->Role() == mozilla::a11y::roles::CAPTION ? child : nsnull;
-  }
 
   // nsHTMLTableAccessible
 
@@ -160,7 +135,7 @@ public:
 
 protected:
 
-  // nsAccessible
+  // Accessible
   virtual void CacheChildren();
 
   // nsHTMLTableAccessible
@@ -201,22 +176,19 @@ protected:
 #endif
 };
 
-NS_DEFINE_STATIC_IID_ACCESSOR(nsHTMLTableAccessible,
-                              NS_TABLEACCESSIBLE_IMPL_CID)
-
-
 /**
  * HTML caption accessible (html:caption).
  */
-class nsHTMLCaptionAccessible : public nsHyperTextAccessibleWrap
+class nsHTMLCaptionAccessible : public HyperTextAccessibleWrap
 {
 public:
-  nsHTMLCaptionAccessible(nsIContent *aContent, nsIWeakReference *aShell) :
-    nsHyperTextAccessibleWrap(aContent, aShell) { }
+  nsHTMLCaptionAccessible(nsIContent* aContent, DocAccessible* aDoc) :
+    HyperTextAccessibleWrap(aContent, aDoc) { }
+  virtual ~nsHTMLCaptionAccessible() { }
 
   // nsIAccessible
 
-  // nsAccessible
+  // Accessible
   virtual mozilla::a11y::role NativeRole();
   virtual Relation RelationByType(PRUint32 aRelationType);
 };

@@ -307,6 +307,7 @@ opcode Machine::Code::decoder::fetch_opcode(const byte * bc)
         case CNTXT_ITEM :
             valid_upto(_max.rule_length, _max.pre_context + int8(bc[0]));
             if (bc + 2 + bc[1] >= _max.bytecode)  failure(jump_past_end);
+            if (_pre_context != 0)                failure(nested_context_item);
             break;
         case ATTR_SET :
         case ATTR_ADD :
@@ -592,7 +593,7 @@ int32 Machine::Code::run(Machine & m, slotref * & map) const
     assert(_own);
     assert(*this);          // Check we are actually runnable
 
-    if (m.slotMap().size() <= _max_ref + m.slotMap().context())
+    if (m.slotMap().size() <= size_t(_max_ref + m.slotMap().context()))
     {
         m._status = Machine::slot_offset_out_bounds;
 //        return (m.slotMap().end() - map);

@@ -4,6 +4,11 @@
 
 Components.utils.import("resource://gre/modules/NetUtil.jsm");
 
+let tmp = {};
+Components.utils.import("resource://gre/modules/AddonManager.jsm", tmp);
+let AddonManager = tmp.AddonManager;
+let AddonManagerPrivate = tmp.AddonManagerPrivate;
+
 var pathParts = gTestPath.split("/");
 // Drop the test filename
 pathParts.splice(pathParts.length - 1, pathParts.length);
@@ -54,6 +59,7 @@ var gUseInContentUI = !gTestInWindow && ("switchToTabHavingURI" in window);
 var gRestorePrefs = [{name: PREF_LOGGING_ENABLED},
                      {name: "extensions.webservice.discoverURL"},
                      {name: "extensions.update.url"},
+                     {name: "extensions.update.background.url"},
                      {name: "extensions.getAddons.get.url"},
                      {name: "extensions.getAddons.getWithPerformance.url"},
                      {name: "extensions.getAddons.search.browseURL"},
@@ -212,17 +218,17 @@ function check_all_in_list(aManager, aIds, aIgnoreExtras) {
     node = node.nextSibling;
   }
 
-  for (var i = 0; i < aIds.length; i++) {
-    if (inlist.indexOf(aIds[i]) == -1)
-      ok(false, "Should find " + aIds[i] + " in the list");
+  for (let id of aIds) {
+    if (inlist.indexOf(id) == -1)
+      ok(false, "Should find " + id + " in the list");
   }
 
   if (aIgnoreExtras)
     return;
 
-  for (i = 0; i < inlist.length; i++) {
-    if (aIds.indexOf(inlist[i]) == -1)
-      ok(false, "Shouldn't have seen " + inlist[i] + " in the list");
+  for (let inlistItem of inlist) {
+    if (aIds.indexOf(inlistItem) == -1)
+      ok(false, "Shouldn't have seen " + inlistItem + " in the list");
   }
 }
 
@@ -668,6 +674,10 @@ MockProvider.prototype = {
           addon._applyBackgroundUpdates = aAddonProp[prop];
           continue;
         }
+        if (prop == "appDisabled") {
+          addon._appDisabled = aAddonProp[prop];
+          continue;
+        }
         addon[prop] = aAddonProp[prop];
       }
       if (!addon.optionsType && !!addon.optionsURL)
@@ -746,9 +756,9 @@ MockProvider.prototype = {
    *         A callback to pass the Addon to
    */
   getAddonByID: function MP_getAddon(aId, aCallback) {
-    for (let i = 0; i < this.addons.length; i++) {
-      if (this.addons[i].id == aId) {
-        this._delayCallback(aCallback, this.addons[i]);
+    for (let addon of this.addons) {
+      if (addon.id == aId) {
+        this._delayCallback(aCallback, addon);
         return;
       }
     }
@@ -944,7 +954,7 @@ function MockAddon(aId, aName, aType, aOperationsRequiringRestart) {
   this.isCompatible = true;
   this.providesUpdatesSecurely = true;
   this.blocklistState = 0;
-  this.appDisabled = false;
+  this._appDisabled = false;
   this._userDisabled = false;
   this._applyBackgroundUpdates = AddonManager.AUTOUPDATE_ENABLE;
   this.scope = AddonManager.SCOPE_PROFILE;
@@ -965,6 +975,24 @@ function MockAddon(aId, aName, aType, aOperationsRequiringRestart) {
 MockAddon.prototype = {
   get shouldBeActive() {
     return !this.appDisabled && !this._userDisabled;
+  },
+
+  get appDisabled() {
+    return this._appDisabled;
+  },
+
+  set appDisabled(val) {
+    if (val == this._appDisabled)
+      return val;
+
+    AddonManagerPrivate.callAddonListeners("onPropertyChanged", this, ["appDisabled"]);
+
+    var currentActive = this.shouldBeActive;
+    this._appDisabled = val;
+    var newActive = this.shouldBeActive;
+    this._updateActiveState(currentActive, newActive);
+
+    return val;
   },
 
   get userDisabled() {

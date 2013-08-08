@@ -1,41 +1,10 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=2 et sw=2 tw=80: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Indexed Database.
- *
- * The Initial Developer of the Original Code is
- * The Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Ben Turner <bent.mozilla@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "base/basictypes.h"
 
 #include "IDBCursor.h"
 
@@ -54,9 +23,46 @@
 #include "IDBTransaction.h"
 #include "TransactionThreadPool.h"
 
+#include "ipc/IndexedDBChild.h"
+#include "ipc/IndexedDBParent.h"
+
+#include "IndexedDatabaseInlines.h"
+
 USING_INDEXEDDB_NAMESPACE
+using namespace mozilla::dom::indexedDB::ipc;
+
+MOZ_STATIC_ASSERT(sizeof(size_t) >= sizeof(IDBCursor::Direction),
+                  "Relying on conversion between size_t and "
+                  "IDBCursor::Direction");
 
 namespace {
+
+class CursorHelper : public AsyncConnectionHelper
+{
+public:
+  CursorHelper(IDBCursor* aCursor)
+  : AsyncConnectionHelper(aCursor->Transaction(), aCursor->Request()),
+    mCursor(aCursor), mActor(nsnull)
+  {
+    NS_ASSERTION(aCursor, "Null cursor!");
+  }
+
+  virtual void ReleaseMainThreadObjects() MOZ_OVERRIDE;
+
+  virtual nsresult Dispatch(nsIEventTarget* aDatabaseThread) MOZ_OVERRIDE;
+
+  virtual nsresult
+  PackArgumentsForParentProcess(CursorRequestParams& aParams) = 0;
+
+  virtual nsresult
+  UnpackResponseFromParentProcess(const ResponseValue& aResponseValue) = 0;
+
+protected:
+  nsRefPtr<IDBCursor> mCursor;
+
+private:
+  IndexedDBCursorRequestChild* mActor;
+};
 
 inline
 already_AddRefed<IDBRequest>
@@ -71,13 +77,12 @@ GenerateRequest(IDBCursor* aCursor)
 
 BEGIN_INDEXEDDB_NAMESPACE
 
-class ContinueHelper : public AsyncConnectionHelper
+class ContinueHelper : public CursorHelper
 {
 public:
   ContinueHelper(IDBCursor* aCursor,
                  PRInt32 aCount)
-  : AsyncConnectionHelper(aCursor->mTransaction, aCursor->mRequest),
-    mCursor(aCursor), mCount(aCount)
+  : CursorHelper(aCursor), mCount(aCount)
   {
     NS_ASSERTION(aCount > 0, "Must have a count!");
   }
@@ -87,15 +92,21 @@ public:
     IDBObjectStore::ClearStructuredCloneBuffer(mCloneReadInfo.mCloneBuffer);
   }
 
-  nsresult DoDatabaseWork(mozIStorageConnection* aConnection);
-  nsresult GetSuccessResult(JSContext* aCx,
-                            jsval* aVal);
+  virtual nsresult DoDatabaseWork(mozIStorageConnection* aConnection)
+                                  MOZ_OVERRIDE;
 
-  void ReleaseMainThreadObjects()
-  {
-    mCursor = nsnull;
-    AsyncConnectionHelper::ReleaseMainThreadObjects();
-  }
+  virtual nsresult GetSuccessResult(JSContext* aCx,
+                                    jsval* aVal) MOZ_OVERRIDE;
+
+  virtual nsresult
+  PackArgumentsForParentProcess(CursorRequestParams& aParams) MOZ_OVERRIDE;
+
+  virtual ChildProcessSendResult
+  MaybeSendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE;
+
+  virtual nsresult
+  UnpackResponseFromParentProcess(const ResponseValue& aResponseValue)
+                                  MOZ_OVERRIDE;
 
 protected:
   virtual nsresult
@@ -104,8 +115,33 @@ protected:
   virtual nsresult
   GatherResultsFromStatement(mozIStorageStatement* aStatement) = 0;
 
-protected:
-  nsRefPtr<IDBCursor> mCursor;
+  void UpdateCursorState()
+  {
+    mCursor->mCachedKey = JSVAL_VOID;
+    mCursor->mCachedPrimaryKey = JSVAL_VOID;
+    mCursor->mCachedValue = JSVAL_VOID;
+    mCursor->mHaveCachedKey = false;
+    mCursor->mHaveCachedPrimaryKey = false;
+    mCursor->mHaveCachedValue = false;
+    mCursor->mContinueCalled = false;
+
+    if (mKey.IsUnset()) {
+      mCursor->mHaveValue = false;
+    }
+    else {
+      NS_ASSERTION(mCursor->mType == IDBCursor::OBJECTSTORE ||
+                   !mObjectKey.IsUnset(), "Bad key!");
+
+      // Set new values.
+      mCursor->mKey = mKey;
+      mCursor->mObjectKey = mObjectKey;
+      mCursor->mContinueToKey.Unset();
+
+      mCursor->mCloneReadInfo.Swap(mCloneReadInfo);
+      mCloneReadInfo.mCloneBuffer.clear();
+    }
+  }
+
   PRInt32 mCount;
   Key mKey;
   Key mObjectKey;
@@ -157,7 +193,7 @@ already_AddRefed<IDBCursor>
 IDBCursor::Create(IDBRequest* aRequest,
                   IDBTransaction* aTransaction,
                   IDBObjectStore* aObjectStore,
-                  PRUint16 aDirection,
+                  Direction aDirection,
                   const Key& aRangeKey,
                   const nsACString& aContinueQuery,
                   const nsACString& aContinueToQuery,
@@ -185,7 +221,7 @@ already_AddRefed<IDBCursor>
 IDBCursor::Create(IDBRequest* aRequest,
                   IDBTransaction* aTransaction,
                   IDBIndex* aIndex,
-                  PRUint16 aDirection,
+                  Direction aDirection,
                   const Key& aRangeKey,
                   const nsACString& aContinueQuery,
                   const nsACString& aContinueToQuery,
@@ -215,7 +251,7 @@ already_AddRefed<IDBCursor>
 IDBCursor::Create(IDBRequest* aRequest,
                   IDBTransaction* aTransaction,
                   IDBIndex* aIndex,
-                  PRUint16 aDirection,
+                  Direction aDirection,
                   const Key& aRangeKey,
                   const nsACString& aContinueQuery,
                   const nsACString& aContinueToQuery,
@@ -243,11 +279,34 @@ IDBCursor::Create(IDBRequest* aRequest,
 }
 
 // static
+nsresult
+IDBCursor::ParseDirection(const nsAString& aDirection, Direction* aResult)
+{
+  if (aDirection.EqualsLiteral("next")) {
+    *aResult = NEXT;
+  }
+  else if (aDirection.EqualsLiteral("nextunique")) {
+    *aResult = NEXT_UNIQUE;
+  }
+  else if (aDirection.EqualsLiteral("prev")) {
+    *aResult = PREV;
+  }
+  else if (aDirection.EqualsLiteral("prevunique")) {
+    *aResult = PREV_UNIQUE;
+  }
+  else {
+    return NS_ERROR_TYPE_ERR;
+  }
+  
+  return NS_OK;
+}
+
+// static
 already_AddRefed<IDBCursor>
 IDBCursor::CreateCommon(IDBRequest* aRequest,
                         IDBTransaction* aTransaction,
                         IDBObjectStore* aObjectStore,
-                        PRUint16 aDirection,
+                        Direction aDirection,
                         const Key& aRangeKey,
                         const nsACString& aContinueQuery,
                         const nsACString& aContinueToQuery)
@@ -256,15 +315,25 @@ IDBCursor::CreateCommon(IDBRequest* aRequest,
   NS_ASSERTION(aRequest, "Null pointer!");
   NS_ASSERTION(aTransaction, "Null pointer!");
   NS_ASSERTION(aObjectStore, "Null pointer!");
-  NS_ASSERTION(!aContinueQuery.IsEmpty(), "Empty query!");
-  NS_ASSERTION(!aContinueToQuery.IsEmpty(), "Empty query!");
+  NS_ASSERTION(!aContinueQuery.IsEmpty() ||
+               !IndexedDatabaseManager::IsMainProcess(),
+               "Empty query!");
+  NS_ASSERTION(!aContinueToQuery.IsEmpty() ||
+               !IndexedDatabaseManager::IsMainProcess(),
+               "Empty query!");
 
   nsRefPtr<IDBCursor> cursor = new IDBCursor();
 
   IDBDatabase* database = aTransaction->Database();
-  cursor->mScriptContext = database->GetScriptContext();
-  cursor->mOwner = database->GetOwner();
   cursor->mScriptOwner = database->GetScriptOwner();
+
+  if (cursor->mScriptOwner) {
+    if (NS_FAILED(NS_HOLD_JS_OBJECTS(cursor, IDBCursor))) {
+      return nsnull;
+    }
+
+    cursor->mRooted = true;
+  }
 
   cursor->mRequest = aRequest;
   cursor->mTransaction = aTransaction;
@@ -280,10 +349,12 @@ IDBCursor::CreateCommon(IDBRequest* aRequest,
 IDBCursor::IDBCursor()
 : mScriptOwner(nsnull),
   mType(OBJECTSTORE),
-  mDirection(nsIIDBCursor::NEXT),
+  mDirection(IDBCursor::NEXT),
   mCachedKey(JSVAL_VOID),
   mCachedPrimaryKey(JSVAL_VOID),
   mCachedValue(JSVAL_VOID),
+  mActorChild(nsnull),
+  mActorParent(nsnull),
   mHaveCachedKey(false),
   mHaveCachedPrimaryKey(false),
   mHaveCachedValue(false),
@@ -297,6 +368,13 @@ IDBCursor::IDBCursor()
 IDBCursor::~IDBCursor()
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+
+  NS_ASSERTION(!mActorParent, "Actor parent owns us, how can we be dying?!");
+  if (mActorChild) {
+    NS_ASSERTION(!IndexedDatabaseManager::IsMainProcess(), "Wrong process!");
+    mActorChild->Send__delete__(mActorChild);
+    NS_ASSERTION(!mActorChild, "Should have cleared in Send__delete__!");
+  }
 
   if (mRooted) {
     NS_DROP_JS_OBJECTS(this, IDBCursor);
@@ -323,11 +401,11 @@ IDBCursor::ContinueInternal(const Key& aKey,
 
 #ifdef DEBUG
   {
-    PRUint16 readyState;
-    if (NS_FAILED(mRequest->GetReadyState(&readyState))) {
+    nsAutoString readyState;
+    if (NS_FAILED(mRequest->GetReadyState(readyState))) {
       NS_ERROR("This should never fail!");
     }
-    NS_ASSERTION(readyState == nsIIDBRequest::DONE, "Should be DONE!");
+    NS_ASSERTION(readyState.EqualsLiteral("done"), "Should be DONE!");
   }
 #endif
 
@@ -368,8 +446,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(IDBCursor)
                                                        nsIDOMEventTarget)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mObjectStore)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mIndex)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mOwner)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mScriptContext)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(IDBCursor)
@@ -413,8 +489,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(IDBCursor)
     tmp->mHaveValue = false;
   }
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mRequest)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mOwner)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mScriptContext)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(IDBCursor)
@@ -434,11 +508,30 @@ DOMCI_DATA(IDBCursor, IDBCursor)
 DOMCI_DATA(IDBCursorWithValue, IDBCursor)
 
 NS_IMETHODIMP
-IDBCursor::GetDirection(PRUint16* aDirection)
+IDBCursor::GetDirection(nsAString& aDirection)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
-  *aDirection = mDirection;
+  switch (mDirection) {
+    case NEXT:
+      aDirection.AssignLiteral("next");
+      break;
+    case NEXT_UNIQUE:
+      aDirection.AssignLiteral("nextunique");
+      break;
+    case PREV:
+      aDirection.AssignLiteral("prev");
+      break;
+    case PREV_UNIQUE:
+      aDirection.AssignLiteral("prevunique");
+      break;
+
+    case DIRECTION_INVALID:
+    default:
+      NS_NOTREACHED("Bad direction value!");
+      return NS_ERROR_UNEXPECTED;
+  }
+
   return NS_OK;
 }
 
@@ -535,12 +628,14 @@ IDBCursor::GetValue(JSContext* aCx,
       mRooted = true;
     }
 
-    if (!IDBObjectStore::DeserializeValue(aCx, mCloneReadInfo, &mCachedValue)) {
-      mCachedValue = JSVAL_VOID;
+    jsval val;
+    if (!IDBObjectStore::DeserializeValue(aCx, mCloneReadInfo, &val)) {
       return NS_ERROR_DOM_DATA_CLONE_ERR;
     }
 
     mCloneReadInfo.mCloneBuffer.clear();
+
+    mCachedValue = val;
     mHaveCachedValue = true;
   }
 
@@ -560,15 +655,15 @@ IDBCursor::Continue(const jsval &aKey,
 
   if (!key.IsUnset()) {
     switch (mDirection) {
-      case nsIIDBCursor::NEXT:
-      case nsIIDBCursor::NEXT_NO_DUPLICATE:
+      case IDBCursor::NEXT:
+      case IDBCursor::NEXT_UNIQUE:
         if (key <= mKey) {
           return NS_ERROR_DOM_INDEXEDDB_DATA_ERR;
         }
         break;
 
-      case nsIIDBCursor::PREV:
-      case nsIIDBCursor::PREV_NO_DUPLICATE:
+      case IDBCursor::PREV:
+      case IDBCursor::PREV_UNIQUE:
         if (key >= mKey) {
           return NS_ERROR_DOM_INDEXEDDB_DATA_ERR;
         }
@@ -682,11 +777,42 @@ IDBCursor::Advance(PRInt32 aCount)
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
   if (aCount < 1) {
-    return NS_ERROR_DOM_TYPE_ERR;
+    return NS_ERROR_TYPE_ERR;
   }
 
   Key key;
   return ContinueInternal(key, aCount);
+}
+
+void
+CursorHelper::ReleaseMainThreadObjects()
+{
+  mCursor = nsnull;
+  AsyncConnectionHelper::ReleaseMainThreadObjects();
+}
+
+nsresult
+CursorHelper::Dispatch(nsIEventTarget* aDatabaseThread)
+{
+  if (IndexedDatabaseManager::IsMainProcess()) {
+    return AsyncConnectionHelper::Dispatch(aDatabaseThread);
+  }
+
+  IndexedDBCursorChild* cursorActor = mCursor->GetActorChild();
+  NS_ASSERTION(cursorActor, "Must have an actor here!");
+
+  CursorRequestParams params;
+  nsresult rv = PackArgumentsForParentProcess(params);
+  NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+
+  NoDispatchEventTarget target;
+  rv = AsyncConnectionHelper::Dispatch(&target);
+  NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+
+  mActor = new IndexedDBCursorRequestChild(this, mCursor, params.type());
+  cursorActor->SendPIndexedDBRequestConstructor(mActor, params);
+
+  return NS_OK;
 }
 
 nsresult
@@ -746,33 +872,89 @@ nsresult
 ContinueHelper::GetSuccessResult(JSContext* aCx,
                                  jsval* aVal)
 {
-  // Remove cached stuff from last time.
-  mCursor->mCachedKey = JSVAL_VOID;
-  mCursor->mCachedPrimaryKey = JSVAL_VOID;
-  mCursor->mCachedValue = JSVAL_VOID;
-  mCursor->mHaveCachedKey = false;
-  mCursor->mHaveCachedPrimaryKey = false;
-  mCursor->mHaveCachedValue = false;
-  mCursor->mContinueCalled = false;
+  UpdateCursorState();
 
   if (mKey.IsUnset()) {
-    mCursor->mHaveValue = false;
     *aVal = JSVAL_VOID;
   }
   else {
-    NS_ASSERTION(mCursor->mType == IDBCursor::OBJECTSTORE ||
-                 !mObjectKey.IsUnset(), "Bad key!");
-
-    // Set new values.
-    mCursor->mKey = mKey;
-    mCursor->mObjectKey = mObjectKey;
-    mCursor->mContinueToKey.Unset();
-
-    mCursor->mCloneReadInfo.Swap(mCloneReadInfo);
-    mCloneReadInfo.mCloneBuffer.clear();
-
     nsresult rv = WrapNative(aCx, mCursor, aVal);
     NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  return NS_OK;
+}
+
+nsresult
+ContinueHelper::PackArgumentsForParentProcess(CursorRequestParams& aParams)
+{
+  ContinueParams params;
+
+  params.key() = mCursor->mContinueToKey;
+  params.count() = uint32_t(mCount);
+
+  aParams = params;
+  return NS_OK;
+}
+
+HelperBase::ChildProcessSendResult
+ContinueHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
+{
+  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+  NS_ASSERTION(IndexedDatabaseManager::IsMainProcess(), "Wrong process!");
+
+  IndexedDBRequestParentBase* actor = mRequest->GetActorParent();
+  if (!actor) {
+    return Success_NotSent;
+  }
+
+  if (!mCloneReadInfo.mFileInfos.IsEmpty()) {
+    NS_WARNING("No support for transferring blobs across processes yet!");
+    return Error;
+  }
+
+  ResponseValue response;
+  if (NS_FAILED(aResultCode)) {
+    response = aResultCode;
+  }
+  else {
+    ContinueResponse continueResponse;
+    continueResponse.key() = mKey;
+    continueResponse.objectKey() = mObjectKey;
+    continueResponse.cloneInfo() = mCloneReadInfo;
+    response = continueResponse;
+  }
+
+  if (!actor->Send__delete__(actor, response)) {
+    return Error;
+  }
+
+  UpdateCursorState();
+
+  return Success_Sent;
+}
+
+nsresult
+ContinueHelper::UnpackResponseFromParentProcess(
+                                            const ResponseValue& aResponseValue)
+{
+  NS_ASSERTION(aResponseValue.type() == ResponseValue::TContinueResponse,
+               "Bad response type!");
+
+  const ContinueResponse& response = aResponseValue.get_ContinueResponse();
+
+  mKey = response.key();
+  mObjectKey = response.objectKey();
+
+  const SerializedStructuredCloneReadInfo& cloneInfo = response.cloneInfo();
+
+  NS_ASSERTION((!cloneInfo.dataLength && !cloneInfo.data) ||
+               (cloneInfo.dataLength && cloneInfo.data),
+               "Inconsistent clone info!");
+
+  if (!mCloneReadInfo.SetFromSerialized(cloneInfo)) {
+    NS_WARNING("Failed to copy clone buffer!");
+    return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
   }
 
   return NS_OK;
@@ -818,7 +1000,7 @@ ContinueObjectStoreHelper::GatherResultsFromStatement(
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = IDBObjectStore::GetStructuredCloneReadInfoFromStatement(aStatement, 1, 2,
-    mDatabase->Manager(), mCloneReadInfo);
+    mDatabase, mCloneReadInfo);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -851,8 +1033,8 @@ ContinueIndexHelper::BindArgumentsToStatement(mozIStorageStatement* aStatement)
 
   // Bind object key if duplicates are allowed and we're not continuing to a
   // specific key.
-  if ((mCursor->mDirection == nsIIDBCursor::NEXT ||
-       mCursor->mDirection == nsIIDBCursor::PREV) &&
+  if ((mCursor->mDirection == IDBCursor::NEXT ||
+       mCursor->mDirection == IDBCursor::PREV) &&
        mCursor->mContinueToKey.IsUnset()) {
     NS_ASSERTION(!mCursor->mObjectKey.IsUnset(), "Bad key!");
 
@@ -888,7 +1070,7 @@ ContinueIndexObjectHelper::GatherResultsFromStatement(
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = IDBObjectStore::GetStructuredCloneReadInfoFromStatement(aStatement, 2, 3,
-    mDatabase->Manager(), mCloneReadInfo);
+    mDatabase, mCloneReadInfo);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;

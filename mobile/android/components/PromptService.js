@@ -1,35 +1,6 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * Portions created by the Initial Developer are Copyright (C) 2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Fabrice Desré <fabrice.desre@gmail.com>, Original author
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 const Ci = Components.interfaces;
 const Cc = Components.classes;
 const Cr = Components.results;
@@ -156,6 +127,9 @@ Prompt.prototype = {
     if (aCheckMsg)
       aInputs.push({ type: "checkbox", label: PromptUtils.cleanUpLabel(aCheckMsg), checked: aCheckState.value });
 
+    if (this._domWin)
+      PromptUtils.fireDialogEvent(this._domWin, "DOMWillOpenModalDialog");
+
     let msg = { type: "Prompt:Show" };
     if (aTitle) msg.title = aTitle;
     if (aText) msg.text = aText;
@@ -223,9 +197,10 @@ Prompt.prototype = {
 
   confirmCheck: function confirmCheck(aTitle, aText, aCheckMsg, aCheckState) {
     let data = this.commonPrompt(aTitle, aText, null, aCheckMsg, aCheckState, []);
+    let ok = data.button == 0;
     if (aCheckMsg)
       aCheckState.value = data.checkbox == "true";
-    return (data.button == 0);
+    return ok;
   },
 
   confirmEx: function confirmEx(aTitle, aText, aButtonFlags, aButton0,
@@ -276,23 +251,25 @@ Prompt.prototype = {
     let inputs = [{ type: "textbox", value: aValue.value }];
     let data = this.commonPrompt(aTitle, aText, null, aCheckMsg, aCheckState, inputs);
 
+    let ok = data.button == 0;
     if (aCheckMsg)
       aCheckState.value = data.checkbox == "true";
-    if (data.textbox)
+    if (ok)
       aValue.value = data.textbox;
-    return (data.button == 0);
+    return ok;
   },
 
   nsIPrompt_promptPassword: function nsIPrompt_promptPassword(
       aTitle, aText, aPassword, aCheckMsg, aCheckState) {
-    let inputs = [{ type: "password", hint: "Password", value: aPassword.value || "" }];
+    let inputs = [{ type: "password", hint: PromptUtils.getLocaleString("password", "passwdmgr"), value: aPassword.value || "" }];
     let data = this.commonPrompt(aTitle, aText, null, aCheckMsg, aCheckState, inputs);
 
+    let ok = data.button == 0;
     if (aCheckMsg)
       aCheckState.value = data.checkbox == "true";
-    if (data.password)
+    if (ok)
       aPassword.value = data.password;
-    return (data.button == 0);
+    return ok;
   },
 
   nsIPrompt_promptUsernameAndPassword: function nsIPrompt_promptUsernameAndPassword(
@@ -300,13 +277,15 @@ Prompt.prototype = {
     let inputs = [{ type: "textbox",  hint: PromptUtils.getLocaleString("username", "passwdmgr"), value: aUsername.value },
                   { type: "password", hint: PromptUtils.getLocaleString("password", "passwdmgr"), value: aPassword.value }];
     let data = this.commonPrompt(aTitle, aText, null, aCheckMsg, aCheckState, inputs);
+
+    let ok = data.button == 0;
     if (aCheckMsg)
       aCheckState.value = data.checkbox == "true";
-    if (data.textbox)
+    if (ok) {
       aUsername.value = data.textbox;
-    if (data.password)
       aPassword.value = data.password;
-    return (data.button == 0);
+    }
+    return ok;
   },
 
   select: function select(aTitle, aText, aCount, aSelectList, aOutSelection) {
@@ -315,9 +294,12 @@ Prompt.prototype = {
     ], "", {value: false}, [
       { type: "menulist",  values: aSelectList },
     ]);
-    if (data.menulist)
+
+    let ok = data.button == 0;
+    if (ok)
       aOutSelection.value = data.menulist;
-    return (data.button == 0);
+
+    return ok;
   },
 
   /* ----------  nsIAuthPrompt  ---------- */
@@ -358,7 +340,8 @@ Prompt.prototype = {
     if (ok && canSave && check.value)
       PromptUtils.savePassword(hostname, realm, aUser, aPass);
 
-    return ok;  },
+    return ok;
+  },
 
   /* ----------  nsIAuthPrompt2  ---------- */
 
@@ -765,9 +748,16 @@ let PromptUtils = {
     }
     return hostname;
   },
+
   sendMessageToJava: function(aMsg) {
     let data = Cc["@mozilla.org/android/bridge;1"].getService(Ci.nsIAndroidBridge).handleGeckoMessage(JSON.stringify({ gecko: aMsg }));
     return JSON.parse(data);
+  },
+
+  fireDialogEvent: function(aDomWin, aEventName) {
+    let event = aDomWin.document.createEvent("Events");
+    event.initEvent(aEventName, true, true);
+    aDomWin.dispatchEvent(event);
   }
 };
 

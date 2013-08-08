@@ -1,49 +1,18 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:expandtab:shiftwidth=2:tabstop=2:
  */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2007
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Alexander Surkov <surkov.alexander@gmail.com> (original author)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CAccessibleText.h"
 
 #include "Accessible2.h"
 #include "AccessibleText_i.c"
 
-#include "nsHyperTextAccessible.h"
+#include "HyperTextAccessible.h"
+
+#include "nsIPersistentProperties2.h"
 
 // IUnknown
 
@@ -71,7 +40,10 @@ STDMETHODIMP
 CAccessibleText::addSelection(long aStartOffset, long aEndOffset)
 {
 __try {
-  nsRefPtr<nsHyperTextAccessible> textAcc(do_QueryObject(this));
+  nsRefPtr<HyperTextAccessible> textAcc(do_QueryObject(this));
+  if (textAcc->IsDefunct())
+    return CO_E_OBJNOTCONNECTED;
+
   nsresult rv = textAcc->AddSelection(aStartOffset, aEndOffset);
   return GetHRESULT(rv);
 
@@ -91,7 +63,9 @@ __try {
   *aEndOffset = 0;
   *aTextAttributes = NULL;
 
-  nsRefPtr<nsHyperTextAccessible> textAcc(do_QueryObject(this));
+  nsRefPtr<HyperTextAccessible> textAcc(do_QueryObject(this));
+  if (textAcc->IsDefunct())
+    return CO_E_OBJNOTCONNECTED;
 
   PRInt32 startOffset = 0, endOffset = 0;
   nsCOMPtr<nsIPersistentProperties> attributes;
@@ -101,8 +75,8 @@ __try {
   if (NS_FAILED(rv))
     return GetHRESULT(rv);
   
-  HRESULT hr = nsAccessibleWrap::ConvertToIA2Attributes(attributes,
-                                                        aTextAttributes);
+  HRESULT hr = AccessibleWrap::ConvertToIA2Attributes(attributes,
+                                                      aTextAttributes);
   if (FAILED(hr))
     return hr;
 
@@ -121,7 +95,9 @@ CAccessibleText::get_caretOffset(long *aOffset)
 __try {
   *aOffset = -1;
 
-  nsRefPtr<nsHyperTextAccessible> textAcc(do_QueryObject(this));
+  nsRefPtr<HyperTextAccessible> textAcc(do_QueryObject(this));
+  if (textAcc->IsDefunct())
+    return CO_E_OBJNOTCONNECTED;
 
   PRInt32 offset = 0;
   nsresult rv = textAcc->GetCaretOffset(&offset);
@@ -147,7 +123,9 @@ __try {
   *aWidth = 0;
   *aHeight = 0;
 
-  nsRefPtr<nsHyperTextAccessible> textAcc(do_QueryObject(this));
+  nsRefPtr<HyperTextAccessible> textAcc(do_QueryObject(this));
+  if (textAcc->IsDefunct())
+    return CO_E_OBJNOTCONNECTED;
 
   PRUint32 geckoCoordType = (aCoordType == IA2_COORDTYPE_SCREEN_RELATIVE) ?
     nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE :
@@ -175,9 +153,9 @@ CAccessibleText::get_nSelections(long *aNSelections)
 __try {
   *aNSelections = 0;
 
-  nsRefPtr<nsHyperTextAccessible> textAcc(do_QueryObject(this));
+  nsRefPtr<HyperTextAccessible> textAcc(do_QueryObject(this));
   if (textAcc->IsDefunct())
-    return E_FAIL;
+    return CO_E_OBJNOTCONNECTED;
 
   PRInt32 selCount = 0;
   nsresult rv = textAcc->GetSelectionCount(&selCount);
@@ -199,7 +177,9 @@ CAccessibleText::get_offsetAtPoint(long aX, long aY,
 __try {
   *aOffset = 0;
 
-  nsRefPtr<nsHyperTextAccessible> textAcc(do_QueryObject(this));
+  nsRefPtr<HyperTextAccessible> textAcc(do_QueryObject(this));
+  if (textAcc->IsDefunct())
+    return CO_E_OBJNOTCONNECTED;
 
   PRUint32 geckoCoordType = (aCoordType == IA2_COORDTYPE_SCREEN_RELATIVE) ?
     nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE :
@@ -225,7 +205,9 @@ __try {
   *aStartOffset = 0;
   *aEndOffset = 0;
 
-  nsRefPtr<nsHyperTextAccessible> textAcc(do_QueryObject(this));
+  nsRefPtr<HyperTextAccessible> textAcc(do_QueryObject(this));
+  if (textAcc->IsDefunct())
+    return CO_E_OBJNOTCONNECTED;
 
   PRInt32 startOffset = 0, endOffset = 0;
   nsresult rv = textAcc->GetSelectionBounds(aSelectionIndex,
@@ -247,7 +229,9 @@ CAccessibleText::get_text(long aStartOffset, long aEndOffset, BSTR *aText)
 __try {
   *aText = NULL;
 
-  nsRefPtr<nsHyperTextAccessible> textAcc(do_QueryObject(this));
+  nsRefPtr<HyperTextAccessible> textAcc(do_QueryObject(this));
+  if (textAcc->IsDefunct())
+    return CO_E_OBJNOTCONNECTED;
 
   nsAutoString text;
   nsresult rv = textAcc->GetText(aStartOffset, aEndOffset, text);
@@ -275,9 +259,9 @@ __try {
   *aEndOffset = 0;
   *aText = NULL;
 
-  nsRefPtr<nsHyperTextAccessible> textAcc(do_QueryObject(this));
+  nsRefPtr<HyperTextAccessible> textAcc(do_QueryObject(this));
   if (textAcc->IsDefunct())
-    return E_FAIL;
+    return CO_E_OBJNOTCONNECTED;
 
   nsresult rv = NS_OK;
   nsAutoString text;
@@ -288,7 +272,7 @@ __try {
     endOffset = textAcc->CharacterCount();
     rv = textAcc->GetText(startOffset, endOffset, text);
   } else {
-    nsAccessibleTextBoundary boundaryType = GetGeckoTextBoundary(aBoundaryType);
+    AccessibleTextBoundary boundaryType = GetGeckoTextBoundary(aBoundaryType);
     if (boundaryType == -1)
       return S_FALSE;
     rv = textAcc->GetTextBeforeOffset(aOffset, boundaryType,
@@ -322,9 +306,9 @@ __try {
   *aEndOffset = 0;
   *aText = NULL;
 
-  nsRefPtr<nsHyperTextAccessible> textAcc(do_QueryObject(this));
+  nsRefPtr<HyperTextAccessible> textAcc(do_QueryObject(this));
   if (textAcc->IsDefunct())
-    return E_FAIL;
+    return CO_E_OBJNOTCONNECTED;
 
   nsresult rv = NS_OK;
   nsAutoString text;
@@ -335,7 +319,7 @@ __try {
     endOffset = textAcc->CharacterCount();
     rv = textAcc->GetText(startOffset, endOffset, text);
   } else {
-    nsAccessibleTextBoundary boundaryType = GetGeckoTextBoundary(aBoundaryType);
+    AccessibleTextBoundary boundaryType = GetGeckoTextBoundary(aBoundaryType);
     if (boundaryType == -1)
       return S_FALSE;
     rv = textAcc->GetTextAfterOffset(aOffset, boundaryType,
@@ -369,9 +353,9 @@ __try {
   *aEndOffset = 0;
   *aText = NULL;
 
-  nsRefPtr<nsHyperTextAccessible> textAcc(do_QueryObject(this));
+  nsRefPtr<HyperTextAccessible> textAcc(do_QueryObject(this));
   if (textAcc->IsDefunct())
-    return E_FAIL;
+    return CO_E_OBJNOTCONNECTED;
 
   nsresult rv = NS_OK;
   nsAutoString text;
@@ -382,7 +366,7 @@ __try {
     endOffset = textAcc->CharacterCount();
     rv = textAcc->GetText(startOffset, endOffset, text);
   } else {
-    nsAccessibleTextBoundary boundaryType = GetGeckoTextBoundary(aBoundaryType);
+    AccessibleTextBoundary boundaryType = GetGeckoTextBoundary(aBoundaryType);
     if (boundaryType == -1)
       return S_FALSE;
     rv = textAcc->GetTextAtOffset(aOffset, boundaryType,
@@ -409,7 +393,9 @@ STDMETHODIMP
 CAccessibleText::removeSelection(long aSelectionIndex)
 {
 __try {
-  nsRefPtr<nsHyperTextAccessible> textAcc(do_QueryObject(this));
+  nsRefPtr<HyperTextAccessible> textAcc(do_QueryObject(this));
+  if (textAcc->IsDefunct())
+    return CO_E_OBJNOTCONNECTED;
 
   nsresult rv = textAcc->RemoveSelection(aSelectionIndex);
   return GetHRESULT(rv);
@@ -422,7 +408,9 @@ STDMETHODIMP
 CAccessibleText::setCaretOffset(long aOffset)
 {
 __try {
-  nsRefPtr<nsHyperTextAccessible> textAcc(do_QueryObject(this));
+  nsRefPtr<HyperTextAccessible> textAcc(do_QueryObject(this));
+  if (textAcc->IsDefunct())
+    return CO_E_OBJNOTCONNECTED;
 
   nsresult rv = textAcc->SetCaretOffset(aOffset);
   return GetHRESULT(rv);
@@ -436,7 +424,9 @@ CAccessibleText::setSelection(long aSelectionIndex, long aStartOffset,
                               long aEndOffset)
 {
 __try {
-  nsRefPtr<nsHyperTextAccessible> textAcc(do_QueryObject(this));
+  nsRefPtr<HyperTextAccessible> textAcc(do_QueryObject(this));
+  if (textAcc->IsDefunct())
+    return CO_E_OBJNOTCONNECTED;
 
   nsresult rv = textAcc->SetSelectionBounds(aSelectionIndex,
                                             aStartOffset, aEndOffset);
@@ -452,9 +442,9 @@ CAccessibleText::get_nCharacters(long *aNCharacters)
 __try {
   *aNCharacters = 0;
 
-  nsRefPtr<nsHyperTextAccessible> textAcc(do_QueryObject(this));
+  nsRefPtr<HyperTextAccessible> textAcc(do_QueryObject(this));
   if (textAcc->IsDefunct())
-    return E_FAIL;
+    return CO_E_OBJNOTCONNECTED;
 
   *aNCharacters  = textAcc->CharacterCount();
   return S_OK;
@@ -468,7 +458,9 @@ CAccessibleText::scrollSubstringTo(long aStartIndex, long aEndIndex,
                                    enum IA2ScrollType aScrollType)
 {
 __try {
-  nsRefPtr<nsHyperTextAccessible> textAcc(do_QueryObject(this));
+  nsRefPtr<HyperTextAccessible> textAcc(do_QueryObject(this));
+  if (textAcc->IsDefunct())
+    return CO_E_OBJNOTCONNECTED;
 
   nsresult rv = textAcc->ScrollSubstringTo(aStartIndex, aEndIndex, aScrollType);
   return GetHRESULT(rv);
@@ -483,7 +475,9 @@ CAccessibleText::scrollSubstringToPoint(long aStartIndex, long aEndIndex,
                                         long aX, long aY)
 {
 __try {
-  nsRefPtr<nsHyperTextAccessible> textAcc(do_QueryObject(this));
+  nsRefPtr<HyperTextAccessible> textAcc(do_QueryObject(this));
+  if (textAcc->IsDefunct())
+    return CO_E_OBJNOTCONNECTED;
 
   PRUint32 geckoCoordType = (aCoordType == IA2_COORDTYPE_SCREEN_RELATIVE) ?
     nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE :
@@ -541,7 +535,7 @@ CAccessibleText::GetModifiedText(bool aGetInsertedText,
   return aText->text ? S_OK : E_OUTOFMEMORY;
 }
 
-nsAccessibleTextBoundary
+AccessibleTextBoundary
 CAccessibleText::GetGeckoTextBoundary(enum IA2TextBoundaryType aBoundaryType)
 {
   switch (aBoundaryType) {

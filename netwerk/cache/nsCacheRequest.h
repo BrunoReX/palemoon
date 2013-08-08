@@ -1,42 +1,8 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is nsCacheRequest.h, released
- * February 22, 2001.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2001
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Gordon Sheridan, 22-February-2001
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef _nsCacheRequest_h_
 #define _nsCacheRequest_h_
@@ -71,7 +37,8 @@ private:
           mInfo(0),
           mListener(listener),
           mLock("nsCacheRequest.mLock"),
-          mCondVar(mLock, "nsCacheRequest.mCondVar")
+          mCondVar(mLock, "nsCacheRequest.mCondVar"),
+          mProfileDir(session->ProfileDir())
     {
         MOZ_COUNT_CTOR(nsCacheRequest);
         PR_INIT_CLIST(this);
@@ -79,6 +46,7 @@ private:
         SetStoragePolicy(session->StoragePolicy());
         if (session->IsStreamBased())             MarkStreamBased();
         if (session->WillDoomEntriesIfExpired())  MarkDoomEntriesIfExpired();
+        if (session->IsPrivate())                 MarkPrivate();
         if (blockingMode == nsICache::BLOCKING)    MarkBlockingMode();
         MarkWaitingForValidation();
         NS_IF_ADDREF(mListener);
@@ -100,6 +68,7 @@ private:
     enum CacheRequestInfo {
         eStoragePolicyMask         = 0x000000FF,
         eStreamBasedMask           = 0x00000100,
+        ePrivateMask               = 0x00000200,
         eDoomEntriesIfExpiredMask  = 0x00001000,
         eBlockingModeMask          = 0x00010000,
         eWaitingForValidationMask  = 0x00100000,
@@ -138,8 +107,12 @@ private:
 
     nsCacheStoragePolicy StoragePolicy()
     {
-        return (nsCacheStoragePolicy)(mInfo & 0xFF);
+        return (nsCacheStoragePolicy)(mInfo & eStoragePolicyMask);
     }
+
+    void   MarkPrivate() { mInfo |= ePrivateMask; }
+    void   MarkPublic() { mInfo &= ~ePrivateMask; }
+    bool   IsPrivate() { return (mInfo & ePrivateMask) != 0; }
 
     void   MarkWaitingForValidation() { mInfo |=  eWaitingForValidationMask; }
     void   DoneWaitingForValidation() { mInfo &= ~eWaitingForValidationMask; }
@@ -180,6 +153,7 @@ private:
     nsCOMPtr<nsIThread>        mThread;
     Mutex                      mLock;
     CondVar                    mCondVar;
+    nsCOMPtr<nsILocalFile>     mProfileDir;
 };
 
 #endif // _nsCacheRequest_h_

@@ -1,42 +1,6 @@
-/*
-# ***** BEGIN LICENSE BLOCK *****
-# Version: MPL 1.1/GPL 2.0/LGPL 2.1
-#
-# The contents of this file are subject to the Mozilla Public License Version
-# 1.1 (the "License"); you may not use this file except in compliance with
-# the License. You may obtain a copy of the License at
-# http://www.mozilla.org/MPL/
-#
-# Software distributed under the License is distributed on an "AS IS" basis,
-# WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
-# for the specific language governing rights and limitations under the
-# License.
-#
-# The Original Code is the Extension Manager.
-#
-# The Initial Developer of the Original Code is mozilla.org
-# Portions created by the Initial Developer are Copyright (C) 2008
-# the Initial Developer. All Rights Reserved.
-#
-# Contributor(s):
-#   Dave Townsend <dtownsend@oxymoronical.com>
-#   Ben Parr <bparr@bparr.com>
-#   Blair McBride <bmcbride@mozilla.com>
-#
-# Alternatively, the contents of this file may be used under the terms of
-# either the GNU General Public License Version 2 or later (the "GPL"), or
-# the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
-# in which case the provisions of the GPL or the LGPL are applicable instead
-# of those above. If you wish to allow use of your version of this file only
-# under the terms of either the GPL or the LGPL, and not to allow others to
-# use your version of this file under the terms of the MPL, indicate your
-# decision by deleting the provisions above and replace them with the notice
-# and other provisions required by the GPL or the LGPL. If you do not delete
-# the provisions above, a recipient may use your version of this file under
-# the terms of any one of the MPL, the GPL or the LGPL.
-#
-# ***** END LICENSE BLOCK *****
-*/
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
@@ -44,11 +8,14 @@ const Cc = Components.classes;
 const Ci = Components.interfaces;
 const Cu = Components.utils;
 
-Components.utils.import("resource://gre/modules/FileUtils.jsm");
-Components.utils.import("resource://gre/modules/NetUtil.jsm");
 Components.utils.import("resource://gre/modules/Services.jsm");
 Components.utils.import("resource://gre/modules/AddonManager.jsm");
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+
+XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
+                                  "resource://gre/modules/FileUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
+                                  "resource://gre/modules/NetUtil.jsm");
 
 var EXPORTED_SYMBOLS = [ "AddonRepository" ];
 
@@ -62,23 +29,6 @@ const PREF_GETADDONS_BROWSERECOMMENDED   = "extensions.getAddons.recommended.bro
 const PREF_GETADDONS_GETRECOMMENDED      = "extensions.getAddons.recommended.url";
 const PREF_GETADDONS_BROWSESEARCHRESULTS = "extensions.getAddons.search.browseURL";
 const PREF_GETADDONS_GETSEARCHRESULTS    = "extensions.getAddons.search.url";
-
-const PREF_CHECK_COMPATIBILITY_BASE = "extensions.checkCompatibility";
-
-const BRANCH_REGEXP                   = /^([^\.]+\.[0-9]+[a-z]*).*/gi;
-
-XPCOMUtils.defineLazyGetter(this, "PREF_CHECK_COMPATIBILITY", function () {
-#ifdef MOZ_COMPATIBILITY_NIGHTLY
-  return PREF_CHECK_COMPATIBILITY_BASE + ".nightly";
-#else
-  return PREF_CHECK_COMPATIBILITY_BASE + "." +
-         Services.appinfo.version.replace(BRANCH_REGEXP, "$1");
-#endif
-});
-
-const PREF_EM_STRICT_COMPATIBILITY       = "extensions.strictCompatibility";
-// Note: This has to be kept in sync with the same constant in AddonManager.jsm
-const STRICT_COMPATIBILITY_DEFAULT       = true;
 
 const XMLURI_PARSE_ERROR  = "http://www.mozilla.org/newlayout/xml/parsererror.xml";
 
@@ -905,19 +855,10 @@ var AddonRepository = {
    *         The callback to pass results to
    */
   searchAddons: function(aSearchTerms, aMaxResults, aCallback) {
-    let checkCompatibility = true;
-    try {
-      checkCompatibility = Services.prefs.getBoolPref(PREF_CHECK_COMPATIBILITY);
-    } catch(e) { }
-    let strictCompatibility = STRICT_COMPATIBILITY_DEFAULT;
-    try {
-      strictCompatibility = Services.prefs.getBoolPref(PREF_EM_STRICT_COMPATIBILITY);
-    } catch(e) { }
-
     let compatMode = "normal";
-    if (!checkCompatibility)
+    if (!AddonManager.checkCompatibility)
       compatMode = "ignore";
-    else if (strictCompatibility)
+    else if (AddonManager.strictCompatibility)
       compatMode = "strict";
 
     let substitutions = {
@@ -1214,16 +1155,6 @@ var AddonRepository = {
     let self = this;
     let results = [];
 
-    let checkCompatibility = true;
-    try {
-      checkCompatibility = Services.prefs.getBoolPref(PREF_CHECK_COMPATIBILITY);
-    } catch(e) { }
-
-    let strictCompatibility = STRICT_COMPATIBILITY_DEFAULT;
-    try {
-      strictCompatibility = Services.prefs.getBoolPref(PREF_EM_STRICT_COMPATIBILITY);
-    } catch (e) {}
-
     function isSameApplication(aAppNode) {
       return self._getTextContent(aAppNode) == Services.appinfo.ID;
     }
@@ -1248,13 +1179,13 @@ var AddonRepository = {
 
         let currentVersion = Services.appinfo.version;
         return (Services.vc.compare(minVersion, currentVersion) <= 0 &&
-                ((!strictCompatibility) ||
+                ((!AddonManager.strictCompatibility) ||
                  Services.vc.compare(currentVersion, maxVersion) <= 0));
       });
 
       // Ignore add-ons not compatible with this Application
       if (!compatible) {
-        if (checkCompatibility)
+        if (AddonManager.checkCompatibility)
           continue;
 
         if (!Array.some(applications, isSameApplication))
@@ -1331,8 +1262,7 @@ var AddonRepository = {
 
     function findMatchingAppRange(aNodes) {
       let toolkitAppRange = null;
-      for (let i = 0; i < aNodes.length; i++) {
-        let node = aNodes[i];
+      for (let node of aNodes) {
         let appID = this._getDescendantTextContent(node, "appID");
         if (appID != Services.appinfo.ID && appID != TOOLKIT_ID)
           continue;
@@ -1503,8 +1433,7 @@ var AddonRepository = {
                                                                      aCompatOverrides,
                                                                      aAppVersion,
                                                                      aPlatformVersion) {
-    for (let i = 0; i < aCompatOverrides.length; i++) {
-      let override = aCompatOverrides[i];
+    for (let override of aCompatOverrides) {
 
       let appVersion = null;
       if (override.appID == TOOLKIT_ID)

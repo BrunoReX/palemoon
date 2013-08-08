@@ -1,46 +1,15 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Josh Aas <josh@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsLookAndFeel.h"
+#include "nsCocoaFeatures.h"
 #include "nsObjCExceptions.h"
 #include "nsIServiceManager.h"
 #include "nsNativeThemeColors.h"
 #include "nsStyleConsts.h"
+#include "gfxFont.h"
 
 #import <Cocoa/Cocoa.h>
 
@@ -259,7 +228,7 @@ nsLookAndFeel::NativeGetColor(ColorID aID, nscolor &aColor)
       aColor = NS_RGB(0xA3,0xA3,0xA3);
       break;          
     case eColorID__moz_mac_menutextdisable:
-      aColor = nsToolkit::OnSnowLeopardOrLater() ?
+      aColor = nsCocoaFeatures::OnSnowLeopardOrLater() ?
                  NS_RGB(0x88,0x88,0x88) : NS_RGB(0x98,0x98,0x98);
       break;      
     case eColorID__moz_mac_menutextselect:
@@ -348,7 +317,7 @@ nsLookAndFeel::GetIntImpl(IntID aID, PRInt32 &aResult)
       aResult = 4;
       break;
     case eIntID_ScrollArrowStyle:
-      if (nsToolkit::OnLionOrLater()) {
+      if (nsCocoaFeatures::OnLionOrLater()) {
         // OS X Lion's scrollbars have no arrows
         aResult = eScrollArrow_None;
       } else {
@@ -395,7 +364,7 @@ nsLookAndFeel::GetIntImpl(IntID aID, PRInt32 &aResult)
       aResult = [NSColor currentControlTint] == NSGraphiteControlTint;
       break;
     case eIntID_MacLionTheme:
-      aResult = nsToolkit::OnLionOrLater();
+      aResult = nsCocoaFeatures::OnLionOrLater();
       break;
     case eIntID_TabFocusModel:
     {
@@ -467,4 +436,125 @@ nsLookAndFeel::GetFloatImpl(FloatID aID, float &aResult)
   }
 
   return res;
+}
+
+// copied from gfxQuartzFontCache.mm, maybe should go in a Cocoa utils
+// file somewhere
+static void GetStringForNSString(const NSString *aSrc, nsAString& aDest)
+{
+    aDest.SetLength([aSrc length]);
+    [aSrc getCharacters:aDest.BeginWriting()];
+}
+
+bool
+nsLookAndFeel::GetFontImpl(FontID aID, nsString &aFontName,
+                           gfxFontStyle &aFontStyle)
+{
+    // hack for now
+    if (aID == eFont_Window || aID == eFont_Document) {
+        aFontStyle.style      = NS_FONT_STYLE_NORMAL;
+        aFontStyle.weight     = NS_FONT_WEIGHT_NORMAL;
+        aFontStyle.stretch    = NS_FONT_STRETCH_NORMAL;
+        aFontStyle.size       = 14;
+        aFontStyle.systemFont = true;
+
+        aFontName.AssignLiteral("sans-serif");
+        return true;
+    }
+
+/* possibilities, see NSFont Class Reference:
+    [NSFont boldSystemFontOfSize:     0.0]
+    [NSFont controlContentFontOfSize: 0.0]
+    [NSFont labelFontOfSize:          0.0]
+    [NSFont menuBarFontOfSize:        0.0]
+    [NSFont menuFontOfSize:           0.0]
+    [NSFont messageFontOfSize:        0.0]
+    [NSFont paletteFontOfSize:        0.0]
+    [NSFont systemFontOfSize:         0.0]
+    [NSFont titleBarFontOfSize:       0.0]
+    [NSFont toolTipsFontOfSize:       0.0]
+    [NSFont userFixedPitchFontOfSize: 0.0]
+    [NSFont userFontOfSize:           0.0]
+    [NSFont systemFontOfSize:         [NSFont smallSystemFontSize]]
+    [NSFont boldSystemFontOfSize:     [NSFont smallSystemFontSize]]
+*/
+
+    NSFont *font = nsnull;
+    switch (aID) {
+        // css2
+        case eFont_Caption:
+            font = [NSFont systemFontOfSize:0.0];
+            break;
+        case eFont_Icon: // used in urlbar; tried labelFont, but too small
+            font = [NSFont controlContentFontOfSize:0.0];
+            break;
+        case eFont_Menu:
+            font = [NSFont systemFontOfSize:0.0];
+            break;
+        case eFont_MessageBox:
+            font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
+            break;
+        case eFont_SmallCaption:
+            font = [NSFont boldSystemFontOfSize:[NSFont smallSystemFontSize]];
+            break;
+        case eFont_StatusBar:
+            font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
+            break;
+        // css3
+        //case eFont_Window:     = 'sans-serif'
+        //case eFont_Document:   = 'sans-serif'
+        case eFont_Workspace:
+            font = [NSFont controlContentFontOfSize:0.0];
+            break;
+        case eFont_Desktop:
+            font = [NSFont controlContentFontOfSize:0.0];
+            break;
+        case eFont_Info:
+            font = [NSFont controlContentFontOfSize:0.0];
+            break;
+        case eFont_Dialog:
+            font = [NSFont systemFontOfSize:0.0];
+            break;
+        case eFont_Button:
+            font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
+            break;
+        case eFont_PullDownMenu:
+            font = [NSFont menuBarFontOfSize:0.0];
+            break;
+        case eFont_List:
+            font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
+            break;
+        case eFont_Field:
+            font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
+            break;
+        // moz
+        case eFont_Tooltips:
+            font = [NSFont toolTipsFontOfSize:0.0];
+            break;
+        case eFont_Widget:
+            font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
+            break;
+        default:
+            break;
+    }
+
+    if (!font) {
+        NS_WARNING("failed to find a system font!");
+        return false;
+    }
+
+    NSFontSymbolicTraits traits = [[font fontDescriptor] symbolicTraits];
+    aFontStyle.style =
+        (traits & NSFontItalicTrait) ?  NS_FONT_STYLE_ITALIC : NS_FONT_STYLE_NORMAL;
+    aFontStyle.weight =
+        (traits & NSFontBoldTrait) ? NS_FONT_WEIGHT_BOLD : NS_FONT_WEIGHT_NORMAL;
+    aFontStyle.stretch =
+        (traits & NSFontExpandedTrait) ?
+            NS_FONT_STRETCH_EXPANDED : (traits & NSFontCondensedTrait) ?
+                NS_FONT_STRETCH_CONDENSED : NS_FONT_STRETCH_NORMAL;
+    aFontStyle.size = [font pointSize];
+    aFontStyle.systemFont = true;
+
+    GetStringForNSString([font familyName], aFontName);
+    return true;
 }

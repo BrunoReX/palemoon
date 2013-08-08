@@ -1,41 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Brendan Eich (brendan@mozilla.org)
- *   Scott MacGregor (mscott@netscape.com)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsCOMPtr.h"
 #include "nsIAtom.h"
@@ -49,8 +15,6 @@
 #include "nsIChannel.h"
 #include "nsXPIDLString.h"
 #include "nsReadableUtils.h"
-#include "nsIParser.h"
-#include "nsParserCIID.h"
 #include "nsNetUtil.h"
 #include "plstr.h"
 #include "nsIContent.h"
@@ -85,7 +49,6 @@
 #include "nsXBLBinding.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptSecurityManager.h"
-#include "nsEventListenerManager.h"
 #include "nsGUIEvent.h"
 
 #include "prprf.h"
@@ -105,18 +68,18 @@
 // The JS class for XBLBinding
 //
 static void
-XBLFinalize(JSContext *cx, JSObject *obj)
+XBLFinalize(JSFreeOp *fop, JSObject *obj)
 {
   nsXBLDocumentInfo* docInfo =
-    static_cast<nsXBLDocumentInfo*>(::JS_GetPrivate(cx, obj));
+    static_cast<nsXBLDocumentInfo*>(::JS_GetPrivate(obj));
   NS_RELEASE(docInfo);
   
-  nsXBLJSClass* c = static_cast<nsXBLJSClass*>(::JS_GET_CLASS(cx, obj));
+  nsXBLJSClass* c = static_cast<nsXBLJSClass*>(::JS_GetClass(obj));
   c->Drop();
 }
 
 static JSBool
-XBLResolve(JSContext *cx, JSObject *obj, jsid id, uintN flags,
+XBLResolve(JSContext *cx, JSHandleObject obj, JSHandleId id, unsigned flags,
            JSObject **objp)
 {
   // Note: if we get here, that means that the implementation for some binding
@@ -135,8 +98,7 @@ XBLResolve(JSContext *cx, JSObject *obj, jsid id, uintN flags,
 
   nsDependentJSString fieldName(id);
 
-  jsval slotVal;
-  ::JS_GetReservedSlot(cx, obj, 0, &slotVal);
+  jsval slotVal = ::JS_GetReservedSlot(obj, 0);
   NS_ASSERTION(!JSVAL_IS_VOID(slotVal), "How did that happen?");
     
   nsXBLPrototypeBinding* protoBinding =
@@ -149,7 +111,7 @@ XBLResolve(JSContext *cx, JSObject *obj, jsid id, uintN flags,
   }
 
   // We have this field.  Time to install it.  Get our node.
-  JSClass* nodeClass = ::JS_GET_CLASS(cx, origObj);
+  JSClass* nodeClass = ::JS_GetClass(origObj);
   if (!nodeClass) {
     return JS_FALSE;
   }
@@ -161,7 +123,7 @@ XBLResolve(JSContext *cx, JSObject *obj, jsid id, uintN flags,
   }
 
   nsCOMPtr<nsIXPConnectWrappedNative> xpcWrapper =
-    do_QueryInterface(static_cast<nsISupports*>(::JS_GetPrivate(cx, origObj)));
+    do_QueryInterface(static_cast<nsISupports*>(::JS_GetPrivate(origObj)));
   if (!xpcWrapper) {
     // Looks like whatever |origObj| is it's not our nsIContent.  It might well
     // be the proto our binding installed, however, where the private is the
@@ -259,10 +221,10 @@ nsXBLJSClass::Destroy()
 
 // Constructors/Destructors
 nsXBLBinding::nsXBLBinding(nsXBLPrototypeBinding* aBinding)
-  : mPrototypeBinding(aBinding),
-    mInsertionPointTable(nsnull),
-    mIsStyleBinding(true),
-    mMarkedForDeath(false)
+  : mIsStyleBinding(true),
+    mMarkedForDeath(false),
+    mPrototypeBinding(aBinding),
+    mInsertionPointTable(nsnull)
 {
   NS_ASSERTION(mPrototypeBinding, "Must have a prototype binding!");
   // Grab a ref to the document info so the prototype binding won't die
@@ -1088,12 +1050,12 @@ nsXBLBinding::ChangeDocument(nsIDocument* aOldDocument, nsIDocument* aNewDocumen
               }
 
               for ( ; true; base = proto) { // Will break out on null proto
-                proto = ::JS_GetPrototype(cx, base);
+                proto = ::JS_GetPrototype(base);
                 if (!proto) {
                   break;
                 }
 
-                JSClass* clazz = ::JS_GET_CLASS(cx, proto);
+                JSClass* clazz = ::JS_GetClass(proto);
                 if (!clazz ||
                     (~clazz->flags &
                      (JSCLASS_HAS_PRIVATE | JSCLASS_PRIVATE_IS_NSISUPPORTS)) ||
@@ -1105,17 +1067,13 @@ nsXBLBinding::ChangeDocument(nsIDocument* aOldDocument, nsIDocument* aNewDocumen
                 }
 
                 nsRefPtr<nsXBLDocumentInfo> docInfo =
-                  static_cast<nsXBLDocumentInfo*>(::JS_GetPrivate(cx, proto));
+                  static_cast<nsXBLDocumentInfo*>(::JS_GetPrivate(proto));
                 if (!docInfo) {
                   // Not the proto we seek
                   continue;
                 }
 
-                jsval protoBinding;
-                if (!::JS_GetReservedSlot(cx, proto, 0, &protoBinding)) {
-                  NS_ERROR("Really shouldn't happen");
-                  continue;
-                }
+                jsval protoBinding = ::JS_GetReservedSlot(proto, 0);
 
                 if (JSVAL_TO_PRIVATE(protoBinding) != mPrototypeBinding) {
                   // Not the right binding
@@ -1124,7 +1082,7 @@ nsXBLBinding::ChangeDocument(nsIDocument* aOldDocument, nsIDocument* aNewDocumen
 
                 // Alright!  This is the right prototype.  Pull it out of the
                 // proto chain.
-                JSObject* grandProto = ::JS_GetPrototype(cx, proto);
+                JSObject* grandProto = ::JS_GetPrototype(proto);
                 ::JS_SetPrototype(cx, base, grandProto);
                 break;
               }
@@ -1224,7 +1182,7 @@ nsXBLBinding::DoInitJSClass(JSContext *cx, JSObject *global, JSObject *obj,
 
   if (obj) {
     // Retrieve the current prototype of obj.
-    parent_proto = ::JS_GetPrototype(cx, obj);
+    parent_proto = ::JS_GetPrototype(obj);
     if (parent_proto) {
       // We need to create a unique classname based on aClassName and
       // parent_proto.  Append a space (an invalid URI character) to ensure that
@@ -1248,9 +1206,7 @@ nsXBLBinding::DoInitJSClass(JSContext *cx, JSObject *global, JSObject *obj,
 
   jsval val;
   JSObject* proto = NULL;
-  if ((!::JS_LookupPropertyWithFlags(cx, global, className.get(),
-                                     JSRESOLVE_CLASSNAME,
-                                     &val)) ||
+  if ((!::JS_LookupPropertyWithFlags(cx, global, className.get(), 0, &val)) ||
       JSVAL_IS_PRIMITIVE(val)) {
     // We need to initialize the class.
 
@@ -1327,16 +1283,10 @@ nsXBLBinding::DoInitJSClass(JSContext *cx, JSObject *global, JSObject *obj,
     // collection doesn't seem to work right if the private is not an
     // nsISupports.
     nsXBLDocumentInfo* docInfo = aProtoBinding->XBLDocumentInfo();
-    ::JS_SetPrivate(cx, proto, docInfo);
+    ::JS_SetPrivate(proto, docInfo);
     NS_ADDREF(docInfo);
 
-    if (!::JS_SetReservedSlot(cx, proto, 0, PRIVATE_TO_JSVAL(aProtoBinding))) {
-      (nsXBLService::gClassTable)->Remove(&key);
-
-      // |c| will get dropped when |proto| is finalized
-
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
+    ::JS_SetReservedSlot(proto, 0, PRIVATE_TO_JSVAL(aProtoBinding));
 
     *aClassObject = proto;
   }
@@ -1452,22 +1402,14 @@ nsXBLBinding::GetInsertionPointsFor(nsIContent* aParent,
   if (!mInsertionPointTable) {
     mInsertionPointTable =
       new nsClassHashtable<nsISupportsHashKey, nsInsertionPointList>;
-    if (!mInsertionPointTable || !mInsertionPointTable->Init(4)) {
-      delete mInsertionPointTable;
-      mInsertionPointTable = nsnull;
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
+    mInsertionPointTable->Init(4);
   }
 
   mInsertionPointTable->Get(aParent, aResult);
 
   if (!*aResult) {
     *aResult = new nsInsertionPointList;
-    if (!*aResult || !mInsertionPointTable->Put(aParent, *aResult)) {
-      delete *aResult;
-      *aResult = nsnull;
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
+    mInsertionPointTable->Put(aParent, *aResult);
     if (aParent) {
       aParent->SetFlags(NODE_IS_INSERTION_PARENT);
     }

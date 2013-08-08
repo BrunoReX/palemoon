@@ -1,41 +1,9 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:expandtab:shiftwidth=2:tabstop=4: 
  */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developers of the Original Code are
- * Naoki Hotta <nhotta@netscape.com> and Jungshik Shin <jshin@mailaps.org>.
- * Portions created by the Initial Developer are Copyright (C) 2002, 2003
- * the Initial Developers. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "nsString.h"
 #include "nsIUnicodeEncoder.h"
 #include "nsICharsetConverterManager.h"
@@ -49,7 +17,8 @@
 NS_IMPL_ISUPPORTS1(nsUTF8ConverterService, nsIUTF8ConverterService)
 
 static nsresult 
-ToUTF8(const nsACString &aString, const char *aCharset, nsACString &aResult)
+ToUTF8(const nsACString &aString, const char *aCharset,
+       bool aAllowSubstitution, nsACString &aResult)
 {
   nsresult rv;
   if (!aCharset || !*aCharset)
@@ -64,6 +33,9 @@ ToUTF8(const nsACString &aString, const char *aCharset, nsACString &aResult)
   rv = ccm->GetUnicodeDecoder(aCharset,
                               getter_AddRefs(unicodeDecoder));
   NS_ENSURE_SUCCESS(rv, rv);
+
+  if (!aAllowSubstitution)
+    unicodeDecoder->SetInputErrorBehavior(nsIUnicodeDecoder::kOnError_Signal);
 
   PRInt32 srcLen = aString.Length();
   PRInt32 dstLen;
@@ -86,8 +58,12 @@ NS_IMETHODIMP
 nsUTF8ConverterService::ConvertStringToUTF8(const nsACString &aString, 
                                             const char *aCharset, 
                                             bool aSkipCheck, 
+                                            bool aAllowSubstitution,
+                                            PRUint8 aOptionalArgc,
                                             nsACString &aUTF8String)
 {
+  bool allowSubstitution = (aOptionalArgc == 1) ? aAllowSubstitution : true;
+
   // return if ASCII only or valid UTF-8 providing that the ASCII/UTF-8
   // check is requested. It may not be asked for if a caller suspects
   // that the input is in non-ASCII 7bit charset (ISO-2022-xx, HZ) or 
@@ -99,7 +75,7 @@ nsUTF8ConverterService::ConvertStringToUTF8(const nsACString &aString,
 
   aUTF8String.Truncate();
 
-  nsresult rv = ToUTF8(aString, aCharset, aUTF8String);
+  nsresult rv = ToUTF8(aString, aCharset, allowSubstitution, aUTF8String);
 
   // additional protection for cases where check is skipped and  the input
   // is actually in UTF-8 as opposed to aCharset. (i.e. caller's hunch
@@ -143,6 +119,6 @@ nsUTF8ConverterService::ConvertURISpecToUTF8(const nsACString &aSpec,
     return NS_OK;
   }
 
-  return ToUTF8(unescapedSpec, aCharset, aUTF8Spec);
+  return ToUTF8(unescapedSpec, aCharset, true, aUTF8Spec);
 }
 

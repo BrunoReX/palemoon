@@ -1,3 +1,5 @@
+// ****************** App/Update/General ******************
+
 pref("startup.homepage_override_url","http://www.palemoon.org/");
 pref("startup.homepage_welcome_url","http://www.palemoon.org/firstrun.shtml");
 // Interval: Time between checks for a new version (in seconds) -- 2 days for Pale Moon
@@ -19,17 +21,47 @@ pref("app.update.url.details", "http://www.palemoon.org/");
 // Additional Update fixes - no SSL damnit, I don't have a cert (4.0)
 pref("app.update.cert.checkAttributes", false);
 pref("app.update.cert.requireBuiltIn", false);
+// Fix useragent for UA sniffing websites
+pref("general.useragent.compatMode.firefox", true);
 
-// Release notes and vendor URLs
+// ****************** Release notes and vendor URLs ******************
+
 pref("app.releaseNotesURL", "http://www.palemoon.org/releasenotes-ng.shtml");
 pref("app.vendorURL", "http://www.palemoon.org/");
+pref("app.support.baseURL", "http://www.palemoon.org/support/");
+//Add-on window fixes
+pref("extensions.getAddons.browseAddons", "https://addons.mozilla.org/%LOCALE%/firefox");
+pref("extensions.getAddons.maxResults", 10);
+pref("extensions.getAddons.recommended.browseURL", "https://addons.mozilla.org/%LOCALE%/firefox/recommended");
+pref("extensions.getAddons.recommended.url", "https://services.addons.mozilla.org/%LOCALE%/firefox/api/%API_VERSION%/list/featured/all/10/%OS%/%VERSION%");
+pref("extensions.getAddons.search.browseURL", "https://addons.mozilla.org/%LOCALE%/firefox/search?q=%TERMS%");
+pref("extensions.getAddons.search.url", "https://services.addons.mozilla.org/%LOCALE%/firefox/api/%API_VERSION%/search/%TERMS%/all/10/%OS%/%VERSION%");
+pref("extensions.getMoreThemesURL", "https://addons.mozilla.org/%LOCALE%/firefox/getpersonas");
+pref("extensions.blocklist.url", "https://addons.mozilla.org/blocklist/3/firefox/%APP_VERSION%/%PRODUCT%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/");
+pref("extensions.webservice.discoverURL","https://services.addons.mozilla.org/%LOCALE%/firefox/discovery/pane/%VERSION%/%OS%");
+pref("extensions.getAddons.get.url","https://services.addons.mozilla.org/%LOCALE%/firefox/api/%API_VERSION%/search/guid:%IDS%?src=firefox&appOS=%OS%&appVersion=%VERSION%&tMain=%TIME_MAIN%&tFirstPaint=%TIME_FIRST_PAINT%&tSessionRestored=%TIME_SESSION_RESTORED%");
+//Search engine fixes
+pref("browser.search.searchEnginesURL", "https://addons.mozilla.org/%LOCALE%/firefox/search-engines/");
+//Safebrowsing URL fixes
+pref("browser.safebrowsing.provider.0.gethashURL", "http://safebrowsing.clients.google.com/safebrowsing/gethash?client=navclient-auto-ffox&appver={moz:version}&pver=2.2");
+pref("browser.safebrowsing.provider.0.keyURL", "https://sb-ssl.google.com/safebrowsing/newkey?client=palemoon&appver={moz:version}&pver=2.2");
+pref("browser.safebrowsing.provider.0.lookupURL", "http://safebrowsing.clients.google.com/safebrowsing/lookup?sourceid=firefox-antiphish&features=TrustRank&client=navclient-auto-ffox&appver={moz:version}&");
+pref("browser.safebrowsing.provider.0.updateURL", "http://safebrowsing.clients.google.com/safebrowsing/downloads?client=navclient-auto-ffox&appver={moz:version}&pver=2.2");
+pref("browser.safebrowsing.warning.infoURL", "http://www.mozilla.com/%LOCALE%/firefox/phishing-protection/");
+//Dictionary URL
+pref("browser.dictionaries.download.url", "https://addons.mozilla.org/%LOCALE%/firefox/dictionaries/");
+//Geolocation info URL
+pref("browser.geolocation.warning.infoURL", "http://www.mozilla.com/%LOCALE%/firefox/geolocation/");
+//add-on/plugin blocklist -> Palemoon.org
+pref("extensions.blocklist.url","http://blocklist.palemoon.org/%VERSION%/blocklist.xml");
 
 pref("browser.search.param.ms-pc", "MOZI");
 pref("browser.search.param.yahoo-fr", "moz35");
 pref("browser.search.param.yahoo-fr-cjkt", "moz35"); // now unused
 pref("browser.search.param.yahoo-fr-ja", "mozff");
 
-//Palemoon networking tweaks
+// ****************** Networking config ******************
+
 pref("network.prefetch-next", false); //prefetching engine off by default!
 pref("network.http.pipelining"      , true); //pipelining on by default, haven't seen any issues
 pref("network.http.pipelining.ssl"  , true); 
@@ -39,132 +71,46 @@ pref("network.http.max-connections",48); // Don't saturate the network layer and
 pref("network.http.max-connections-per-server",8); // With pipelining, this should be low (FF=15)
 pref("network.http.max-persistent-connections-per-proxy", 8);
 pref("network.http.max-persistent-connections-per-server", 6);
-
-pref("browser.tabs.insertRelatedAfterCurrent", false); //use old method of tabbed browsing instead of "Chrome" style
-pref("general.warnOnAboutConfig", false); //about:config warning. annoying. I don't give warranty.
-pref("browser.download.useDownloadDir", false); //don't use default download location as standard. ASK.
-
-//Fix useragent for annoying websites
-pref("general.useragent.compatMode.firefox", true);
-
-//Ctrl-Tab page previews (361)
-pref("browser.ctrlTab.previews", true);
-//All Tabs previews (3615/400)
-pref("browser.allTabs.previews", true);
-
-//Downloadmanager (361)
-pref("browser.download.manager.flashCount", 10);
-pref("browser.download.manager.scanWhenDone", false);
-
-//plugin kill timeout (366)
-pref("dom.ipc.plugins.timeoutSecs", 20);
-
-//support url
-pref("app.support.baseURL", "http://www.palemoon.org/support/");
-
-//DNS handling (368)
+pref("network.dns.disablePrefetch", true); //Disable DNS prefetching to prevent router hangups
 pref("network.dnsCacheEntries", 1024); //cache 1024 instead of 20
 pref("network.dnsCacheExpiration", 3600); //TTL 1 hour
 
-//Slightly lower default initial rendering delay (368)
+// ****************** Renderer config ******************
+
 pref("nglayout.initialpaint.delay", 150);
-
-//webGL
-//v11.1: flipped back off - still implementation errors.
 pref("webgl.prefer-native-gl", false); 
-//enable it even if ANGLE isn't built. Will disable anyway if no GL driver present.
 pref("webgl.force-enabled", true); 
-
-//D2D/DirectWrite
 pref("gfx.font_rendering.directwrite.enabled", false); //Too many issues with this!
-//D2D force may cause issues for poor drivers, so off by default.
-pref("gfx.direct2d.force-enabled", false);
-
-//JIT the chrome! (402)
+pref("gfx.direct2d.force-enabled", false); //D2D force may cause issues for poor drivers, so off by default.
+// JIT the chrome!
 pref("javascript.options.jitprofiling.chrome", true);
 // pref("javascript.options.methodjit.chrome", true);
 // pref("javascript.options.methodjit_always", true);
 
-//Add-on window fixes (368)
-pref("extensions.getAddons.browseAddons", "https://addons.mozilla.org/%LOCALE%/firefox");
-pref("extensions.getAddons.maxResults", 10);
-pref("extensions.getAddons.recommended.browseURL", "https://addons.mozilla.org/%LOCALE%/firefox/recommended");
-pref("extensions.getAddons.recommended.url", "https://services.addons.mozilla.org/%LOCALE%/firefox/api/%API_VERSION%/list/featured/all/10/%OS%/%VERSION%");
-pref("extensions.getAddons.search.browseURL", "https://addons.mozilla.org/%LOCALE%/firefox/search?q=%TERMS%");
-pref("extensions.getAddons.search.url", "https://services.addons.mozilla.org/%LOCALE%/firefox/api/%API_VERSION%/search/%TERMS%/all/10/%OS%/%VERSION%");
-pref("extensions.getMoreThemesURL", "https://addons.mozilla.org/%LOCALE%/firefox/getpersonas");
-pref("extensions.blocklist.url", "https://addons.mozilla.org/blocklist/3/firefox/%APP_VERSION%/%PRODUCT%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/");
-//MORE add-ons fixes (405)
-pref("extensions.webservice.discoverURL","https://services.addons.mozilla.org/%LOCALE%/firefox/discovery/pane/%VERSION%/%OS%");
-pref("extensions.getAddons.get.url","https://services.addons.mozilla.org/%LOCALE%/firefox/api/%API_VERSION%/search/guid:%IDS%?src=firefox&appOS=%OS%&appVersion=%VERSION%&tMain=%TIME_MAIN%&tFirstPaint=%TIME_FIRST_PAINT%&tSessionRestored=%TIME_SESSION_RESTORED%");
+// ****************** UI config ******************
 
-//Search engine fixes (3611)
-pref("browser.search.searchEnginesURL", "https://addons.mozilla.org/%LOCALE%/firefox/search-engines/");
-
-//Safebrowsing URL fixes (3613)
-pref("browser.safebrowsing.provider.0.gethashURL", "http://safebrowsing.clients.google.com/safebrowsing/gethash?client=navclient-auto-ffox&appver={moz:version}&pver=2.2");
-pref("browser.safebrowsing.provider.0.keyURL", "https://sb-ssl.google.com/safebrowsing/newkey?client=palemoon&appver={moz:version}&pver=2.2");
-pref("browser.safebrowsing.provider.0.lookupURL", "http://safebrowsing.clients.google.com/safebrowsing/lookup?sourceid=firefox-antiphish&features=TrustRank&client=navclient-auto-ffox&appver={moz:version}&");
-pref("browser.safebrowsing.provider.0.updateURL", "http://safebrowsing.clients.google.com/safebrowsing/downloads?client=navclient-auto-ffox&appver={moz:version}&pver=2.2");
-pref("browser.safebrowsing.warning.infoURL", "http://www.mozilla.com/%LOCALE%/firefox/phishing-protection/");
-//Dictionary URL (3613)
-pref("browser.dictionaries.download.url", "https://addons.mozilla.org/%LOCALE%/firefox/dictionaries/");
-//Geolocation info URL (3613)
-pref("browser.geolocation.warning.infoURL", "http://www.mozilla.com/%LOCALE%/firefox/geolocation/");
-
-//give people a choice for add-on updates.
-pref("extensions.update.autoUpdateDefault", false);
-
+pref("browser.tabs.insertRelatedAfterCurrent", false); //use old method of tabbed browsing instead of "Chrome" style
+pref("general.warnOnAboutConfig", false); //about:config warning. annoying. I don't give warranty.
+pref("browser.download.useDownloadDir", false); //don't use default download location as standard. ASK.
+pref("browser.search.context.loadInBackground", true); //don't swap focus to the context search tab.
+pref("browser.ctrlTab.previews", true);
+pref("browser.allTabs.previews", true);
 pref("browser.urlbar.trimURLs", false); //stop being a derp, Mozilla!
+pref("browser.preferences.animateFadeIn", true); //Animate preferences windows
 
-//cache handling 1GB -> 200MB by default, disable automatic
-//max element size 5MB -> 4MB/1MB, caching anything larger is not recommended
-pref("browser.cache.disk.smart_size.enabled",false);
-pref("browser.cache.disk.capacity",204800); //200MB
-pref("browser.cache.disk.max_entry_size",4096);
-pref("browser.cache.memory.capacity",-1); //dynamically allocate as-needed - doesn't seem to be intensively used.
-pref("browser.cache.memory.max_entry_size",1024);
-
-//image RAM cache size for *decoded* images; 256MB should be enough here;
-pref("image.cache.size",256000);
-
-//Improve memory handling for js
-pref("javascript.options.mem.gc_per_compartment", false);
-pref("javascript.options.mem.high_water_mark", 64);
-pref("javascript.options.mem.max", 100000);
-
-//Disable DNS prefetching to prevent router hangups
-pref("network.dns.disablePrefetch", true);
-
-//Animate preferences windows
-pref("browser.preferences.animateFadeIn", true);
-
-//DOM
-pref("dom.disable_window_status_change", false); //Allow status feedback by default
-//Set max script runtimes to sane values
-pref("dom.max_chrome_script_run_time", 90); //Some addons need ample time!
-pref("dom.max_script_run_time", 20); //Should be plenty for a page script to do what it needs
-
-//Image decoding tweaks
-pref("image.mem.max_ms_before_yield", 250);
-
-//add-on/plugin blocklist -> Palemoon.org
-pref("extensions.blocklist.url","http://blocklist.palemoon.org/%VERSION%/blocklist.xml");
-
-//store sessions less frequently to prevent redundant mem usage by storing too much
-pref("browser.sessionstore.interval",60000); //every minute instead of every 10 seconds
-pref("browser.sessionstore.privacy_level",1); //don't store session data (forms, etc) for secure sites
-
-//Take removed tools out of the UI
+//Take unintended/removed tools out of the UI
 pref("devtools.errorconsole.enabled",true); //Essential for troubleshooting
 pref("devtools.scratchpad.enabled",false); //Still present but flipped off
 pref("devtools.inspector.enabled",false);
 pref("devtools.styleeditor.enabled",false); //NIIB
 pref("devtools.styleinspector.enabled",false); //NIIB
 pref("devtools.tilt.enabled",false); //Tilt? WHY? NIIB
+//advanced webdev only (stripped firebug clone)
+pref("devtools.responsiveUI.enabled",false); 
+pref("devtools.debugger.enabled",false);
 
-//Set Tabs NOT on top.
-pref("browser.tabs.onTop",false);
+//Set tabs NOT on top
+pref("browser.tabs.onTop",false); 
 
 //Smooth scrolling settings
 pref("general.smoothScroll",true);
@@ -180,3 +126,44 @@ pref("general.smoothScroll.pixels.durationMaxMS",500);
 pref("general.smoothScroll.scrollbars",true);
 pref("general.smoothScroll.scrollbars.durationMinMS",50);
 pref("general.smoothScroll.scrollbars.durationMaxMS",200);
+
+// ****************** Misc. config ******************
+
+// Download manager
+pref("browser.download.manager.flashCount", 10);
+pref("browser.download.manager.scanWhenDone", false);
+
+//plugin kill timeout
+pref("dom.ipc.plugins.timeoutSecs", 20);
+
+//give people a choice for add-on updates.
+pref("extensions.update.autoUpdateDefault", false);
+
+//cache handling 1GB -> 200MB by default, disable automatic
+//max element size -> 4MB, caching anything larger is not recommended
+pref("browser.cache.disk.smart_size.enabled",false);
+pref("browser.cache.disk.capacity",204800); //200MB
+pref("browser.cache.disk.max_entry_size",4096);
+pref("browser.cache.memory.capacity",-1); //dynamically allocate RAM cache as-needed.
+pref("browser.cache.memory.max_entry_size",-1); 
+
+//image RAM cache size for *decoded* images; 256MB should be enough here;
+pref("image.mem.max_decoded_image_kb", 256000);
+
+//Improve memory handling for js
+pref("javascript.options.mem.gc_per_compartment", false);
+pref("javascript.options.mem.high_water_mark", 64);
+pref("javascript.options.mem.max", 100000);
+
+//DOM
+pref("dom.disable_window_status_change", false); //Allow status feedback by default
+//Set max script runtimes to sane values
+pref("dom.max_chrome_script_run_time", 90); //Some addons need ample time!
+pref("dom.max_script_run_time", 20); //Should be plenty for a page script to do what it needs
+
+//Image decoding tweaks
+pref("image.mem.max_ms_before_yield", 250);
+
+//store sessions less frequently to prevent redundant mem usage by storing too much
+pref("browser.sessionstore.interval",60000); //every minute instead of every 10 seconds
+pref("browser.sessionstore.privacy_level",1); //don't store session data (forms, etc) for secure sites

@@ -1,45 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998-2001
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Hubbie Shaw
- *   Doug Turner <dougt@netscape.com>
- *   Stuart Parmenter <pavlov@netscape.com>
- *   Brian Ryner <bryner@brianryner.com>
- *   Terry Hayes <thayes@netscape.com>
- *   Kai Engert <kaie@netscape.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifdef MOZ_LOGGING
 #define FORCE_PR_LOG
@@ -169,6 +131,8 @@ nsSecureBrowserUIImpl::nsSecureBrowserUIImpl()
   , mSubRequestsLowSecurity(0)
   , mSubRequestsBrokenSecurity(0)
   , mSubRequestsNoSecurity(0)
+  , mRestoreSubrequests(false)
+  , mOnLocationChangeSeen(false)
 #ifdef DEBUG
   , mOnStateLocationChangeReentranceDetection(0)
 #endif
@@ -573,6 +537,11 @@ nsSecureBrowserUIImpl::EvaluateAndUpdateSecurityState(nsIRequest* aRequest, nsIS
         mCurrentToplevelSecurityInfo = aRequest;
     else
         mCurrentToplevelSecurityInfo = info;
+
+    // The subrequest counters are now in sync with 
+    // mCurrentToplevelSecurityInfo, don't restore after top level
+    // document load finishes.
+    mRestoreSubrequests = false;
   }
 
   return UpdateSecurityState(aRequest, withNewLocation, 
@@ -795,18 +764,23 @@ nsSecureBrowserUIImpl::OnStateChange(nsIWebProgress* aWebProgress,
 
   nsCOMPtr<nsIURI> uri;
   nsCOMPtr<nsIChannel> channel(do_QueryInterface(aRequest));
-  if (channel)
-  {
+  if (channel) {
     channel->GetURI(getter_AddRefs(uri));
-    if (uri)
-    {
-      bool vs;
-      if (NS_SUCCEEDED(uri->SchemeIs("javascript", &vs)) && vs)
-      {
-        // We ignore the progress events for javascript URLs.
-        // If a document loading gets triggered, we will see more events.
-        return NS_OK;
-      }
+  }
+
+  nsCOMPtr<imgIRequest> imgRequest(do_QueryInterface(aRequest));
+  if (imgRequest) {
+    NS_ASSERTION(!channel, "How did that happen, exactly?");
+    // for image requests, we get the URI from here
+    imgRequest->GetURI(getter_AddRefs(uri));
+  }
+  
+  if (uri) {
+    bool vs;
+    if (NS_SUCCEEDED(uri->SchemeIs("javascript", &vs)) && vs) {
+      // We ignore the progress events for javascript URLs.
+      // If a document loading gets triggered, we will see more events.
+      return NS_OK;
     }
   }
 
@@ -842,11 +816,7 @@ nsSecureBrowserUIImpl::OnStateChange(nsIWebProgress* aWebProgress,
   bool isSubDocumentRelevant = true;
 
   // We are only interested in requests that load in the browser window...
-  nsCOMPtr<imgIRequest> imgRequest(do_QueryInterface(aRequest));
-  if (imgRequest) {
-    // for image requests, we get the URI from here
-    imgRequest->GetURI(getter_AddRefs(uri));
-  } else { // is not imgRequest
+  if (!imgRequest) { // is not imgRequest
     nsCOMPtr<nsIHttpChannel> httpRequest(do_QueryInterface(aRequest));
     if (!httpRequest) {
       nsCOMPtr<nsIFileChannel> fileRequest(do_QueryInterface(aRequest));
@@ -1112,6 +1082,8 @@ nsSecureBrowserUIImpl::OnStateChange(nsIWebProgress* aWebProgress,
         prevContentSecurity->SetCountSubRequestsBrokenSecurity(saveSubBroken);
         prevContentSecurity->SetCountSubRequestsNoSecurity(saveSubNo);
         prevContentSecurity->Flush();
+        PR_LOG(gSecureDocLog, PR_LOG_DEBUG, ("SecureUI:%p: Saving subs in START to %p as %d,%d,%d,%d\n", 
+          this, prevContentSecurity.get(), saveSubHigh, saveSubLow, saveSubBroken, saveSubNo));      
       }
 
       bool retrieveAssociatedState = false;
@@ -1145,7 +1117,18 @@ nsSecureBrowserUIImpl::OnStateChange(nsIWebProgress* aWebProgress,
           newContentSecurity->GetCountSubRequestsLowSecurity(&newSubLow);
           newContentSecurity->GetCountSubRequestsBrokenSecurity(&newSubBroken);
           newContentSecurity->GetCountSubRequestsNoSecurity(&newSubNo);
+          PR_LOG(gSecureDocLog, PR_LOG_DEBUG, ("SecureUI:%p: Restoring subs in START from %p to %d,%d,%d,%d\n", 
+            this, newContentSecurity.get(), newSubHigh, newSubLow, newSubBroken, newSubNo));      
         }
+      }
+      else
+      {
+        // If we don't get OnLocationChange for this top level load later,
+        // it didn't get rendered.  But we reset the state to unknown and
+        // mSubRequests* to zeros.  If we would have left these values after 
+        // this top level load stoped, we would override the original top level
+        // load with all zeros and break mixed content state on back and forward.
+        mRestoreSubrequests = true;
       }
     }
 
@@ -1213,20 +1196,76 @@ nsSecureBrowserUIImpl::OnStateChange(nsIWebProgress* aWebProgress,
       }
     }
 
+    bool sinkChanged = false;
+    bool inProgress;
     {
       ReentrantMonitorAutoEnter lock(mReentrantMonitor);
       if (allowSecurityStateChange)
       {
+        sinkChanged = (mToplevelEventSink != temp_ToplevelEventSink);
         mToplevelEventSink = temp_ToplevelEventSink;
       }
       --mDocumentRequestsInProgress;
+      inProgress = mDocumentRequestsInProgress > 0;
     }
 
     if (allowSecurityStateChange && requestHasTransferedData) {
       // Data has been transferred for the single toplevel
       // request. Evaluate the security state.
 
-      return EvaluateAndUpdateSecurityState(aRequest, securityInfo, false);
+      // Do this only when the sink has changed.  We update and notify
+      // the state from OnLacationChange, this is actually redundant.
+      // But when the target sink changes between OnLocationChange and
+      // OnStateChange, we have to fire the notification here (again).
+
+      if (sinkChanged || mOnLocationChangeSeen)
+        return EvaluateAndUpdateSecurityState(aRequest, securityInfo, false);
+    }
+    mOnLocationChangeSeen = false;
+
+    if (mRestoreSubrequests && !inProgress)
+    {
+      // We get here when there were no OnLocationChange between 
+      // OnStateChange(START) and OnStateChange(STOP).  Then the load has not
+      // been rendered but has been retargeted in some other way then by external
+      // app handler.  Restore mSubRequests* members to what the current security 
+      // state info holds (it was reset to all zero in OnStateChange(START) 
+      // before).
+      nsCOMPtr<nsIAssociatedContentSecurity> currentContentSecurity;
+      {
+        ReentrantMonitorAutoEnter lock(mReentrantMonitor);
+        currentContentSecurity = do_QueryInterface(mCurrentToplevelSecurityInfo);
+
+        // Drop this indication flag, the restore opration is just being
+        // done.
+        mRestoreSubrequests = false;
+
+        // We can do this since the state didn't actually change.
+        mNewToplevelSecurityStateKnown = true;
+      }
+
+      PRInt32 subHigh = 0;
+      PRInt32 subLow = 0;
+      PRInt32 subBroken = 0;
+      PRInt32 subNo = 0;
+
+      if (currentContentSecurity)
+      {
+        currentContentSecurity->GetCountSubRequestsHighSecurity(&subHigh);
+        currentContentSecurity->GetCountSubRequestsLowSecurity(&subLow);
+        currentContentSecurity->GetCountSubRequestsBrokenSecurity(&subBroken);
+        currentContentSecurity->GetCountSubRequestsNoSecurity(&subNo);
+        PR_LOG(gSecureDocLog, PR_LOG_DEBUG, ("SecureUI:%p: Restoring subs in STOP from %p to %d,%d,%d,%d\n", 
+          this, currentContentSecurity.get(), subHigh, subLow, subBroken, subNo));      
+      }
+
+      {
+        ReentrantMonitorAutoEnter lock(mReentrantMonitor);
+        mSubRequestsHighSecurity = subHigh;
+        mSubRequestsLowSecurity = subLow;
+        mSubRequestsBrokenSecurity = subBroken;
+        mSubRequestsNoSecurity = subNo;
+      }
     }
     
     return NS_OK;
@@ -1573,6 +1612,7 @@ nsSecureBrowserUIImpl::OnLocationChange(nsIWebProgress* aWebProgress,
 
   if (windowForProgress.get() == window.get()) {
     // For toplevel channels, update the security state right away.
+    mOnLocationChangeSeen = true;
     return EvaluateAndUpdateSecurityState(aRequest, securityInfo, true);
   }
 

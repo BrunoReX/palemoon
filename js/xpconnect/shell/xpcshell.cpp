@@ -1,47 +1,9 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=2 sw=4 et tw=80:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   John Bandhauer <jband@netscape.com>
- *   Pierre Phaneuf <pp@ludusdesign.com>
- *   IBM Corp.
- *   Dan Mosedale <dan.mosedale@oracle.com>
- *   Serge Gautherie <sgautherie.bz@free.fr>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* XPConnect JavaScript interactive shell. */
 
@@ -81,12 +43,15 @@
 #include "nsCOMPtr.h"
 #include "nsAutoPtr.h"
 #include "nsIXPCSecurityManager.h"
+#include "nsJSPrincipals.h"
 #include "xpcpublic.h"
+#include "nsXULAppAPI.h"
 #ifdef XP_MACOSX
 #include "xpcshellMacUtils.h"
 #endif
 #ifdef XP_WIN
 #include <windows.h>
+#include <shlobj.h>
 #endif
 
 #ifdef ANDROID
@@ -126,9 +91,12 @@ public:
 
     bool SetGREDir(const char *dir);
     void ClearGREDir() { mGREDir = nsnull; }
+    void SetAppFile(nsILocalFile *appFile);
+    void ClearAppFile() { mAppFile = nsnull; }
 
 private:
     nsCOMPtr<nsILocalFile> mGREDir;
+    nsCOMPtr<nsILocalFile> mAppFile;
 };
 
 /***************************************************************************/
@@ -161,14 +129,14 @@ JSPrincipals *gJSPrincipals = nsnull;
 nsAutoString *gWorkingDirectory = nsnull;
 
 static JSBool
-GetLocationProperty(JSContext *cx, JSObject *obj, jsid id, jsval *vp)
+GetLocationProperty(JSContext *cx, JSHandleObject obj, JSHandleId id, jsval *vp)
 {
 #if !defined(XP_WIN) && !defined(XP_UNIX)
     //XXX: your platform should really implement this
     return false;
 #else
-    JSStackFrame *fp = JS_GetScriptedCaller(cx, NULL);
-    JSScript *script = JS_GetFrameScript(cx, fp);
+    JSScript *script;
+    JS_DescribeScriptedCaller(cx, &script, NULL);
     const char *filename = JS_GetScriptFilename(cx, script);
 
     if (filename) {
@@ -287,15 +255,12 @@ my_ErrorReporter(JSContext *cx, const char *message, JSErrorReport *report)
     int i, j, k, n;
     char *prefix = NULL, *tmp;
     const char *ctmp;
-    JSStackFrame * fp = nsnull;
     nsCOMPtr<nsIXPConnect> xpc;
 
     // Don't report an exception from inner JS frames as the callers may intend
     // to handle it.
-    while ((fp = JS_FrameIterator(cx, &fp))) {
-        if (JS_IsScriptFrame(cx, fp)) {
-            return;
-        }
+    if (JS_DescribeScriptedCaller(cx, nsnull, nsnull)) {
+        return;
     }
 
     // In some cases cx->fp is null here so use XPConnect to tell us about inner
@@ -376,7 +341,7 @@ my_ErrorReporter(JSContext *cx, const char *message, JSErrorReport *report)
 }
 
 static JSBool
-ReadLine(JSContext *cx, uintN argc, jsval *vp)
+ReadLine(JSContext *cx, unsigned argc, jsval *vp)
 {
     // While 4096 might be quite arbitrary, this is something to be fixed in
     // bug 105707. It is also the same limit as in ProcessFile.
@@ -418,9 +383,9 @@ ReadLine(JSContext *cx, uintN argc, jsval *vp)
 }
 
 static JSBool
-Print(JSContext *cx, uintN argc, jsval *vp)
+Print(JSContext *cx, unsigned argc, jsval *vp)
 {
-    uintN i, n;
+    unsigned i, n;
     JSString *str;
 
     jsval *argv = JS_ARGV(cx, vp);
@@ -442,7 +407,7 @@ Print(JSContext *cx, uintN argc, jsval *vp)
 }
 
 static JSBool
-Dump(JSContext *cx, uintN argc, jsval *vp)
+Dump(JSContext *cx, unsigned argc, jsval *vp)
 {
     JS_SET_RVAL(cx, vp, JSVAL_VOID);
 
@@ -459,7 +424,7 @@ Dump(JSContext *cx, uintN argc, jsval *vp)
         return false;
 
 #ifdef ANDROID
-    __android_log_print(ANDROID_LOG_INFO, "Gecko", bytes.ptr());
+    __android_log_print(ANDROID_LOG_INFO, "Gecko", "%s", bytes.ptr());
 #endif
     fputs(bytes.ptr(), gOutFile);
     fflush(gOutFile);
@@ -467,14 +432,14 @@ Dump(JSContext *cx, uintN argc, jsval *vp)
 }
 
 static JSBool
-Load(JSContext *cx, uintN argc, jsval *vp)
+Load(JSContext *cx, unsigned argc, jsval *vp)
 {
     JSObject *obj = JS_THIS_OBJECT(cx, vp);
     if (!obj)
         return false;
 
     jsval *argv = JS_ARGV(cx, vp);
-    for (uintN i = 0; i < argc; i++) {
+    for (unsigned i = 0; i < argc; i++) {
         JSString *str = JS_ValueToString(cx, argv[i]);
         if (!str)
             return false;
@@ -503,7 +468,7 @@ Load(JSContext *cx, uintN argc, jsval *vp)
 }
 
 static JSBool
-Version(JSContext *cx, uintN argc, jsval *vp)
+Version(JSContext *cx, unsigned argc, jsval *vp)
 {
     if (argc > 0 && JSVAL_IS_INT(JS_ARGV(cx, vp)[0]))
         JS_SET_RVAL(cx, vp, INT_TO_JSVAL(JS_SetVersion(cx, JSVersion(JSVAL_TO_INT(JS_ARGV(cx, vp)[0])))));
@@ -513,7 +478,7 @@ Version(JSContext *cx, uintN argc, jsval *vp)
 }
 
 static JSBool
-BuildDate(JSContext *cx, uintN argc, jsval *vp)
+BuildDate(JSContext *cx, unsigned argc, jsval *vp)
 {
     fprintf(gOutFile, "built on %s at %s\n", __DATE__, __TIME__);
     JS_SET_RVAL(cx, vp, JSVAL_VOID);
@@ -521,7 +486,7 @@ BuildDate(JSContext *cx, uintN argc, jsval *vp)
 }
 
 static JSBool
-Quit(JSContext *cx, uintN argc, jsval *vp)
+Quit(JSContext *cx, unsigned argc, jsval *vp)
 {
     gExitCode = 0;
     JS_ConvertArguments(cx, argc, JS_ARGV(cx, vp),"/ i", &gExitCode);
@@ -532,7 +497,7 @@ Quit(JSContext *cx, uintN argc, jsval *vp)
 }
 
 static JSBool
-DumpXPC(JSContext *cx, uintN argc, jsval *vp)
+DumpXPC(JSContext *cx, unsigned argc, jsval *vp)
 {
     int32_t depth = 2;
 
@@ -549,11 +514,12 @@ DumpXPC(JSContext *cx, uintN argc, jsval *vp)
 }
 
 static JSBool
-GC(JSContext *cx, uintN argc, jsval *vp)
+GC(JSContext *cx, unsigned argc, jsval *vp)
 {
-    JS_GC(cx);
+    JSRuntime *rt = JS_GetRuntime(cx);
+    JS_GC(rt);
 #ifdef JS_GCMETER
-    js_DumpGCStats(JS_GetRuntime(cx), stdout);
+    js_DumpGCStats(rt, stdout);
 #endif
     JS_SET_RVAL(cx, vp, JSVAL_VOID);
     return true;
@@ -561,13 +527,13 @@ GC(JSContext *cx, uintN argc, jsval *vp)
 
 #ifdef JS_GC_ZEAL
 static JSBool
-GCZeal(JSContext *cx, uintN argc, jsval *vp)
+GCZeal(JSContext *cx, unsigned argc, jsval *vp)
 {
     uint32_t zeal;
     if (!JS_ValueToECMAUint32(cx, argc ? JS_ARGV(cx, vp)[0] : JSVAL_VOID, &zeal))
         return false;
 
-    JS_SetGCZeal(cx, uint8_t(zeal), JS_DEFAULT_ZEAL_FREQ, false);
+    JS_SetGCZeal(cx, uint8_t(zeal), JS_DEFAULT_ZEAL_FREQ);
     JS_SET_RVAL(cx, vp, JSVAL_VOID);
     return true;
 }
@@ -576,7 +542,7 @@ GCZeal(JSContext *cx, uintN argc, jsval *vp)
 #ifdef DEBUG
 
 static JSBool
-DumpHeap(JSContext *cx, uintN argc, jsval *vp)
+DumpHeap(JSContext *cx, unsigned argc, jsval *vp)
 {
     void* startThing = NULL;
     JSGCTraceKind startTraceKind = JSTRACE_OBJECT;
@@ -644,10 +610,12 @@ DumpHeap(JSContext *cx, uintN argc, jsval *vp)
         }
     }
 
-    ok = JS_DumpHeap(cx, dumpFile, startThing, startTraceKind, thingToFind,
+    ok = JS_DumpHeap(JS_GetRuntime(cx), dumpFile, startThing, startTraceKind, thingToFind,
                      maxDepth, thingToIgnore);
     if (dumpFile != gOutFile)
         fclose(dumpFile);
+    if (!ok)
+        JS_ReportOutOfMemory(cx);
     return ok;
 
   not_traceable_arg:
@@ -660,21 +628,8 @@ DumpHeap(JSContext *cx, uintN argc, jsval *vp)
 #endif /* DEBUG */
 
 static JSBool
-Clear(JSContext *cx, uintN argc, jsval *vp)
-{
-    if (argc > 0 && !JSVAL_IS_PRIMITIVE(JS_ARGV(cx, vp)[0])) {
-        JS_ClearScope(cx, JSVAL_TO_OBJECT(JS_ARGV(cx, vp)[0]));
-    } else {
-        JS_ReportError(cx, "'clear' requires an object");
-        return false;
-    }
-    JS_SET_RVAL(cx, vp, JSVAL_VOID);
-    return true;
-}
-
-static JSBool
 SendCommand(JSContext* cx,
-            uintN argc,
+            unsigned argc,
             jsval* vp)
 {
     if (argc == 0) {
@@ -705,7 +660,7 @@ SendCommand(JSContext* cx,
 
 static JSBool
 GetChildGlobalObject(JSContext* cx,
-                     uintN,
+                     unsigned,
                      jsval* vp)
 {
     JSObject* global;
@@ -728,7 +683,9 @@ static const struct JSOption {
     {"relimit",         JSOPTION_RELIMIT},
     {"strict",          JSOPTION_STRICT},
     {"werror",          JSOPTION_WERROR},
-    {"xml",             JSOPTION_XML},
+    {"allow_xml",       JSOPTION_ALLOW_XML},
+    {"moar_xml",        JSOPTION_MOAR_XML},
+    {"strict_mode",     JSOPTION_STRICT_MODE},
 };
 
 static uint32_t
@@ -762,7 +719,7 @@ MapContextOptionNameToFlag(JSContext* cx, const char* name)
 }
 
 static JSBool
-Options(JSContext *cx, uintN argc, jsval *vp)
+Options(JSContext *cx, unsigned argc, jsval *vp)
 {
     uint32_t optset, flag;
     JSString *str;
@@ -771,7 +728,7 @@ Options(JSContext *cx, uintN argc, jsval *vp)
 
     optset = 0;
     jsval *argv = JS_ARGV(cx, vp);
-    for (uintN i = 0; i < argc; i++) {
+    for (unsigned i = 0; i < argc; i++) {
         str = JS_ValueToString(cx, argv[i]);
         if (!str)
             return false;
@@ -812,7 +769,7 @@ Options(JSContext *cx, uintN argc, jsval *vp)
 }
 
 static JSBool
-Parent(JSContext *cx, uintN argc, jsval *vp)
+Parent(JSContext *cx, unsigned argc, jsval *vp)
 {
     if (argc != 1) {
         JS_ReportError(cx, "Wrong number of arguments");
@@ -825,7 +782,7 @@ Parent(JSContext *cx, uintN argc, jsval *vp)
         return false;
     }
 
-    *vp = OBJECT_TO_JSVAL(JS_GetParent(cx, JSVAL_TO_OBJECT(v)));
+    *vp = OBJECT_TO_JSVAL(JS_GetParent(JSVAL_TO_OBJECT(v)));
     return true;
 }
 
@@ -842,7 +799,6 @@ static JSFunctionSpec glob_functions[] = {
 #ifdef JS_GC_ZEAL
     {"gczeal",          GCZeal,         1,0},
 #endif
-    {"clear",           Clear,          1,0},
     {"options",         Options,        0,0},
     JS_FN("parent",     Parent,         1,0),
 #ifdef DEBUG
@@ -860,7 +816,7 @@ JSClass global_class = {
 };
 
 static JSBool
-env_setProperty(JSContext *cx, JSObject *obj, jsid id, JSBool strict, jsval *vp)
+env_setProperty(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict, jsval *vp)
 {
 /* XXX porting may be easy, but these don't seem to supply setenv by default */
 #if !defined XP_OS2 && !defined SOLARIS
@@ -913,7 +869,7 @@ env_setProperty(JSContext *cx, JSObject *obj, jsid id, JSBool strict, jsval *vp)
 }
 
 static JSBool
-env_enumerate(JSContext *cx, JSObject *obj)
+env_enumerate(JSContext *cx, JSHandleObject obj)
 {
     static JSBool reflected;
     char **evp, *name, *value;
@@ -923,7 +879,7 @@ env_enumerate(JSContext *cx, JSObject *obj)
     if (reflected)
         return true;
 
-    for (evp = (char **)JS_GetPrivate(cx, obj); (name = *evp) != NULL; evp++) {
+    for (evp = (char **)JS_GetPrivate(obj); (name = *evp) != NULL; evp++) {
         value = strchr(name, '=');
         if (!value)
             continue;
@@ -945,7 +901,7 @@ env_enumerate(JSContext *cx, JSObject *obj)
 }
 
 static JSBool
-env_resolve(JSContext *cx, JSObject *obj, jsid id, uintN flags,
+env_resolve(JSContext *cx, JSHandleObject obj, JSHandleId id, unsigned flags,
             JSObject **objp)
 {
     JSString *idstr, *valstr;
@@ -1003,7 +959,7 @@ JSErrorFormatString jsShell_ErrorFormatString[JSShellErr_Limit] = {
 };
 
 static const JSErrorFormatString *
-my_GetErrorMessage(void *userRef, const char *locale, const uintN errorNumber)
+my_GetErrorMessage(void *userRef, const char *locale, const unsigned errorNumber)
 {
     if (errorNumber == 0 || errorNumber >= JSShellErr_Limit)
         return NULL;
@@ -1228,13 +1184,13 @@ ProcessArgs(JSContext *cx, JSObject *obj, char **argv, int argc)
             JS_ToggleOptions(cx, JSOPTION_STRICT);
             break;
         case 'x':
-            JS_ToggleOptions(cx, JSOPTION_XML);
+            JS_ToggleOptions(cx, JSOPTION_MOAR_XML);
             break;
         case 'd':
             xpc_ActivateDebugMode();
             break;
         case 'P':
-            if (JS_GET_CLASS(cx, JS_GetPrototype(cx, obj)) != &global_class) {
+            if (JS_GetClass(JS_GetPrototype(obj)) != &global_class) {
                 JSObject *gobj;
 
                 if (!JS_DeepFreezeObject(cx, obj))
@@ -1506,29 +1462,6 @@ FullTrustSecMan::EnableCapability(const char *capability)
     return NS_OK;;
 }
 
-/* void revertCapability (in string capability); */
-NS_IMETHODIMP
-FullTrustSecMan::RevertCapability(const char *capability)
-{
-    return NS_OK;
-}
-
-/* void disableCapability (in string capability); */
-NS_IMETHODIMP
-FullTrustSecMan::DisableCapability(const char *capability)
-{
-    return NS_OK;
-}
-
-/* void setCanEnableCapability (in AUTF8String certificateFingerprint, in string capability, in short canEnable); */
-NS_IMETHODIMP
-FullTrustSecMan::SetCanEnableCapability(const nsACString & certificateFingerprint,
-                                        const char *capability,
-                                        PRInt16 canEnable)
-{
-    return NS_OK;
-}
-
 /* [noscript] nsIPrincipal getObjectPrincipal (in JSContextPtr cx, in JSObjectPtr obj); */
 NS_IMETHODIMP
 FullTrustSecMan::GetObjectPrincipal(JSContext * cx, JSObject * obj,
@@ -1686,7 +1619,7 @@ nsXPCFunctionThisTranslator::TranslateThis(nsISupports *aInitialThis,
 static JSContextCallback gOldJSContextCallback;
 
 static JSBool
-ContextCallback(JSContext *cx, uintN contextOp)
+ContextCallback(JSContext *cx, unsigned contextOp)
 {
     if (gOldJSContextCallback && !gOldJSContextCallback(cx, contextOp))
         return false;
@@ -1737,10 +1670,12 @@ GetCurrentWorkingDirectory(nsAString& workingDirectory)
 }
 
 static JSPrincipals *
-FindObjectPrincipals(JSContext *cx, JSObject *obj)
+FindObjectPrincipals(JSObject *obj)
 {
     return gJSPrincipals;
 }
+
+static JSSecurityCallbacks shellSecurityCallbacks;
 
 int
 main(int argc, char **argv, char **envp)
@@ -1758,6 +1693,10 @@ main(int argc, char **argv, char **envp)
     // unbuffer stdout so that output is in the correct order; note that stderr
     // is unbuffered by default
     setbuf(stdout, 0);
+#endif
+
+#ifdef XRE_HAS_DLL_BLOCKLIST
+    XRE_SetupDllBlocklist();
 #endif
 
     gErrFile = stderr;
@@ -1780,6 +1719,8 @@ main(int argc, char **argv, char **envp)
     }
 
     XPCShellDirProvider dirprovider;
+
+    dirprovider.SetAppFile(appFile);
 
     if (argc > 1 && !strcmp(argv[1], "-g")) {
         if (argc < 3)
@@ -1871,6 +1812,7 @@ main(int argc, char **argv, char **envp)
             return 1;
         }
 
+        JS_SetOptions(cx, JS_GetOptions(cx) | JSOPTION_ALLOW_XML);
         xpc_LocalizeContext(cx);
 
         nsCOMPtr<nsIXPConnect> xpc = do_GetService(nsIXPConnect::GetCID());
@@ -1899,10 +1841,8 @@ main(int argc, char **argv, char **envp)
                     fprintf(gErrFile, "+++ Failed to obtain SystemPrincipal from ScriptSecurityManager service.\n");
                 } else {
                     // fetch the JS principals and stick in a global
-                    rv = systemprincipal->GetJSPrincipals(cx, &gJSPrincipals);
-                    if (NS_FAILED(rv)) {
-                        fprintf(gErrFile, "+++ Failed to obtain JS principals from SystemPrincipal.\n");
-                    }
+                    gJSPrincipals = nsJSPrincipals::get(systemprincipal);
+                    JS_HoldPrincipals(gJSPrincipals);
                     secman->SetSystemPrincipal(systemprincipal);
                 }
             } else {
@@ -1910,10 +1850,11 @@ main(int argc, char **argv, char **envp)
             }
         }
 
-        JSSecurityCallbacks *cb = JS_GetRuntimeSecurityCallbacks(rt);
-        NS_ASSERTION(cb, "We are assuming that nsScriptSecurityManager::Init() has been run");
-        NS_ASSERTION(!cb->findObjectPrincipals, "Your pigeon is in my hole!");
-        cb->findObjectPrincipals = FindObjectPrincipals;
+        const JSSecurityCallbacks *scb = JS_GetSecurityCallbacks(rt);
+        NS_ASSERTION(scb, "We are assuming that nsScriptSecurityManager::Init() has been run");
+        shellSecurityCallbacks = *scb;
+        shellSecurityCallbacks.findObjectPrincipals = FindObjectPrincipals;
+        JS_SetSecurityCallbacks(rt, &shellSecurityCallbacks);
 
 #ifdef TEST_TranslateThis
         nsCOMPtr<nsIXPCFunctionThisTranslator>
@@ -1942,9 +1883,7 @@ main(int argc, char **argv, char **envp)
 
         nsCOMPtr<nsIXPConnectJSObjectHolder> holder;
         rv = xpc->InitClassesWithNewWrappedGlobal(cx, backstagePass,
-                                                  NS_GET_IID(nsISupports),
                                                   systemprincipal,
-                                                  nsnull,
                                                   nsIXPConnect::
                                                   FLAG_SYSTEM_GLOBAL_OBJECT,
                                                   getter_AddRefs(holder));
@@ -1977,10 +1916,12 @@ main(int argc, char **argv, char **envp)
             }
 
             envobj = JS_DefineObject(cx, glob, "environment", &env_class, NULL, 0);
-            if (!envobj || !JS_SetPrivate(cx, envobj, envp)) {
+            if (!envobj) {
                 JS_EndRequest(cx);
                 return 1;
             }
+
+            JS_SetPrivate(envobj, envp);
 
             nsAutoString workingDirectory;
             if (GetCurrentWorkingDirectory(workingDirectory))
@@ -2003,14 +1944,14 @@ main(int argc, char **argv, char **envp)
             xpc->WrapJS(cx, glob, NS_GET_IID(nsIJSContextStack),
                         (void**) getter_AddRefs(bogus));
 #endif
-            JSPRINCIPALS_DROP(cx, gJSPrincipals);
+            JS_DropPrincipals(rt, gJSPrincipals);
             JS_ClearScope(cx, glob);
-            JS_GC(cx);
+            JS_GC(rt);
             JSContext *oldcx;
             cxstack->Pop(&oldcx);
             NS_ASSERTION(oldcx == cx, "JS thread context push/pop mismatch");
             cxstack = nsnull;
-            JS_GC(cx);
+            JS_GC(rt);
         } //this scopes the JSAutoCrossCompartmentCall
         JS_EndRequest(cx);
         JS_DestroyContext(cx);
@@ -2040,6 +1981,7 @@ main(int argc, char **argv, char **envp)
     appDir = nsnull;
     appFile = nsnull;
     dirprovider.ClearGREDir();
+    dirprovider.ClearAppFile();
 
 #ifdef MOZ_CRASHREPORTER
     // Shut down the crashreporter service to prevent leaking some strings it holds.
@@ -2065,6 +2007,12 @@ XPCShellDirProvider::SetGREDir(const char *dir)
     return NS_SUCCEEDED(rv);
 }
 
+void
+XPCShellDirProvider::SetAppFile(nsILocalFile* appFile)
+{
+    mAppFile = appFile;
+}
+
 NS_IMETHODIMP_(nsrefcnt)
 XPCShellDirProvider::AddRef()
 {
@@ -2088,6 +2036,9 @@ XPCShellDirProvider::GetFile(const char *prop, bool *persistent,
     if (mGREDir && !strcmp(prop, NS_GRE_DIR)) {
         *persistent = true;
         return mGREDir->Clone(result);
+    } else if (mAppFile && !strcmp(prop, XRE_EXECUTABLE_FILE)) {
+        *persistent = true;
+        return mAppFile->Clone(result);
     } else if (mGREDir && !strcmp(prop, NS_APP_PREF_DEFAULTS_50_DIR)) {
         nsCOMPtr<nsIFile> file;
         *persistent = true;
@@ -2097,6 +2048,46 @@ XPCShellDirProvider::GetFile(const char *prop, bool *persistent,
             return NS_ERROR_FAILURE;
         NS_ADDREF(*result = file);
         return NS_OK;
+    } else if (mAppFile && !strcmp(prop, XRE_UPDATE_ROOT_DIR)) {
+        // For xpcshell, we pretend that the update root directory is always
+        // the same as the GRE directory, except for Windows, where we immitate
+        // the algorithm defined in nsXREDirProvider::GetUpdateRootDir.
+        *persistent = true;
+#ifdef XP_WIN
+        char appData[MAX_PATH] = {'\0'};
+        char path[MAX_PATH] = {'\0'};
+        LPITEMIDLIST pItemIDList;
+        if (FAILED(SHGetSpecialFolderLocation(NULL, CSIDL_LOCAL_APPDATA, &pItemIDList)) ||
+            FAILED(SHGetPathFromIDListA(pItemIDList, appData))) {
+            return NS_ERROR_FAILURE;
+        }
+        nsAutoString pathName;
+        pathName.AssignASCII(appData);
+        nsCOMPtr<nsILocalFile> localFile;
+        nsresult rv = NS_NewLocalFile(pathName, true, getter_AddRefs(localFile));
+        if (NS_FAILED(rv)) {
+            return rv;
+        }
+
+#ifdef MOZ_APP_PROFILE
+        localFile->AppendNative(NS_LITERAL_CSTRING(MOZ_APP_PROFILE));
+#else
+        // MOZ_APP_VENDOR and MOZ_APP_BASENAME are optional.
+#ifdef MOZ_APP_VENDOR
+        localFile->AppendNative(NS_LITERAL_CSTRING(MOZ_APP_VENDOR));
+#endif
+#ifdef MOZ_APP_BASENAME
+        localFile->AppendNative(NS_LITERAL_CSTRING(MOZ_APP_BASENAME));
+#endif
+        // However app name is always appended.
+        localFile->AppendNative(NS_LITERAL_CSTRING(MOZ_APP_NAME));
+#endif
+        return localFile->Clone(result);
+#else
+        // Fail on non-Windows platforms, the caller is supposed to fal back on
+        // the app dir.
+        return NS_ERROR_FAILURE;
+#endif
     }
 
     return NS_ERROR_FAILURE;

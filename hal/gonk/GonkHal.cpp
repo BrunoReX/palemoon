@@ -1,65 +1,48 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set sw=2 ts=8 et ft=cpp : */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at:
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Code.
- *
- * The Initial Developer of the Original Code is
- *   The Mozilla Foundation
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Chris Jones <jones.chris.g@gmail.com>
- *   Michael Wu <mwu@mozilla.com>
- *   Justin Lebar <justin.lebar@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <errno.h>
+#include <fcntl.h>
+#include <math.h>
+#include <stdio.h>
+#include <sys/syscall.h>
+#include <time.h>
+
+#include "android/log.h"
+#include "cutils/properties.h"
+#include "hardware/hardware.h"
+#include "hardware/lights.h"
 #include "hardware_legacy/uevent.h"
+#include "hardware_legacy/vibrator.h"
+#include "hardware_legacy/power.h"
+
+#include "base/message_loop.h"
+
 #include "Hal.h"
 #include "HalImpl.h"
 #include "mozilla/dom/battery/Constants.h"
 #include "mozilla/FileUtils.h"
-#include "nsAlgorithm.h"
-#include "nsThreadUtils.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Services.h"
-#include "mozilla/FileUtils.h"
-#include "nsThreadUtils.h"
-#include "nsIRunnable.h"
-#include "nsIThread.h"
+#include "nsAlgorithm.h"
 #include "nsIObserver.h"
 #include "nsIObserverService.h"
-#include "hardware_legacy/vibrator.h"
-#include <stdio.h>
-#include <math.h>
-#include <fcntl.h>
-#include <errno.h>
-#include "mozilla/dom/network/Constants.h"
+#include "nsIRunnable.h"
+#include "nsScreenManagerGonk.h"
+#include "nsThreadUtils.h"
+#include "nsThreadUtils.h"
+#include "nsIThread.h"
+#include "nsXULAppAPI.h"
+#include "OrientationObserver.h"
+#include "UeventPoller.h"
+
+#define LOG(args...)  __android_log_print(ANDROID_LOG_INFO, "Gonk", args)
+#define NsecPerMsec  1000000
+#define NsecPerSec   1000000000
+
 
 using mozilla::hal::WindowIdentifier;
 
@@ -95,18 +78,18 @@ public:
   NS_DECL_NSIOBSERVER
 
   // Run on the main thread, not the vibrator thread.
-  void Vibrate(const nsTArray<uint32> &pattern);
+  void Vibrate(const nsTArray<uint32_t> &pattern);
   void CancelVibrate();
 
 private:
   Monitor mMonitor;
 
   // The currently-playing pattern.
-  nsTArray<uint32> mPattern;
+  nsTArray<uint32_t> mPattern;
 
   // The index we're at in the currently-playing pattern.  If mIndex >=
   // mPattern.Length(), then we're not currently playing anything.
-  uint32 mIndex;
+  uint32_t mIndex;
 
   // Set to true in our shutdown observer.  When this is true, we kill the
   // vibrator thread.
@@ -131,7 +114,7 @@ VibratorRunnable::Run()
 
   while (!mShuttingDown) {
     if (mIndex < mPattern.Length()) {
-      uint32 duration = mPattern[mIndex];
+      uint32_t duration = mPattern[mIndex];
       if (mIndex % 2 == 0) {
         vibrator_on(duration);
       }
@@ -158,7 +141,7 @@ VibratorRunnable::Observe(nsISupports *subject, const char *topic,
 }
 
 void
-VibratorRunnable::Vibrate(const nsTArray<uint32> &pattern)
+VibratorRunnable::Vibrate(const nsTArray<uint32_t> &pattern)
 {
   MonitorAutoLock lock(mMonitor);
   mPattern = pattern;
@@ -194,7 +177,7 @@ EnsureVibratorThreadInitialized()
 } // anonymous namespace
 
 void
-Vibrate(const nsTArray<uint32> &pattern, const hal::WindowIdentifier &)
+Vibrate(const nsTArray<uint32_t> &pattern, const hal::WindowIdentifier &)
 {
   EnsureVibratorThreadInitialized();
   sVibratorRunnable->Vibrate(pattern);
@@ -220,75 +203,83 @@ public:
   }
 };
 
-class UEventWatcher : public nsRunnable {
+} // anonymous namespace
+
+class BatteryObserver : public IUeventObserver,
+                        public RefCounted<BatteryObserver>
+{
 public:
-  UEventWatcher()
-    : mUpdater(new BatteryUpdater())
-    , mRunning(false)
+  BatteryObserver()
+    :mUpdater(new BatteryUpdater())
   {
   }
 
-  NS_IMETHOD Run()
+  virtual void Notify(const NetlinkEvent &aEvent)
   {
-    while (mRunning) {
-      char buf[1024];
-      int count = uevent_next_event(buf, sizeof(buf) - 1);
-      if (!count) {
-        NS_WARNING("uevent_next_event() returned 0!");
-        continue;
-      }
-
-      buf[sizeof(buf) - 1] = 0;
-      if (strstr(buf, "battery"))
-        NS_DispatchToMainThread(mUpdater);
+    // this will run on IO thread
+    NetlinkEvent *event = const_cast<NetlinkEvent*>(&aEvent);
+    const char *subsystem = event->getSubsystem();
+    // e.g. DEVPATH=/devices/platform/sec-battery/power_supply/battery
+    const char *devpath = event->findParam("DEVPATH");
+    if (strcmp(subsystem, "power_supply") == 0 &&
+        strstr(devpath, "battery")) {
+      // aEvent will be valid only in this method.
+      NS_DispatchToMainThread(mUpdater);
     }
-    return NS_OK;
   }
-
-  bool mRunning;
 
 private:
   nsRefPtr<BatteryUpdater> mUpdater;
 };
 
-} // anonymous namespace
+// sBatteryObserver is owned by the IO thread. Only the IO thread may
+// create or destroy it.
+static BatteryObserver *sBatteryObserver = NULL;
 
-static bool sUEventInitialized = false;
-static UEventWatcher *sWatcher = NULL;
-static nsIThread *sWatcherThread = NULL;
+static void
+RegisterBatteryObserverIOThread()
+{
+  MOZ_ASSERT(MessageLoop::current() == XRE_GetIOMessageLoop());
+  MOZ_ASSERT(!sBatteryObserver);
+
+  sBatteryObserver = new BatteryObserver();
+  RegisterUeventListener(sBatteryObserver);
+}
 
 void
 EnableBatteryNotifications()
 {
-  if (!sUEventInitialized)
-    sUEventInitialized = uevent_init();
-  if (!sUEventInitialized) {
-    NS_WARNING("uevent_init() failed!");
-    return;
-  }
+  XRE_GetIOMessageLoop()->PostTask(
+      FROM_HERE,
+      NewRunnableFunction(RegisterBatteryObserverIOThread));
+}
 
-  if (!sWatcher)
-    sWatcher = new UEventWatcher();
-  NS_ADDREF(sWatcher);
+static void
+UnregisterBatteryObserverIOThread()
+{
+  MOZ_ASSERT(MessageLoop::current() == XRE_GetIOMessageLoop());
+  MOZ_ASSERT(sBatteryObserver);
 
-  sWatcher->mRunning = true;
-  nsresult rv = NS_NewThread(&sWatcherThread, sWatcher);
-  if (NS_FAILED(rv))
-    NS_WARNING("Failed to get new thread for uevent watching");
+  UnregisterUeventListener(sBatteryObserver);
+  delete sBatteryObserver;
+  sBatteryObserver = NULL;
 }
 
 void
 DisableBatteryNotifications()
 {
-  sWatcher->mRunning = false;
-  sWatcherThread->Shutdown();
-  NS_IF_RELEASE(sWatcherThread);
-  delete sWatcher;
+  XRE_GetIOMessageLoop()->PostTask(
+      FROM_HERE,
+      NewRunnableFunction(UnregisterBatteryObserverIOThread));
 }
 
 void
 GetCurrentBatteryInformation(hal::BatteryInformation *aBatteryInfo)
 {
+  static const int BATTERY_NOT_CHARGING = 0;
+  static const int BATTERY_CHARGING_USB = 1;
+  static const int BATTERY_CHARGING_AC  = 2;
+
   FILE *capacityFile = fopen("/sys/class/power_supply/battery/capacity", "r");
   double capacity = dom::battery::kDefaultLevel * 100;
   if (capacityFile) {
@@ -297,14 +288,42 @@ GetCurrentBatteryInformation(hal::BatteryInformation *aBatteryInfo)
   }
 
   FILE *chargingFile = fopen("/sys/class/power_supply/battery/charging_source", "r");
-  int chargingSrc = 1;
+  int chargingSrc = BATTERY_CHARGING_USB;
+  bool done = false;
   if (chargingFile) {
     fscanf(chargingFile, "%d", &chargingSrc);
     fclose(chargingFile);
+    done = true;
   }
 
+  if (!done) {
+    // toro devices support
+    chargingFile = fopen("/sys/class/power_supply/battery/status", "r");
+    if (chargingFile) {
+      char status[16];
+      fscanf(chargingFile, "%s", &status);
+      if (!strcmp(status, "Charging") || !strcmp(status, "Full")) {
+        // no way here to know if we're charging from USB or AC.
+        chargingSrc = BATTERY_CHARGING_USB;
+      } else {
+        chargingSrc = BATTERY_NOT_CHARGING;
+      }
+      fclose(chargingFile);
+      done = true;
+    }
+  }
+
+  #ifdef DEBUG
+  if (chargingSrc != BATTERY_NOT_CHARGING &&
+      chargingSrc != BATTERY_CHARGING_USB &&
+      chargingSrc != BATTERY_CHARGING_AC) {
+    HAL_LOG(("charging_source contained unknown value: %d", chargingSrc));
+  }
+  #endif
+
   aBatteryInfo->level() = capacity / 100;
-  aBatteryInfo->charging() = chargingSrc == 1;
+  aBatteryInfo->charging() = (chargingSrc == BATTERY_CHARGING_USB ||
+                              chargingSrc == BATTERY_CHARGING_AC);
   aBatteryInfo->remainingTime() = dom::battery::kUnknownRemainingTime;
 }
 
@@ -313,8 +332,8 @@ namespace {
 /**
  * RAII class to help us remember to close file descriptors.
  */
-const char *screenEnabledFilename = "/sys/power/state";
-const char *screenBrightnessFilename = "/sys/class/leds/lcd-backlight/brightness";
+const char *wakeLockFilename = "/sys/power/wake_lock";
+const char *wakeUnlockFilename = "/sys/power/wake_unlock";
 
 template<ssize_t n>
 bool ReadFromFile(const char *filename, char (&buf)[n])
@@ -356,6 +375,12 @@ void WriteToFile(const char *filename, const char *toWrite)
 // the screen is on or not.
 bool sScreenEnabled = true;
 
+// We can read wakeLockFilename to find out whether the cpu wake lock
+// is already acquired, but reading and parsing it is a lot more work
+// than tracking it ourselves, and it won't be accurate anyway (kernel
+// internal wake locks aren't counted here.)
+bool sCpuSleepAllowed = true;
+
 } // anonymous namespace
 
 bool
@@ -367,31 +392,20 @@ GetScreenEnabled()
 void
 SetScreenEnabled(bool enabled)
 {
-  WriteToFile(screenEnabledFilename, enabled ? "on" : "mem");
+  set_screen_state(enabled);
   sScreenEnabled = enabled;
 }
 
 double
 GetScreenBrightness()
 {
-  char buf[32];
-  ReadFromFile(screenBrightnessFilename, buf);
+  hal::LightConfiguration aConfig;
+  hal::LightType light = hal::eHalLightID_Backlight;
 
-  errno = 0;
-  unsigned long val = strtoul(buf, NULL, 10);
-  if (errno) {
-    HAL_LOG(("Cannot parse contents of %s; expected an unsigned "
-             "int, but contains \"%s\".",
-             screenBrightnessFilename, buf));
-    return 1;
-  }
-
-  if (val > 255) {
-    HAL_LOG(("Got out-of-range brightness %d, truncating to 1.0", val));
-    val = 255;
-  }
-
-  return val / 255.0;
+  hal::GetLight(light, &aConfig);
+  // backlight is brightness only, so using one of the RGB elements as value.
+  int brightness = aConfig.color() & 0xFF;
+  return brightness / 255.0;
 }
 
 void
@@ -405,29 +419,211 @@ SetScreenBrightness(double brightness)
     return;
   }
 
-  // Convert the value in [0, 1] to an int between 0 and 255, then write to a
-  // string.
+  // Convert the value in [0, 1] to an int between 0 and 255 and convert to a color
+  // note that the high byte is FF, corresponding to the alpha channel.
   int val = static_cast<int>(round(brightness * 255));
-  char str[4];
-  DebugOnly<int> numChars = snprintf(str, sizeof(str), "%d", val);
-  MOZ_ASSERT(numChars < static_cast<int>(sizeof(str)));
+  uint32_t color = (0xff<<24) + (val<<16) + (val<<8) + val;
 
-  WriteToFile(screenBrightnessFilename, str);
+  hal::LightConfiguration aConfig;
+  aConfig.mode() = hal::eHalLightMode_User;
+  aConfig.flash() = hal::eHalLightFlash_None;
+  aConfig.flashOnMS() = aConfig.flashOffMS() = 0;
+  aConfig.color() = color;
+  hal::SetLight(hal::eHalLightID_Backlight, aConfig);
+  hal::SetLight(hal::eHalLightID_Buttons, aConfig);
+}
+
+bool
+GetCpuSleepAllowed()
+{
+  return sCpuSleepAllowed;
 }
 
 void
-EnableNetworkNotifications()
-{}
-
-void
-DisableNetworkNotifications()
-{}
-
-void
-GetCurrentNetworkInformation(hal::NetworkInformation* aNetworkInfo)
+SetCpuSleepAllowed(bool aAllowed)
 {
-  aNetworkInfo->bandwidth() = dom::network::kDefaultBandwidth;
-  aNetworkInfo->canBeMetered() = dom::network::kDefaultCanBeMetered;
+  WriteToFile(aAllowed ? wakeUnlockFilename : wakeLockFilename, "gecko");
+  sCpuSleepAllowed = aAllowed;
+}
+
+static light_device_t* sLights[hal::eHalLightID_Count];	// will be initialized to NULL
+
+light_device_t* GetDevice(hw_module_t* module, char const* name)
+{
+  int err;
+  hw_device_t* device;
+  err = module->methods->open(module, name, &device);
+  if (err == 0) {
+    return (light_device_t*)device;
+  } else {
+    return NULL;
+  }
+}
+
+void
+InitLights()
+{
+  // assume that if backlight is NULL, nothing has been set yet
+  // if this is not true, the initialization will occur everytime a light is read or set!
+  if (!sLights[hal::eHalLightID_Backlight]) {
+    int err;
+    hw_module_t* module;
+
+    err = hw_get_module(LIGHTS_HARDWARE_MODULE_ID, (hw_module_t const**)&module);
+    if (err == 0) {
+      sLights[hal::eHalLightID_Backlight]
+             = GetDevice(module, LIGHT_ID_BACKLIGHT);
+      sLights[hal::eHalLightID_Keyboard]
+             = GetDevice(module, LIGHT_ID_KEYBOARD);
+      sLights[hal::eHalLightID_Buttons]
+             = GetDevice(module, LIGHT_ID_BUTTONS);
+      sLights[hal::eHalLightID_Battery]
+             = GetDevice(module, LIGHT_ID_BATTERY);
+      sLights[hal::eHalLightID_Notifications]
+             = GetDevice(module, LIGHT_ID_NOTIFICATIONS);
+      sLights[hal::eHalLightID_Attention]
+             = GetDevice(module, LIGHT_ID_ATTENTION);
+      sLights[hal::eHalLightID_Bluetooth]
+             = GetDevice(module, LIGHT_ID_BLUETOOTH);
+      sLights[hal::eHalLightID_Wifi]
+             = GetDevice(module, LIGHT_ID_WIFI);
+        }
+    }
+}
+
+/**
+ * The state last set for the lights until liblights supports
+ * getting the light state.
+ */
+static light_state_t sStoredLightState[hal::eHalLightID_Count];
+
+bool
+SetLight(hal::LightType light, const hal::LightConfiguration& aConfig)
+{
+  light_state_t state;
+
+  InitLights();
+
+  if (light < 0 || light >= hal::eHalLightID_Count || sLights[light] == NULL) {
+    return false;
+  }
+
+  memset(&state, 0, sizeof(light_state_t));
+  state.color = aConfig.color();
+  state.flashMode = aConfig.flash();
+  state.flashOnMS = aConfig.flashOnMS();
+  state.flashOffMS = aConfig.flashOffMS();
+  state.brightnessMode = aConfig.mode();
+
+  sLights[light]->set_light(sLights[light], &state);
+  sStoredLightState[light] = state;
+  return true;
+}
+
+bool
+GetLight(hal::LightType light, hal::LightConfiguration* aConfig)
+{
+  light_state_t state;
+
+#ifdef HAVEGETLIGHT
+  InitLights();
+#endif
+
+  if (light < 0 || light >= hal::eHalLightID_Count || sLights[light] == NULL) {
+    return false;
+  }
+
+  memset(&state, 0, sizeof(light_state_t));
+
+#ifdef HAVEGETLIGHT
+  sLights[light]->get_light(sLights[light], &state);
+#else
+  state = sStoredLightState[light];
+#endif
+
+  aConfig->light() = light;
+  aConfig->color() = state.color;
+  aConfig->flash() = hal::FlashMode(state.flashMode);
+  aConfig->flashOnMS() = state.flashOnMS;
+  aConfig->flashOffMS() = state.flashOffMS;
+  aConfig->mode() = hal::LightMode(state.brightnessMode);
+
+  return true;
+}
+
+/**
+ * clock_settime() is not exposed through bionic. 
+ * we define the new function to set system time.
+ * The result is the same as using clock_settime() system call.     
+ */
+static int
+sys_clock_settime(clockid_t clk_id, const struct timespec *tp)
+{
+  return syscall(__NR_clock_settime, clk_id, tp);
+}
+
+void 
+AdjustSystemClock(int32_t aDeltaMilliseconds)
+{
+  struct timespec now;
+  
+  // Preventing context switch before setting system clock 
+  sched_yield();
+  clock_gettime(CLOCK_REALTIME, &now);
+  now.tv_sec += aDeltaMilliseconds/1000;
+  now.tv_nsec += (aDeltaMilliseconds%1000)*NsecPerMsec;
+  if (now.tv_nsec >= NsecPerSec)
+  {
+    now.tv_sec += 1;
+    now.tv_nsec -= NsecPerSec;
+  }
+
+  if (now.tv_nsec < 0)
+  {
+    now.tv_nsec += NsecPerSec;
+    now.tv_sec -= 1;  
+  }
+  // we need to have root privilege. 
+  sys_clock_settime(CLOCK_REALTIME, &now);   
+}
+
+void 
+SetTimezone(const nsCString& aTimezoneSpec)
+{ 
+  property_set("persist.sys.timezone", aTimezoneSpec.get());
+  // this function is automatically called by the other time conversion 
+  // functions that depend on the timezone. To be safe, we call it manually.  
+  tzset();
+}
+
+// Nothing to do here.  Gonk widgetry always listens for screen
+// orientation changes.
+void
+EnableScreenConfigurationNotifications()
+{
+}
+
+void
+DisableScreenConfigurationNotifications()
+{
+}
+
+void
+GetCurrentScreenConfiguration(hal::ScreenConfiguration* aScreenConfiguration)
+{
+  *aScreenConfiguration = nsScreenGonk::GetConfiguration();
+}
+
+bool
+LockScreenOrientation(const dom::ScreenOrientation& aOrientation)
+{
+  return OrientationObserver::GetInstance()->LockScreenOrientation(aOrientation);
+}
+
+void
+UnlockScreenOrientation()
+{
+  OrientationObserver::GetInstance()->UnlockScreenOrientation();
 }
 
 } // hal_impl

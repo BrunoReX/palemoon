@@ -7,6 +7,12 @@ if (Cc === undefined) {
   var Ci = Components.interfaces;
   var Cu = Components.utils;
 }
+
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+
+XPCOMUtils.defineLazyModuleGetter(this, "Services",
+  "resource://gre/modules/Services.jsm");
+
 window.addEventListener("load", testOnLoad, false);
 
 function testOnLoad() {
@@ -15,21 +21,18 @@ function testOnLoad() {
   gConfig = readConfig();
   if (gConfig.testRoot == "browser") {
     // Make sure to launch the test harness for the first opened window only
-    var prefs = Cc["@mozilla.org/preferences-service;1"].
-                getService(Ci.nsIPrefBranch);
+    var prefs = Services.prefs;
     if (prefs.prefHasUserValue("testing.browserTestHarness.running"))
       return;
 
     prefs.setBoolPref("testing.browserTestHarness.running", true);
 
-    var ww = Cc["@mozilla.org/embedcomp/window-watcher;1"].
-             getService(Ci.nsIWindowWatcher);
     var sstring = Cc["@mozilla.org/supports-string;1"].
                   createInstance(Ci.nsISupportsString);
     sstring.data = location.search;
 
-    ww.openWindow(window, "chrome://mochikit/content/browser-harness.xul", "browserTest",
-                  "chrome,centerscreen,dialog=no,resizable,titlebar,toolbar=no,width=800,height=600", sstring);
+    Services.ww.openWindow(window, "chrome://mochikit/content/browser-harness.xul", "browserTest",
+                           "chrome,centerscreen,dialog=no,resizable,titlebar,toolbar=no,width=800,height=600", sstring);
   } else {
     // This code allows us to redirect without requiring specialpowers for chrome and a11y tests.
     function messageHandler(m) {
@@ -53,15 +56,10 @@ function Tester(aTests, aDumper, aCallback) {
   this.dumper = aDumper;
   this.tests = aTests;
   this.callback = aCallback;
-  this._cs = Cc["@mozilla.org/consoleservice;1"].
-             getService(Ci.nsIConsoleService);
-  this._wm = Cc["@mozilla.org/appshell/window-mediator;1"].
-             getService(Ci.nsIWindowMediator);
-  this._fm = Cc["@mozilla.org/focus-manager;1"].
-             getService(Ci.nsIFocusManager);
+  this.openedWindows = {};
+  this.openedURLs = {};
 
-  this._scriptLoader = Cc["@mozilla.org/moz/jssubscript-loader;1"].
-                       getService(Ci.mozIJSSubScriptLoader);
+  this._scriptLoader = Services.scriptloader;
   this._scriptLoader.loadSubScript("chrome://mochikit/content/tests/SimpleTest/EventUtils.js", this.EventUtils);
   var simpleTestScope = {};
   this._scriptLoader.loadSubScript("chrome://mochikit/content/tests/SimpleTest/specialpowersAPI.js", simpleTestScope);
@@ -79,6 +77,8 @@ Tester.prototype = {
   checker: null,
   currentTestIndex: -1,
   lastStartTime: null,
+  openedWindows: null,
+
   get currentTest() {
     return this.tests[this.currentTestIndex];
   },
@@ -88,11 +88,17 @@ Tester.prototype = {
 
   start: function Tester_start() {
     //if testOnLoad was not called, then gConfig is not defined
-    if(!gConfig)
+    if (!gConfig)
       gConfig = readConfig();
     this.repeat = gConfig.repeat;
     this.dumper.dump("*** Start BrowserChrome Test Results ***\n");
-    this._cs.registerListener(this);
+    Services.console.registerListener(this);
+    Services.obs.addObserver(this, "chrome-document-global-created", false);
+    Services.obs.addObserver(this, "content-document-global-created", false);
+    this._globalProperties = Object.keys(window);
+    this._globalPropertyWhitelist = ["navigator", "constructor", "Application",
+      "__SS_tabsToRestore", "__SSi", "webConsoleCommandController",
+    ];
 
     if (this.tests.length)
       this.nextTest();
@@ -117,7 +123,7 @@ Tester.prototype = {
     }
 
     this.dumper.dump("TEST-INFO | checking window state\n");
-    let windowsEnum = this._wm.getEnumerator(null);
+    let windowsEnum = Services.wm.getEnumerator(null);
     while (windowsEnum.hasMoreElements()) {
       let win = windowsEnum.getNext();
       if (win != window && !win.closed &&
@@ -152,7 +158,9 @@ Tester.prototype = {
       this.nextTest();
     }
     else{
-      this._cs.unregisterListener(this);
+      Services.console.unregisterListener(this);
+      Services.obs.removeObserver(this, "chrome-document-global-created");
+      Services.obs.removeObserver(this, "content-document-global-created");
   
       this.dumper.dump("\nINFO TEST-START | Shutdown\n");
       if (this.tests.length) {
@@ -179,10 +187,38 @@ Tester.prototype = {
       this.callback(this.tests);
       this.callback = null;
       this.tests = null;
+      this.openedWindows = null;
     }
   },
 
-  observe: function Tester_observe(aConsoleMessage) {
+  observe: function Tester_observe(aSubject, aTopic, aData) {
+    if (!aTopic) {
+      this.onConsoleMessage(aSubject);
+    } else if (this.currentTest) {
+      this.onDocumentCreated(aSubject);
+    }
+  },
+
+  onDocumentCreated: function Tester_onDocumentCreated(aWindow) {
+    let utils = aWindow.QueryInterface(Ci.nsIInterfaceRequestor)
+                       .getInterface(Ci.nsIDOMWindowUtils);
+    let outerID = utils.outerWindowID;
+    let innerID = utils.currentInnerWindowID;
+
+    if (!(outerID in this.openedWindows)) {
+      this.openedWindows[outerID] = this.currentTest;
+    }
+    this.openedWindows[innerID] = this.currentTest;
+
+    let url = aWindow.location.href || "about:blank";
+    this.openedURLs[outerID] = this.openedURLs[innerID] = url;
+  },
+
+  onConsoleMessage: function Tester_onConsoleMessage(aConsoleMessage) {
+    // Ignore empty messages.
+    if (!aConsoleMessage.message)
+      return;
+
     try {
       var msg = "Console message: " + aConsoleMessage.message;
       if (this.currentTest)
@@ -214,6 +250,14 @@ Tester.prototype = {
         this.currentTest.addResult(new testResult(false, "expectUncaughtException was called but no uncaught exception was detected!", "", false));
       }
 
+      Object.keys(window).forEach(function (prop) {
+        if (this._globalProperties.indexOf(prop) == -1) {
+          this._globalProperties.push(prop);
+          if (this._globalPropertyWhitelist.indexOf(prop) == -1)
+            this.currentTest.addResult(new testResult(false, "leaked window property: " + prop, "", false));
+        }
+      }, this);
+
       // Clear document.popupNode.  The test could have set it to a custom value
       // for its own purposes, nulling it out it will go back to the default
       // behavior of returning the last opened popup.
@@ -233,15 +277,33 @@ Tester.prototype = {
     // is invoked to start the tests.
     this.waitForWindowsState((function () {
       if (this.done) {
+        // Many tests randomly add and remove tabs, resulting in the original
+        // tab being replaced by a new one. The last test in the suite doing this
+        // will erroneously be blamed for leaking this new tab's DOM window and
+        // docshell until shutdown. We can prevent this by removing this tab now
+        // that all tests are done.
+        if (window.gBrowser) {
+          gBrowser.addTab();
+          gBrowser.removeCurrentTab();
+        }
+
         // Schedule GC and CC runs before finishing in order to detect
         // DOM windows leaked by our tests or the tested code.
         Cu.schedulePreciseGC((function () {
-          let winutils = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                               .getInterface(Ci.nsIDOMWindowUtils);
-          winutils.garbageCollect();
-          winutils.garbageCollect();
-          winutils.garbageCollect();
-          this.finish();
+          let analyzer = new CCAnalyzer();
+          analyzer.run(function () {
+            for (let obj of analyzer.find("nsGlobalWindow ")) {
+              let m = obj.name.match(/^nsGlobalWindow #(\d+)/);
+              if (m && m[1] in this.openedWindows) {
+                let test = this.openedWindows[m[1]];
+                let msg = "leaked until shutdown [" + obj.name +
+                          " " + (this.openedURLs[m[1]] || "NULL") + "]";
+                test.addResult(new testResult(false, msg, "", false));
+              }
+            }
+
+            this.finish();
+          }.bind(this));
         }).bind(this));
         return;
       }
@@ -265,7 +327,7 @@ Tester.prototype = {
     this.currentTest.scope.gTestPath = this.currentTest.path;
 
     // Override SimpleTest methods with ours.
-    ["ok", "is", "isnot", "todo", "todo_is", "todo_isnot", "info"].forEach(function(m) {
+    ["ok", "is", "isnot", "ise", "todo", "todo_is", "todo_isnot", "info"].forEach(function(m) {
       this.SimpleTest[m] = this[m];
     }, this.currentTest.scope);
 
@@ -405,6 +467,10 @@ function testScope(aTester, aTest) {
     self.ok(a != b, name, "Didn't expect " + a + ", but got it", false,
             Components.stack.caller);
   };
+  this.ise = function test_ise(a, b, name) {
+    self.ok(a === b, name, "Got " + a + ", strictly expected " + b, false,
+            Components.stack.caller);
+  };
   this.todo = function test_todo(condition, name, diag, stack) {
     aTest.addResult(new testResult(!condition, name, diag, true,
                                    stack ? stack : Components.stack.caller));
@@ -422,9 +488,7 @@ function testScope(aTester, aTest) {
   };
 
   this.executeSoon = function test_executeSoon(func) {
-    let tm = Cc["@mozilla.org/thread-manager;1"].getService(Ci.nsIThreadManager);
-
-    tm.mainThread.dispatch({
+    Services.tm.mainThread.dispatch({
       run: function() {
         func();
       }

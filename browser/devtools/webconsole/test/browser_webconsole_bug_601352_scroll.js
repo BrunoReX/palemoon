@@ -8,13 +8,8 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-function tabLoad(aEvent) {
-  browser.removeEventListener(aEvent.type, arguments.callee, true);
-
-  openConsole();
-
-  let hudId = HUDService.getHudIdByWindow(content);
-  let HUD = HUDService.hudReferences[hudId];
+function consoleOpened(HUD) {
+  HUD.jsterm.clearOutput();
 
   let longMessage = "";
   for (let i = 0; i < 50; i++) {
@@ -22,18 +17,18 @@ function tabLoad(aEvent) {
   }
 
   for (let i = 0; i < 50; i++) {
-    HUD.console.log("test message " + i);
+    content.console.log("test message " + i);
   }
 
-  HUD.console.log(longMessage);
+  content.console.log(longMessage);
 
   for (let i = 0; i < 50; i++) {
-    HUD.console.log("test message " + i);
+    content.console.log("test message " + i);
   }
 
   HUD.jsterm.execute("1+1");
 
-  executeSoon(function() {
+  function performTest() {
     let scrollBox = HUD.outputNode.scrollBoxObject.element;
     isnot(scrollBox.scrollTop, 0, "scroll location is not at the top");
 
@@ -54,16 +49,24 @@ function tabLoad(aEvent) {
        "last message is visible");
 
     finishTest();
+  };
+
+  waitForSuccess({
+    name: "console output displayed",
+    validatorFn: function()
+    {
+      return HUD.outputNode.itemCount == 103;
+    },
+    successFn: performTest,
+    failureFn: finishTest,
   });
 }
 
-registerCleanupFunction(function() {
-  Services.prefs.clearUserPref("devtools.gcli.enable");
-});
-
 function test() {
-  Services.prefs.setBoolPref("devtools.gcli.enable", false);
-  addTab("data:text/html,Web Console test for bug 601352");
-  browser.addEventListener("load", tabLoad, true);
+  addTab("data:text/html;charset=utf-8,Web Console test for bug 601352");
+  browser.addEventListener("load", function tabLoad(aEvent) {
+    browser.removeEventListener(aEvent.type, tabLoad, true);
+    openConsole(null, consoleOpened);
+  }, true);
 }
 

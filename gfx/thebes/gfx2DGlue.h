@@ -1,4 +1,12 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef GFX_2D_GLUE_H
+#define GFX_2D_GLUE_H
+
+
+#include "gfxPlatform.h"
 #include "gfxRect.h"
 #include "gfxMatrix.h"
 #include "gfxContext.h"
@@ -122,9 +130,8 @@ inline gfxContext::GraphicsLineCap ThebesLineCap(CapStyle aStyle)
     return gfxContext::LINE_CAP_ROUND;
   case CAP_SQUARE:
     return gfxContext::LINE_CAP_SQUARE;
-  default:
-    return gfxContext::LINE_CAP_BUTT;
   }
+  MOZ_NOT_REACHED("Incomplete switch");
 }
 
 inline CapStyle ToCapStyle(gfxContext::GraphicsLineCap aStyle)
@@ -136,9 +143,8 @@ inline CapStyle ToCapStyle(gfxContext::GraphicsLineCap aStyle)
     return CAP_ROUND;
   case gfxContext::LINE_CAP_SQUARE:
     return CAP_SQUARE;
-  default:
-    return CAP_BUTT;
   }
+  MOZ_NOT_REACHED("Incomplete switch");
 }
 
 inline gfxContext::GraphicsLineJoin ThebesLineJoin(JoinStyle aStyle)
@@ -164,9 +170,8 @@ inline JoinStyle ToJoinStyle(gfxContext::GraphicsLineJoin aStyle)
     return JOIN_BEVEL;
   case gfxContext::LINE_JOIN_ROUND:
     return JOIN_ROUND;
-  default:
-    return JOIN_MITER;
   }
+  MOZ_NOT_REACHED("Incomplete switch");
 }
 
 inline gfxMatrix ThebesMatrix(const Matrix &aMatrix)
@@ -175,9 +180,26 @@ inline gfxMatrix ThebesMatrix(const Matrix &aMatrix)
                    aMatrix._22, aMatrix._31, aMatrix._32);
 }
 
+inline gfxASurface::gfxImageFormat SurfaceFormatToImageFormat(SurfaceFormat aFormat)
+{
+  switch (aFormat) {
+  case FORMAT_B8G8R8A8:
+    return gfxASurface::ImageFormatARGB32;
+  case FORMAT_B8G8R8X8:
+    return gfxASurface::ImageFormatRGB24;
+  case FORMAT_R5G6B5:
+    return gfxASurface::ImageFormatRGB16_565;
+  case FORMAT_A8:
+    return gfxASurface::ImageFormatA8;
+  default:
+    return gfxASurface::ImageFormatUnknown;
+  }
+}
+
 inline gfxASurface::gfxContentType ContentForFormat(const SurfaceFormat &aFormat)
 {
   switch (aFormat) {
+  case FORMAT_R5G6B5:
   case FORMAT_B8G8R8X8:
     return gfxASurface::CONTENT_COLOR;
   case FORMAT_A8:
@@ -185,18 +207,6 @@ inline gfxASurface::gfxContentType ContentForFormat(const SurfaceFormat &aFormat
   case FORMAT_B8G8R8A8:
   default:
     return gfxASurface::CONTENT_COLOR_ALPHA;
-  }
-}
-
-inline SurfaceFormat FormatForContent(gfxASurface::gfxContentType aContent)
-{
-  switch (aContent) {
-  case gfxASurface::CONTENT_COLOR:
-    return FORMAT_B8G8R8X8;
-  case gfxASurface::CONTENT_ALPHA:
-    return FORMAT_A8;
-  default:
-    return FORMAT_B8G8R8A8;
   }
 }
 
@@ -254,3 +264,5 @@ inline gfxContext::GraphicsOperator ThebesOp(CompositionOp aOp)
 
 }
 }
+
+#endif

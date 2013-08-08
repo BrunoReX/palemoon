@@ -17,30 +17,35 @@ let bhist = Cc["@mozilla.org/browser/global-history;2"]
 
 function runTests() {
   clearHistory();
-  fillHistory();
+  yield fillHistory();
   yield addNewTabPageTab();
 
-  is(cells[0].site.url, URL, "first site is our fake site");
+  is(getCell(0).site.url, URL, "first site is our fake site");
 
-  let page = {
-    update: function () {
-      executeSoon(TestRunner.next);
-    },
-
-    observe: function () {}
-  };
-
-  NewTabUtils.allPages.register(page);
+  whenPagesUpdated();
   yield clearHistory();
 
-  NewTabUtils.allPages.unregister(page);
-  ok(!cells[0].site, "the fake site is gone");
+  ok(!getCell(0).site, "the fake site is gone");
 }
 
 function fillHistory() {
-  let uri = makeURI(URL);
-  for (let i = 59; i > 0; i--)
-    bhist.addPageWithDetails(uri, "fake site", NOW - i * 60 * 1000000);
+  let visits = [];
+  for (let i = 59; i > 0; i--) {
+    visits.push({
+      visitDate: NOW - i * 60 * 1000000,
+      transitionType: Ci.nsINavHistoryService.TRANSITION_LINK
+    });
+  }
+  let place = {
+    uri: makeURI(URL),
+    title: "fake site",
+    visits: visits
+  };
+  PlacesUtils.asyncHistory.updatePlaces(place, {
+    handleError: function () do_throw("Unexpected error in adding visit."),
+    handleResult: function () { },
+    handleCompletion: function () TestRunner.next()
+  });
 }
 
 function clearHistory() {

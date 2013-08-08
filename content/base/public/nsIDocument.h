@@ -1,40 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Ms2ger <ms2ger@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef nsIDocument_h___
 #define nsIDocument_h___
 
@@ -68,7 +35,6 @@
 #include "nsEventStates.h"
 #include "nsIStructuredCloneContainer.h"
 #include "nsIBFCacheEntry.h"
-#include "nsDOMMemoryReporter.h"
 
 class nsIContent;
 class nsPresContext;
@@ -111,6 +77,8 @@ class nsIBoxObject;
 class imgIRequest;
 class nsISHEntry;
 class nsDOMNavigationTiming;
+class nsWindowSizes;
+class nsIObjectLoadingContent;
 
 namespace mozilla {
 namespace css {
@@ -124,9 +92,8 @@ class Element;
 } // namespace mozilla
 
 #define NS_IDOCUMENT_IID \
-{ 0x283ec27d, 0x5b23, 0x49b2, \
-  { 0x94, 0xd9, 0x9, 0xb5, 0xdb, 0x45, 0x30, 0x73 } }
-
+{ 0x7bac702d, 0xca67, 0x4ce1, \
+ { 0x80, 0x3c, 0x35, 0xde, 0x81, 0x26, 0x04, 0x97 } }
 
 // Flag for AddStyleSheet().
 #define NS_STYLESHEET_FROM_CATALOG                (1 << 0)
@@ -156,7 +123,6 @@ public:
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_IDOCUMENT_IID)
   NS_DECL_AND_IMPL_ZEROING_OPERATOR_NEW
-  NS_DECL_DOM_MEMORY_REPORTER_SIZEOF
 
 #ifdef MOZILLA_INTERNAL_API
   nsIDocument()
@@ -183,9 +149,10 @@ public:
   
   /**
    * Let the document know that we're starting to load data into it.
-   * @param aCommand The parser command
+   * @param aCommand The parser command. Must not be null.
    *                 XXXbz It's odd to have that here.
-   * @param aChannel The channel the data will come from
+   * @param aChannel The channel the data will come from. The channel must be
+   *                 able to report its Content-Type.
    * @param aLoadGroup The loadgroup this document should use from now on.
    *                   Note that the document might not be the only thing using
    *                   this loadgroup.
@@ -204,6 +171,9 @@ public:
    * @param aSink The content sink to use for the data.  If this is null and
    *              the document needs a content sink, it will create one based
    *              on whatever it knows about the data it's going to load.
+   *              This MUST be null if the underlying document is an HTML
+   *              document. Even in the XML case, please don't add new calls
+   *              with non-null sink.
    *
    * Once this has been called, the document will return false for
    * MayStartLayout() until SetMayStartLayout(true) is called on it.  Making
@@ -650,7 +620,9 @@ public:
    * Get this document's attribute stylesheet.  May return null if
    * there isn't one.
    */
-  virtual nsHTMLStyleSheet* GetAttributeStyleSheet() const = 0;
+  nsHTMLStyleSheet* GetAttributeStyleSheet() const {
+    return mAttrStyleSheet;
+  }
 
   /**
    * Get this document's inline style sheet.  May return null if there
@@ -772,11 +744,25 @@ public:
   virtual bool IsFullScreenDoc() = 0;
 
   /**
+   * Sets whether this document is approved for fullscreen mode.
+   * Documents aren't approved for fullscreen until chrome has sent a
+   * "fullscreen-approved" notification with a subject which is a pointer
+   * to the approved document.
+   */
+  virtual void SetApprovedForFullscreen(bool aIsApproved) = 0;
+
+  /**
    * Exits all documents from DOM full-screen mode, and moves the top-level
    * browser window out of full-screen mode. If aRunAsync is true, this runs
    * asynchronously.
    */
   static void ExitFullScreen(bool aRunAsync);
+
+
+  virtual void RequestPointerLock(Element* aElement) = 0;
+
+  static void UnlockPointer();
+
 
   //----------------------------------------------------------------------
 
@@ -1128,6 +1114,14 @@ public:
                                      nsIDOMNodeList** aResult) = 0;
 
   /**
+   * See GetAnonymousElementByAttribute on nsIDOMDocumentXBL.
+   */
+  virtual nsIContent*
+    GetAnonymousElementByAttribute(nsIContent* aElement,
+                                   nsIAtom* aAttrName,
+                                   const nsAString& aAttrValue) const = 0;
+
+  /**
    * Helper for nsIDOMDocument::elementFromPoint implementation that allows
    * ignoring the scroll frame and/or avoiding layout flushes.
    *
@@ -1429,7 +1423,8 @@ public:
   /**
    * Called by nsParser to preload images. Can be removed and code moved
    * to nsPreloadURIs::PreloadURIs() in file nsParser.cpp whenever the
-   * parser-module is linked with gklayout-module.
+   * parser-module is linked with gklayout-module.  aCrossOriginAttr should
+   * be a void string if the attr is not present.
    */
   virtual void MaybePreLoadImage(nsIURI* uri,
                                  const nsAString& aCrossOriginAttr) = 0;
@@ -1568,6 +1563,10 @@ public:
   // state is unlocked/false.
   virtual nsresult SetImageLockingState(bool aLocked) = 0;
 
+  virtual nsresult AddPlugin(nsIObjectLoadingContent* aPlugin) = 0;
+  virtual void RemovePlugin(nsIObjectLoadingContent* aPlugin) = 0;
+  virtual void GetPlugins(nsTArray<nsIObjectLoadingContent*>& aPlugins) = 0;
+
   virtual nsresult GetStateObject(nsIVariant** aResult) = 0;
 
   virtual nsDOMNavigationTiming* GetNavigationTiming() const = 0;
@@ -1601,7 +1600,7 @@ public:
     eDeprecatedOperationCount
   };
 #undef DEPRECATED_OPERATION
-  void WarnOnceAbout(DeprecatedOperations aOperation);
+  void WarnOnceAbout(DeprecatedOperations aOperation, bool asError = false);
 
   virtual void PostVisibilityUpdateEvent() = 0;
   
@@ -1618,6 +1617,40 @@ public:
     mNeedStyleFlush = true;
     if (mDisplayDocument) {
       mDisplayDocument->SetNeedStyleFlush();
+    }
+  }
+
+  // Note: nsIDocument is a sub-class of nsINode, which has a
+  // SizeOfExcludingThis function.  However, because nsIDocument objects can
+  // only appear at the top of the DOM tree, we have a specialized measurement
+  // function which returns multiple sizes.
+  virtual void DocSizeOfExcludingThis(nsWindowSizes* aWindowSizes) const;
+  // DocSizeOfIncludingThis doesn't need to be overridden by sub-classes
+  // because nsIDocument inherits from nsINode;  see the comment above the
+  // declaration of nsINode::SizeOfIncludingThis.
+  virtual void DocSizeOfIncludingThis(nsWindowSizes* aWindowSizes) const;
+
+  bool MayHaveDOMMutationObservers()
+  {
+    return mMayHaveDOMMutationObservers;
+  }
+
+  void SetMayHaveDOMMutationObservers()
+  {
+    mMayHaveDOMMutationObservers = true;
+  }
+
+  bool IsInSyncOperation()
+  {
+    return mInSyncOperationCount != 0;
+  }
+
+  void SetIsInSyncOperation(bool aSync)
+  {
+    if (aSync) {
+      ++mInSyncOperationCount;
+    } else {
+      --mInSyncOperationCount;
     }
   }
 
@@ -1694,6 +1727,7 @@ protected:
   // The cleanup is handled by the nsDocument destructor.
   nsNodeInfoManager* mNodeInfoManager; // [STRONG]
   mozilla::css::Loader* mCSSLoader; // [STRONG]
+  nsHTMLStyleSheet* mAttrStyleSheet;
 
   // The set of all object, embed, applet, video and audio elements for
   // which this is the owner document. (They might not be in the document.)
@@ -1791,6 +1825,9 @@ protected:
   // True if a style flush might not be a no-op
   bool mNeedStyleFlush;
 
+  // True if a DOMMutationObserver is perhaps attached to a node in the document.
+  bool mMayHaveDOMMutationObservers;
+
   // The document's script global object, the object from which the
   // document can get its script context and scope. This is the
   // *inner* window object.
@@ -1886,6 +1923,8 @@ protected:
   nsCOMPtr<nsIVariant> mStateObjectCached;
 
   PRUint8 mDefaultElementType;
+
+  PRUint32 mInSyncOperationCount;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIDocument, NS_IDOCUMENT_IID)
@@ -1930,6 +1969,16 @@ public:
 private:
   nsCOMPtr<nsINode>     mTarget;
   nsCOMPtr<nsIDocument> mSubtreeOwner;
+};
+
+class NS_STACK_CLASS nsAutoSyncOperation
+{
+public:
+  nsAutoSyncOperation(nsIDocument* aDocument);
+  ~nsAutoSyncOperation();
+private:
+  nsCOMArray<nsIDocument> mDocuments;
+  PRUint32                mMicroTaskLevel;
 };
 
 // XXX These belong somewhere else

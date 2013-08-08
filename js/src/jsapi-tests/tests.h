@@ -1,42 +1,9 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sw=4 et tw=99:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is JSAPI tests.
- *
- * The Initial Developer of the Original Code is
- * Mozilla Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *     Jason Orendorff
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Util.h"
 
@@ -305,18 +272,17 @@ class JSAPITest
         static JSClass c = {
             "global", JSCLASS_GLOBAL_FLAGS,
             JS_PropertyStub, JS_PropertyStub, JS_PropertyStub, JS_StrictPropertyStub,
-            JS_EnumerateStub, JS_ResolveStub, JS_ConvertStub, JS_FinalizeStub,
-            JSCLASS_NO_OPTIONAL_MEMBERS
+            JS_EnumerateStub, JS_ResolveStub, JS_ConvertStub
         };
         return &c;
     }
 
   protected:
     static JSBool
-    print(JSContext *cx, uintN argc, jsval *vp)
+    print(JSContext *cx, unsigned argc, jsval *vp)
     {
         jsval *argv = JS_ARGV(cx, vp);
-        for (uintN i = 0; i < argc; i++) {
+        for (unsigned i = 0; i < argc; i++) {
             JSString *str = JS_ValueToString(cx, argv[i]);
             if (!str)
                 return JS_FALSE;
@@ -338,7 +304,25 @@ class JSAPITest
     }
 
     virtual JSRuntime * createRuntime() {
-        return JS_NewRuntime(8L * 1024 * 1024);
+        JSRuntime *rt = JS_NewRuntime(8L * 1024 * 1024);
+        if (!rt)
+            return NULL;
+
+        const size_t MAX_STACK_SIZE =
+/* Assume we can't use more than 5e5 bytes of C stack by default. */
+#if (defined(DEBUG) && defined(__SUNPRO_CC))  || defined(JS_CPU_SPARC)
+            /*
+             * Sun compiler uses a larger stack space for js::Interpret() with
+             * debug.  Use a bigger gMaxStackSize to make "make check" happy.
+             */
+            5000000
+#else
+            500000
+#endif
+        ;
+
+        JS_SetNativeStackQuota(rt, MAX_STACK_SIZE);
+        return rt;
     }
 
     virtual void destroyRuntime() {
@@ -358,22 +342,6 @@ class JSAPITest
         JSContext *cx = JS_NewContext(rt, 8192);
         if (!cx)
             return NULL;
-
-        const size_t MAX_STACK_SIZE =
-/* Assume we can't use more than 5e5 bytes of C stack by default. */
-#if (defined(DEBUG) && defined(__SUNPRO_CC))  || defined(JS_CPU_SPARC)
-            /*
-             * Sun compiler uses a larger stack space for js::Interpret() with
-             * debug.  Use a bigger gMaxStackSize to make "make check" happy.
-             */
-            5000000
-#else
-            500000
-#endif
-        ;
-
-        JS_SetNativeStackQuota(cx, MAX_STACK_SIZE);
-
         JS_SetOptions(cx, JSOPTION_VAROBJFIX);
         JS_SetVersion(cx, JSVERSION_LATEST);
         JS_SetErrorReporter(cx, &reportError);
@@ -432,7 +400,7 @@ class JSAPITest
 
 /*
  * A class for creating and managing one temporary file.
- * 
+ *
  * We could use the ISO C temporary file functions here, but those try to
  * create files in the root directory on Windows, which fails for users
  * without Administrator privileges.
@@ -463,7 +431,7 @@ class TempFile {
             fprintf(stderr, "error opening temporary file '%s': %s\n",
                     fileName, strerror(errno));
             exit(1);
-        }            
+        }
         name = fileName;
         return stream;
     }

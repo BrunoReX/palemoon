@@ -1,42 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  * vim: sw=2 ts=2 et lcs=trail\:.,tab\:>~ :
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is the Mozilla SVG project.
- *
- * The Initial Developer of the Original Code is
- * Crocodile Clips Ltd..
- * Portions created by the Initial Developer are Copyright (C) 2001
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Alex Fritze <alex.fritze@crocodile-clips.com> (original author)
- *   Brian Birtles <birtles@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DOMSVGTransform.h"
 #include "DOMSVGMatrix.h"
@@ -173,9 +139,7 @@ DOMSVGTransform::SetMatrix(nsIDOMSVGMatrix *matrix)
   if (!domMatrix)
     return NS_ERROR_DOM_SVG_WRONG_TYPE_ERR;
 
-  Transform().SetMatrix(domMatrix->Matrix());
-  NotifyElementOfChange();
-
+  SetMatrix(domMatrix->Matrix());
   return NS_OK;
 }
 
@@ -188,8 +152,14 @@ DOMSVGTransform::SetTranslate(float tx, float ty)
   }
   NS_ENSURE_FINITE2(tx, ty, NS_ERROR_ILLEGAL_VALUE);
 
+  if (Transform().Type() == nsIDOMSVGTransform::SVG_TRANSFORM_TRANSLATE &&
+      Matrix().x0 == tx && Matrix().y0 == ty) {
+    return NS_OK;
+  }
+
+  nsAttrValue emptyOrOldValue = NotifyElementWillChange();
   Transform().SetTranslate(tx, ty);
-  NotifyElementOfChange();
+  NotifyElementDidChange(emptyOrOldValue);
 
   return NS_OK;
 }
@@ -203,8 +173,14 @@ DOMSVGTransform::SetScale(float sx, float sy)
   }
   NS_ENSURE_FINITE2(sx, sy, NS_ERROR_ILLEGAL_VALUE);
 
+  if (Transform().Type() == nsIDOMSVGTransform::SVG_TRANSFORM_SCALE &&
+      Matrix().xx == sx && Matrix().yy == sy) {
+    return NS_OK;
+  }
+
+  nsAttrValue emptyOrOldValue = NotifyElementWillChange();
   Transform().SetScale(sx, sy);
-  NotifyElementOfChange();
+  NotifyElementDidChange(emptyOrOldValue);
 
   return NS_OK;
 }
@@ -218,8 +194,17 @@ DOMSVGTransform::SetRotate(float angle, float cx, float cy)
   }
   NS_ENSURE_FINITE3(angle, cx, cy, NS_ERROR_ILLEGAL_VALUE);
 
+  if (Transform().Type() == nsIDOMSVGTransform::SVG_TRANSFORM_ROTATE) {
+    float currentCx, currentCy;
+    Transform().GetRotationOrigin(currentCx, currentCy);
+    if (Transform().Angle() == angle && currentCx == cx && currentCy == cy) {
+      return NS_OK;
+    }
+  }
+
+  nsAttrValue emptyOrOldValue = NotifyElementWillChange();
   Transform().SetRotate(angle, cx, cy);
-  NotifyElementOfChange();
+  NotifyElementDidChange(emptyOrOldValue);
 
   return NS_OK;
 }
@@ -233,10 +218,16 @@ DOMSVGTransform::SetSkewX(float angle)
   }
   NS_ENSURE_FINITE(angle, NS_ERROR_ILLEGAL_VALUE);
 
+  if (Transform().Type() == nsIDOMSVGTransform::SVG_TRANSFORM_SKEWX &&
+      Transform().Angle() == angle) {
+    return NS_OK;
+  }
+
+  nsAttrValue emptyOrOldValue = NotifyElementWillChange();
   nsresult rv = Transform().SetSkewX(angle);
   if (NS_FAILED(rv))
     return rv;
-  NotifyElementOfChange();
+  NotifyElementDidChange(emptyOrOldValue);
 
   return NS_OK;
 }
@@ -250,10 +241,16 @@ DOMSVGTransform::SetSkewY(float angle)
   }
   NS_ENSURE_FINITE(angle, NS_ERROR_ILLEGAL_VALUE);
 
+  if (Transform().Type() == nsIDOMSVGTransform::SVG_TRANSFORM_SKEWY &&
+      Transform().Angle() == angle) {
+    return NS_OK;
+  }
+
+  nsAttrValue emptyOrOldValue = NotifyElementWillChange();
   nsresult rv = Transform().SetSkewY(angle);
   if (NS_FAILED(rv))
     return rv;
-  NotifyElementOfChange();
+  NotifyElementDidChange(emptyOrOldValue);
 
   return NS_OK;
 }
@@ -324,8 +321,15 @@ DOMSVGTransform::SetMatrix(const gfxMatrix& aMatrix)
 {
   NS_ABORT_IF_FALSE(!mIsAnimValItem,
       "Attempting to modify read-only transform");
+
+  if (Transform().Type() == nsIDOMSVGTransform::SVG_TRANSFORM_MATRIX &&
+      SVGTransform::MatricesEqual(Matrix(), aMatrix)) {
+    return;
+  }
+
+  nsAttrValue emptyOrOldValue = NotifyElementWillChange();
   Transform().SetMatrix(aMatrix);
-  NotifyElementOfChange();
+  NotifyElementDidChange(emptyOrOldValue);
 }
 
 void
@@ -341,10 +345,10 @@ DOMSVGTransform::ClearMatrixTearoff(DOMSVGMatrix* aMatrix)
 // Implementation helpers
 
 void
-DOMSVGTransform::NotifyElementOfChange()
+DOMSVGTransform::NotifyElementDidChange(const nsAttrValue& aEmptyOrOldValue)
 {
   if (HasOwner()) {
-    Element()->DidChangeTransformList(true);
+    Element()->DidChangeTransformList(aEmptyOrOldValue);
     if (mList->mAList->IsAnimating()) {
       Element()->AnimationNeedsResample();
     }

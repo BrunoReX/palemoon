@@ -1,6 +1,10 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sw=4 et tw=99:
  */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 
 #include <limits>
 #include <math.h>
@@ -51,7 +55,7 @@ BEGIN_TEST(testParseJSON_success)
     CHECK(TryParse(cx, "1", DOUBLE_TO_JSVAL(1)));
     CHECK(TryParse(cx, "1.75", DOUBLE_TO_JSVAL(1.75)));
     CHECK(TryParse(cx, "9e9", DOUBLE_TO_JSVAL(9e9)));
-    CHECK(TryParse(cx, "9e99999", DOUBLE_TO_JSVAL(std::numeric_limits<jsdouble>::infinity())));
+    CHECK(TryParse(cx, "9e99999", DOUBLE_TO_JSVAL(std::numeric_limits<double>::infinity())));
 
     JSFlatString *str;
 
@@ -157,14 +161,44 @@ Error(JSContext *cx, const char (&input)[N])
     AutoInflatedString str(cx);
     jsval dummy;
     str = input;
-    CHECK(!JS_ParseJSON(cx, str.chars(), str.length(), &dummy));
-    JS_ClearPendingException(cx);
+
+    ContextPrivate p = {0, 0};
+    CHECK(!JS_GetContextPrivate(cx));
+    JS_SetContextPrivate(cx, &p);
+    JSErrorReporter old = JS_SetErrorReporter(cx, reportJSONEror);
+    JSBool ok = JS_ParseJSON(cx, str.chars(), str.length(), &dummy);
+    JS_SetErrorReporter(cx, old);
+    JS_SetContextPrivate(cx, NULL);
+
+    CHECK(!ok);
+    CHECK(!p.unexpectedErrorCount);
+    CHECK(p.expectedErrorCount == 1);
+
+    /* We do not execute JS, so there should be no exception thrown. */
+    CHECK(!JS_IsExceptionPending(cx));
+
     return true;
 }
+
+struct ContextPrivate {
+    unsigned unexpectedErrorCount;
+    unsigned expectedErrorCount;
+};
+
+static void
+reportJSONEror(JSContext *cx, const char *message, JSErrorReport *report)
+{
+    ContextPrivate *p = static_cast<ContextPrivate *>(JS_GetContextPrivate(cx));
+    if (report->errorNumber == JSMSG_JSON_BAD_PARSE)
+        p->expectedErrorCount++;
+    else
+        p->unexpectedErrorCount++;
+}
+
 END_TEST(testParseJSON_error)
 
 static JSBool
-Censor(JSContext *cx, uintN argc, jsval *vp)
+Censor(JSContext *cx, unsigned argc, jsval *vp)
 {
     JS_ASSERT(argc == 2);
 #ifdef DEBUG

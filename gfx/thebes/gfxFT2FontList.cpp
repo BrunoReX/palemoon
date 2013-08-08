@@ -1,43 +1,7 @@
 /* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Corporation code.
- *
- * The Initial Developer of the Original Code is Mozilla Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Stuart Parmenter <stuart@mozilla.com>
- *   Masayuki Nakano <masayuki@d-toybox.com>
- *   Mats Palmgren <mats.palmgren@bredband.net>
- *   John Daggett <jdaggett@mozilla.com>
- *   Jonathan Kew <jfkthame@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Util.h"
 
@@ -136,7 +100,7 @@ FT2FontEntry::CreateScaledFont(const gfxFontStyle *aStyle)
 
     // synthetic oblique by skewing via the font matrix
     bool needsOblique = !IsItalic() &&
-            (aStyle->style & (FONT_STYLE_ITALIC | FONT_STYLE_OBLIQUE));
+            (aStyle->style & (NS_FONT_STYLE_ITALIC | NS_FONT_STYLE_OBLIQUE));
 
     if (needsOblique) {
         const double kSkewFactor = 0.25;
@@ -154,9 +118,9 @@ FT2FontEntry::CreateScaledFont(const gfxFontStyle *aStyle)
 
     cairo_font_options_t *fontOptions = cairo_font_options_create();
 
-#ifdef MOZ_GFX_OPTIMIZE_MOBILE
-    cairo_font_options_set_hint_metrics(fontOptions, CAIRO_HINT_METRICS_OFF);
-#endif
+    if (!gfxPlatform::GetPlatform()->FontHintingEnabled()) {
+        cairo_font_options_set_hint_metrics(fontOptions, CAIRO_HINT_METRICS_OFF);
+    }
 
     scaledFont = cairo_scaled_font_create(CairoFontFace(),
                                           &sizeMatrix,
@@ -208,7 +172,16 @@ FT2FontEntry::CreateFontEntry(const gfxProxyFontEntry &aProxyEntry,
         NS_Free((void*)aFontData);
         return nsnull;
     }
-    FT2FontEntry* fe = FT2FontEntry::CreateFontEntry(face, nsnull, 0, aFontData);
+    if (FT_Err_Ok != FT_Select_Charmap(face, FT_ENCODING_UNICODE)) {
+        FT_Done_Face(face);
+        NS_Free((void*)aFontData);
+        return nsnull;
+    }
+    // Create our FT2FontEntry, which inherits the name of the proxy
+    // as it's not guaranteed that the face has valid names (bug 737315)
+    FT2FontEntry* fe =
+        FT2FontEntry::CreateFontEntry(face, nsnull, 0, aProxyEntry.Name(),
+                                      aFontData);
     if (fe) {
         fe->mItalic = aProxyEntry.mItalic;
         fe->mWeight = aProxyEntry.mWeight;
@@ -261,29 +234,18 @@ FT2FontEntry::CreateFontEntry(const FontListEntry& aFLE)
 FT2FontEntry*
 FT2FontEntry::CreateFontEntry(FT_Face aFace,
                               const char* aFilename, PRUint8 aIndex,
+                              const nsAString& aName,
                               const PRUint8 *aFontData)
 {
     static cairo_user_data_key_t key;
 
-    if (!aFace->family_name) {
-        FT_Done_Face(aFace);
-        return nsnull;
-    }
-    // Construct font name from family name and style name, regular fonts
-    // do not have the modifier by convention.
-    NS_ConvertUTF8toUTF16 fontName(aFace->family_name);
-    if (aFace->style_name && strcmp("Regular", aFace->style_name)) {
-        fontName.AppendLiteral(" ");
-        AppendUTF8toUTF16(aFace->style_name, fontName);
-    }
-    FT2FontEntry *fe = new FT2FontEntry(fontName);
+    FT2FontEntry *fe = new FT2FontEntry(aName);
     fe->mItalic = aFace->style_flags & FT_STYLE_FLAG_ITALIC;
     fe->mFTFace = aFace;
-#ifdef MOZ_GFX_OPTIMIZE_MOBILE
-    fe->mFontFace = cairo_ft_font_face_create_for_ft_face(aFace, FT_LOAD_NO_AUTOHINT | FT_LOAD_NO_HINTING);
-#else
-    fe->mFontFace = cairo_ft_font_face_create_for_ft_face(aFace, 0);
-#endif
+    int flags = gfxPlatform::GetPlatform()->FontHintingEnabled() ?
+                FT_LOAD_DEFAULT :
+                (FT_LOAD_NO_AUTOHINT | FT_LOAD_NO_HINTING);
+    fe->mFontFace = cairo_ft_font_face_create_for_ft_face(aFace, flags);
     fe->mFilename = aFilename;
     fe->mFTFontIndex = aIndex;
     FTUserFontData *userFontData = new FTUserFontData(aFace, aFontData);
@@ -315,6 +277,23 @@ FT2FontEntry::CreateFontEntry(FT_Face aFace,
     return fe;
 }
 
+// construct font entry name for an installed font from names in the FT_Face,
+// and then create our FT2FontEntry
+static FT2FontEntry*
+CreateNamedFontEntry(FT_Face aFace, const char* aFilename, PRUint8 aIndex)
+{
+    if (!aFace->family_name) {
+        return nsnull;
+    }
+    nsAutoString fontName;
+    AppendUTF8toUTF16(aFace->family_name, fontName);
+    if (aFace->style_name && strcmp("Regular", aFace->style_name)) {
+        fontName.AppendLiteral(" ");
+        AppendUTF8toUTF16(aFace->style_name, fontName);
+    }
+    return FT2FontEntry::CreateFontEntry(aFace, aFilename, aIndex, fontName);
+}
+
 FT2FontEntry*
 gfxFT2Font::GetFontEntry()
 {
@@ -328,13 +307,19 @@ FT2FontEntry::CairoFontFace()
 
     if (!mFontFace) {
         FT_Face face;
-        FT_New_Face(gfxToolkitPlatform::GetPlatform()->GetFTLibrary(), mFilename.get(), mFTFontIndex, &face);
+        if (FT_Err_Ok != FT_New_Face(gfxToolkitPlatform::GetPlatform()->GetFTLibrary(),
+                                     mFilename.get(), mFTFontIndex, &face)) {
+            NS_WARNING("failed to create freetype face");
+            return nsnull;
+        }
+        if (FT_Err_Ok != FT_Select_Charmap(face, FT_ENCODING_UNICODE)) {
+            NS_WARNING("failed to select Unicode charmap, text may be garbled");
+        }
         mFTFace = face;
-#ifdef MOZ_GFX_OPTIMIZE_MOBILE
-        mFontFace = cairo_ft_font_face_create_for_ft_face(face, FT_LOAD_NO_AUTOHINT | FT_LOAD_NO_HINTING);
-#else
-        mFontFace = cairo_ft_font_face_create_for_ft_face(face, 0);
-#endif
+        int flags = gfxPlatform::GetPlatform()->FontHintingEnabled() ?
+                    FT_LOAD_DEFAULT :
+                    (FT_LOAD_NO_AUTOHINT | FT_LOAD_NO_HINTING);
+        mFontFace = cairo_ft_font_face_create_for_ft_face(face, flags);
         FTUserFontData *userFontData = new FTUserFontData(face, nsnull);
         cairo_font_face_set_user_data(mFontFace, &key,
                                       userFontData, FTFontDestroyFunc);
@@ -345,12 +330,11 @@ FT2FontEntry::CairoFontFace()
 nsresult
 FT2FontEntry::ReadCMAP()
 {
-    if (mCmapInitialized) {
+    if (mCharacterMap) {
         return NS_OK;
     }
 
-    // attempt this once, if errors occur leave a blank cmap
-    mCmapInitialized = true;
+    nsRefPtr<gfxCharacterMap> charmap = new gfxCharacterMap();
 
     AutoFallibleTArray<PRUint8,16384> buffer;
     nsresult rv = GetFontTable(TTAG_cmap, buffer);
@@ -359,11 +343,18 @@ FT2FontEntry::ReadCMAP()
         bool unicodeFont;
         bool symbolFont;
         rv = gfxFontUtils::ReadCMAP(buffer.Elements(), buffer.Length(),
-                                    mCharacterMap, mUVSOffset,
+                                    *charmap, mUVSOffset,
                                     unicodeFont, symbolFont);
     }
 
     mHasCmapTable = NS_SUCCEEDED(rv);
+    if (mHasCmapTable) {
+        gfxPlatformFontList *pfl = gfxPlatformFontList::PlatformFontList();
+        mCharacterMap = pfl->FindCharMap(charmap);
+    } else {
+        // if error occurred, initialize to null cmap
+        mCharacterMap = new gfxCharacterMap();
+    }
     return rv;
 }
 
@@ -378,17 +369,35 @@ FT2FontEntry::GetFontTable(PRUint32 aTableTag,
     FT_Error status;
     FT_ULong len = 0;
     status = FT_Load_Sfnt_Table(mFTFace, aTableTag, 0, nsnull, &len);
-    NS_ENSURE_TRUE(status == 0, NS_ERROR_FAILURE);
-    NS_ENSURE_TRUE(len != 0, NS_ERROR_FAILURE);
+    if (status != FT_Err_Ok || len == 0) {
+        return NS_ERROR_FAILURE;
+    }
 
     if (!aBuffer.SetLength(len)) {
         return NS_ERROR_OUT_OF_MEMORY;
     }
     PRUint8 *buf = aBuffer.Elements();
     status = FT_Load_Sfnt_Table(mFTFace, aTableTag, 0, buf, &len);
-    NS_ENSURE_TRUE(status == 0, NS_ERROR_FAILURE);
+    NS_ENSURE_TRUE(status == FT_Err_Ok, NS_ERROR_FAILURE);
 
     return NS_OK;
+}
+
+void
+FT2FontEntry::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf,
+                                  FontListSizes*    aSizes) const
+{
+    gfxFontEntry::SizeOfExcludingThis(aMallocSizeOf, aSizes);
+    aSizes->mFontListSize +=
+        mFilename.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
+}
+
+void
+FT2FontEntry::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf,
+                                  FontListSizes*    aSizes) const
+{
+    aSizes->mFontListSize += aMallocSizeOf(this);
+    SizeOfExcludingThis(aMallocSizeOf, aSizes);
 }
 
 /*
@@ -713,6 +722,35 @@ AppendToFaceList(nsCString& aFaceList,
 }
 
 void
+FT2FontEntry::CheckForBrokenFont()
+{
+    NS_ASSERTION(mFamily != nsnull, "font entry must belong to a family");
+
+    // note if the family is in the "bad underline" blacklist
+    if (mFamily->IsBadUnderlineFamily()) {
+        mIsBadUnderlineFont = true;
+    }
+
+    // bug 721719 - set the IgnoreGSUB flag on entries for Roboto
+    // because of unwanted on-by-default "ae" ligature.
+    // (See also AppendFaceFromFontListEntry.)
+    if (mFamily->Name().EqualsLiteral("roboto")) {
+        mIgnoreGSUB = true;
+    }
+
+    // bug 706888 - set the IgnoreGSUB flag on the broken version of
+    // Droid Sans Arabic from certain phones, as identified by the
+    // font checksum in the 'head' table
+    else if (mFamily->Name().EqualsLiteral("droid sans arabic")) {
+        const TT_Header *head = static_cast<const TT_Header*>
+            (FT_Get_Sfnt_Table(mFTFace, ft_sfnt_head));
+        if (head && head->CheckSum_Adjust == 0xe445242) {
+            mIgnoreGSUB = true;
+        }
+    }
+}
+
+void
 gfxFT2FontList::AppendFacesFromFontFile(nsCString& aFileName,
                                         bool aStdFile,
                                         FontNameCache *aCache)
@@ -749,9 +787,12 @@ gfxFT2FontList::AppendFacesFromFontFile(nsCString& aFileName,
             if (FT_Err_Ok != FT_New_Face(ftLibrary, aFileName.get(), i, &face)) {
                 continue;
             }
-
+            if (FT_Err_Ok != FT_Select_Charmap(face, FT_ENCODING_UNICODE)) {
+                FT_Done_Face(face);
+                continue;
+            }
             FT2FontEntry* fe =
-                FT2FontEntry::CreateFontEntry(face, aFileName.get(), i);
+                CreateNamedFontEntry(face, aFileName.get(), i);
             if (fe) {
                 NS_ConvertUTF8toUTF16 name(face->family_name);
                 BuildKeyNameFromFontName(name);       
@@ -765,16 +806,9 @@ gfxFT2FontList::AppendFacesFromFontFile(nsCString& aFileName,
                 }
                 fe->mStandardFace = aStdFile;
                 family->AddFontEntry(fe);
-                if (family->IsBadUnderlineFamily()) {
-                    fe->mIsBadUnderlineFont = true;
-                }
 
-                // bug 721719 - set the IgnoreGSUB flag on entries for Roboto
-                // because of unwanted on-by-default "ae" ligature.
-                // (See also AppendFaceFromFontListEntry.)
-                if (name.EqualsLiteral("roboto")) {
-                    fe->mIgnoreGSUB = true;
-                }
+                // this depends on the entry having been added to its family
+                fe->CheckForBrokenFont();
 
                 AppendToFaceList(faceList, name, fe);
 #ifdef PR_LOGGING
@@ -982,20 +1016,9 @@ gfxFT2FontList::AppendFaceFromFontListEntry(const FontListEntry& aFLE,
             }
         }
         family->AddFontEntry(fe);
-        if (family->IsBadUnderlineFamily()) {
-            fe->mIsBadUnderlineFont = true;
-        }
 
-        // bug 721719 - set the IgnoreGSUB flag on entries for Roboto
-        // because of unwanted on-by-default "ae" ligature.
-        // This totally sucks, but if we don't hack around these broken fonts
-        // we get really bad text rendering, which we can't inflict on users. :(
-        // If we accumulate a few more examples of this stuff, it'll be time
-        // to create some prefs for the list of fonts where we need to ignore
-        // layout tables. Sigh.
-        if (name.EqualsLiteral("roboto")) {
-            fe->mIgnoreGSUB = true;
-        }
+        // this depends on the entry having been added to its family
+        fe->CheckForBrokenFont();
     }
 }
 
@@ -1095,8 +1118,10 @@ gfxFT2FontList::GetDefaultFont(const gfxFontStyle* aStyle, bool& aNeedsBold)
     }
 #elif defined(ANDROID)
     nsAutoString resolvedName;
-    if (ResolveFontName(NS_LITERAL_STRING("Droid Sans"), resolvedName))
+    if (ResolveFontName(NS_LITERAL_STRING("Roboto"), resolvedName) ||
+        ResolveFontName(NS_LITERAL_STRING("Droid Sans"), resolvedName)) {
         return FindFontForFamily(resolvedName, aStyle, aNeedsBold);
+    }
 #endif
     /* TODO: what about Qt or other platforms that may use this? */
     return nsnull;

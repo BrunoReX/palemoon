@@ -1,4 +1,8 @@
-; Package file for the Firefox build. 
+; This Source Code Form is subject to the terms of the Mozilla Public
+; License, v. 2.0. If a copy of the MPL was not distributed with this
+; file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+; Package file for the Firefox build.
 ;
 ; Packaging manifest is used to copy files from dist/bin
 ; to the staging directory.
@@ -20,23 +24,26 @@
 @APPNAME@/Contents/Info.plist
 @APPNAME@/Contents/PkgInfo
 @APPNAME@/Contents/Resources/
+@APPNAME@/Contents/_CodeSignature/CodeResources
 #endif
 
 [@AB_CD@]
 @BINPATH@/chrome/@AB_CD@@JAREXT@
 @BINPATH@/chrome/@AB_CD@.manifest
-@BINPATH@/@PREF_DIR@/firefox-l10n.js
-@BINPATH@/searchplugins/*
 @BINPATH@/defaults/profile/bookmarks.html
+@BINPATH@/defaults/profile/chrome/*
 @BINPATH@/defaults/profile/localstore.rdf
 @BINPATH@/defaults/profile/mimeTypes.rdf
-@BINPATH@/defaults/profile/chrome/*
-@BINPATH@/update.locale
-@BINPATH@/updater.ini
 @BINPATH@/dictionaries/*
 @BINPATH@/hyphenation/*
+@BINPATH@/@PREF_DIR@/firefox-l10n.js
+@BINPATH@/searchplugins/*
 #ifdef XP_WIN32
 @BINPATH@/uninstall/helper.exe
+#endif
+#ifdef MOZ_UPDATER
+@BINPATH@/update.locale
+@BINPATH@/updater.ini
 #endif
 
 [xpcom]
@@ -68,23 +75,10 @@
 #endif
 #ifdef XP_WIN32
 #ifndef MOZ_DEBUG
-#if _MSC_VER == 1400
-@BINPATH@/Microsoft.VC80.CRT.manifest
-@BINPATH@/msvcm80.dll
-@BINPATH@/msvcp80.dll
-@BINPATH@/msvcr80.dll
-#elif _MSC_VER == 1500
-@BINPATH@/Microsoft.VC90.CRT.manifest
-@BINPATH@/msvcm90.dll
-@BINPATH@/msvcp90.dll
-@BINPATH@/msvcr90.dll
-#elif _MSC_VER == 1600
+#if _MSC_VER == 1600
 @BINPATH@/msvcp100.dll
 @BINPATH@/msvcr100.dll
-#elif _MSC_VER == 1700
-@BINPATH@/msvcp110.dll
-@BINPATH@/msvcr110.dll
-#endif
+#endif 
 #endif
 #endif
 
@@ -97,7 +91,9 @@
 @BINPATH@/@MOZ_APP_NAME@
 #endif
 @BINPATH@/application.ini
+#ifdef MOZ_UPDATER
 @BINPATH@/update-settings.ini
+#endif
 @BINPATH@/platform.ini
 #ifndef XP_OS2
 @BINPATH@/@DLL_PREFIX@mozsqlite3@DLL_SUFFIX@
@@ -144,25 +140,38 @@
 @BINPATH@/components/directory.xpt
 @BINPATH@/components/docshell.xpt
 @BINPATH@/components/dom.xpt
+@BINPATH@/components/dom_apps.xpt
 @BINPATH@/components/dom_base.xpt
 #ifdef MOZ_B2G_RIL
 @BINPATH@/components/dom_telephony.xpt
 @BINPATH@/components/dom_wifi.xpt
-@BINPATH@/components/dom_system_b2g.xpt
+@BINPATH@/components/dom_system_gonk.xpt
 #endif
 @BINPATH@/components/dom_battery.xpt
+#ifdef MOZ_B2G_BT
+@BINPATH@/components/dom_bluetooth.xpt
+#endif
 @BINPATH@/components/dom_canvas.xpt
+@BINPATH@/components/dom_contacts.xpt
 @BINPATH@/components/dom_core.xpt
 @BINPATH@/components/dom_css.xpt
+@BINPATH@/components/dom_devicestorage.xpt
 @BINPATH@/components/dom_events.xpt
+@BINPATH@/components/dom_file.xpt
 @BINPATH@/components/dom_geolocation.xpt
+@BINPATH@/components/dom_media.xpt
 @BINPATH@/components/dom_network.xpt
 @BINPATH@/components/dom_notification.xpt
 @BINPATH@/components/dom_html.xpt
 @BINPATH@/components/dom_indexeddb.xpt
 @BINPATH@/components/dom_offline.xpt
 @BINPATH@/components/dom_json.xpt
+#ifdef MOZ_B2G_RIL
+@BINPATH@/components/dom_mms.xpt
+#endif
+@BINPATH@/components/dom_power.xpt
 @BINPATH@/components/dom_range.xpt
+@BINPATH@/components/dom_settings.xpt
 @BINPATH@/components/dom_sidebar.xpt
 @BINPATH@/components/dom_sms.xpt
 @BINPATH@/components/dom_storage.xpt
@@ -186,14 +195,18 @@
 @BINPATH@/components/find.xpt
 @BINPATH@/components/fuel.xpt
 @BINPATH@/components/gfx.xpt
+@BINPATH@/components/html5.xpt
 @BINPATH@/components/htmlparser.xpt
 @BINPATH@/components/imglib2.xpt
 @BINPATH@/components/imgicon.xpt
 @BINPATH@/components/inspector.xpt
 @BINPATH@/components/intl.xpt
 @BINPATH@/components/jar.xpt
+#ifdef MOZ_JSDEBUGGER
 @BINPATH@/components/jsdservice.xpt
+#endif
 @BINPATH@/components/jsdebugger.xpt
+@BINPATH@/components/jsinspector.xpt
 @BINPATH@/components/layout_base.xpt
 @BINPATH@/components/layout_forms.xpt
 #ifdef NS_PRINTING
@@ -217,7 +230,9 @@
 @BINPATH@/components/necko_socket.xpt
 @BINPATH@/components/necko_strconv.xpt
 @BINPATH@/components/necko_viewsource.xpt
+#ifdef NECKO_WIFI
 @BINPATH@/components/necko_wifi.xpt
+#endif
 @BINPATH@/components/necko_wyciwyg.xpt
 @BINPATH@/components/necko.xpt
 @BINPATH@/components/loginmgr.xpt
@@ -227,7 +242,9 @@
 @BINPATH@/components/pref.xpt
 @BINPATH@/components/prefetch.xpt
 @BINPATH@/components/profile.xpt
+#ifdef MOZ_ENABLE_PROFILER_SPS
 @BINPATH@/components/profiler.xpt
+#endif
 @BINPATH@/components/rdf.xpt
 @BINPATH@/components/satchel.xpt
 @BINPATH@/components/saxparser.xpt
@@ -274,6 +291,8 @@
 ; JavaScript components
 @BINPATH@/components/ConsoleAPI.manifest
 @BINPATH@/components/ConsoleAPI.js
+@BINPATH@/components/BrowserElementParent.manifest
+@BINPATH@/components/BrowserElementParent.js
 @BINPATH@/components/FeedProcessor.manifest
 @BINPATH@/components/FeedProcessor.js
 @BINPATH@/components/BrowserFeeds.manifest
@@ -287,6 +306,9 @@
 @BINPATH@/components/nsBrowserGlue.js
 @BINPATH@/components/nsSetDefaultBrowser.manifest
 @BINPATH@/components/nsSetDefaultBrowser.js
+@BINPATH@/components/BrowserDownloads.manifest
+@BINPATH@/components/DownloadsStartup.js
+@BINPATH@/components/DownloadsUI.js
 @BINPATH@/components/BrowserPlaces.manifest
 @BINPATH@/components/BrowserPageThumbs.manifest
 @BINPATH@/components/nsPrivateBrowsingService.manifest
@@ -376,14 +398,26 @@
 #ifdef MOZ_B2G_RIL
 @BINPATH@/components/RadioInterfaceLayer.manifest
 @BINPATH@/components/RadioInterfaceLayer.js
-@BINPATH@/components/nsWifiWorker.js
-@BINPATH@/components/nsWifiWorker.manifest
+@BINPATH@/components/MmsService.manifest
+@BINPATH@/components/MmsService.js
+@BINPATH@/components/RILContentHelper.js
+@BINPATH@/components/SmsDatabaseService.manifest
+@BINPATH@/components/SmsDatabaseService.js
+@BINPATH@/components/WifiWorker.js
+@BINPATH@/components/WifiWorker.manifest
+@BINPATH@/components/DOMWifiManager.js
+@BINPATH@/components/DOMWifiManager.manifest
 #endif
 @BINPATH@/components/BrowserProfileMigrators.manifest
 @BINPATH@/components/ProfileMigrator.js
 @BINPATH@/components/ChromeProfileMigrator.js
 @BINPATH@/components/FirefoxProfileMigrator.js
+#ifdef XP_WIN
+@BINPATH@/components/IEProfileMigrator.js
+@BINPATH@/components/SafariProfileMigrator.js
+#endif
 #ifdef XP_MACOSX
+@BINPATH@/components/SafariProfileMigrator.js
 @BINPATH@/components/libalerts.dylib
 #endif
 #ifdef MOZ_ENABLE_DBUS
@@ -395,15 +429,27 @@
 @BINPATH@/components/nsPrompter.js
 #ifdef MOZ_SERVICES_SYNC
 @BINPATH@/components/SyncComponents.manifest
+@BINPATH@/components/AitcComponents.manifest
 @BINPATH@/components/Weave.js
+@BINPATH@/components/Aitc.js
 #endif
 @BINPATH@/components/TelemetryPing.js
 @BINPATH@/components/TelemetryPing.manifest
+@BINPATH@/components/messageWakeupService.js
+@BINPATH@/components/messageWakeupService.manifest
+@BINPATH@/components/SettingsManager.js
+@BINPATH@/components/SettingsManager.manifest
+@BINPATH@/components/AppsService.js
+@BINPATH@/components/AppsService.manifest
+
+@BINPATH@/components/ContactManager.js
+@BINPATH@/components/ContactManager.manifest
 
 ; Modules
 @BINPATH@/modules/*
 
 ; Safe Browsing
+#ifdef MOZ_SAFE_BROWSING
 @BINPATH@/components/nsSafebrowsingApplication.manifest
 @BINPATH@/components/nsSafebrowsingApplication.js
 @BINPATH@/components/nsURLClassifier.manifest
@@ -411,6 +457,7 @@
 @BINPATH@/components/nsUrlClassifierListManager.js
 @BINPATH@/components/nsUrlClassifierLib.js
 @BINPATH@/components/url-classifier.xpt
+#endif
 
 ; GNOME hooks
 #ifdef MOZ_ENABLE_GNOME_COMPONENT
@@ -428,9 +475,10 @@
 ; [Browser Chrome Files]
 @BINPATH@/chrome/browser@JAREXT@
 @BINPATH@/chrome/browser.manifest
+@BINPATH@/chrome/pdfjs.manifest
+@BINPATH@/chrome/pdfjs/*
 @BINPATH@/extensions/{972ce4c6-7e08-4474-a285-3208198ce6fd}/install.rdf
 @BINPATH@/extensions/{972ce4c6-7e08-4474-a285-3208198ce6fd}/icon.png
-@BINPATH@/extensions/{972ce4c6-7e08-4474-a285-3208198ce6fd}/preview.png
 ; Pale Moon status bar functionality
 @BINPATH@/distribution/bundles/statusbar@palemoon.org/chrome/*
 @BINPATH@/distribution/bundles/statusbar@palemoon.org/components/status4evar.js
@@ -461,13 +509,19 @@
 ; All the pref files must be part of base to prevent migration bugs
 @BINPATH@/@PREF_DIR@/firefox.js
 @BINPATH@/@PREF_DIR@/firefox-branding.js
-@BINPATH@/@PREF_DIR@/channel-prefs.js
 #ifdef MOZ_SERVICES_SYNC
 @BINPATH@/@PREF_DIR@/services-sync.js
+@BINPATH@/@PREF_DIR@/services-aitc.js
 #endif
 @BINPATH@/greprefs.js
 @BINPATH@/defaults/autoconfig/platform.js
 @BINPATH@/defaults/autoconfig/prefcalls.js
+#ifndef LIBXUL_SDK
+; Warning: changing the path to channel-prefs.js can cause bugs (Bug 756325)
+@BINPATH@/defaults/pref/channel-prefs.js
+#else
+@BINPATH@/@PREF_DIR@/channel-prefs.js
+#endif
 @BINPATH@/defaults/profile/prefs.js
 
 ; [Layout Engine Resources]
@@ -544,10 +598,12 @@ bin/libfreebl_32int64_3.so
 
 ; [Updater]
 ;
+#ifdef MOZ_UPDATER
 #ifdef XP_MACOSX
 @BINPATH@/updater.app/
 #else
 @BINPATH@/updater@BIN_SUFFIX@
+#endif
 #endif
 
 ; [MaintenanceService]
@@ -570,6 +626,9 @@ bin/libfreebl_32int64_3.so
 #endif
 #endif
 @BINPATH@/crashreporter-override.ini
+#ifdef MOZ_CRASHREPORTER_INJECTOR
+@BINPATH@/breakpadinjector.dll
+#endif
 #endif
 
 ; [Extensions]
@@ -583,4 +642,23 @@ bin/components/@DLL_PREFIX@nkgnomevfs@DLL_SUFFIX@
 @BINPATH@/MozSounds.cmd
 @BINPATH@/*.xqs
 @BINPATH@/components/*.xqs
+#endif
+
+#ifdef MOZ_WEBAPP_RUNTIME
+[WebappRuntime]
+#ifdef XP_WIN
+@BINPATH@/webapp-uninstaller@BIN_SUFFIX@
+#endif
+@BINPATH@/webapprt-stub@BIN_SUFFIX@
+@BINPATH@/webapprt/webapprt.ini
+@BINPATH@/webapprt/chrome.manifest
+@BINPATH@/webapprt/chrome/webapprt@JAREXT@
+@BINPATH@/webapprt/chrome/webapprt.manifest
+@BINPATH@/webapprt/components/CommandLineHandler.js
+@BINPATH@/webapprt/components/ContentPermission.js
+@BINPATH@/webapprt/components/ContentPolicy.js
+@BINPATH@/webapprt/components/DirectoryProvider.js
+@BINPATH@/webapprt/components/components.manifest
+@BINPATH@/webapprt/defaults/preferences/prefs.js
+@BINPATH@/webapprt/modules/WebappRT.jsm
 #endif

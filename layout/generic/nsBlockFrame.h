@@ -1,40 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 // vim:cindent:ts=2:et:sw=2:
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * rendering object for CSS display:block, inline-block, and list-item
@@ -123,6 +91,16 @@ class nsIntervalSet;
 // (including <BR CLEAR="..."> frames)
 #define NS_BLOCK_HAS_CLEAR_CHILDREN         NS_FRAME_STATE_BIT(27)
 
+// Are our cached intrinsic widths intrinsic widths for font size
+// inflation?  i.e., what was the current state of
+// GetPresContext()->mInflationDisabledForShrinkWrap at the time they
+// were computed?
+// nsBlockFrame is the only thing that caches intrinsic widths that
+// needs to track this because it's the only thing that caches intrinsic
+// widths that lives inside of things (form controls) that do intrinsic
+// sizing with font inflation enabled.
+#define NS_BLOCK_FRAME_INTRINSICS_INFLATED  NS_FRAME_STATE_BIT(62)
+
 #define nsBlockFrameSuper nsContainerFrame
 
 /*
@@ -154,11 +132,6 @@ public:
 
   friend nsIFrame* NS_NewBlockFrame(nsIPresShell* aPresShell, nsStyleContext* aContext, PRUint32 aFlags);
 
-  // This is a child list too, but we let nsBlockReflowState get to it
-  // directly too.
-  NS_DECLARE_FRAME_PROPERTY(PushedFloatProperty,
-                            nsContainerFrame::DestroyFrameList)
-
   // nsQueryFrame
   NS_DECL_QUERYFRAME
 
@@ -175,7 +148,7 @@ public:
                            nsFrameList&    aFrameList);
   NS_IMETHOD  RemoveFrame(ChildListID     aListID,
                           nsIFrame*       aOldFrame);
-  virtual nsFrameList GetChildList(ChildListID aListID) const;
+  virtual const nsFrameList& GetChildList(ChildListID aListID) const;
   virtual void GetChildLists(nsTArray<ChildList>* aLists) const;
   virtual nscoord GetBaseline() const;
   virtual nscoord GetCaretBaseline() const;
@@ -203,7 +176,7 @@ public:
 #endif
 
 #ifdef ACCESSIBILITY
-  virtual already_AddRefed<nsAccessible> CreateAccessible();
+  virtual already_AddRefed<Accessible> CreateAccessible();
 #endif
 
   // line cursor methods to speed up searching for the line(s)
@@ -246,14 +219,41 @@ public:
   /**
    * Return the bullet text equivalent.
    */
-  virtual void GetBulletText(nsAString& aText) const;
+  void GetBulletText(nsAString& aText) const;
 
   /**
    * Return true if there's a bullet.
    */
-  virtual bool HasBullet() const;
+  bool HasBullet() const {
+    return HasOutsideBullet() || HasInsideBullet();
+  }
+
+  /**
+   * @return true if this frame has an inside bullet frame.
+   */
+  bool HasInsideBullet() const {
+    return 0 != (mState & NS_BLOCK_FRAME_HAS_INSIDE_BULLET);
+  }
+
+  /**
+   * @return true if this frame has an outside bullet frame.
+   */
+  bool HasOutsideBullet() const {
+    return 0 != (mState & NS_BLOCK_FRAME_HAS_OUTSIDE_BULLET);
+  }
+
+  /**
+   * @return the bullet frame or nsnull if we don't have one.
+   */
+  nsBulletFrame* GetBullet() const {
+    nsBulletFrame* outside = GetOutsideBullet();
+    return outside ? outside : GetInsideBullet();
+  }
 
   virtual void MarkIntrinsicWidthsDirty();
+private:
+  void CheckIntrinsicCacheAgainstShrinkWrapState();
+public:
   virtual nscoord GetMinWidth(nsRenderingContext *aRenderingContext);
   virtual nscoord GetPrefWidth(nsRenderingContext *aRenderingContext);
 
@@ -328,6 +328,11 @@ public:
    */
   static nsBlockFrame* GetNearestAncestorBlock(nsIFrame* aCandidate);
   
+  struct FrameLines {
+    nsLineList mLines;
+    nsFrameList mFrames;
+  };
+
 protected:
   nsBlockFrame(nsStyleContext* aContext)
     : nsContainerFrame(aContext)
@@ -352,23 +357,34 @@ protected:
 #endif
 #endif
 
+  NS_DECLARE_FRAME_PROPERTY(LineCursorProperty, nsnull)
+  nsLineBox* GetLineCursor() {
+    return (GetStateBits() & NS_BLOCK_HAS_LINE_CURSOR) ?
+      static_cast<nsLineBox*>(Properties().Get(LineCursorProperty())) : nsnull;
+  }
+
+  nsLineBox* NewLineBox(nsIFrame* aFrame, bool aIsBlock) {
+    return NS_NewLineBox(PresContext()->PresShell(), aFrame, aIsBlock);
+  }
+  nsLineBox* NewLineBox(nsLineBox* aFromLine, nsIFrame* aFrame, PRInt32 aCount) {
+    return NS_NewLineBox(PresContext()->PresShell(), aFromLine, aFrame, aCount);
+  }
+  void FreeLineBox(nsLineBox* aLine) {
+    if (aLine == GetLineCursor()) {
+      ClearLineCursor();
+    }
+    aLine->Destroy(PresContext()->PresShell());
+  }
+
   void TryAllLines(nsLineList::iterator* aIterator,
                    nsLineList::iterator* aStartIterator,
                    nsLineList::iterator* aEndIterator,
-                   bool* aInOverflowLines);
+                   bool*        aInOverflowLines,
+                   FrameLines** aOverflowLines);
 
   void SetFlags(nsFrameState aFlags) {
     mState &= ~NS_BLOCK_FLAGS_MASK;
     mState |= aFlags;
-  }
-
-  bool HaveOutsideBullet() const {
-#if defined(DEBUG) && !defined(DEBUG_rods)
-    if(mState & NS_BLOCK_FRAME_HAS_OUTSIDE_BULLET) {
-      NS_ASSERTION(mBullet,"NS_BLOCK_FRAME_HAS_OUTSIDE_BULLET flag set and no mBullet");
-    }
-#endif
-    return 0 != (mState & NS_BLOCK_FRAME_HAS_OUTSIDE_BULLET);
   }
 
   /** move the frames contained by aLine by aDY
@@ -646,8 +662,14 @@ protected:
                           nsLineBox*           aLine,
                           nsBlockFrame*        aFromContainer,
                           bool                 aFromOverflowLine,
+                          nsFrameList&         aFromFrameList,
                           nsLineList::iterator aFromLine);
 
+  /**
+   * Push the line after aLineBefore to the overflow line list.
+   * @param aLineBefore a line in 'mLines' (or begin_lines() when
+   *        pushing the first line)
+   */
   void PushLines(nsBlockReflowState& aState,
                  nsLineList::iterator aLineBefore);
 
@@ -675,7 +697,8 @@ protected:
 
   static bool FrameStartsCounterScope(nsIFrame* aFrame);
 
-  void ReflowBullet(nsBlockReflowState& aState,
+  void ReflowBullet(nsIFrame* aBulletFrame,
+                    nsBlockReflowState& aState,
                     nsHTMLReflowMetrics& aMetrics,
                     nscoord aLineTop);
 
@@ -684,10 +707,14 @@ protected:
   virtual nsILineIterator* GetLineIterator();
 
 public:
-  nsLineList* GetOverflowLines() const;
+  bool HasOverflowLines() const {
+    return 0 != (GetStateBits() & NS_BLOCK_HAS_OVERFLOW_LINES);
+  }
+  FrameLines* GetOverflowLines() const;
 protected:
-  nsLineList* RemoveOverflowLines();
-  nsresult SetOverflowLines(nsLineList* aOverflowLines);
+  FrameLines* RemoveOverflowLines();
+  void SetOverflowLines(FrameLines* aOverflowLines);
+  void DestroyOverflowLines();
 
   // Determine the computed height that's in effect for this block
   // frame (that is, our computed height minus the heights of our
@@ -724,6 +751,28 @@ protected:
   nsFrameList* GetOverflowOutOfFlows() const;
   void SetOverflowOutOfFlows(const nsFrameList& aList, nsFrameList* aPropValue);
 
+  /**
+   * @return the inside bullet frame or nsnull if we don't have one.
+   */
+  nsBulletFrame* GetInsideBullet() const;
+
+  /**
+   * @return the outside bullet frame or nsnull if we don't have one.
+   */
+  nsBulletFrame* GetOutsideBullet() const;
+
+  /**
+   * @return the outside bullet frame list frame property.
+   */
+  nsFrameList* GetOutsideBulletList() const;
+
+  /**
+   * @return true if this frame has pushed floats.
+   */
+  bool HasPushedFloats() const {
+    return 0 != (GetStateBits() & NS_BLOCK_HAS_PUSHED_FLOATS);
+  }
+
   // Get the pushed floats list
   nsFrameList* GetPushedFloats() const;
   // Get the pushed floats list, or if there is not currently one,
@@ -743,11 +792,8 @@ protected:
   nsLineList mLines;
 
   // List of all floats in this block
+  // XXXmats blocks rarely have floats, make it a frame property
   nsFrameList mFloats;
-
-  // XXX_fix_me: subclass one more time!
-  // For list-item frames, this is the bullet frame.
-  nsBulletFrame* mBullet;
 
   friend class nsBlockReflowState;
   friend class nsBlockInFlowLineIterator;
@@ -798,7 +844,11 @@ private:
 class nsBlockInFlowLineIterator {
 public:
   typedef nsBlockFrame::line_iterator line_iterator;
-  nsBlockInFlowLineIterator(nsBlockFrame* aFrame, line_iterator aLine, bool aInOverflow);
+  /**
+   * Set up the iterator to point to aLine which must be a normal line
+   * in aFrame (not an overflow line).
+   */
+  nsBlockInFlowLineIterator(nsBlockFrame* aFrame, line_iterator aLine);
   /**
    * Set up the iterator to point to the first line found starting from
    * aFrame. Sets aFoundValidLine to false if there is no such line.
@@ -845,6 +895,10 @@ public:
   bool Prev();
 
 private:
+  friend class nsBlockFrame;
+  // XXX nsBlockFrame uses this internally in one place.  Try to remove it.
+  nsBlockInFlowLineIterator(nsBlockFrame* aFrame, line_iterator aLine, bool aInOverflow);
+
   nsBlockFrame* mFrame;
   line_iterator mLine;
   nsLineList*   mInOverflowLines;

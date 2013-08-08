@@ -1,40 +1,6 @@
-# ***** BEGIN LICENSE BLOCK *****
-# Version: MPL 1.1/GPL 2.0/LGPL 2.1
-#
-# The contents of this file are subject to the Mozilla Public License Version
-# 1.1 (the "License"); you may not use this file except in compliance with
-# the License. You may obtain a copy of the License at
-# http://www.mozilla.org/MPL/
-#
-# Software distributed under the License is distributed on an "AS IS" basis,
-# WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
-# for the specific language governing rights and limitations under the
-# License.
-#
-# The Original Code is the Mozilla Firefox browser.
-#
-# The Initial Developer of the Original Code is
-# Benjamin Smedberg <benjamin@smedbergs.us>
-#
-# Portions created by the Initial Developer are Copyright (C) 2004
-# the Initial Developer. All Rights Reserved.
-#
-# Contributor(s):
-#   Robert Strong <robert.bugzilla@gmail.com>
-#
-# Alternatively, the contents of this file may be used under the terms of
-# either the GNU General Public License Version 2 or later (the "GPL"), or
-# the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
-# in which case the provisions of the GPL or the LGPL are applicable instead
-# of those above. If you wish to allow use of your version of this file only
-# under the terms of either the GPL or the LGPL, and not to allow others to
-# use your version of this file under the terms of the MPL, indicate your
-# decision by deleting the provisions above and replace them with the notice
-# and other provisions required by the GPL or the LGPL. If you do not delete
-# the provisions above, a recipient may use your version of this file under
-# the terms of any one of the MPL, the GPL or the LGPL.
-#
-# ***** END LICENSE BLOCK *****
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 Components.utils.import("resource://gre/modules/Services.jsm");
@@ -52,7 +18,6 @@ const nsIDocShellTreeItem    = Components.interfaces.nsIDocShellTreeItem;
 const nsIDOMChromeWindow     = Components.interfaces.nsIDOMChromeWindow;
 const nsIDOMWindow           = Components.interfaces.nsIDOMWindow;
 const nsIFileURL             = Components.interfaces.nsIFileURL;
-const nsIHttpProtocolHandler = Components.interfaces.nsIHttpProtocolHandler;
 const nsIInterfaceRequestor  = Components.interfaces.nsIInterfaceRequestor;
 const nsINetUtil             = Components.interfaces.nsINetUtil;
 const nsIPrefBranch          = Components.interfaces.nsIPrefBranch;
@@ -65,13 +30,12 @@ const nsIWindowWatcher       = Components.interfaces.nsIWindowWatcher;
 const nsIWebNavigationInfo   = Components.interfaces.nsIWebNavigationInfo;
 const nsIBrowserSearchService = Components.interfaces.nsIBrowserSearchService;
 const nsICommandLineValidator = Components.interfaces.nsICommandLineValidator;
-const nsIXULAppInfo          = Components.interfaces.nsIXULAppInfo;
 
 const NS_BINDING_ABORTED = Components.results.NS_BINDING_ABORTED;
 const NS_ERROR_WONT_HANDLE_CONTENT = 0x805d0001;
 const NS_ERROR_ABORT = Components.results.NS_ERROR_ABORT;
 
-const URI_INHERITS_SECURITY_CONTEXT = nsIHttpProtocolHandler
+const URI_INHERITS_SECURITY_CONTEXT = Components.interfaces.nsIHttpProtocolHandler
                                         .URI_INHERITS_SECURITY_CONTEXT;
 
 function shouldLoadURI(aURI) {
@@ -137,16 +101,14 @@ function needHomepageOverride(prefb) {
   if (savedmstone == "ignore")
     return OVERRIDE_NONE;
 
-  var mstone = Components.classes["@mozilla.org/network/protocol;1?name=http"]
-                         .getService(nsIHttpProtocolHandler).misc;
+  var mstone = Services.appinfo.platformVersion;
 
   var savedBuildID = null;
   try {
     savedBuildID = prefb.getCharPref("browser.startup.homepage_override.buildID");
   } catch (e) {}
 
-  var buildID =  Components.classes["@mozilla.org/xre/app-info;1"]
-                           .getService(nsIXULAppInfo).platformBuildID;
+  var buildID = Services.appinfo.platformBuildID;
 
   if (mstone != savedmstone) {
     // Bug 462254. Previous releases had a default pref to suppress the EULA
@@ -294,14 +256,33 @@ function openWindow(parent, url, target, features, args, noExternalArgs) {
 }
 
 function openPreferences() {
-  var features = "chrome,titlebar,toolbar,centerscreen,dialog=no";
-  var url = "chrome://browser/content/preferences/preferences.xul";
+  if (Services.prefs.getBoolPref("browser.preferences.inContent")) { 
+    var sa = Components.classes["@mozilla.org/supports-array;1"]
+                       .createInstance(Components.interfaces.nsISupportsArray);
 
-  var win = getMostRecentWindow("Browser:Preferences");
-  if (win) {
-    win.focus();
+    var wuri = Components.classes["@mozilla.org/supports-string;1"]
+                         .createInstance(Components.interfaces.nsISupportsString);
+    wuri.data = "about:preferences";
+
+    sa.AppendElement(wuri);
+
+    var wwatch = Components.classes["@mozilla.org/embedcomp/window-watcher;1"]
+                           .getService(nsIWindowWatcher);
+
+    wwatch.openWindow(null, gBrowserContentHandler.chromeURL,
+                      "_blank",
+                      "chrome,dialog=no,all",
+                      sa);
   } else {
-    openWindow(null, url, "_blank", features);
+    var features = "chrome,titlebar,toolbar,centerscreen,dialog=no";
+    var url = "chrome://browser/content/preferences/preferences.xul";
+    
+    var win = getMostRecentWindow("Browser:Preferences");
+    if (win) {
+      win.focus();
+    } else {
+      openWindow(null, url, "_blank", features);
+    }
   }
 }
 
@@ -762,10 +743,6 @@ nsDefaultCommandLineHandler.prototype = {
     return this;
   },
 
-  // List of uri's that were passed via the command line without the app
-  // running and have already been handled. This is compared against uri's
-  // opened using DDE on Win32 so we only open one of the requests.
-  _handledURIs: [ ],
 #ifdef XP_WIN
   _haveProfile: false,
 #endif
@@ -799,25 +776,8 @@ nsDefaultCommandLineHandler.prototype = {
     try {
       var ar;
       while ((ar = cmdLine.handleFlagWithParam("url", false))) {
-        var found = false;
         var uri = resolveURIInternal(cmdLine, ar);
-        // count will never be greater than zero except on Win32.
-        var count = this._handledURIs.length;
-        for (var i = 0; i < count; ++i) {
-          if (this._handledURIs[i].spec == uri.spec) {
-            this._handledURIs.splice(i, 1);
-            found = true;
-            cmdLine.preventDefault = true;
-            break;
-          }
-        }
-        if (!found) {
-          urilist.push(uri);
-          // The requestpending command line flag is only used on Win32.
-          if (cmdLine.handleFlag("requestpending", false) &&
-              cmdLine.state == nsICommandLine.STATE_INITIAL_LAUNCH)
-            this._handledURIs.push(uri)
-        }
+        urilist.push(uri);
       }
     }
     catch (e) {
@@ -902,7 +862,7 @@ let AboutHomeUtils = {
 
   loadSnippetsURL: function AHU_loadSnippetsURL()
   {
-    const STARTPAGE_VERSION = 1;
+    const STARTPAGE_VERSION = 3;
     let updateURL = Services.prefs
                             .getCharPref(this.SNIPPETS_URL_PREF)
                             .replace("%STARTPAGE_VERSION%", STARTPAGE_VERSION);

@@ -1,49 +1,14 @@
 /* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Corporation code.
- *
- * The Initial Developer of the Original Code is Mozilla Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Stuart Parmenter <stuart@mozilla.com>
- *   Masayuki Nakano <masayuki@d-toybox.com>
- *   John Daggett <jdaggett@mozilla.com>
- *   Jonathan Kew <jfkthame@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef GFX_GDIFONTLIST_H
 #define GFX_GDIFONTLIST_H
 
 #include "gfxWindowsPlatform.h"
 #include "gfxPlatformFontList.h"
-#include "gfxAtoms.h"
+#include "nsGkAtoms.h"
 
 #include <windows.h>
 
@@ -146,8 +111,8 @@ public:
 
     virtual bool IsSymbolFont();
 
-    void FillLogFont(LOGFONTW *aLogFont, bool aItalic,
-                     PRUint16 aWeight, gfxFloat aSize, bool aUseCleartype);
+    void FillLogFont(LOGFONTW *aLogFont, PRUint16 aWeight, gfxFloat aSize,
+                     bool aUseCleartype);
 
     static gfxWindowsFontType DetermineFontType(const NEWTEXTMETRICW& metrics, 
                                                 DWORD fontType)
@@ -218,42 +183,42 @@ public:
     }
 
     virtual bool SupportsLangGroup(nsIAtom* aLangGroup) const {
-        if (!aLangGroup || aLangGroup == gfxAtoms::x_unicode) {
+        if (!aLangGroup || aLangGroup == nsGkAtoms::Unicode) {
             return true;
         }
 
         PRInt16 bit = -1;
 
         /* map our langgroup names in to Windows charset bits */
-        if (aLangGroup == gfxAtoms::x_western) {
+        if (aLangGroup == nsGkAtoms::x_western) {
             bit = ANSI_CHARSET;
-        } else if (aLangGroup == gfxAtoms::ja) {
+        } else if (aLangGroup == nsGkAtoms::Japanese) {
             bit = SHIFTJIS_CHARSET;
-        } else if (aLangGroup == gfxAtoms::ko) {
+        } else if (aLangGroup == nsGkAtoms::ko) {
             bit = HANGEUL_CHARSET;
-        } else if (aLangGroup == gfxAtoms::ko_xxx) {
+        } else if (aLangGroup == nsGkAtoms::ko_xxx) {
             bit = JOHAB_CHARSET;
-        } else if (aLangGroup == gfxAtoms::zh_cn) {
+        } else if (aLangGroup == nsGkAtoms::zh_cn) {
             bit = GB2312_CHARSET;
-        } else if (aLangGroup == gfxAtoms::zh_tw) {
+        } else if (aLangGroup == nsGkAtoms::zh_tw) {
             bit = CHINESEBIG5_CHARSET;
-        } else if (aLangGroup == gfxAtoms::el) {
+        } else if (aLangGroup == nsGkAtoms::el_) {
             bit = GREEK_CHARSET;
-        } else if (aLangGroup == gfxAtoms::tr) {
+        } else if (aLangGroup == nsGkAtoms::tr) {
             bit = TURKISH_CHARSET;
-        } else if (aLangGroup == gfxAtoms::he) {
+        } else if (aLangGroup == nsGkAtoms::he) {
             bit = HEBREW_CHARSET;
-        } else if (aLangGroup == gfxAtoms::ar) {
+        } else if (aLangGroup == nsGkAtoms::ar) {
             bit = ARABIC_CHARSET;
-        } else if (aLangGroup == gfxAtoms::x_baltic) {
+        } else if (aLangGroup == nsGkAtoms::x_baltic) {
             bit = BALTIC_CHARSET;
-        } else if (aLangGroup == gfxAtoms::x_cyrillic) {
+        } else if (aLangGroup == nsGkAtoms::x_cyrillic) {
             bit = RUSSIAN_CHARSET;
-        } else if (aLangGroup == gfxAtoms::th) {
+        } else if (aLangGroup == nsGkAtoms::th) {
             bit = THAI_CHARSET;
-        } else if (aLangGroup == gfxAtoms::x_central_euro) {
+        } else if (aLangGroup == nsGkAtoms::x_central_euro) {
             bit = EASTEUROPE_CHARSET;
-        } else if (aLangGroup == gfxAtoms::x_symbol) {
+        } else if (aLangGroup == nsGkAtoms::x_symbol) {
             bit = SYMBOL_CHARSET;
         }
 
@@ -274,12 +239,16 @@ public:
 
     virtual bool TestCharacterMap(PRUint32 aCh);
 
+    virtual void SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf,
+                                     FontListSizes*    aSizes) const;
+
     // create a font entry for a font with a given name
     static GDIFontEntry* CreateFontEntry(const nsAString& aName,
                                          gfxWindowsFontType aFontType,
                                          bool aItalic,
                                          PRUint16 aWeight, PRInt16 aStretch,
-                                         gfxUserFontData* aUserFontData);
+                                         gfxUserFontData* aUserFontData,
+                                         bool aFamilyHasItalicFace);
 
     // create a font entry for a font referenced by its fullname
     static GDIFontEntry* LoadLocalFont(const gfxProxyFontEntry &aProxyEntry,
@@ -290,7 +259,12 @@ public:
 
     gfxWindowsFontType mFontType;
     bool mForceGDI    : 1;
-    bool mUnknownCMAP : 1;
+
+    // For src:local user-fonts, we keep track of whether the platform family
+    // contains an italic face, because in this case we can't safely ask GDI
+    // to create synthetic italics (oblique) via the LOGFONT.
+    // (For other types of font, this is just set to false.)
+    bool mFamilyHasItalicFace : 1;
 
     gfxSparseBitSet mCharset;
     gfxSparseBitSet mUnicodeRanges;
@@ -300,7 +274,7 @@ protected:
 
     GDIFontEntry(const nsAString& aFaceName, gfxWindowsFontType aFontType,
                  bool aItalic, PRUint16 aWeight, PRInt16 aStretch,
-                 gfxUserFontData *aUserFontData);
+                 gfxUserFontData *aUserFontData, bool aFamilyHasItalicFace);
 
     void InitLogFont(const nsAString& aName, gfxWindowsFontType aFontType);
 
@@ -347,6 +321,11 @@ public:
     virtual bool ResolveFontName(const nsAString& aFontName,
                                    nsAString& aResolvedFontName);
 
+    virtual void SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf,
+                                     FontListSizes*    aSizes) const;
+    virtual void SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf,
+                                     FontListSizes*    aSizes) const;
+
 private:
     friend class gfxWindowsPlatform;
 
@@ -361,7 +340,7 @@ private:
                                           DWORD fontType,
                                           LPARAM lParam);
 
-    typedef nsDataHashtable<nsStringHashKey, nsRefPtr<gfxFontFamily> > FontTable;
+    typedef nsRefPtrHashtable<nsStringHashKey, gfxFontFamily> FontTable;
 
     FontTable mFontSubstitutes;
     nsTArray<nsString> mNonExistingFonts;

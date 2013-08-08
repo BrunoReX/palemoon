@@ -1,41 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  * vim: sw=2 ts=2 sts=2 expandtab
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * the Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2008
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Shawn Wilsher <me@shawnwilsher.com> (Original Author)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 Components.utils.import("resource://gre/modules/Services.jsm");
@@ -76,6 +43,7 @@ const MATCH_ANYWHERE = Ci.mozIPlacesAutoComplete.MATCH_ANYWHERE;
 const MATCH_BOUNDARY_ANYWHERE = Ci.mozIPlacesAutoComplete.MATCH_BOUNDARY_ANYWHERE;
 const MATCH_BOUNDARY = Ci.mozIPlacesAutoComplete.MATCH_BOUNDARY;
 const MATCH_BEGINNING = Ci.mozIPlacesAutoComplete.MATCH_BEGINNING;
+const MATCH_BEGINNING_CASE_SENSITIVE = Ci.mozIPlacesAutoComplete.MATCH_BEGINNING_CASE_SENSITIVE;
 
 // AutoComplete index constants.  All AutoComplete queries will provide these
 // columns in this order.
@@ -102,7 +70,12 @@ const kQueryTypeFiltered = 1;
 const kTitleTagsSeparator = " \u2013 ";
 
 const kBrowserUrlbarBranch = "browser.urlbar.";
-const kBrowserUrlbarAutofillPref = "browser.urlbar.autoFill";
+// Toggle autocomplete.
+const kBrowserUrlbarAutocompleteEnabledPref = "autocomplete.enabled";
+// Toggle autoFill.
+const kBrowserUrlbarAutofillPref = "autoFill";
+// Whether to search only typed entries.
+const kBrowserUrlbarAutofillTypedPref = "autoFill.typed";
 
 ////////////////////////////////////////////////////////////////////////////////
 //// Globals
@@ -182,7 +155,7 @@ function fixupSearchText(aURIString)
  * This will return the default value provided if no pref is set.
  *
  * @param aPrefBranch
- *        The nsIPrefBranch2 containing the required preference
+ *        The nsIPrefBranch containing the required preference
  * @param aName
  *        A preference name
  * @param aDefault
@@ -318,6 +291,13 @@ function nsPlacesAutoComplete()
              getService(Ci.nsPIPlacesDatabase).
              DBConnection.
              clone(true);
+
+    // Autocomplete often fallbacks to a table scan due to lack of text indices.
+    // In such cases a larger cache helps reducing IO.  The default Storage
+    // value is MAX_CACHE_SIZE_BYTES in storage/src/mozStorageConnection.cpp.
+    let stmt = db.createAsyncStatement("PRAGMA cache_size = -6144"); // 6MiB
+    stmt.executeAsync();
+    stmt.finalize();
 
     // Create our in-memory tables for tab tracking.
     initTempTable(db);
@@ -687,7 +667,7 @@ nsPlacesAutoComplete.prototype = {
       this._os.removeObserver(this, kTopicShutdown);
 
       // Remove our preference observer.
-      this._prefs.QueryInterface(Ci.nsIPrefBranch2).removeObserver("", this);
+      this._prefs.removeObserver("", this);
       delete this._prefs;
 
       // Finalize the statements that we have used.
@@ -833,9 +813,9 @@ nsPlacesAutoComplete.prototype = {
    */
   _loadPrefs: function PAC_loadPrefs(aRegisterObserver)
   {
-    let self = this;
-
-    this._enabled = safePrefGetter(this._prefs, "autocomplete.enabled", true);
+    this._enabled = safePrefGetter(this._prefs,
+                                   kBrowserUrlbarAutocompleteEnabledPref,
+                                   true);
     this._matchBehavior = safePrefGetter(this._prefs,
                                          "matchBehavior",
                                          MATCH_BOUNDARY_ANYWHERE);
@@ -867,8 +847,7 @@ nsPlacesAutoComplete.prototype = {
     }
     // register observer
     if (aRegisterObserver) {
-      let pb = this._prefs.QueryInterface(Ci.nsIPrefBranch2);
-      pb.addObserver("", this, false);
+      this._prefs.addObserver("", this, false);
     }
   },
 
@@ -1280,8 +1259,7 @@ nsPlacesAutoComplete.prototype = {
 function urlInlineComplete()
 {
   this._loadPrefs(true);
-  // register observers
-  Services.obs.addObserver(this, kTopicShutdown, false);
+  Services.obs.addObserver(this, kTopicShutdown, true);
 }
 
 urlInlineComplete.prototype = {
@@ -1293,11 +1271,9 @@ urlInlineComplete.prototype = {
 
   get _db()
   {
-    if (!this.__db && this._autofill) {
-      this.__db = Cc["@mozilla.org/browser/nav-history-service;1"].
-        getService(Ci.nsPIPlacesDatabase).
-        DBConnection.
-        clone(true);
+    if (!this.__db && this._autofillEnabled) {
+      this.__db = PlacesUtils.history.QueryInterface(Ci.nsPIPlacesDatabase).
+                  DBConnection.clone(true);
     }
     return this.__db;
   },
@@ -1310,9 +1286,12 @@ urlInlineComplete.prototype = {
       // Add a trailing slash at the end of the hostname, since we always
       // want to complete up to and including a URL separator.
       this.__syncQuery = this._db.createStatement(
-        "SELECT host || '/' "
+          "/* do not warn (bug no): could index on (typed,frecency) but not worth it */ "
+        + "SELECT host || '/', prefix || host || '/' "
         + "FROM moz_hosts "
         + "WHERE host BETWEEN :search_string AND :search_string || X'FFFF' "
+        + "AND frecency <> 0 "
+        + (this._autofillTyped ? "AND typed = 1 " : "")
         + "ORDER BY frecency DESC "
         + "LIMIT 1"
       );
@@ -1326,9 +1305,11 @@ urlInlineComplete.prototype = {
   {
     if (!this.__asyncQuery) {
       this.__asyncQuery = this._db.createAsyncStatement(
-        "SELECT h.url "
+          "/* do not warn (bug no): can't use an index */ "
+        + "SELECT h.url "
         + "FROM moz_places h "
         + "WHERE h.frecency <> 0 "
+        + (this._autofillTyped ? "AND h.typed = 1 " : "")
         +   "AND AUTOCOMPLETE_MATCH(:searchString, h.url, "
         +                          "h.title, '', "
         +                          "h.visit_count, h.typed, 0, 0, "
@@ -1380,6 +1361,15 @@ urlInlineComplete.prototype = {
       return;
     }
 
+    // Don't try to autofill if the search term includes any whitespace.
+    // This may confuse completeDefaultIndex cause the AUTOCOMPLETE_MATCH
+    // tokenizer ends up trimming the search string and returning a value
+    // that doesn't match it, or is even shorter.
+    if (/\s/.test(this._currentSearchString)) {
+      this._finishSearch();
+      return;
+    }
+
     // Do a synchronous search on the table of domains.
     let query = this._syncQuery;
     query.params.search_string = this._currentSearchString.toLowerCase();
@@ -1388,11 +1378,12 @@ urlInlineComplete.prototype = {
     let lastSlashIndex = this._currentSearchString.lastIndexOf("/");
     if (lastSlashIndex == -1) {
       var hasDomainResult = false;
-      var domain;
+      var domain, untrimmedDomain;
       try {
         hasDomainResult = query.executeStep();
         if (hasDomainResult) {
           domain = query.getString(0);
+          untrimmedDomain = query.getString(1);
         }
       } finally {
         query.reset();
@@ -1400,7 +1391,9 @@ urlInlineComplete.prototype = {
 
       if (hasDomainResult) {
         // We got a match for a domain, we can add it immediately.
-        result.appendMatch(this._strippedPrefix + domain, "");
+        // TODO (bug 754265): this is a temporary solution introduced while
+        // waiting for a propert dedicated API.
+        result.appendMatch(this._strippedPrefix + domain, untrimmedDomain);
 
         this._finishSearch();
         return;
@@ -1420,11 +1413,20 @@ urlInlineComplete.prototype = {
       return;
     }
 
+    // The URIs in the database are fixed up, so we can match on a lowercased
+    // host, but the path must be matched in a case sensitive way.
+    let pathIndex =
+      this._originalSearchString.indexOf("/", this._strippedPrefix.length);
+    this._currentSearchString = fixupSearchText(
+      this._originalSearchString.slice(0, pathIndex).toLowerCase() +
+      this._originalSearchString.slice(pathIndex)
+    );
+
     // Within the standard autocomplete query, we only search the beginning
     // of URLs for 1 result.
     let query = this._asyncQuery;
     let (params = query.params) {
-      params.matchBehavior = MATCH_BEGINNING;
+      params.matchBehavior = MATCH_BEGINNING_CASE_SENSITIVE;
       params.searchBehavior = Ci.mozIPlacesAutoComplete["BEHAVIOR_URL"];
       params.searchString = this._currentSearchString;
     }
@@ -1456,13 +1458,25 @@ urlInlineComplete.prototype = {
    */
   _loadPrefs: function UIC_loadPrefs(aRegisterObserver)
   {
-    this._autofill = safePrefGetter(Services.prefs,
-                                    kBrowserUrlbarAutofillPref,
-                                    true);
+    let prefBranch = Services.prefs.getBranch(kBrowserUrlbarBranch);
+    let autocomplete = safePrefGetter(prefBranch,
+                                      kBrowserUrlbarAutocompleteEnabledPref,
+                                      true);
+    let autofill = safePrefGetter(prefBranch,
+                                  kBrowserUrlbarAutofillPref,
+                                  true);
+    this._autofillEnabled = autocomplete && autofill;
+    this._autofillTyped = safePrefGetter(prefBranch,
+                                         kBrowserUrlbarAutofillTypedPref,
+                                         true);
     if (aRegisterObserver) {
-      Services.prefs.addObserver(kBrowserUrlbarAutofillPref, this, true);
+      Services.prefs.addObserver(kBrowserUrlbarBranch, this, true);
     }
   },
+
+  //////////////////////////////////////////////////////////////////////////////
+  //// nsIAutoCompleteSearchDescriptor
+  get searchType() Ci.nsIAutoCompleteSearchDescriptor.SEARCH_TYPE_IMMEDIATE,
 
   //////////////////////////////////////////////////////////////////////////////
   //// mozIStorageStatementCallback
@@ -1470,7 +1484,10 @@ urlInlineComplete.prototype = {
   handleResult: function UIC_handleResult(aResultSet)
   {
     let row = aResultSet.getNextRow();
-    let url = fixupSearchText(row.getResultByIndex(0));
+    let value = row.getResultByIndex(0);
+    let url = fixupSearchText(value);
+
+    let prefix = value.slice(0, value.length - url.length);
 
     // We must complete the URL up to the next separator (which is /, ? or #).
     let separatorIndex = url.slice(this._currentSearchString.length)
@@ -1483,8 +1500,10 @@ urlInlineComplete.prototype = {
       url = url.slice(0, separatorIndex);
     }
 
-    // Add the result
-    this._result.appendMatch(this._strippedPrefix + url, "");
+    // Add the result.
+    // TODO (bug 754265): this is a temporary solution introduced while
+    // waiting for a propert dedicated API.
+    this._result.appendMatch(this._strippedPrefix + url, prefix + url);
 
     // handleCompletion() will cause the result listener to be called, and
     // will display the result in the UI.
@@ -1504,27 +1523,32 @@ urlInlineComplete.prototype = {
   //////////////////////////////////////////////////////////////////////////////
   //// nsIObserver
 
-  observe: function PAC_observe(aSubject, aTopic, aData)
+  observe: function UIC_observe(aSubject, aTopic, aData)
   {
     if (aTopic == kTopicShutdown) {
-      Services.obs.removeObserver(this, kTopicShutdown);
       this._closeDatabase();
     }
-    else if (aTopic == kPrefChanged) {
+    else if (aTopic == kPrefChanged &&
+             (aData.substr(kBrowserUrlbarBranch.length) == kBrowserUrlbarAutofillPref ||
+              aData.substr(kBrowserUrlbarBranch.length) == kBrowserUrlbarAutocompleteEnabledPref ||
+              aData.substr(kBrowserUrlbarBranch.length) == kBrowserUrlbarAutofillTypedPref)) {
+      let previousAutofillTyped = this._autofillTyped;
       this._loadPrefs();
-      if (!this._autofill) {
+      if (!this._autofillEnabled) {
         this.stopSearch();
         this._closeDatabase();
+      }
+      else if (this._autofillTyped != previousAutofillTyped) {
+        // Invalidate the statements to update them for the new typed status.
+        this._invalidateStatements();
       }
     }
   },
 
   /**
-   *
-   * Finalize and close the database safely
-   *
-   **/
-  _closeDatabase: function UIC_closeDatabase()
+   * Finalizes and invalidates cached statements.
+   */
+  _invalidateStatements: function UIC_invalidateStatements()
   {
     // Finalize the statements that we have used.
     let stmts = [
@@ -1539,6 +1563,14 @@ urlInlineComplete.prototype = {
         this[stmts[i]] = null;
       }
     }
+  },
+
+  /**
+   * Closes the database.
+   */
+  _closeDatabase: function UIC_closeDatabase()
+  {
+    this._invalidateStatements();
     if (this.__db) {
       this._db.asyncClose();
       this.__db = null;
@@ -1584,6 +1616,7 @@ urlInlineComplete.prototype = {
 
   QueryInterface: XPCOMUtils.generateQI([
     Ci.nsIAutoCompleteSearch,
+    Ci.nsIAutoCompleteSearchDescriptor,
     Ci.mozIStorageStatementCallback,
     Ci.nsIObserver,
     Ci.nsISupportsWeakReference,

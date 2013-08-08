@@ -1,40 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:set ts=2 sw=2 sts=2 et cindent: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla code.
- *
- * The Initial Developer of the Original Code is the Mozilla Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  Robert O'Callahan <robert@ocallahan.org>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef nsMediaCache_h_
 #define nsMediaCache_h_
@@ -43,10 +11,11 @@
 #include "nsIPrincipal.h"
 #include "nsCOMPtr.h"
 
-class nsMediaStream;
-class nsByteRange;
-
 namespace mozilla {
+// defined in MediaResource.h
+class ChannelMediaResource;
+class MediaByteRange;
+class MediaResource;
 class ReentrantMonitorAutoEnter;
 }
 
@@ -169,7 +138,7 @@ class ReentrantMonitorAutoEnter;
  * (In the future it might be advantageous to relax this, e.g. so that a
  * seek to near the end of the file can happen without disturbing
  * the loading of data from the beginning of the file.) The Necko channel
- * is managed through nsMediaChannelStream; nsMediaCache does not
+ * is managed through ChannelMediaResource; nsMediaCache does not
  * depend on Necko directly.
  * 
  * Every time something changes that might affect whether we want to
@@ -183,7 +152,7 @@ class ReentrantMonitorAutoEnter;
  * into the main part of the cache.
  * 
  * Streams can be opened in non-seekable mode. In non-seekable mode,
- * the cache will only call nsMediaChannelStream::CacheClientSeek with
+ * the cache will only call ChannelMediaResource::CacheClientSeek with
  * a 0 offset. The cache tries hard not to discard readahead data
  * for non-seekable streams, since that could trigger a potentially
  * disastrous re-read of the entire stream. It's up to cache clients
@@ -191,7 +160,7 @@ class ReentrantMonitorAutoEnter;
  * 
  * nsMediaCache has a single internal monitor for all synchronization.
  * This is treated as the lowest level monitor in the media code. So,
- * we must not acquire any nsMediaDecoder locks or nsMediaStream locks
+ * we must not acquire any nsMediaDecoder locks or MediaResource locks
  * while holding the nsMediaCache lock. But it's OK to hold those locks
  * and then get the nsMediaCache lock.
  * 
@@ -203,8 +172,6 @@ class ReentrantMonitorAutoEnter;
  * same stream, and replace them with a null principal.
  */
 class nsMediaCache;
-// defined in nsMediaStream.h
-class nsMediaChannelStream;
 
 /**
  * If the cache fails to initialize then Init will fail, so nonstatic
@@ -213,9 +180,12 @@ class nsMediaChannelStream;
  * This class can be directly embedded as a value.
  */
 class nsMediaCacheStream {
+public:
+  typedef mozilla::ChannelMediaResource ChannelMediaResource;
+  typedef mozilla::MediaByteRange MediaByteRange;
+  typedef mozilla::MediaResource MediaResource;
   typedef mozilla::ReentrantMonitorAutoEnter ReentrantMonitorAutoEnter;
 
-public:
   enum {
     // This needs to be a power of two
     BLOCK_SIZE = 32768
@@ -227,19 +197,17 @@ public:
 
   // aClient provides the underlying transport that cache will use to read
   // data for this stream.
-  nsMediaCacheStream(nsMediaChannelStream* aClient)
-    : mClient(aClient), mResourceID(0), mInitialized(false),
+  nsMediaCacheStream(ChannelMediaResource* aClient)
+    : mClient(aClient), mInitialized(false),
       mHasHadUpdate(false),
       mClosed(false),
-      mDidNotifyDataEnded(false),
+      mDidNotifyDataEnded(false), mResourceID(0),
       mIsSeekable(false), mCacheSuspended(false),
       mChannelEnded(false),
-      mUsingNullPrincipal(false),
       mChannelOffset(0), mStreamLength(-1),  
       mStreamOffset(0), mPlaybackBytesPerSecond(10000),
       mPinCount(0), mCurrentMode(MODE_PLAYBACK),
-      mMetadataInPartialBlockBuffer(false)
-  {}
+      mMetadataInPartialBlockBuffer(false) {}
   ~nsMediaCacheStream();
 
   // Set up this stream with the cache. Can fail on OOM. One
@@ -261,7 +229,7 @@ public:
   // we do an HTTP load the seekability may be different (and sometimes
   // is, in practice, due to the effects of caching proxies).
   void SetSeekable(bool aIsSeekable);
-  // This must be called (and return) before the nsMediaChannelStream
+  // This must be called (and return) before the ChannelMediaResource
   // used to create this nsMediaCacheStream is deleted.
   void Close();
   // This returns true when the stream has been closed
@@ -272,7 +240,8 @@ public:
     return !mClosed &&
       (!mDidNotifyDataEnded || NS_SUCCEEDED(mNotifyDataEndedStatus));
   }
-  // Get the principal for this stream.
+  // Get the principal for this stream. Anything accessing the contents of
+  // this stream must have a principal that subsumes this principal.
   nsIPrincipal* GetCurrentPrincipal() { return mPrincipal; }
   // Ensure a global media cache update has run with this stream present.
   // This ensures the cache has had a chance to suspend or unsuspend this stream.
@@ -299,14 +268,14 @@ public:
   // requested. In particular we might unexpectedly start providing
   // data at offset 0. This need not be called if the offset is the
   // offset that the cache requested in
-  // nsMediaChannelStream::CacheClientSeek. This can be called at any
+  // ChannelMediaResource::CacheClientSeek. This can be called at any
   // time by the client, not just after a CacheClientSeek.
   void NotifyDataStarted(PRInt64 aOffset);
   // Notifies the cache that data has been received. The stream already
   // knows the offset because data is received in sequence and
   // the starting offset is known via NotifyDataStarted or because
   // the cache requested the offset in
-  // nsMediaChannelStream::CacheClientSeek, or because it defaulted to 0.
+  // ChannelMediaResource::CacheClientSeek, or because it defaulted to 0.
   // We pass in the principal that was used to load this data.
   void NotifyDataReceived(PRInt64 aSize, const char* aData,
                           nsIPrincipal* aPrincipal);
@@ -325,7 +294,8 @@ public:
   // If we've successfully read data beyond the originally reported length,
   // we return the end of the data we've read.
   PRInt64 GetLength();
-  // Returns the unique resource ID
+  // Returns the unique resource ID. Call only on the main thread or while
+  // holding the media cache lock.
   PRInt64 GetResourceID() { return mResourceID; }
   // Returns the end of the bytes starting at the given offset
   // which are in cache.
@@ -337,7 +307,7 @@ public:
   // cached. Locks the media cache while running, to prevent any ranges
   // growing. The stream should be pinned while this runs and while its results
   // are used, to ensure no data is evicted.
-  nsresult GetCachedRanges(nsTArray<nsByteRange>& aRanges);
+  nsresult GetCachedRanges(nsTArray<MediaByteRange>& aRanges);
 
   // Reads from buffered data only. Will fail if not all data to be read is
   // in the cache. Will not mark blocks as read. Can be called from the main
@@ -364,9 +334,9 @@ public:
 
   // Returns true when all streams for this resource are suspended or their
   // channel has ended.
-  // If aActiveStream is non-null, fills it with a pointer to a stream
+  // If aActiveResource is non-null, fills it with a pointer to a stream
   // for this resource that is not suspended or ended.
-  bool AreAllStreamsForResourceSuspended(nsMediaStream** aActiveStream);
+  bool AreAllStreamsForResourceSuspended(MediaResource** aActiveResource);
 
   // These methods must be called on a different thread from the main
   // thread. They should always be called on the same thread for a given
@@ -458,15 +428,11 @@ private:
   // blocked on reading from this stream.
   void CloseInternal(ReentrantMonitorAutoEnter& aReentrantMonitor);
   // Update mPrincipal given that data has been received from aPrincipal
-  void UpdatePrincipal(nsIPrincipal* aPrincipal);
+  bool UpdatePrincipal(nsIPrincipal* aPrincipal);
 
   // These fields are main-thread-only.
-  nsMediaChannelStream*  mClient;
+  ChannelMediaResource*  mClient;
   nsCOMPtr<nsIPrincipal> mPrincipal;
-  // This is a unique ID representing the resource we're loading.
-  // All streams with the same mResourceID are loading the same
-  // underlying resource and should share data.
-  PRInt64                mResourceID;
   // Set to true when Init or InitAsClone has been called
   bool                   mInitialized;
   // Set to true when nsMediaCache::Update() has finished while this stream
@@ -478,9 +444,14 @@ private:
   // True if CacheClientNotifyDataEnded has been called for this stream.
   bool                   mDidNotifyDataEnded;
 
-  // The following fields are protected by the cache's monitor but are
-  // only written on the main thread. 
+  // The following fields must be written holding the cache's monitor and
+  // only on the main thread, thus can be read either on the main thread
+  // or while holding the cache's monitor.
 
+  // This is a unique ID representing the resource we're loading.
+  // All streams with the same mResourceID are loading the same
+  // underlying resource and should share data.
+  PRInt64 mResourceID;
   // The last reported seekability state for the underlying channel
   bool mIsSeekable;
   // True if the cache has suspended our channel because the cache is
@@ -489,9 +460,6 @@ private:
   bool mCacheSuspended;
   // True if the channel ended and we haven't seeked it again.
   bool mChannelEnded;
-  // True if mPrincipal is a null principal because we saw data from
-  // multiple origins
-  bool mUsingNullPrincipal;
   // The offset where the next data from the channel will arrive
   PRInt64      mChannelOffset;
   // The reported or discovered length of the data, or -1 if nothing is

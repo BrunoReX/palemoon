@@ -1,40 +1,7 @@
 /* vim: set shiftwidth=2 tabstop=8 autoindent cindent expandtab: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is nsAnimationManager, an implementation of part
- * of css3-animations.
- *
- * The Initial Developer of the Original Code is the Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   L. David Baron <dbaron@dbaron.org>, Mozilla Corporation (original author)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsAnimationManager.h"
 #include "nsPresContext.h"
@@ -246,10 +213,10 @@ ElementAnimations::EnsureStyleRuleFor(TimeStamp aRefreshTime,
       // the keyframes.
       NS_ABORT_IF_FALSE(currentIterationCount >= 0.0, "must be positive");
       PRUint32 whichIteration = int(currentIterationCount);
-      if (whichIteration == anim.mIterationCount) {
+      if (whichIteration == anim.mIterationCount && whichIteration != 0) {
         // When the animation's iteration count is an integer (as it
         // normally is), we need to end at 100% of its last iteration
-        // rather than 0% of the next one.
+        // rather than 0% of the next one (unless it's zero).
         --whichIteration;
       }
       double positionInIteration =
@@ -435,9 +402,12 @@ nsAnimationManager::RulesMatching(XULTreeRuleProcessorData* aData)
 /* virtual */ size_t
 nsAnimationManager::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const
 {
-  // XXX: various other members in nsAnimationManager could be measured here.
-  // Bug 671299 may do this.
   return CommonAnimationManager::SizeOfExcludingThis(aMallocSizeOf);
+
+  // Measurement of the following members may be added later if DMD finds it is
+  // worthwhile:
+  // - mKeyframesRules
+  // - mPendingEvents
 }
 
 /* virtual */ size_t
@@ -568,8 +538,10 @@ public:
 
   static KeyTypePointer KeyToPointer(KeyType aKey) { return &aKey; }
   static PLDHashNumber HashKey(KeyTypePointer aKey) {
-    PR_STATIC_ASSERT(sizeof(PLDHashNumber) == sizeof(PRUint32));
-    PR_STATIC_ASSERT(PLDHashNumber(-1) > PLDHashNumber(0));
+    MOZ_STATIC_ASSERT(sizeof(PLDHashNumber) == sizeof(PRUint32),
+                      "this hash function assumes PLDHashNumber is PRUint32");
+    MOZ_STATIC_ASSERT(PLDHashNumber(-1) > PLDHashNumber(0),
+                      "this hash function assumes PLDHashNumber is PRUint32");
     float key = *aKey;
     NS_ABORT_IF_FALSE(0.0f <= key && key <= 1.0f, "out of range");
     return PLDHashNumber(key * PR_UINT32_MAX);
@@ -582,27 +554,16 @@ private:
 
 struct KeyframeData {
   float mKey;
+  PRUint32 mIndex; // store original order since sort algorithm is not stable
   nsCSSKeyframeRule *mRule;
 };
 
-typedef InfallibleTArray<KeyframeData> KeyframeDataArray;
-
-static PLDHashOperator
-AppendKeyframeData(const float &aKey, nsCSSKeyframeRule *aRule, void *aData)
-{
-  KeyframeDataArray *array = static_cast<KeyframeDataArray*>(aData);
-  KeyframeData *data = array->AppendElement();
-  data->mKey = aKey;
-  data->mRule = aRule;
-  return PL_DHASH_NEXT;
-}
-
 struct KeyframeDataComparator {
   bool Equals(const KeyframeData& A, const KeyframeData& B) const {
-    return A.mKey == B.mKey;
+    return A.mKey == B.mKey && A.mIndex == B.mIndex;
   }
   bool LessThan(const KeyframeData& A, const KeyframeData& B) const {
-    return A.mKey < B.mKey;
+    return A.mKey < B.mKey || (A.mKey == B.mKey && A.mIndex < B.mIndex);
   }
 };
 
@@ -680,11 +641,15 @@ nsAnimationManager::BuildAnimations(nsStyleContext* aStyleContext,
       continue;
     }
 
-    // Build the set of unique keyframes in the @keyframes rule.  Per
-    // css3-animations, later keyframes with the same key replace
-    // earlier ones (no cascading).
-    nsDataHashtable<PercentageHashKey, nsCSSKeyframeRule*> keyframes;
-    keyframes.Init(16); // FIXME: make infallible!
+    // While current drafts of css3-animations say that later keyframes
+    // with the same key entirely replace earlier ones (no cascading),
+    // this is a bad idea and contradictory to the rest of CSS.  So
+    // we're going to keep all the keyframes for each key and then do
+    // the replacement on a per-property basis rather than a per-rule
+    // basis, just like everything else in CSS.
+
+    AutoInfallibleTArray<KeyframeData, 16> sortedKeyframes;
+
     for (PRUint32 ruleIdx = 0, ruleEnd = rule->StyleRuleCount();
          ruleIdx != ruleEnd; ++ruleIdx) {
       css::Rule* cssRule = rule->GetStyleRuleAt(ruleIdx);
@@ -702,13 +667,14 @@ nsAnimationManager::BuildAnimations(nsStyleContext* aStyleContext,
         // (And PercentageHashKey currently assumes we either ignore or
         // clamp them.)
         if (0.0f <= key && key <= 1.0f) {
-          keyframes.Put(key, kfRule);
+          KeyframeData *data = sortedKeyframes.AppendElement();
+          data->mKey = key;
+          data->mIndex = ruleIdx;
+          data->mRule = kfRule;
         }
       }
     }
 
-    KeyframeDataArray sortedKeyframes;
-    keyframes.EnumerateRead(AppendKeyframeData, &sortedKeyframes);
     sortedKeyframes.Sort(KeyframeDataComparator());
 
     if (sortedKeyframes.Length() == 0) {
@@ -737,18 +703,37 @@ nsAnimationManager::BuildAnimations(nsStyleContext* aStyleContext,
         continue;
       }
 
+      // Build a list of the keyframes to use for this property.  This
+      // means we need every keyframe with the property in it, except
+      // for those keyframes where a later keyframe with the *same key*
+      // also has the property.
+      AutoInfallibleTArray<PRUint32, 16> keyframesWithProperty;
+      float lastKey = 100.0f; // an invalid key
+      for (PRUint32 kfIdx = 0, kfEnd = sortedKeyframes.Length();
+           kfIdx != kfEnd; ++kfIdx) {
+        KeyframeData &kf = sortedKeyframes[kfIdx];
+        if (!kf.mRule->Declaration()->HasProperty(prop)) {
+          continue;
+        }
+        if (kf.mKey == lastKey) {
+          // Replace previous occurrence of same key.
+          keyframesWithProperty[keyframesWithProperty.Length() - 1] = kfIdx;
+        } else {
+          keyframesWithProperty.AppendElement(kfIdx);
+        }
+        lastKey = kf.mKey;
+      }
+
       AnimationProperty &propData = *aDest.mProperties.AppendElement();
       propData.mProperty = prop;
 
       KeyframeData *fromKeyframe = nsnull;
       nsRefPtr<nsStyleContext> fromContext;
       bool interpolated = true;
-      for (PRUint32 kfIdx = 0, kfEnd = sortedKeyframes.Length();
-           kfIdx != kfEnd; ++kfIdx) {
+      for (PRUint32 wpIdx = 0, wpEnd = keyframesWithProperty.Length();
+           wpIdx != wpEnd; ++wpIdx) {
+        PRUint32 kfIdx = keyframesWithProperty[wpIdx];
         KeyframeData &toKeyframe = sortedKeyframes[kfIdx];
-        if (!toKeyframe.mRule->Declaration()->HasProperty(prop)) {
-          continue;
-        }
 
         nsRefPtr<nsStyleContext> toContext =
           resolvedStyles.Get(mPresContext, aStyleContext, toKeyframe.mRule);

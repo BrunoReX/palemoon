@@ -18,6 +18,13 @@ function cleanAndGo(server) {
   server.stop(run_next_test);
 }
 
+function configureService(username, password) {
+  Service.clusterURL = TEST_CLUSTER_URL;
+
+  Identity.account = username || "foo";
+  Identity.basicPassword = password || "password";
+}
+
 function createServerAndConfigureClient() {
   let engine = new RotaryEngine();
 
@@ -29,8 +36,8 @@ function createServerAndConfigureClient() {
   };
 
   const USER = "foo";
-  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", USER);
 
   let server = new SyncServer();
@@ -65,7 +72,8 @@ add_test(function test_syncStartup_emptyOrOutdatedGlobalsResetsSync() {
   _("SyncEngine._syncStartup resets sync and wipes server data if there's no or an outdated global record");
 
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
 
   // Some server side data that's going to be wiped
@@ -118,7 +126,8 @@ add_test(function test_syncStartup_serverHasNewerVersion() {
   _("SyncEngine._syncStartup ");
 
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
   let global = new ServerWBO('global', {engines: {rotary: {version: 23456}}});
   let server = httpd_setup({
@@ -148,7 +157,8 @@ add_test(function test_syncStartup_syncIDMismatchResetsClient() {
   _("SyncEngine._syncStartup resets sync if syncIDs don't match");
 
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
   let server = sync_httpd_setup({});
 
@@ -185,7 +195,8 @@ add_test(function test_processIncoming_emptyServer() {
   _("SyncEngine._processIncoming working with an empty server backend");
 
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
   let collection = new ServerCollection();
 
@@ -210,7 +221,8 @@ add_test(function test_processIncoming_createFromServer() {
   _("SyncEngine._processIncoming creates new records from server data");
 
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
   
   generateNewKeys();
@@ -271,7 +283,8 @@ add_test(function test_processIncoming_reconcile() {
   _("SyncEngine._processIncoming updates local records");
 
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
   let collection = new ServerCollection();
 
@@ -590,7 +603,8 @@ add_test(function test_processIncoming_mobile_batchSize() {
   _("SyncEngine._processIncoming doesn't fetch everything at once on mobile clients");
 
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
   Svc.Prefs.set("client.type", "mobile");
 
@@ -659,7 +673,8 @@ add_test(function test_processIncoming_mobile_batchSize() {
 add_test(function test_processIncoming_store_toFetch() {
   _("If processIncoming fails in the middle of a batch on mobile, state is saved in toFetch and lastSync.");
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
   Svc.Prefs.set("client.type", "mobile");
 
@@ -726,7 +741,8 @@ add_test(function test_processIncoming_store_toFetch() {
 add_test(function test_processIncoming_resume_toFetch() {
   _("toFetch and previousFailed items left over from previous syncs are fetched on the next sync, along with new items.");
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
 
   const LASTSYNC = Date.now() / 1000;
@@ -794,7 +810,8 @@ add_test(function test_processIncoming_resume_toFetch() {
 add_test(function test_processIncoming_applyIncomingBatchSize_smaller() {
   _("Ensure that a number of incoming items less than applyIncomingBatchSize is still applied.");
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
 
   // Engine that doesn't like the first and last record it's given.
@@ -848,7 +865,7 @@ add_test(function test_processIncoming_applyIncomingBatchSize_smaller() {
 add_test(function test_processIncoming_applyIncomingBatchSize_multiple() {
   _("Ensure that incoming items are applied according to applyIncomingBatchSize.");
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
 
   const APPLY_BATCH_SIZE = 10;
@@ -900,7 +917,8 @@ add_test(function test_processIncoming_applyIncomingBatchSize_multiple() {
 add_test(function test_processIncoming_notify_count() {
   _("Ensure that failed records are reported only once.");
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
   
   const APPLY_BATCH_SIZE = 5;
@@ -988,7 +1006,8 @@ add_test(function test_processIncoming_notify_count() {
 add_test(function test_processIncoming_previousFailed() {
   _("Ensure that failed records are retried.");
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
   Svc.Prefs.set("client.type", "mobile");
   
@@ -1073,7 +1092,8 @@ add_test(function test_processIncoming_previousFailed() {
 add_test(function test_processIncoming_failed_records() {
   _("Ensure that failed records from _reconcile and applyIncomingBatch are refetched.");
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
 
   // Let's create three and a bit batches worth of server side records.
@@ -1207,7 +1227,8 @@ add_test(function test_processIncoming_decrypt_failed() {
   _("Ensure that records failing to decrypt are either replaced or refetched.");
 
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
 
   // Some good and some bogus records. One doesn't contain valid JSON,
@@ -1284,7 +1305,8 @@ add_test(function test_uploadOutgoing_toEmptyServer() {
   _("SyncEngine._uploadOutgoing uploads new records to server");
 
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
   let collection = new ServerCollection();
   collection._wbos.flying = new ServerWBO('flying');
@@ -1342,7 +1364,8 @@ add_test(function test_uploadOutgoing_failed() {
   _("SyncEngine._uploadOutgoing doesn't clear the tracker of objects that failed to upload.");
 
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
   let collection = new ServerCollection();
   // We only define the "flying" WBO on the server, not the "scotsman"
@@ -1404,7 +1427,8 @@ add_test(function test_uploadOutgoing_MAX_UPLOAD_RECORDS() {
   _("SyncEngine._uploadOutgoing uploads in batches of MAX_UPLOAD_RECORDS");
 
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
   let collection = new ServerCollection();
 
@@ -1475,7 +1499,8 @@ add_test(function test_syncFinish_deleteByIds() {
   _("SyncEngine._syncFinish deletes server records slated for deletion (list of record IDs).");
 
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
   let collection = new ServerCollection();
   collection._wbos.flying = new ServerWBO(
@@ -1516,7 +1541,8 @@ add_test(function test_syncFinish_deleteLotsInBatches() {
   _("SyncEngine._syncFinish deletes server records in batches of 100 (list of record IDs).");
 
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
   let collection = new ServerCollection();
 
@@ -1587,7 +1613,8 @@ add_test(function test_sync_partialUpload() {
   _("SyncEngine.sync() keeps changedIDs that couldn't be uploaded.");
 
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
 
   let collection = new ServerCollection();
@@ -1660,7 +1687,8 @@ add_test(function test_sync_partialUpload() {
 add_test(function test_canDecrypt_noCryptoKeys() {
   _("SyncEngine.canDecrypt returns false if the engine fails to decrypt items on the server, e.g. due to a missing crypto key collection.");
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
 
   // Wipe CollectionKeys so we can test the desired scenario.
@@ -1688,7 +1716,8 @@ add_test(function test_canDecrypt_noCryptoKeys() {
 add_test(function test_canDecrypt_true() {
   _("SyncEngine.canDecrypt returns true if the engine can decrypt the items on the server.");
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
 
   // Set up CollectionKeys, as service.js does.
@@ -1716,7 +1745,8 @@ add_test(function test_canDecrypt_true() {
 
 add_test(function test_syncapplied_observer() {
   let syncTesting = new SyncTestingInfrastructure();
-  Svc.Prefs.set("clusterURL", "http://localhost:8080/");
+  Svc.Prefs.set("serverURL", TEST_SERVER_URL);
+  Svc.Prefs.set("clusterURL", TEST_CLUSTER_URL);
   Svc.Prefs.set("username", "foo");
 
   const NUMBER_OF_RECORDS = 10;

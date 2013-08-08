@@ -7,6 +7,7 @@ Cu.import("resource:///modules/devtools/CssRuleView.jsm", tempScope);
 let CssRuleView = tempScope.CssRuleView;
 let _ElementStyle = tempScope._ElementStyle;
 let _editableField = tempScope._editableField;
+let inplaceEditor = tempScope._getInplaceEditorForSpan;
 
 let doc = content.document;
 
@@ -43,13 +44,13 @@ function testReturnCommit()
     element: span,
     initial: "explicit initial",
     start: function() {
-      is(span.inplaceEditor.input.value, "explicit initial", "Explicit initial value should be used.");
-      span.inplaceEditor.input.value = "Test Value";
+      is(inplaceEditor(span).input.value, "explicit initial", "Explicit initial value should be used.");
+      inplaceEditor(span).input.value = "Test Value";
       EventUtils.sendKey("return");
     },
     done: expectDone("Test Value", true, testBlurCommit)
   });
-  span.focus();
+  span.click();
 }
 
 function testBlurCommit()
@@ -59,13 +60,13 @@ function testBlurCommit()
   _editableField({
     element: span,
     start: function() {
-      is(span.inplaceEditor.input.value, "Edit Me!", "textContent of the span used.");
-      span.inplaceEditor.input.value = "Test Value";
-      span.inplaceEditor.input.blur();
+      is(inplaceEditor(span).input.value, "Edit Me!", "textContent of the span used.");
+      inplaceEditor(span).input.value = "Test Value";
+      inplaceEditor(span).input.blur();
     },
     done: expectDone("Test Value", true, testAdvanceCharCommit)
   });
-  span.focus();
+  span.click();
 }
 
 function testAdvanceCharCommit()
@@ -76,14 +77,14 @@ function testAdvanceCharCommit()
     element: span,
     advanceChars: ":",
     start: function() {
-      let input = span.inplaceEditor.input;
+      let input = inplaceEditor(span).input;
       for each (let ch in "Test:") {
         EventUtils.sendChar(ch);
       }
     },
     done: expectDone("Test", true, testEscapeCancel)
   });
-  span.focus();
+  span.click();
 }
 
 function testEscapeCancel()
@@ -94,12 +95,12 @@ function testEscapeCancel()
     element: span,
     initial: "initial text",
     start: function() {
-      span.inplaceEditor.input.value = "Test Value";
+      inplaceEditor(span).input.value = "Test Value";
       EventUtils.sendKey("escape");
     },
     done: expectDone("initial text", false, finishTest)
   });
-  span.focus();
+  span.click();
 }
 
 

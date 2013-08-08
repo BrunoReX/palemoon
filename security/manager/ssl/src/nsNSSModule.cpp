@@ -1,44 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Hubbie Shaw
- *   Doug Turner <dougt@netscape.com>
- *   Brian Ryner <bryner@brianryner.com>
- *   Kai Engert <kengert@redhat.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ModuleUtils.h"
 
@@ -76,8 +40,9 @@
 #include "nsRandomGenerator.h"
 #include "nsRecentBadCerts.h"
 #include "nsSSLStatus.h"
-#include "nsNSSIOLayer.h"
+#include "TransportSecurityInfo.h"
 #include "NSSErrorsService.h"
+#include "nsNSSVersion.h"
 
 #include "nsXULAppAPI.h"
 #define NS_IS_PROCESS_DEFAULT                                                 \
@@ -210,6 +175,10 @@ _InstanceClassChrome##Constructor(nsISupports *aOuter, REFNSIID aIID,         \
 NS_NSS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nssLoadingComponent, nsNSSComponent,
                                         Init)
 
+using namespace mozilla::psm;
+  
+namespace {
+
 // Use the special factory constructor for everything this module implements,
 // because all code could potentially require the NSS library.
 // Our factory constructor takes an additional boolean parameter.
@@ -249,10 +218,11 @@ NS_NSS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nssEnsure, nsCertOverrideService, Init)
 NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsure, nsRandomGenerator)
 NS_NSS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nssEnsure, nsRecentBadCertsService, Init)
 NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsureOnChromeOnly, nsSSLStatus)
-NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsureOnChromeOnly, nsNSSSocketInfo)
+NS_NSS_GENERIC_FACTORY_CONSTRUCTOR(nssEnsureOnChromeOnly, TransportSecurityInfo)
 
 typedef mozilla::psm::NSSErrorsService NSSErrorsService;
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(NSSErrorsService, Init)
+NS_GENERIC_FACTORY_CONSTRUCTOR(nsNSSVersion)
 
 NS_DEFINE_NAMED_CID(NS_NSSCOMPONENT_CID);
 NS_DEFINE_NAMED_CID(NS_SSLSOCKETPROVIDER_CID);
@@ -287,9 +257,9 @@ NS_DEFINE_NAMED_CID(NS_CERTOVERRIDE_CID);
 NS_DEFINE_NAMED_CID(NS_RANDOMGENERATOR_CID);
 NS_DEFINE_NAMED_CID(NS_RECENTBADCERTS_CID);
 NS_DEFINE_NAMED_CID(NS_SSLSTATUS_CID);
-NS_DEFINE_NAMED_CID(NS_NSSSOCKETINFO_CID);
+NS_DEFINE_NAMED_CID(TRANSPORTSECURITYINFO_CID);
 NS_DEFINE_NAMED_CID(NS_NSSERRORSSERVICE_CID);
-
+NS_DEFINE_NAMED_CID(NS_NSSVERSION_CID);
 
 static const mozilla::Module::CIDEntry kNSSCIDs[] = {
   { &kNS_NSSCOMPONENT_CID, false, NULL, nsNSSComponentConstructor },
@@ -325,14 +295,16 @@ static const mozilla::Module::CIDEntry kNSSCIDs[] = {
   { &kNS_RANDOMGENERATOR_CID, false, NULL, nsRandomGeneratorConstructor },
   { &kNS_RECENTBADCERTS_CID, false, NULL, nsRecentBadCertsServiceConstructor },
   { &kNS_SSLSTATUS_CID, false, NULL, nsSSLStatusConstructor },
-  { &kNS_NSSSOCKETINFO_CID, false, NULL, nsNSSSocketInfoConstructor },
+  { &kTRANSPORTSECURITYINFO_CID, false, NULL, TransportSecurityInfoConstructor },
   { &kNS_NSSERRORSSERVICE_CID, false, NULL, NSSErrorsServiceConstructor },
+  { &kNS_NSSVERSION_CID, false, NULL, nsNSSVersionConstructor },
   { NULL }
 };
 
 static const mozilla::Module::ContractIDEntry kNSSContracts[] = {
   { PSM_COMPONENT_CONTRACTID, &kNS_NSSCOMPONENT_CID },
   { NS_NSS_ERRORS_SERVICE_CONTRACTID, &kNS_NSSERRORSSERVICE_CID },
+  { NS_NSSVERSION_CONTRACTID, &kNS_NSSVERSION_CID },
   { NS_SSLSOCKETPROVIDER_CONTRACTID, &kNS_SSLSOCKETPROVIDER_CID },
   { NS_STARTTLSSOCKETPROVIDER_CONTRACTID, &kNS_STARTTLSSOCKETPROVIDER_CID },
   { NS_SDR_CONTRACTID, &kNS_SDR_CID },
@@ -385,5 +357,7 @@ static const mozilla::Module kNSSModule = {
   kNSSContracts,
   kNSSCategories
 };
+
+} // unnamed namespace
 
 NSMODULE_DEFN(NSS) = &kNSSModule;

@@ -1,41 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- -*- Mode: HTML; tab-width: 4; indent-tabs-mode: nil; -*- -->
 <!-- vim: set shiftwidth=4 tabstop=4 autoindent noexpandtab: -->
-<!-- ***** BEGIN LICENSE BLOCK *****
-   - Version: MPL 1.1/GPL 2.0/LGPL 2.1
-   -
-   - The contents of this file are subject to the Mozilla Public License Version
-   - 1.1 (the "License"); you may not use this file except in compliance with
-   - the License. You may obtain a copy of the License at
-   - http://www.mozilla.org/MPL/
-   -
-   - Software distributed under the License is distributed on an "AS IS" basis,
-   - WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
-   - for the specific language governing rights and limitations under the
-   - License.
-   -
-   - The Original Code is reftest-analyzer.html.
-   -
-   - The Initial Developer of the Original Code is the Mozilla Foundation.
-   - Portions created by the Initial Developer are Copyright (C) 2008
-   - the Initial Developer. All Rights Reserved.
-   -
-   - Contributor(s):
-   -   L. David Baron <dbaron@dbaron.org>, Mozilla Corporation (original author)
-   -
-   - Alternatively, the contents of this file may be used under the terms of
-   - either the GNU General Public License Version 2 or later (the "GPL"), or
-   - the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
-   - in which case the provisions of the GPL or the LGPL are applicable instead
-   - of those above. If you wish to allow use of your version of this file only
-   - under the terms of either the GPL or the LGPL, and not to allow others to
-   - use your version of this file under the terms of the MPL, indicate your
-   - decision by deleting the provisions above and replace them with the notice
-   - and other provisions required by the LGPL or the GPL. If you do not delete
-   - the provisions above, a recipient may use your version of this file under
-   - the terms of any one of the MPL, the GPL or the LGPL.
-   -
-   - ***** END LICENSE BLOCK ***** -->
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 <!--
 
 Features to add:
@@ -100,6 +68,7 @@ Features to add:
 
 var XLINK_NS = "http://www.w3.org/1999/xlink";
 var SVG_NS = "http://www.w3.org/2000/svg";
+var IMAGE_NOT_AVAILABLE = "data:image/png;base64,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";
 
 var gPhases = null;
 
@@ -137,6 +106,13 @@ function load() {
     ID("logentry").value = params.log;
     log_pasted();
   }
+  window.addEventListener('keypress', maybe_load_image, false);
+  ID("image1").addEventListener('error', image_load_error, false);
+  ID("image2").addEventListener('error', image_load_error, false);
+}
+
+function image_load_error(e) {
+  e.target.setAttributeNS(XLINK_NS, "xlink:href", IMAGE_NOT_AVAILABLE);
 }
 
 function build_mag() {
@@ -374,6 +350,19 @@ function show_image(i) {
   }
 }
 
+function maybe_load_image(event) {
+  switch (event.charCode) {
+  case 49: // "1" key
+    document.getElementById("radio1").checked = true;
+    show_image(1);
+    break;
+  case 50: // "2" key
+    document.getElementById("radio2").checked = true;
+    show_image(2);
+    break;
+  }
+}
+
 function show_differences(cb) {
   ID("diffrect").style.display = cb.checked ? "" : "none";
 }
@@ -513,8 +502,8 @@ function show_pixelinfo(x, y, pix1rgb, pix1hex, pix2rgb, pix2hex) {
   <div id="itemlist"></div>
   <div id="images" style="display:none">
     <form id="imgcontrols">
-    <label><input type="radio" name="which" value="0" onchange="show_image(1)" checked="checked" />Image 1</label>
-    <label><input type="radio" name="which" value="1" onchange="show_image(2)" />Image 2</label>
+    <label title="1"><input id="radio1" type="radio" name="which" value="0" onchange="show_image(1)" checked="checked" />Image 1</label>
+    <label title="2"><input id="radio2" type="radio" name="which" value="1" onchange="show_image(2)" />Image 2</label>
     <label><input type="checkbox" onchange="show_differences(this)" />Circle differences</label>
     </form>
     <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="800px" height="1000px" viewBox="0 0 800 1000" id="svg">

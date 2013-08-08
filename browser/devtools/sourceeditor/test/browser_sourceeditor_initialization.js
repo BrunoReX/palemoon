@@ -37,7 +37,7 @@ function initEditor()
   editor = new SourceEditor();
   let config = {
     showLineNumbers: true,
-    placeholderText: "foobarbaz",
+    initialText: "foobarbaz",
     tabSize: 7,
     expandTab: true,
   };
@@ -54,7 +54,7 @@ function editorLoaded()
 
   editor.focus();
 
-  is(editor.getMode(), SourceEditor.DEFAULTS.MODE, "default editor mode");
+  is(editor.getMode(), SourceEditor.DEFAULTS.mode, "default editor mode");
 
   // Test general editing methods.
 
@@ -201,11 +201,21 @@ function editorLoaded()
   editor.setText("foobar");
   is(editor.getText(), "foobar", "editor allows programmatic changes (setText)");
 
+  EventUtils.synthesizeKey("VK_RETURN", {}, testWin);
+  is(editor.getText(), "foobar", "Enter key does nothing");
+
+  EventUtils.synthesizeKey("VK_TAB", {}, testWin);
+  is(editor.getText(), "foobar", "Tab does nothing");
+
+  editor.setText("      foobar");
+  EventUtils.synthesizeKey("VK_TAB", {shiftKey: true}, testWin);
+  is(editor.getText(), "      foobar", "Shift+Tab does nothing");
+
   editor.readOnly = false;
 
   editor.setCaretOffset(editor.getCharCount());
   EventUtils.synthesizeKey("-", {}, testWin);
-  is(editor.getText(), "foobar-", "editor is now editable again");
+  is(editor.getText(), "      foobar-", "editor is now editable again");
 
   // Test the Selection event.
 
@@ -323,6 +333,9 @@ function testReturnKey()
 
   let lineDelimiter = editor.getLineDelimiter();
   ok(lineDelimiter, "we have the line delimiter");
+
+  let indentationString = editor.getIndentationString();
+  is("       ", indentationString, "we have an indentation string of 7 spaces");
 
   is(editor.getText(), "       a" + lineDelimiter + "       x\n  b\n c",
      "return maintains indentation");

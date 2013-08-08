@@ -1,51 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Dave Hyatt <hyatt@mozilla.org> (Original Author)
- *   Ben Goodger <ben@netscape.com>
- *   Joe Hewitt <hewitt@netscape.com>
- *   Jan Varga <varga@ku.sk>
- *   Dean Tessman <dean_tessman@hotmail.com>
- *   Brian Ryner <bryner@brianryner.com>
- *   Blake Ross <blaker@netscape.com>
- *   Pierre Chanial <pierrechanial@netscape.net>
- *   Rene Pronk <r.pronk@its.tudelft.nl>
- *   Nate Nielsen <nielsen@memberwebs.com>
- *   Mark Banner <mark@standard8.demon.co.uk>
- *   Ehsan Akhgari <ehsan.akhgari@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsCOMPtr.h"
 #include "nsISupportsArray.h"
@@ -72,7 +28,6 @@
 #include "nsIDOMDocument.h"
 #include "nsIDOMXULElement.h"
 #include "nsIDocument.h"
-#include "nsIContent.h"
 #include "mozilla/css/StyleRule.h"
 #include "nsCSSRendering.h"
 #include "nsIXULTemplateBuilder.h"
@@ -86,7 +41,6 @@
 #include "nsIURL.h"
 #include "nsNetUtil.h"
 #include "nsBoxLayoutState.h"
-#include "nsIDragService.h"
 #include "nsTreeContentView.h"
 #include "nsTreeUtils.h"
 #include "nsChildIterator.h"
@@ -103,7 +57,11 @@
 #include "nsDisplayList.h"
 #include "nsTreeBoxObject.h"
 #include "nsRenderingContext.h"
+#include "nsIScriptableRegion.h"
 
+#ifdef ACCESSIBILITY
+#include "nsAccessibilityService.h"
+#endif
 #ifdef IBMBIDI
 #include "nsBidiUtils.h"
 #endif
@@ -185,7 +143,7 @@ GetBorderPadding(nsStyleContext* aContext, nsMargin& aMargin)
   if (!aContext->GetStylePadding()->GetPadding(aMargin)) {
     NS_NOTYETIMPLEMENTED("percentage padding");
   }
-  aMargin += aContext->GetStyleBorder()->GetActualBorder();
+  aMargin += aContext->GetStyleBorder()->GetComputedBorder();
 }
 
 static void
@@ -207,9 +165,9 @@ nsTreeBodyFrame::Init(nsIContent*     aContent,
   mIndentation = GetIndentation();
   mRowHeight = GetRowHeight();
 
-  NS_ENSURE_TRUE(mCreatedListeners.Init(), NS_ERROR_OUT_OF_MEMORY);
+  mCreatedListeners.Init();
 
-  NS_ENSURE_TRUE(mImageCache.Init(16), NS_ERROR_OUT_OF_MEMORY);
+  mImageCache.Init(16);
   EnsureBoxObject();
 
   return rv;
@@ -520,6 +478,11 @@ nsTreeBodyFrame::SetView(nsITreeView * aView)
  
   nsIContent *treeContent = GetBaseElement();
   if (treeContent) {
+#ifdef ACCESSIBILITY
+    nsAccessibilityService* accService = nsIPresShell::AccService();
+    if (accService)
+      accService->TreeViewChanged(PresContext()->GetPresShell(), treeContent, mView);
+#endif
     FireDOMEvent(NS_LITERAL_STRING("TreeViewChanged"), treeContent);
   }
 
@@ -1948,7 +1911,7 @@ nsTreeBodyFrame::PrefillPropertyArray(PRInt32 aRowIndex, nsTreeColumn* aCol)
     mScratchArray->AppendElement(nsGkAtoms::sorted);
 
   // drag session
-  if (mSlots && mSlots->mDragSession)
+  if (mSlots && mSlots->mIsDragging)
     mScratchArray->AppendElement(nsGkAtoms::dragSession);
 
   if (aRowIndex != -1) {
@@ -2555,6 +2518,18 @@ nsTreeBodyFrame::GetCursor(const nsPoint& aPoint,
   return nsLeafBoxFrame::GetCursor(aPoint, aCursor);
 }
 
+static PRUint32 GetDropEffect(nsGUIEvent* aEvent)
+{
+  NS_ASSERTION(aEvent->eventStructType == NS_DRAG_EVENT, "wrong event type");
+  nsDragEvent* dragEvent = static_cast<nsDragEvent *>(aEvent);
+  nsContentUtils::SetDataTransferInEvent(dragEvent);
+
+  PRUint32 action = 0;
+  if (dragEvent->dataTransfer)
+    dragEvent->dataTransfer->GetDropEffectInt(&action);
+  return action;
+}
+
 NS_IMETHODIMP
 nsTreeBodyFrame::HandleEvent(nsPresContext* aPresContext,
                              nsGUIEvent* aEvent,
@@ -2593,17 +2568,10 @@ nsTreeBodyFrame::HandleEvent(nsPresContext* aPresContext,
     }
 
     // Cache the drag session.
-    nsCOMPtr<nsIDragService> dragService = 
-             do_GetService("@mozilla.org/widget/dragservice;1");
-    dragService->GetCurrentSession(getter_AddRefs(mSlots->mDragSession));
-    NS_ASSERTION(mSlots->mDragSession, "can't get drag session");
-
-    if (mSlots->mDragSession)
-      mSlots->mDragSession->GetDragAction(&mSlots->mDragAction);
-    else
-      mSlots->mDragAction = 0;
+    mSlots->mIsDragging = true;
     mSlots->mDropRow = -1;
     mSlots->mDropOrient = -1;
+    mSlots->mDragAction = GetDropEffect(aEvent);
   }
   else if (aEvent->message == NS_DRAGDROP_OVER) {
     // The mouse is hovering over this tree. If we determine things are
@@ -2627,8 +2595,7 @@ nsTreeBodyFrame::HandleEvent(nsPresContext* aPresContext,
 
     // Find out the current drag action
     PRUint32 lastDragAction = mSlots->mDragAction;
-    if (mSlots->mDragSession)
-      mSlots->mDragSession->GetDragAction(&mSlots->mDragAction);
+    mSlots->mDragAction = GetDropEffect(aEvent);
 
     // Compute the row mouse is over and the above/below/on state.
     // Below we'll use this to see if anything changed.
@@ -2698,11 +2665,9 @@ nsTreeBodyFrame::HandleEvent(nsPresContext* aPresContext,
           }
         }
 
-        NS_ASSERTION(aEvent->eventStructType == NS_DRAG_EVENT, "wrong event type");
-        nsDragEvent* dragEvent = static_cast<nsDragEvent*>(aEvent);
-        nsContentUtils::SetDataTransferInEvent(dragEvent);
-
+        // The dataTransfer was initialized by the call to GetDropEffect above.
         bool canDropAtNewLocation = false;
+        nsDragEvent* dragEvent = static_cast<nsDragEvent *>(aEvent);
         mView->CanDrop(mSlots->mDropRow, mSlots->mDropOrient,
                        dragEvent->dataTransfer, &canDropAtNewLocation);
 
@@ -2714,10 +2679,9 @@ nsTreeBodyFrame::HandleEvent(nsPresContext* aPresContext,
       }
     }
 
-    // Alert the drag session we accept the drop. We have to do this every time
-    // since the |canDrop| attribute is reset before we're called.
-    if (mSlots->mDropAllowed && mSlots->mDragSession)
-      mSlots->mDragSession->SetCanDrop(true);
+    // Indicate that the drop is allowed by preventing the default behaviour.
+    if (mSlots->mDropAllowed)
+      *aEventStatus = nsEventStatus_eConsumeNoDefault;
   }
   else if (aEvent->message == NS_DRAGDROP_DROP) {
      // this event was meant for another frame, so ignore it
@@ -2741,6 +2705,7 @@ nsTreeBodyFrame::HandleEvent(nsPresContext* aPresContext,
     mView->Drop(mSlots->mDropRow, mSlots->mDropOrient, dragEvent->dataTransfer);
     mSlots->mDropRow = -1;
     mSlots->mDropOrient = -1;
+    mSlots->mIsDragging = false;
     *aEventStatus = nsEventStatus_eConsumeNoDefault; // already handled the drop
   }
   else if (aEvent->message == NS_DRAGDROP_EXIT) {
@@ -2756,7 +2721,7 @@ nsTreeBodyFrame::HandleEvent(nsPresContext* aPresContext,
     }
     else
       mSlots->mDropAllowed = false;
-    mSlots->mDragSession = nsnull;
+    mSlots->mIsDragging = false;
     mSlots->mScrollLines = 0;
     // If a drop is occuring, the exit event will fire just before the drop
     // event, so don't reset mDropRow or mDropOrient as these fields are used

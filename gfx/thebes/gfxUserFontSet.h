@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Foundation code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2008
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   John Daggett <jdaggett@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef GFX_USER_FONT_SET_H
 #define GFX_USER_FONT_SET_H
@@ -51,6 +19,7 @@
 
 class nsIURI;
 class gfxMixedFontFamily;
+class nsFontFaceLoader;
 
 // parsed CSS @font-face rule information
 // lifetime: from when @font-face rule processed until font is loaded
@@ -110,10 +79,11 @@ public:
         nsRefPtr<gfxFontEntry> fe = aFontEntry;
         mAvailableFonts.AppendElement(fe);
         aFontEntry->SetFamily(this);
+        ResetCharacterMap();
     }
 
-    void ReplaceFontEntry(gfxFontEntry *aOldFontEntry, gfxFontEntry *aNewFontEntry) 
-    {
+    void ReplaceFontEntry(gfxFontEntry *aOldFontEntry,
+                          gfxFontEntry *aNewFontEntry) {
         PRUint32 numFonts = mAvailableFonts.Length();
         for (PRUint32 i = 0; i < numFonts; i++) {
             gfxFontEntry *fe = mAvailableFonts[i];
@@ -123,22 +93,37 @@ public:
                 // other reference to it except from its family
                 mAvailableFonts[i] = aNewFontEntry;
                 aNewFontEntry->SetFamily(this);
-                return;
+                break;
             }
         }
+        ResetCharacterMap();
     }
 
-    void RemoveFontEntry(gfxFontEntry *aFontEntry) 
-    {
+    void RemoveFontEntry(gfxFontEntry *aFontEntry) {
         PRUint32 numFonts = mAvailableFonts.Length();
         for (PRUint32 i = 0; i < numFonts; i++) {
             gfxFontEntry *fe = mAvailableFonts[i];
             if (fe == aFontEntry) {
                 aFontEntry->SetFamily(nsnull);
                 mAvailableFonts.RemoveElementAt(i);
-                return;
+                break;
             }
         }
+        ResetCharacterMap();
+    }
+
+    // clear family pointer for all entries and remove them from the family;
+    // we need to do this explicitly before inserting the entries into a new
+    // family, in case the old one is not actually deleted until later
+    void DetachFontEntries() {
+        PRUint32 i = mAvailableFonts.Length();
+        while (i--) {
+            gfxFontEntry *fe = mAvailableFonts[i];
+            if (fe) {
+                fe->SetFamily(nsnull);
+            }
+        }
+        mAvailableFonts.Clear();
     }
 
     // temp method to determine if all proxies are loaded
@@ -198,7 +183,7 @@ public:
                               PRUint32 aWeight,
                               PRUint32 aStretch,
                               PRUint32 aItalicStyle,
-                              const nsString& aFeatureSettings,
+                              const nsTArray<gfxFontFeature>& aFeatureSettings,
                               const nsString& aLanguageOverride,
                               gfxSparseBitSet *aUnicodeRanges = nsnull);
 
@@ -251,6 +236,23 @@ protected:
     // in the src list
     LoadStatus LoadNext(gfxProxyFontEntry *aProxyEntry);
 
+    // helper method for creating a platform font
+    // returns font entry if platform font creation successful
+    // Ownership of aFontData is passed in here; the font set must
+    // ensure that it is eventually deleted with NS_Free().
+    gfxFontEntry* LoadFont(gfxProxyFontEntry *aProxy,
+                           const PRUint8 *aFontData, PRUint32 &aLength);
+
+    // parse data for a data URL
+    virtual nsresult SyncLoadFontData(gfxProxyFontEntry *aFontToLoad,
+                                      const gfxFontFaceSrc *aFontFaceSrc,
+                                      PRUint8* &aBuffer,
+                                      PRUint32 &aBufferLength)
+    {
+        // implemented in nsUserFontSet
+        return NS_ERROR_NOT_IMPLEMENTED;
+    }
+
     gfxMixedFontFamily *GetFamily(const nsAString& aName) const;
 
     // report a problem of some kind (implemented in nsUserFontSet)
@@ -259,12 +261,28 @@ protected:
                                 PRUint32 aFlags = nsIScriptError::errorFlag,
                                 nsresult aStatus = 0) = 0;
 
+    const PRUint8* SanitizeOpenTypeData(gfxProxyFontEntry *aProxy,
+                                        const PRUint8* aData,
+                                        PRUint32 aLength,
+                                        PRUint32& aSaneLength,
+                                        bool aIsCompressed);
+
+#ifdef MOZ_OTS_REPORT_ERRORS
+    static bool OTSMessage(void *aUserData, const char *format, ...);
+#endif
+
     // font families defined by @font-face rules
     nsRefPtrHashtable<nsStringHashKey, gfxMixedFontFamily> mFontFamilies;
 
     PRUint64        mGeneration;
 
     static PRLogModuleInfo *sUserFontsLog;
+
+private:
+    static void CopyWOFFMetadata(const PRUint8* aFontData,
+                                 PRUint32 aLength,
+                                 nsTArray<PRUint8>* aMetadata,
+                                 PRUint32* aMetaOrigLen);
 };
 
 // acts a placeholder until the real font is downloaded
@@ -301,6 +319,7 @@ public:
 
     nsTArray<gfxFontFaceSrc> mSrcList;
     PRUint32                 mSrcIndex; // index of loading src item
+    nsFontFaceLoader        *mLoader; // current loader for this entry, if any
 };
 
 

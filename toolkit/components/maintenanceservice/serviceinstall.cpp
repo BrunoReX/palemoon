@@ -1,43 +1,11 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Maintenance service service installer code.
- *
- * The Initial Developer of the Original Code is
- * Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Brian R. Bondy <netzen@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <windows.h>
 #include <aclapi.h>
 #include <stdlib.h>
+#include <shlwapi.h>
 
 // Used for DNLEN and UNLEN
 #include <lm.h>
@@ -50,8 +18,36 @@
 #include "servicebase.h"
 #include "updatehelper.h"
 #include "shellapi.h"
+#include "readstrings.h"
+#include "errors.h"
 
 #pragma comment(lib, "version.lib")
+
+/**
+ * A wrapper function to read strings for the maintenance service.
+ *
+ * @param path    The path of the ini file to read from
+ * @param results The maintenance service strings that were read
+ * @return OK on success
+*/
+static int
+ReadMaintenanceServiceStrings(LPCWSTR path, 
+                              MaintenanceServiceStringTable *results)
+{
+  // Read in the maintenance service description string if specified.
+  const unsigned int kNumStrings = 1;
+  const char *kServiceKeys = "MozillaMaintenanceDescription\0";
+  char serviceStrings[kNumStrings][MAX_TEXT_LEN];
+  int result = ReadStrings(path, kServiceKeys, 
+                           kNumStrings, serviceStrings);
+  if (result != OK) {
+    serviceStrings[0][0] = '\0';
+  }
+  strncpy(results->serviceDescription, 
+          serviceStrings[0], MAX_TEXT_LEN - 1);
+  results->serviceDescription[MAX_TEXT_LEN - 1] = '\0';
+  return result;
+}
 
 /**
  * Obtains the version number from the specified PE file's version information
@@ -91,6 +87,76 @@ GetVersionNumberFromPath(LPWSTR path, DWORD &A, DWORD &B,
   B = LOWORD(fixedFileInfo->dwFileVersionMS);
   C = HIWORD(fixedFileInfo->dwFileVersionLS);
   D = LOWORD(fixedFileInfo->dwFileVersionLS);
+  return TRUE;
+}
+
+/**
+ * Updates the service description with what is stored in updater.ini
+ * at the same path as the currently executing module binary.
+ *
+ * @param serviceHandle A handle to an opened service with 
+ *                      SERVICE_CHANGE_CONFIG access right
+ * @param TRUE on succcess.
+*/
+BOOL
+UpdateServiceDescription(SC_HANDLE serviceHandle)
+{
+  WCHAR updaterINIPath[MAX_PATH + 1];
+  if (!GetModuleFileNameW(NULL, updaterINIPath, 
+                          sizeof(updaterINIPath) /
+                          sizeof(updaterINIPath[0]))) {
+    LOG(("Could not obtain module filename when attempting to "
+         "modify service description. (%d)\n", GetLastError()));
+    return FALSE;
+  }
+
+  if (!PathRemoveFileSpecW(updaterINIPath)) {
+    LOG(("Could not remove file spec when attempting to "
+         "modify service description. (%d)\n", GetLastError()));
+    return FALSE;
+  }
+
+  if (!PathAppendSafe(updaterINIPath, L"updater.ini")) {
+    LOG(("Could not append updater.ini filename when attempting to "
+         "modify service description. (%d)\n", GetLastError()));
+    return FALSE;
+  }
+
+  if (GetFileAttributesW(updaterINIPath) == INVALID_FILE_ATTRIBUTES) {
+    LOG(("updater.ini file does not exist, will not modify "
+         "service description. (%d)\n", GetLastError()));
+    return FALSE;
+  }
+  
+  MaintenanceServiceStringTable serviceStrings;
+  int rv = ReadMaintenanceServiceStrings(updaterINIPath, &serviceStrings);
+  if (rv != OK || !strlen(serviceStrings.serviceDescription)) {
+    LOG(("updater.ini file does not contain a maintenance "
+         "service description.\n"));
+    return FALSE;
+  }
+
+  WCHAR serviceDescription[MAX_TEXT_LEN];
+  if (!MultiByteToWideChar(CP_UTF8, 0, 
+                           serviceStrings.serviceDescription, -1,
+                           serviceDescription,
+                           sizeof(serviceDescription) / 
+                           sizeof(serviceDescription[0]))) {
+    LOG(("Could not convert description to wide string format (%d)\n", 
+         GetLastError()));
+    return FALSE;
+  }
+
+  SERVICE_DESCRIPTIONW descriptionConfig;
+  descriptionConfig.lpDescription = serviceDescription;
+  if (!ChangeServiceConfig2W(serviceHandle, 
+                             SERVICE_CONFIG_DESCRIPTION, 
+                             &descriptionConfig)) {
+    LOG(("Could not change service config (%d)\n", GetLastError()));
+    return FALSE;
+  }
+
+  LOG(("The service description was updated successfully.\n"));
   return TRUE;
 }
 
@@ -167,6 +233,11 @@ SvcInstall(SvcInstallAction action)
     QUERY_SERVICE_CONFIGW &serviceConfig = 
       *reinterpret_cast<QUERY_SERVICE_CONFIGW*>(serviceConfigBuffer.get());
 
+    // Ensure the service path is not quoted. We own this memory and know it to
+    // be large enough for the quoted path, so it is large enough for the
+    // unquoted path.  This function cannot fail.
+    PathUnquoteSpacesW(serviceConfig.lpBinaryPathName);
+
     // Obtain the existing maintenanceservice file's version number and
     // the new file's version number.  Versions are in the format of
     // A.B.C.D.
@@ -182,8 +253,6 @@ SvcInstall(SvcInstallAction action)
       return FALSE;
     }
 
-    schService.reset(); //Explicitly close the handle so we can delete it
-
     // Check if we need to replace the old binary with the new one
     // If we couldn't get the old version info then we assume we should 
     // replace it.
@@ -195,6 +264,11 @@ SvcInstall(SvcInstallAction action)
          existingC < newC) ||
         (existingA == newA && existingB == newB && 
          existingC == newC && existingD < newD)) {
+
+      // We have a newer updater, so update the description from the INI file.
+      UpdateServiceDescription(schService);
+
+      schService.reset();
       if (!StopService()) {
         return FALSE;
       }
@@ -302,6 +376,8 @@ SvcInstall(SvcInstallAction action)
     return TRUE;
   }
 
+  // Quote the path only if it contains spaces.
+  PathQuoteSpacesW(newServiceBinaryPath);
   // The service does not already exist so create the service as on demand
   schService.own(CreateServiceW(schSCManager, SVC_NAME, SVC_DISPLAY_NAME,
                                 SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS,
@@ -321,6 +397,8 @@ SvcInstall(SvcInstallAction action)
          "This error should never happen.  (%d)\n", 
          GetLastError()));
   }
+
+  UpdateServiceDescription(schService);
 
   return TRUE;
 }

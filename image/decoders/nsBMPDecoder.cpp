@@ -1,42 +1,7 @@
 /* vim:set tw=80 expandtab softtabstop=4 ts=4 sw=4: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is the Mozilla BMP Decoder.
- *
- * The Initial Developer of the Original Code is
- * Christian Biesinger <cbiesinger@web.de>.
- * Portions created by the Initial Developer are Copyright (C) 2001
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Neil Rashbrook <neil@parkwaycc.co.uk>
- *   Bobby Holley <bobbyholley@gmail.com>
- *   Brian R. Bondy <netzen@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /* I got the format description from http://www.daubnet.com/formats/BMP.html */
 
 /* This is a Cross-Platform BMP Decoder, which should work everywhere, including
@@ -106,11 +71,11 @@ nsBMPDecoder::GetWidth() const
   return mBIH.width; 
 }
 
-// Obtains the height from the internal BIH header
+// Obtains the abs-value of the height from the internal BIH header
 PRInt32 
 nsBMPDecoder::GetHeight() const
 {
-  return mBIH.height; 
+  return abs(mBIH.height);
 }
 
 // Obtains the internal output image buffer
@@ -139,7 +104,7 @@ nsBMPDecoder::GetCompressedImageSize() const
 
   // The height should be the absolute value of what the height is in the BIH.
   // If positive the bitmap is stored bottom to top, otherwise top to bottom
-  PRInt32 pixelArraySize = rowSize * abs(mBIH.height); 
+  PRInt32 pixelArraySize = rowSize * GetHeight();
   return pixelArraySize;
 }
 
@@ -165,7 +130,7 @@ nsBMPDecoder::FinishInternal()
     if (!IsSizeDecode() && (GetFrameCount() == 1)) {
 
         // Invalidate
-        nsIntRect r(0, 0, mBIH.width, mBIH.height);
+        nsIntRect r(0, 0, mBIH.width, GetHeight());
         PostInvalidation(r);
 
         PostFrameStop();
@@ -273,13 +238,12 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
             return;
         }
 
-        PRUint32 real_height = (mBIH.height > 0) ? mBIH.height : -mBIH.height;
+        PRUint32 real_height = GetHeight();
 
         // Post our size to the superclass
         PostSize(mBIH.width, real_height);
         if (HasError()) {
-          // Setting the size lead to an error; this can happen when for example
-          // a multipart channel sends an image of a different size.
+          // Setting the size led to an error.
           return;
         }
 
@@ -516,9 +480,12 @@ nsBMPDecoder::WriteInternal(const char* aBuffer, PRUint32 aCount)
                               // 4 has been right all along.  And we know it
                               // has been set to 0 the whole time, so that 
                               // means that everything is transparent so far.
-                              memset(mImageData + (mCurLine - 1) * GetWidth(), 0, 
-                                     (GetHeight() - mCurLine + 1) * 
-                                     GetWidth() * sizeof(PRUint32));
+                              PRUint32* start = mImageData + GetWidth() * (mCurLine - 1);
+                              PRUint32 heightDifference = GetHeight() - mCurLine + 1;
+                              PRUint32 pixelCount = GetWidth() * heightDifference;
+
+                              memset(start, 0, pixelCount * sizeof(PRUint32));
+
                               mHaveAlphaData = true;
                             }
                             SetPixel(d, p[2], p[1], p[0], mHaveAlphaData ? p[3] : 0xFF);

@@ -1,49 +1,17 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Author: Aaron Leventhal (aaronl@netscape.com)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsXULMenuAccessible.h"
 
+#include "Accessible-inl.h"
 #include "nsAccessibilityService.h"
 #include "nsAccUtils.h"
-#include "nsDocAccessible.h"
-#include "nsXULFormControlAccessible.h"
+#include "DocAccessible.h"
 #include "Role.h"
 #include "States.h"
+#include "XULFormControlAccessible.h"
 
 #include "nsIDOMElement.h"
 #include "nsIDOMXULElement.h"
@@ -71,15 +39,15 @@ using namespace mozilla::a11y;
 ////////////////////////////////////////////////////////////////////////////////
 
 nsXULMenuitemAccessible::
-  nsXULMenuitemAccessible(nsIContent *aContent, nsIWeakReference *aShell) :
-  nsAccessibleWrap(aContent, aShell)
+  nsXULMenuitemAccessible(nsIContent* aContent, DocAccessible* aDoc) :
+  AccessibleWrap(aContent, aDoc)
 {
 }
 
 PRUint64
 nsXULMenuitemAccessible::NativeState()
 {
-  PRUint64 state = nsAccessible::NativeState();
+  PRUint64 state = Accessible::NativeState();
 
   // Has Popup?
   if (mContent->NodeInfo()->Equals(nsGkAtoms::menu, kNameSpaceID_XUL)) {
@@ -118,7 +86,7 @@ nsXULMenuitemAccessible::NativeState()
 
     // Is collapsed?
     bool isCollapsed = false;
-    nsAccessible* parent = Parent();
+    Accessible* parent = Parent();
     if (parent && parent->State() & states::INVISIBLE)
       isCollapsed = true;
 
@@ -128,7 +96,7 @@ nsXULMenuitemAccessible::NativeState()
       // Selected and collapsed?
       if (isCollapsed) {
         // Set selected option offscreen/invisible according to combobox state
-        nsAccessible* grandParent = parent->Parent();
+        Accessible* grandParent = parent->Parent();
         if (!grandParent)
           return state;
         NS_ASSERTION(grandParent->Role() == roles::COMBOBOX,
@@ -142,24 +110,28 @@ nsXULMenuitemAccessible::NativeState()
     } // isSelected
   } // ROLE_COMBOBOX_OPTION
 
-  // Set focusable and selectable for items that are available
-  // and whose metric setting does allow disabled items to be focused.
-  if (state & states::UNAVAILABLE) {
-    // Honour the LookAndFeel metric.
-    PRInt32 skipDisabledMenuItems =
-      LookAndFeel::GetInt(LookAndFeel::eIntID_SkipNavigatingDisabledMenuItem);
-    // We don't want the focusable and selectable states for combobox items,
-    // so exclude them here as well.
-    if (skipDisabledMenuItems || isComboboxOption) {
-      return state;
+  return state;
+}
+
+PRUint64
+nsXULMenuitemAccessible::NativeInteractiveState() const
+{
+  if (NativelyUnavailable()) {
+    // Note: keep in sinc with nsXULPopupManager::IsValidMenuItem() logic.
+    bool skipNavigatingDisabledMenuItem = true;
+    nsMenuFrame* menuFrame = do_QueryFrame(GetFrame());
+    if (menuFrame && !menuFrame->IsOnMenuBar()) {
+      skipNavigatingDisabledMenuItem = LookAndFeel::
+        GetInt(LookAndFeel::eIntID_SkipNavigatingDisabledMenuItem, 0) != 0;
     }
+
+    if (skipNavigatingDisabledMenuItem)
+      return states::UNAVAILABLE;
+
+    return states::UNAVAILABLE | states::FOCUSABLE | states::SELECTABLE;
   }
 
-  state |= (states::FOCUSABLE | states::SELECTABLE);
-  if (FocusMgr()->IsFocused(this))
-    state |= states::FOCUSED;
-
-  return state;
+  return states::FOCUSABLE | states::SELECTABLE;
 }
 
 nsresult
@@ -192,7 +164,7 @@ nsXULMenuitemAccessible::AccessKey() const
 
   PRUint32 modifierKey = 0;
 
-  nsAccessible* parentAcc = Parent();
+  Accessible* parentAcc = Parent();
   if (parentAcc) {
     if (parentAcc->NativeRole() == roles::MENUBAR) {
       // If top level menu item, add Alt+ or whatever modifier text to string
@@ -311,16 +283,8 @@ nsXULMenuitemAccessible::GetLevelInternal()
   return nsAccUtils::GetLevelForXULContainerItem(mContent);
 }
 
-void
-nsXULMenuitemAccessible::GetPositionAndSizeInternal(PRInt32 *aPosInSet,
-                                                    PRInt32 *aSetSize)
-{
-  nsAccUtils::GetPositionAndSizeForXULContainerItem(mContent, aPosInSet,
-                                                    aSetSize);
-}
-
 bool
-nsXULMenuitemAccessible::GetAllowsAnonChildAccessibles()
+nsXULMenuitemAccessible::CanHaveAnonChildren()
 {
   // That indicates we don't walk anonymous children for menuitems
   return false;
@@ -381,7 +345,7 @@ nsXULMenuitemAccessible::AreItemsOperable() const
   return false;
 }
 
-nsAccessible*
+Accessible*
 nsXULMenuitemAccessible::ContainerWidget() const
 {
   nsMenuFrame* menuFrame = do_QueryFrame(GetFrame());
@@ -408,8 +372,8 @@ nsXULMenuitemAccessible::ContainerWidget() const
 ////////////////////////////////////////////////////////////////////////////////
 
 nsXULMenuSeparatorAccessible::
-  nsXULMenuSeparatorAccessible(nsIContent *aContent, nsIWeakReference *aShell) :
-  nsXULMenuitemAccessible(aContent, aShell)
+  nsXULMenuSeparatorAccessible(nsIContent* aContent, DocAccessible* aDoc) :
+  nsXULMenuitemAccessible(aContent, aDoc)
 {
 }
 
@@ -454,8 +418,8 @@ nsXULMenuSeparatorAccessible::ActionCount()
 ////////////////////////////////////////////////////////////////////////////////
 
 nsXULMenupopupAccessible::
-  nsXULMenupopupAccessible(nsIContent *aContent, nsIWeakReference *aShell) :
-  XULSelectControlAccessible(aContent, aShell)
+  nsXULMenupopupAccessible(nsIContent* aContent, DocAccessible* aDoc) :
+  XULSelectControlAccessible(aContent, aDoc)
 {
   nsMenuPopupFrame* menuPopupFrame = do_QueryFrame(GetFrame());
   if (menuPopupFrame && menuPopupFrame->IsMenu())
@@ -468,25 +432,21 @@ nsXULMenupopupAccessible::
 PRUint64
 nsXULMenupopupAccessible::NativeState()
 {
-  PRUint64 state = nsAccessible::NativeState();
+  PRUint64 state = Accessible::NativeState();
 
-#ifdef DEBUG_A11Y
+#ifdef DEBUG
   // We are onscreen if our parent is active
-  bool isActive = mContent->HasAttr(kNameSpaceID_None,
-                                      nsGkAtoms::menuactive);
+  bool isActive = mContent->HasAttr(kNameSpaceID_None, nsGkAtoms::menuactive);
   if (!isActive) {
-    nsAccessible* parent = Parent();
-    if (!parent)
-      return state;
-
-    nsIContent *parentContent = parnet->GetContent();
-    NS_ENSURE_TRUE(parentContent, state);
-
-    isActive = parentContent->HasAttr(kNameSpaceID_None,
-                                      nsGkAtoms::open);
+    Accessible* parent = Parent();
+    if (parent) {
+      nsIContent* parentContent = parent->GetContent();
+      if (parentContent)
+        isActive = parentContent->HasAttr(kNameSpaceID_None, nsGkAtoms::open);
+    }
   }
 
-  NS_ASSERTION(isActive || states & states::INVISIBLE,
+  NS_ASSERTION(isActive || (state & states::INVISIBLE),
                "XULMenupopup doesn't have INVISIBLE when it's inactive");
 #endif
 
@@ -520,7 +480,7 @@ nsXULMenupopupAccessible::NativeRole()
 
     if (role == roles::PUSHBUTTON) {
       // Some widgets like the search bar have several popups, owned by buttons.
-      nsAccessible* grandParent = mParent->Parent();
+      Accessible* grandParent = mParent->Parent();
       if (grandParent && grandParent->Role() == roles::AUTOCOMPLETE)
         return roles::COMBOBOX_LIST;
     }
@@ -553,14 +513,14 @@ nsXULMenupopupAccessible::AreItemsOperable() const
   return menuPopupFrame && menuPopupFrame->IsOpen();
 }
 
-nsAccessible*
+Accessible*
 nsXULMenupopupAccessible::ContainerWidget() const
 {
-  nsDocAccessible* document = GetDocAccessible();
+  DocAccessible* document = Document();
 
   nsMenuPopupFrame* menuPopupFrame = do_QueryFrame(GetFrame());
   while (menuPopupFrame) {
-    nsAccessible* menuPopup =
+    Accessible* menuPopup =
       document->GetAccessible(menuPopupFrame->GetContent());
     if (!menuPopup) // shouldn't be a real case
       return nsnull;
@@ -594,21 +554,10 @@ nsXULMenupopupAccessible::ContainerWidget() const
 ////////////////////////////////////////////////////////////////////////////////
 
 nsXULMenubarAccessible::
-  nsXULMenubarAccessible(nsIContent *aContent, nsIWeakReference *aShell) :
-  nsAccessibleWrap(aContent, aShell)
+  nsXULMenubarAccessible(nsIContent* aContent, DocAccessible* aDoc) :
+  AccessibleWrap(aContent, aDoc)
 {
 }
-
-PRUint64
-nsXULMenubarAccessible::NativeState()
-{
-  PRUint64 state = nsAccessible::NativeState();
-
-  // Menu bar itself is not actually focusable
-  state &= ~states::FOCUSABLE;
-  return state;
-}
-
 
 nsresult
 nsXULMenubarAccessible::GetNameInternal(nsAString& aName)
@@ -639,7 +588,7 @@ nsXULMenubarAccessible::AreItemsOperable() const
   return true;
 }
 
-nsAccessible*
+Accessible*
 nsXULMenubarAccessible::CurrentItem()
 {
   nsMenuBarFrame* menuBarFrame = do_QueryFrame(GetFrame());
@@ -647,14 +596,14 @@ nsXULMenubarAccessible::CurrentItem()
     nsMenuFrame* menuFrame = menuBarFrame->GetCurrentMenuItem();
     if (menuFrame) {
       nsIContent* menuItemNode = menuFrame->GetContent();
-      return GetAccService()->GetAccessible(menuItemNode);
+      return mDoc->GetAccessible(menuItemNode);
     }
   }
   return nsnull;
 }
 
 void
-nsXULMenubarAccessible::SetCurrentItem(nsAccessible* aItem)
+nsXULMenubarAccessible::SetCurrentItem(Accessible* aItem)
 {
   NS_ERROR("nsXULMenubarAccessible::SetCurrentItem not implemented");
 }

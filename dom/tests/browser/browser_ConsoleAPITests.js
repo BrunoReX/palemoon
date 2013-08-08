@@ -1,46 +1,11 @@
 /* vim:set ts=2 sw=2 sts=2 et: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is DevTools test code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  David Dahl <ddahl@mozilla.com>
- *  Rob Campbell <rcampbell@mozilla.com>
- *  Mihai Sucan <mihai.sucan@gmail.com>
- *  Panos Astithas <past@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 const TEST_URI = "http://example.com/browser/dom/tests/browser/test-console-api.html";
 
-var gWindow, gLevel, gArgs;
+var gWindow, gLevel, gArgs, gTestDriver;
 
 function test() {
   waitForExplicitFinish();
@@ -50,6 +15,7 @@ function test() {
   var browser = gBrowser.selectedBrowser;
 
   registerCleanupFunction(function () {
+    gWindow = gLevel = gArgs = gTestDriver = null;
     gBrowser.removeTab(tab);
   });
 
@@ -60,7 +26,8 @@ function test() {
     executeSoon(function test_executeSoon() {
       gWindow = browser.contentWindow;
       consoleAPISanityTest();
-      observeConsoleTest();
+      gTestDriver = observeConsoleTest();
+      gTestDriver.next();
     });
 
   }, false);
@@ -77,9 +44,6 @@ function testConsoleData(aMessageObject) {
   if (gLevel == "trace") {
     is(aMessageObject.arguments.toSource(), gArgs.toSource(),
        "stack trace is correct");
-
-    // Now test the location information in console.log()
-    startLocationTest();
   }
   else {
     gArgs.forEach(function (a, i) {
@@ -87,10 +51,7 @@ function testConsoleData(aMessageObject) {
     });
   }
 
-  if (aMessageObject.level == "error") {
-    // Now test console.trace()
-    startTraceTest();
-  }
+  gTestDriver.next();
 }
 
 function testLocationData(aMessageObject) {
@@ -198,9 +159,11 @@ function observeConsoleTest() {
   let win = XPCNativeWrapper.unwrap(gWindow);
   expect("log", "arg");
   win.console.log("arg");
+  yield;
 
   expect("info", "arg", "extra arg");
   win.console.info("arg", "extra arg");
+  yield;
 
   // We don't currently support width and precision qualifiers, but we don't
   // choke on them either.
@@ -209,29 +172,49 @@ function observeConsoleTest() {
                    1,
                    "PI",
                    3.14159);
+  yield;
+
   expect("log", "%d, %s, %l");
   win.console.log("%d, %s, %l");
+  yield;
+
   expect("log", "%a %b %c");
   win.console.log("%a %b %c");
+  yield;
+
   expect("log", "%a %b %c", "a", "b");
   win.console.log("%a %b %c", "a", "b");
+  yield;
+
   expect("log", "2, a, %l", 3);
   win.console.log("%d, %s, %l", 2, "a", 3);
+  yield;
 
   // Bug #692550 handle null and undefined.
   expect("log", "null, undefined");
   win.console.log("%s, %s", null, undefined);
+  yield;
 
   // Bug #696288 handle object as first argument.
   let obj = { a: 1 };
   expect("log", obj, "a");
   win.console.log(obj, "a");
+  yield;
 
   expect("dir", win.toString());
   win.console.dir(win);
+  yield;
 
   expect("error", "arg");
   win.console.error("arg");
+
+  yield;
+
+  startTraceTest();
+  yield;
+
+  startLocationTest();
+  yield;
 }
 
 function consoleAPISanityTest() {

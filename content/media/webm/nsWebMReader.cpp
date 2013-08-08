@@ -1,49 +1,20 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:set ts=2 sw=2 sts=2 et cindent: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla code.
- *
- * The Initial Developer of the Original Code is the Mozilla Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2007
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  Chris Double <chris.double@double.co.nz>
- *  Chris Pearce <chris@pearce.org.nz>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "nsError.h"
 #include "nsBuiltinDecoderStateMachine.h"
 #include "nsBuiltinDecoder.h"
-#include "nsMediaStream.h"
+#include "MediaResource.h"
 #include "nsWebMReader.h"
+#include "nsWebMBufferedParser.h"
 #include "VideoUtils.h"
 #include "nsTimeRanges.h"
-#include "mozilla/Preferences.h"
+
+#define VPX_DONT_DEFINE_STDINT_TYPES
+#include "vpx/vp8dx.h"
+#include "vpx/vpx_decoder.h"
 
 using namespace mozilla;
 using namespace mozilla::layers;
@@ -79,15 +50,15 @@ public:
   static void Release(NesteggPacketHolder* aHolder) { delete aHolder; }
 };
 
-// Functions for reading and seeking using nsMediaStream required for
+// Functions for reading and seeking using MediaResource required for
 // nestegg_io. The 'user data' passed to these functions is the
-// decoder from which the media stream is obtained.
+// decoder from which the media resource is obtained.
 static int webm_read(void *aBuffer, size_t aLength, void *aUserData)
 {
   NS_ASSERTION(aUserData, "aUserData must point to a valid nsBuiltinDecoder");
   nsBuiltinDecoder* decoder = reinterpret_cast<nsBuiltinDecoder*>(aUserData);
-  nsMediaStream* stream = decoder->GetStream();
-  NS_ASSERTION(stream, "Decoder has no media stream");
+  MediaResource* resource = decoder->GetResource();
+  NS_ASSERTION(resource, "Decoder has no media resource");
 
   nsresult rv = NS_OK;
   bool eof = false;
@@ -95,7 +66,7 @@ static int webm_read(void *aBuffer, size_t aLength, void *aUserData)
   char *p = static_cast<char *>(aBuffer);
   while (NS_SUCCEEDED(rv) && aLength > 0) {
     PRUint32 bytes = 0;
-    rv = stream->Read(p, aLength, &bytes);
+    rv = resource->Read(p, aLength, &bytes);
     if (bytes == 0) {
       eof = true;
       break;
@@ -112,9 +83,9 @@ static int webm_seek(int64_t aOffset, int aWhence, void *aUserData)
 {
   NS_ASSERTION(aUserData, "aUserData must point to a valid nsBuiltinDecoder");
   nsBuiltinDecoder* decoder = reinterpret_cast<nsBuiltinDecoder*>(aUserData);
-  nsMediaStream* stream = decoder->GetStream();
-  NS_ASSERTION(stream, "Decoder has no media stream");
-  nsresult rv = stream->Seek(aWhence, aOffset);
+  MediaResource* resource = decoder->GetResource();
+  NS_ASSERTION(resource, "Decoder has no media resource");
+  nsresult rv = resource->Seek(aWhence, aOffset);
   return NS_SUCCEEDED(rv) ? 0 : -1;
 }
 
@@ -122,9 +93,9 @@ static int64_t webm_tell(void *aUserData)
 {
   NS_ASSERTION(aUserData, "aUserData must point to a valid nsBuiltinDecoder");
   nsBuiltinDecoder* decoder = reinterpret_cast<nsBuiltinDecoder*>(aUserData);
-  nsMediaStream* stream = decoder->GetStream();
-  NS_ASSERTION(stream, "Decoder has no media stream");
-  return stream->Tell();
+  MediaResource* resource = decoder->GetResource();
+  NS_ASSERTION(resource, "Decoder has no media resource");
+  return resource->Tell();
 }
 
 nsWebMReader::nsWebMReader(nsBuiltinDecoder* aDecoder)
@@ -137,16 +108,9 @@ nsWebMReader::nsWebMReader(nsBuiltinDecoder* aDecoder)
   mAudioStartUsec(-1),
   mAudioFrames(0),
   mHasVideo(false),
-  mHasAudio(false),
-  mForceStereoMode(0),
-  mStereoModeForced(false)
+  mHasAudio(false)
 {
   MOZ_COUNT_CTOR(nsWebMReader);
-
-  mStereoModeForced =
-    NS_SUCCEEDED(Preferences::GetInt(
-          "media.webm.force_stereo_mode",
-          &mForceStereoMode));
 }
 
 nsWebMReader::~nsWebMReader()
@@ -312,26 +276,6 @@ nsresult nsWebMReader::ReadMetadata(nsVideoInfo* aInfo)
         mInfo.mStereoMode = STEREO_MODE_RIGHT_LEFT;
         break;
       }
-
-      // Switch only when stereo mode is explicitly set 
-      if (mStereoModeForced) {
-        switch (mForceStereoMode) {
-        case 1:
-          mInfo.mStereoMode = STEREO_MODE_LEFT_RIGHT;
-          break;
-        case 2:
-          mInfo.mStereoMode = STEREO_MODE_RIGHT_LEFT;
-          break;
-        case 3:
-          mInfo.mStereoMode = STEREO_MODE_TOP_BOTTOM;
-          break;
-        case 4:
-          mInfo.mStereoMode = STEREO_MODE_BOTTOM_TOP;
-          break;
-        default:
-          mInfo.mStereoMode = STEREO_MODE_MONO;
-        }
-      }
     }
     else if (!mHasAudio && type == NESTEGG_TRACK_AUDIO) {
       nestegg_audio_params params;
@@ -441,26 +385,23 @@ bool nsWebMReader::DecodeAudioPacket(nestegg_packet* aPacket, PRInt64 aOffset)
   // the previous audio chunk, we need to increment the packet count so that
   // the vorbis decode doesn't use data from before the gap to help decode
   // from after the gap.
-  PRInt64 tstamp_frames = 0;
-  if (!UsecsToFrames(tstamp_usecs, rate, tstamp_frames)) {
-    NS_WARNING("Int overflow converting WebM timestamp to frames");
+  CheckedInt64 tstamp_frames = UsecsToFrames(tstamp_usecs, rate);
+  CheckedInt64 decoded_frames = UsecsToFrames(mAudioStartUsec, rate);
+  if (!tstamp_frames.isValid() || !decoded_frames.isValid()) {
+    NS_WARNING("Int overflow converting WebM times to frames");
     return false;
   }
-  PRInt64 decoded_frames = 0;
-  if (!UsecsToFrames(mAudioStartUsec, rate, decoded_frames)) {
-    NS_WARNING("Int overflow converting WebM start time to frames");
-    return false;
-  }
-  if (!AddOverflow(decoded_frames, mAudioFrames, decoded_frames)) {
+  decoded_frames += mAudioFrames;
+  if (!decoded_frames.isValid()) {
     NS_WARNING("Int overflow adding decoded_frames");
     return false;
   }
-  if (tstamp_frames > decoded_frames) {
+  if (tstamp_frames.value() > decoded_frames.value()) {
 #ifdef DEBUG
-    PRInt64 usecs = 0;
+    CheckedInt64 usecs = FramesToUsecs(tstamp_frames.value() - decoded_frames.value(), rate);
     LOG(PR_LOG_DEBUG, ("WebMReader detected gap of %lld, %lld frames, in audio stream\n",
-      FramesToUsecs(tstamp_frames - decoded_frames, rate, usecs) ? usecs: -1,
-      tstamp_frames - decoded_frames));
+      usecs.isValid() ? usecs.value() : -1,
+      tstamp_frames.value() - decoded_frames.value()));
 #endif
     mPacketCount++;
     mAudioStartUsec = tstamp_usecs;
@@ -498,22 +439,28 @@ bool nsWebMReader::DecodeAudioPacket(nestegg_packet* aPacket, PRInt64 aOffset)
         }
       }
 
-      PRInt64 duration = 0;
-      if (!FramesToUsecs(frames, rate, duration)) {
+      CheckedInt64 duration = FramesToUsecs(frames, rate);
+      if (!duration.isValid()) {
         NS_WARNING("Int overflow converting WebM audio duration");
         return false;
       }
-      PRInt64 total_duration = 0;
-      if (!FramesToUsecs(total_frames, rate, total_duration)) {
+      CheckedInt64 total_duration = FramesToUsecs(total_frames, rate);
+      if (!total_duration.isValid()) {
         NS_WARNING("Int overflow converting WebM audio total_duration");
         return false;
       }
       
-      PRInt64 time = tstamp_usecs + total_duration;
+      CheckedInt64 time = total_duration + tstamp_usecs;
+      if (!time.isValid()) {
+        NS_WARNING("Int overflow adding total_duration and tstamp_usecs");
+        nestegg_free_packet(aPacket);
+        return false;
+      };
+
       total_frames += frames;
       mAudioQueue.Push(new AudioData(aOffset,
-                                     time,
-                                     duration,
+                                     time.value(),
+                                     duration.value(),
                                      frames,
                                      buffer.forget(),
                                      mChannels));
@@ -565,7 +512,7 @@ nsReturnRef<NesteggPacketHolder> nsWebMReader::NextPacket(TrackType aTrackType)
       if (r <= 0) {
         return nsReturnRef<NesteggPacketHolder>();
       }
-      PRInt64 offset = mDecoder->GetStream()->Tell();
+      PRInt64 offset = mDecoder->GetResource()->Tell();
       holder.own(new NesteggPacketHolder(packet, offset));
 
       unsigned int track = 0;
@@ -640,7 +587,7 @@ bool nsWebMReader::DecodeVideoFrame(bool &aKeyframeSkip,
 
   // The end time of this frame is the start time of the next frame.  Fetch
   // the timestamp of the next packet for this track.  If we've reached the
-  // end of the stream, use the file's duration as the end time of this
+  // end of the resource, use the file's duration as the end time of this
   // video frame.
   uint64_t next_tstamp = 0;
   {
@@ -710,16 +657,19 @@ bool nsWebMReader::DecodeVideoFrame(bool &aKeyframeSkip,
       b.mPlanes[0].mStride = img->stride[0];
       b.mPlanes[0].mHeight = img->d_h;
       b.mPlanes[0].mWidth = img->d_w;
+      b.mPlanes[0].mOffset = b.mPlanes[0].mSkip = 0;
 
       b.mPlanes[1].mData = img->planes[1];
       b.mPlanes[1].mStride = img->stride[1];
       b.mPlanes[1].mHeight = img->d_h >> img->y_chroma_shift;
       b.mPlanes[1].mWidth = img->d_w >> img->x_chroma_shift;
+      b.mPlanes[1].mOffset = b.mPlanes[1].mSkip = 0;
  
       b.mPlanes[2].mData = img->planes[2];
       b.mPlanes[2].mStride = img->stride[2];
       b.mPlanes[2].mHeight = img->d_h >> img->y_chroma_shift;
       b.mPlanes[2].mWidth = img->d_w >> img->x_chroma_shift;
+      b.mPlanes[2].mOffset = b.mPlanes[2].mSkip = 0;
   
       nsIntRect picture = mPicture;
       if (img->d_w != static_cast<PRUint32>(mInitialFrame.width) ||
@@ -775,7 +725,7 @@ nsresult nsWebMReader::Seek(PRInt64 aTarget, PRInt64 aStartTime, PRInt64 aEndTim
 
 nsresult nsWebMReader::GetBuffered(nsTimeRanges* aBuffered, PRInt64 aStartTime)
 {
-  nsMediaStream* stream = mDecoder->GetStream();
+  MediaResource* resource = mDecoder->GetResource();
 
   uint64_t timecodeScale;
   if (!mContext || nestegg_tstamp_scale(mContext, &timecodeScale) == -1) {
@@ -783,31 +733,52 @@ nsresult nsWebMReader::GetBuffered(nsTimeRanges* aBuffered, PRInt64 aStartTime)
   }
 
   // Special case completely cached files.  This also handles local files.
-  if (stream->IsDataCachedToEndOfStream(0)) {
+  bool isFullyCached = resource->IsDataCachedToEndOfResource(0);
+  if (isFullyCached) {
     uint64_t duration = 0;
     if (nestegg_duration(mContext, &duration) == 0) {
       aBuffered->Add(0, duration / NS_PER_S);
     }
-  } else {
-    nsMediaStream* stream = mDecoder->GetStream();
-    nsTArray<nsByteRange> ranges;
-    nsresult res = stream->GetCachedRanges(ranges);
+  }
+
+  PRUint32 bufferedLength = 0;
+  aBuffered->GetLength(&bufferedLength);
+
+  // Either we the file is not fully cached, or we couldn't find a duration in
+  // the WebM bitstream.
+  if (!isFullyCached || !bufferedLength) {
+    MediaResource* resource = mDecoder->GetResource();
+    nsTArray<MediaByteRange> ranges;
+    nsresult res = resource->GetCachedRanges(ranges);
     NS_ENSURE_SUCCESS(res, res);
 
-    PRInt64 startTimeOffsetNS = aStartTime * NS_PER_USEC;
     for (PRUint32 index = 0; index < ranges.Length(); index++) {
-      mBufferedState->CalculateBufferedForRange(aBuffered,
-                                                ranges[index].mStart,
-                                                ranges[index].mEnd,
-                                                timecodeScale,
-                                                startTimeOffsetNS);
+      PRUint64 start, end;
+      bool rv = mBufferedState->CalculateBufferedForRange(ranges[index].mStart,
+                                                          ranges[index].mEnd,
+                                                          &start, &end);
+      if (rv) {
+        double startTime = start * timecodeScale / NS_PER_S - aStartTime;
+        double endTime = end * timecodeScale / NS_PER_S - aStartTime;
+
+        // If this range extends to the end of the file, the true end time
+        // is the file's duration.
+        if (resource->IsDataCachedToEndOfResource(ranges[index].mStart)) {
+          uint64_t duration = 0;
+          if (nestegg_duration(mContext, &duration) == 0) {
+            endTime = duration / NS_PER_S;
+          }
+        }
+
+        aBuffered->Add(startTime, endTime);
+      }
     }
   }
 
   return NS_OK;
 }
 
-void nsWebMReader::NotifyDataArrived(const char* aBuffer, PRUint32 aLength, PRUint32 aOffset)
+void nsWebMReader::NotifyDataArrived(const char* aBuffer, PRUint32 aLength, PRInt64 aOffset)
 {
   mBufferedState->NotifyDataArrived(aBuffer, aLength, aOffset);
 }

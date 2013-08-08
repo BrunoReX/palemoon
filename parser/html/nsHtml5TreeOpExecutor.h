@@ -1,39 +1,6 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is HTML Parser Gecko integration code.
- *
- * The Initial Developer of the Original Code is
- * Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Henri Sivonen <hsivonen@iki.fi>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef nsHtml5TreeOpExecutor_h__
 #define nsHtml5TreeOpExecutor_h__
@@ -55,8 +22,9 @@
 #include "nsIParser.h"
 #include "nsAHtml5TreeOpSink.h"
 #include "nsHtml5TreeOpStage.h"
-#include "nsHashSets.h"
 #include "nsIURI.h"
+#include "nsTHashtable.h"
+#include "nsHashKeys.h"
 
 class nsHtml5Parser;
 class nsHtml5TreeBuilder;
@@ -84,6 +52,7 @@ class nsHtml5TreeOpExecutor : public nsContentSink,
     NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsHtml5TreeOpExecutor, nsContentSink)
 
   private:
+    static bool        sExternalViewSource;
 #ifdef DEBUG_NS_HTML5_TREE_OP_EXECUTOR_FLUSH
     static PRUint32    sAppendBatchMaxSize;
     static PRUint32    sAppendBatchSlotsExamined;
@@ -107,7 +76,7 @@ class nsHtml5TreeOpExecutor : public nsContentSink,
     /**
      * URLs already preloaded/preloading.
      */
-    nsCStringHashSet mPreloadedURLs;
+    nsTHashtable<nsCStringHashKey> mPreloadedURLs;
 
     nsCOMPtr<nsIURI> mSpeculationBaseURI;
 
@@ -127,14 +96,23 @@ class nsHtml5TreeOpExecutor : public nsContentSink,
     bool                          mCallContinueInterruptedParsingIfEnabled;
 
     /**
-     * True if this parser should refuse to process any more input.
-     * Currently, the only way a parser can break is if it drops some input
-     * due to a memory allocation failure. In such a case, the whole parser
-     * needs to be marked as broken, because some input has been lost and
-     * parsing more input could lead to a DOM where pieces of HTML source
+     * Non-NS_OK if this parser should refuse to process any more input.
+     * For example, the parser needs to be marked as broken if it drops some
+     * input due to a memory allocation failure. In such a case, the whole
+     * parser needs to be marked as broken, because some input has been lost
+     * and parsing more input could lead to a DOM where pieces of HTML source
      * that weren't supposed to become scripts become scripts.
+     *
+     * Since NS_OK is actually 0, zeroing operator new takes care of
+     * initializing this.
      */
-    bool                          mBroken;
+    nsresult                      mBroken;
+
+    /**
+     * Whether this executor has already complained about matters related
+     * to character encoding declarations.
+     */
+    bool                          mAlreadyComplainedAboutCharset;
 
   public:
   
@@ -151,14 +129,7 @@ class nsHtml5TreeOpExecutor : public nsContentSink,
     /**
      * 
      */
-    NS_IMETHOD WillBuildModel(nsDTDMode aDTDMode) {
-      NS_ASSERTION(!mDocShell || GetDocument()->GetScriptGlobalObject(),
-                   "Script global object not ready");
-      mDocument->AddObserver(this);
-      WillBuildModelImpl();
-      GetDocument()->BeginLoad();
-      return NS_OK;
-    }
+    NS_IMETHOD WillBuildModel(nsDTDMode aDTDMode);
 
     /**
      * Emits EOF.
@@ -261,13 +232,16 @@ class nsHtml5TreeOpExecutor : public nsContentSink,
     /**
      * Marks this parser as broken and tells the stream parser (if any) to
      * terminate.
+     *
+     * @return aReason for convenience
      */
-    void MarkAsBroken();
+    nsresult MarkAsBroken(nsresult aReason);
 
     /**
-     * Checks if this parser is broken.
+     * Checks if this parser is broken. Returns a non-NS_OK (i.e. non-0)
+     * value if broken.
      */
-    inline bool IsBroken() {
+    inline nsresult IsBroken() {
       NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
       return mBroken;
     }
@@ -367,8 +341,16 @@ class nsHtml5TreeOpExecutor : public nsContentSink,
 
     void Start();
 
-    void NeedsCharsetSwitchTo(const char* aEncoding, PRInt32 aSource);
-    
+    void NeedsCharsetSwitchTo(const char* aEncoding,
+                              PRInt32 aSource,
+                              PRUint32 aLineNumber);
+
+    void MaybeComplainAboutCharset(const char* aMsgId,
+                                   bool aError,
+                                   PRUint32 aLineNumber);
+
+    void ComplainAboutBogusProtocolCharset(nsIDocument* aDoc);
+
     bool IsComplete() {
       return !mParser;
     }
@@ -423,7 +405,8 @@ class nsHtml5TreeOpExecutor : public nsContentSink,
 
     void PreloadScript(const nsAString& aURL,
                        const nsAString& aCharset,
-                       const nsAString& aType);
+                       const nsAString& aType,
+                       const nsAString& aCrossOrigin);
 
     void PreloadStyle(const nsAString& aURL, const nsAString& aCharset);
 
@@ -431,8 +414,12 @@ class nsHtml5TreeOpExecutor : public nsContentSink,
 
     void SetSpeculationBase(const nsAString& aURL);
 
+    static void InitializeStatics();
+
   private:
     nsHtml5Parser* GetParser();
+
+    bool IsExternalViewSource();
 
     /**
      * Get a nsIURI for an nsString if the URL hasn't been preloaded yet.

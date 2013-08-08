@@ -1,52 +1,19 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2003
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Original Author: Aaron Leventhal (aaronl@netscape.com)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsAccessNodeWrap.h"
 
 #include "AccessibleApplication.h"
+#include "ApplicationAccessibleWrap.h"
 #include "ISimpleDOMNode_i.c"
 
 #include "Compatibility.h"
 #include "nsAccessibilityService.h"
-#include "nsApplicationAccessibleWrap.h"
 #include "nsCoreUtils.h"
-#include "nsRootAccessible.h"
 #include "nsWinUtils.h"
+#include "RootAccessible.h"
 #include "Statistics.h"
 
 #include "nsAttrName.h"
@@ -63,14 +30,6 @@
 using namespace mozilla;
 using namespace mozilla::a11y;
 
-/// the accessible library and cached methods
-HINSTANCE nsAccessNodeWrap::gmAccLib = nsnull;
-HINSTANCE nsAccessNodeWrap::gmUserLib = nsnull;
-LPFNACCESSIBLEOBJECTFROMWINDOW nsAccessNodeWrap::gmAccessibleObjectFromWindow = nsnull;
-LPFNLRESULTFROMOBJECT nsAccessNodeWrap::gmLresultFromObject = NULL;
-LPFNNOTIFYWINEVENT nsAccessNodeWrap::gmNotifyWinEvent = nsnull;
-LPFNGETGUITHREADINFO nsAccessNodeWrap::gmGetGUIThreadInfo = nsnull;
-
 AccTextChangeEvent* nsAccessNodeWrap::gTextEvent = nsnull;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -78,8 +37,8 @@ AccTextChangeEvent* nsAccessNodeWrap::gTextEvent = nsnull;
 ////////////////////////////////////////////////////////////////////////////////
 
 nsAccessNodeWrap::
-  nsAccessNodeWrap(nsIContent *aContent, nsIWeakReference *aShell) :
-  nsAccessNode(aContent, aShell)
+  nsAccessNodeWrap(nsIContent* aContent, DocAccessible* aDoc) :
+  nsAccessNode(aContent, aDoc)
 {
 }
 
@@ -170,7 +129,7 @@ nsAccessNodeWrap::QueryService(REFGUID guidService, REFIID iid, void** ppv)
       return E_NOINTERFACE;
 
     // Make sure this is a document.
-    nsDocAccessible* docAcc = nsAccUtils::GetDocAccessibleFor(root);
+    DocAccessible* docAcc = nsAccUtils::GetDocAccessibleFor(root);
     if (!docAcc)
       return E_UNEXPECTED;
 
@@ -182,7 +141,7 @@ nsAccessNodeWrap::QueryService(REFGUID guidService, REFIID iid, void** ppv)
 
   // Can get to IAccessibleApplication from any node via QS
   if (iid == IID_IAccessibleApplication) {
-    nsApplicationAccessible *applicationAcc = GetApplicationAccessible();
+    ApplicationAccessible* applicationAcc = GetApplicationAccessible();
     if (!applicationAcc)
       return E_NOINTERFACE;
 
@@ -223,10 +182,11 @@ __try{
   *aNodeName = nsnull;
   *aNodeValue = nsnull;
 
-  if (IsDefunct())
+  nsINode* node = GetNode();
+  if (!node)
     return E_FAIL;
 
-  nsCOMPtr<nsIDOMNode> DOMNode(do_QueryInterface(GetNode()));
+  nsCOMPtr<nsIDOMNode> DOMNode(do_QueryInterface(node));
 
   PRUint16 nodeType = 0;
   DOMNode->GetNodeType(&nodeType);
@@ -252,7 +212,7 @@ __try{
   // data nodes in their internal object model.
   *aUniqueID = - NS_PTR_TO_INT32(UniqueID());
 
-  *aNumChildren = GetNode()->GetChildCount();
+  *aNumChildren = node->GetChildCount();
 
 } __except(FilterA11yExceptions(::GetExceptionCode(), GetExceptionInformation())) { }
   return S_OK;
@@ -270,7 +230,7 @@ STDMETHODIMP nsAccessNodeWrap::get_attributes(
 __try{
   *aNumAttribs = 0;
 
-  if (IsDefunct() || IsDocumentNode())
+  if (!mContent || IsDocumentNode())
     return E_FAIL;
 
   PRUint32 numAttribs = mContent->GetAttrCount();
@@ -301,7 +261,7 @@ STDMETHODIMP nsAccessNodeWrap::get_attributesForNames(
     /* [length_is][size_is][retval] */ BSTR __RPC_FAR *aAttribValues)
 {
 __try {
-  if (IsDefunct() || !IsElement())
+  if (!mContent || !IsElement())
     return E_FAIL;
 
   nsCOMPtr<nsIDOMElement> domElement(do_QueryInterface(mContent));
@@ -343,11 +303,11 @@ STDMETHODIMP nsAccessNodeWrap::get_computedStyle(
 __try{
   *aNumStyleProperties = 0;
 
-  if (IsDefunct() || IsDocumentNode())
+  if (!mContent || IsDocumentNode())
     return E_FAIL;
 
   nsCOMPtr<nsIDOMCSSStyleDeclaration> cssDecl =
-    nsCoreUtils::GetComputedStyleDeclaration(EmptyString(), mContent);
+    nsWinUtils::GetComputedStyleDeclaration(mContent);
   NS_ENSURE_TRUE(cssDecl, E_FAIL);
 
   PRUint32 length;
@@ -378,11 +338,11 @@ STDMETHODIMP nsAccessNodeWrap::get_computedStyleForProperties(
     /* [length_is][size_is][out] */ BSTR __RPC_FAR *aStyleValues)
 {
 __try {
-  if (IsDefunct() || IsDocumentNode())
+  if (!mContent || IsDocumentNode())
     return E_FAIL;
  
   nsCOMPtr<nsIDOMCSSStyleDeclaration> cssDecl =
-    nsCoreUtils::GetComputedStyleDeclaration(EmptyString(), mContent);
+    nsWinUtils::GetComputedStyleDeclaration(mContent);
   NS_ENSURE_TRUE(cssDecl, E_FAIL);
 
   PRUint32 index;
@@ -404,9 +364,8 @@ __try {
     aScrollTopLeft ? nsIAccessibleScrollType::SCROLL_TYPE_TOP_LEFT :
                      nsIAccessibleScrollType::SCROLL_TYPE_BOTTOM_RIGHT;
 
-  nsresult rv = ScrollTo(scrollType);
-  if (NS_SUCCEEDED(rv))
-    return S_OK;
+  nsCoreUtils::ScrollTo(mDoc->PresShell(), mContent, scrollType);
+  return S_OK;
 } __except(FilterA11yExceptions(::GetExceptionCode(), GetExceptionInformation())) { }
 
   return E_FAIL;
@@ -421,8 +380,7 @@ nsAccessNodeWrap::MakeAccessNode(nsINode *aNode)
   nsAccessNodeWrap *newNode = NULL;
 
   ISimpleDOMNode *iNode = NULL;
-  nsAccessible *acc =
-    GetAccService()->GetAccessibleInWeakShell(aNode, mWeakShell);
+  Accessible* acc = mDoc->GetAccessible(aNode);
   if (acc) {
     IAccessible *msaaAccessible = nsnull;
     acc->GetNativeInterface((void**)&msaaAccessible); // addrefs
@@ -436,7 +394,7 @@ nsAccessNodeWrap::MakeAccessNode(nsINode *aNode)
       return NULL;
     }
 
-    newNode = new nsAccessNodeWrap(content, mWeakShell);
+    newNode = new nsAccessNodeWrap(content, mDoc);
     if (!newNode)
       return NULL;
 
@@ -452,10 +410,11 @@ nsAccessNodeWrap::MakeAccessNode(nsINode *aNode)
 STDMETHODIMP nsAccessNodeWrap::get_parentNode(ISimpleDOMNode __RPC_FAR *__RPC_FAR *aNode)
 {
 __try {
-  if (IsDefunct())
+  nsINode* node = GetNode();
+  if (!node)
     return E_FAIL;
 
-  *aNode = MakeAccessNode(GetNode()->GetNodeParent());
+  *aNode = MakeAccessNode(node->GetNodeParent());
 
 } __except(FilterA11yExceptions(::GetExceptionCode(), GetExceptionInformation())) { }
 
@@ -465,10 +424,11 @@ __try {
 STDMETHODIMP nsAccessNodeWrap::get_firstChild(ISimpleDOMNode __RPC_FAR *__RPC_FAR *aNode)
 {
 __try {
-  if (IsDefunct())
+  nsINode* node = GetNode();
+  if (!node)
     return E_FAIL;
 
-  *aNode = MakeAccessNode(GetNode()->GetFirstChild());
+  *aNode = MakeAccessNode(node->GetFirstChild());
 
 } __except(FilterA11yExceptions(::GetExceptionCode(), GetExceptionInformation())) { }
 
@@ -478,10 +438,11 @@ __try {
 STDMETHODIMP nsAccessNodeWrap::get_lastChild(ISimpleDOMNode __RPC_FAR *__RPC_FAR *aNode)
 {
 __try {
-  if (IsDefunct())
+  nsINode* node = GetNode();
+  if (!node)
     return E_FAIL;
 
-  *aNode = MakeAccessNode(GetNode()->GetLastChild());
+  *aNode = MakeAccessNode(node->GetLastChild());
 
 } __except(FilterA11yExceptions(::GetExceptionCode(), GetExceptionInformation())) { }
 
@@ -491,10 +452,11 @@ __try {
 STDMETHODIMP nsAccessNodeWrap::get_previousSibling(ISimpleDOMNode __RPC_FAR *__RPC_FAR *aNode)
 {
 __try {
-  if (IsDefunct())
+  nsINode* node = GetNode();
+  if (!node)
     return E_FAIL;
 
-  *aNode = MakeAccessNode(GetNode()->GetPreviousSibling());
+  *aNode = MakeAccessNode(node->GetPreviousSibling());
 
 } __except(FilterA11yExceptions(::GetExceptionCode(), GetExceptionInformation())) { }
 
@@ -504,10 +466,11 @@ __try {
 STDMETHODIMP nsAccessNodeWrap::get_nextSibling(ISimpleDOMNode __RPC_FAR *__RPC_FAR *aNode)
 {
 __try {
-  if (IsDefunct())
+  nsINode* node = GetNode();
+  if (!node)
     return E_FAIL;
 
-  *aNode = MakeAccessNode(GetNode()->GetNextSibling());
+  *aNode = MakeAccessNode(node->GetNextSibling());
 
 } __except(FilterA11yExceptions(::GetExceptionCode(), GetExceptionInformation())) { }
 
@@ -521,10 +484,11 @@ nsAccessNodeWrap::get_childAt(unsigned aChildIndex,
 __try {
   *aNode = nsnull;
 
-  if (IsDefunct())
+  nsINode* node = GetNode();
+  if (!node)
     return E_FAIL;
 
-  *aNode = MakeAccessNode(GetNode()->GetChildAt(aChildIndex));
+  *aNode = MakeAccessNode(node->GetChildAt(aChildIndex));
 
 } __except(FilterA11yExceptions(::GetExceptionCode(), GetExceptionInformation())) { }
 
@@ -562,10 +526,7 @@ __try {
   *aLanguage = NULL;
 
   nsAutoString language;
-  if (NS_FAILED(GetLanguage(language))) {
-    return E_FAIL;
-  }
-
+  Language(language);
   if (language.IsEmpty())
     return S_FALSE;
 
@@ -583,7 +544,7 @@ nsAccessNodeWrap::get_localInterface(
     /* [out] */ void __RPC_FAR *__RPC_FAR *localInterface)
 {
 __try {
-  *localInterface = static_cast<nsIAccessNode*>(this);
+  *localInterface = static_cast<nsAccessNode*>(this);
   NS_ADDREF_THIS();
 } __except(FilterA11yExceptions(::GetExceptionCode(), GetExceptionInformation())) { }
   return S_OK;
@@ -591,22 +552,9 @@ __try {
  
 void nsAccessNodeWrap::InitAccessibility()
 {
-  if (!gmUserLib) {
-    gmUserLib =::LoadLibraryW(L"USER32.DLL");
-  }
-
-  if (gmUserLib) {
-    if (!gmNotifyWinEvent)
-      gmNotifyWinEvent = (LPFNNOTIFYWINEVENT)GetProcAddress(gmUserLib,"NotifyWinEvent");
-    if (!gmGetGUIThreadInfo)
-      gmGetGUIThreadInfo = (LPFNGETGUITHREADINFO)GetProcAddress(gmUserLib,"GetGUIThreadInfo");
-  }
-
   Compatibility::Init();
 
   nsWinUtils::MaybeStartWindowEmulation();
-
-  nsAccessNode::InitXPAccessibility();
 }
 
 void nsAccessNodeWrap::ShutdownAccessibility()
@@ -660,7 +608,7 @@ GetHRESULT(nsresult aResult)
   }
 }
 
-nsRefPtrHashtable<nsVoidPtrHashKey, nsDocAccessible> nsAccessNodeWrap::sHWNDCache;
+nsRefPtrHashtable<nsPtrHashKey<void>, DocAccessible> nsAccessNodeWrap::sHWNDCache;
 
 LRESULT CALLBACK
 nsAccessNodeWrap::WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -673,13 +621,13 @@ nsAccessNodeWrap::WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_GETOBJECT:
     {
       if (lParam == OBJID_CLIENT) {
-        nsDocAccessible* document = sHWNDCache.GetWeak(static_cast<void*>(hWnd));
+        DocAccessible* document = sHWNDCache.GetWeak(static_cast<void*>(hWnd));
         if (document) {
           IAccessible* msaaAccessible = NULL;
           document->GetNativeInterface((void**)&msaaAccessible); // does an addref
           if (msaaAccessible) {
-            LRESULT result = LresultFromObject(IID_IAccessible, wParam,
-                                               msaaAccessible); // does an addref
+            LRESULT result = ::LresultFromObject(IID_IAccessible, wParam,
+                                                 msaaAccessible); // does an addref
             msaaAccessible->Release(); // release extra addref
             return result;
           }
@@ -697,22 +645,4 @@ nsAccessNodeWrap::WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
   }
 
   return ::DefWindowProcW(hWnd, msg, wParam, lParam);
-}
-
-STDMETHODIMP_(LRESULT)
-nsAccessNodeWrap::LresultFromObject(REFIID riid, WPARAM wParam, LPUNKNOWN pAcc)
-{
-  // open the dll dynamically
-  if (!gmAccLib)
-    gmAccLib =::LoadLibraryW(L"OLEACC.DLL");
-
-  if (gmAccLib) {
-    if (!gmLresultFromObject)
-      gmLresultFromObject = (LPFNLRESULTFROMOBJECT)GetProcAddress(gmAccLib,"LresultFromObject");
-
-    if (gmLresultFromObject)
-      return gmLresultFromObject(riid, wParam, pAcc);
-  }
-
-  return 0;
 }

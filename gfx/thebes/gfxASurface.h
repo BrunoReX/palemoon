@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Oracle Corporation code.
- *
- * The Initial Developer of the Original Code is Oracle Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2005
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Stuart Parmenter <pavlov@pavlov.net>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef GFX_ASURFACE_H
 #define GFX_ASURFACE_H
@@ -41,6 +9,8 @@
 #include "gfxTypes.h"
 #include "gfxRect.h"
 #include "nsAutoPtr.h"
+#include "nsAutoRef.h"
+#include "nsThreadUtils.h"
 
 typedef struct _cairo_surface cairo_surface_t;
 typedef struct _cairo_user_data_key cairo_user_data_key_t;
@@ -200,7 +170,6 @@ public:
     virtual PRInt32 GetDefaultContextFlags() const { return 0; }
 
     static gfxContentType ContentFromFormat(gfxImageFormat format);
-    static gfxImageFormat FormatFromContent(gfxContentType format);
 
     void SetSubpixelAntialiasingEnabled(bool aEnabled);
     bool GetSubpixelAntialiasingEnabled();
@@ -255,9 +224,14 @@ public:
     void WriteAsPNG(const char* aFile);
 
     /**
+     * Write as a PNG encoded Data URL to a file.
+     */
+    void DumpAsDataURL(FILE* aOutput = stdout);
+
+    /**
      * Write as a PNG encoded Data URL to stdout.
      */
-    void DumpAsDataURL();
+    void PrintAsDataURL();
 
     /**
      * Copy a PNG encoded Data URL to the clipboard.
@@ -358,4 +332,56 @@ public:
     virtual ~gfxUnknownSurface() { }
 };
 
+#ifndef XPCOM_GLUE_AVOID_NSPR
+/**
+ * We need to be able to hold a reference to a gfxASurface from Image
+ * subclasses. This is potentially a problem since Images can be addrefed
+ * or released off the main thread. We can ensure that we never AddRef
+ * a gfxASurface off the main thread, but we might want to Release due
+ * to an Image being destroyed off the main thread.
+ * 
+ * We use nsCountedRef<nsMainThreadSurfaceRef> to reference the
+ * gfxASurface. When AddRefing, we assert that we're on the main thread.
+ * When Releasing, if we're not on the main thread, we post an event to
+ * the main thread to do the actual release.
+ */
+class nsMainThreadSurfaceRef;
+
+template <>
+class nsAutoRefTraits<nsMainThreadSurfaceRef> {
+public:
+  typedef gfxASurface* RawRef;
+
+  /**
+   * The XPCOM event that will do the actual release on the main thread.
+   */
+  class SurfaceReleaser : public nsRunnable {
+  public:
+    SurfaceReleaser(RawRef aRef) : mRef(aRef) {}
+    NS_IMETHOD Run() {
+      mRef->Release();
+      return NS_OK;
+    }
+    RawRef mRef;
+  };
+
+  static RawRef Void() { return nsnull; }
+  static void Release(RawRef aRawRef)
+  {
+    if (NS_IsMainThread()) {
+      aRawRef->Release();
+      return;
+    }
+    nsCOMPtr<nsIRunnable> runnable = new SurfaceReleaser(aRawRef);
+    NS_DispatchToMainThread(runnable);
+  }
+  static void AddRef(RawRef aRawRef)
+  {
+    NS_ASSERTION(NS_IsMainThread(),
+                 "Can only add a reference on the main thread");
+    aRawRef->AddRef();
+  }
+};
+
+#endif
 #endif /* GFX_ASURFACE_H */

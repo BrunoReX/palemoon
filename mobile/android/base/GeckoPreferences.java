@@ -1,40 +1,7 @@
 /* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Android code.
- *
- * The Initial Developer of the Original Code is Mozilla Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Alex Pakhotin <alexp@mozilla.com>
- *   Brian Nicholson <bnicholson@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.gecko;
 
@@ -46,6 +13,7 @@ import android.text.Editable;
 import android.app.AlertDialog;
 import android.os.Build;
 import android.os.Bundle;
+import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.content.Context;
 import android.preference.*;
@@ -57,6 +25,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.Toast;
 import android.text.TextWatcher;
 import android.text.TextUtils;
 import android.content.DialogInterface;
@@ -71,28 +40,40 @@ public class GeckoPreferences
 {
     private static final String LOGTAG = "GeckoPreferences";
 
-    private ArrayList<String> mPreferencesList = new ArrayList<String>();
+    private ArrayList<String> mPreferencesList;
     private PreferenceScreen mPreferenceScreen;
     private static boolean sIsCharEncodingEnabled = false;
+    private static final String NON_PREF_PREFIX = "android.not_a_preference.";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        if (Build.VERSION.SDK_INT >= 11)
-            GeckoActionBar.setDisplayHomeAsUpEnabled(this, true);
-
         addPreferencesFromResource(R.xml.preferences);
-        mPreferenceScreen = getPreferenceScreen();
         GeckoAppShell.registerGeckoEventListener("Preferences:Data", this);
+        GeckoAppShell.registerGeckoEventListener("Sanitize:Finished", this);
+   }
+
+   @Override
+   public void onWindowFocusChanged(boolean hasFocus) {
+        if (!hasFocus)
+            return;
+
+        mPreferencesList = new ArrayList<String>();
+        mPreferenceScreen = getPreferenceScreen();
         initGroups(mPreferenceScreen);
         initValues();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
         GeckoAppShell.unregisterGeckoEventListener("Preferences:Data", this);
+        GeckoAppShell.unregisterGeckoEventListener("Sanitize:Finished", this);
     }
 
     public void handleMessage(String event, JSONObject message) {
@@ -100,6 +81,15 @@ public class GeckoPreferences
             if (event.equals("Preferences:Data")) {
                 JSONArray jsonPrefs = message.getJSONArray("preferences");
                 refresh(jsonPrefs);
+            } else if (event.equals("Sanitize:Finished")) {
+                boolean success = message.getBoolean("success");
+                final int stringRes = success ? R.string.private_data_success : R.string.private_data_fail;
+                final Context context = this;
+                GeckoAppShell.getMainHandler().post(new Runnable () {
+                    public void run() {
+                        Toast.makeText(context, stringRes, Toast.LENGTH_SHORT).show();
+                    }
+                });
             }
         } catch (Exception e) {
             Log.e(LOGTAG, "Exception handling message \"" + event + "\":", e);
@@ -110,7 +100,7 @@ public class GeckoPreferences
     private void initValues() {
         JSONArray jsonPrefs = new JSONArray(mPreferencesList);
 
-        GeckoEvent event = new GeckoEvent("Preferences:Get", jsonPrefs.toString());
+        GeckoEvent event = GeckoEvent.createBroadcastEvent("Preferences:Get", jsonPrefs.toString());
         GeckoAppShell.sendEventToGecko(event);
     }
 
@@ -122,7 +112,16 @@ public class GeckoPreferences
                 initGroups((PreferenceGroup)pref);
             else {
                 pref.setOnPreferenceChangeListener(this);
-                mPreferencesList.add(pref.getKey());
+
+                // Some Preference UI elements are not actually preferences,
+                // but they require a key to work correctly. For example,
+                // "Clear private data" requires a key for its state to be
+                // saved when the orientation changes. It uses the
+                // "android.not_a_preference.privacy.clear" key - which doesn't
+                // exist in Gecko - to satisfy this requirement.
+                String key = pref.getKey();
+                if (key != null && !key.startsWith(NON_PREF_PREFIX))
+                    mPreferencesList.add(pref.getKey());
             }
         }
     }
@@ -229,7 +228,7 @@ public class GeckoPreferences
                                     jsonPref.put("type", "string");
                                     jsonPref.put("value", input1.getText().toString());
                     
-                                    GeckoEvent event = new GeckoEvent("Preferences:Set", jsonPref.toString());
+                                    GeckoEvent event = GeckoEvent.createBroadcastEvent("Preferences:Set", jsonPref.toString());
                                     GeckoAppShell.sendEventToGecko(event);
                                 } catch(Exception ex) {
                                     Log.e(LOGTAG, "Error setting masterpassword", ex);
@@ -270,7 +269,7 @@ public class GeckoPreferences
                                     jsonPref.put("type", "string");
                                     jsonPref.put("value", input.getText().toString());
                         
-                                    GeckoEvent event = new GeckoEvent("Preferences:Set", jsonPref.toString());
+                                    GeckoEvent event = GeckoEvent.createBroadcastEvent("Preferences:Set", jsonPref.toString());
                                     GeckoAppShell.sendEventToGecko(event);
                                 } catch(Exception ex) {
                                     Log.e(LOGTAG, "Error setting masterpassword", ex);
@@ -369,7 +368,7 @@ public class GeckoPreferences
                 jsonPref.put("value", String.valueOf(value));
             }
 
-            GeckoEvent event = new GeckoEvent("Preferences:Set", jsonPref.toString());
+            GeckoEvent event = GeckoEvent.createBroadcastEvent("Preferences:Set", jsonPref.toString());
             GeckoAppShell.sendEventToGecko(event);
         } catch (JSONException e) {
             Log.e(LOGTAG, "JSON exception: ", e);

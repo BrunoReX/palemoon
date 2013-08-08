@@ -40,7 +40,7 @@
 ; the provisions above, a recipient may use your version of this file under
 ; the terms of any one of the MPL, the GPL or the LGPL.
 ;
-; ***** END LICENSE BLOCK *****
+; ***** END LICENSE BLOCK ***** 
 #endif
 #filter substitution
 [App]
@@ -52,10 +52,10 @@ Profile=@MOZ_APP_PROFILE@
 #endif
 BuildID=@APP_BUILDID@
 #ifdef MOZ_SOURCE_REPO
-SourceRepository=@MOZ_SOURCE_REPO@
+# SourceRepository=@MOZ_SOURCE_REPO@
 #endif
 #ifdef MOZ_SOURCE_STAMP
-SourceStamp=@MOZ_SOURCE_STAMP@
+# SourceStamp=@MOZ_SOURCE_STAMP@
 #endif
 ID=@MOZ_APP_ID@
 

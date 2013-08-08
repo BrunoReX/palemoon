@@ -165,13 +165,23 @@ private:
     }
 };
 
+enum AllocationBehavior
+{
+    AllocationCanRandomize,
+    AllocationDeterministic
+};
+
 class ExecutableAllocator {
     typedef void (*DestroyCallback)(void* addr, size_t size);
     enum ProtectionSetting { Writable, Executable };
     DestroyCallback destroyCallback;
 
+    void initSeed();
+
 public:
-    ExecutableAllocator() : destroyCallback(NULL)
+    explicit ExecutableAllocator(AllocationBehavior allocBehavior)
+      : destroyCallback(NULL),
+        allocBehavior(allocBehavior)
     {
         if (!pageSize) {
             pageSize = determinePageSize();
@@ -185,6 +195,10 @@ public:
              */
             largeAllocSize = pageSize * 16;
         }
+
+#if WTF_OS_WINDOWS
+        initSeed();
+#endif
 
         JS_ASSERT(m_smallPools.empty());
     }
@@ -227,6 +241,7 @@ public:
         if (destroyCallback)
             destroyCallback(pool->m_allocation.pages, pool->m_allocation.size);
         systemRelease(pool->m_allocation);
+        JS_ASSERT(m_pools.initialized());
         m_pools.remove(m_pools.lookup(pool));   // this asserts if |pool| is not in m_pools
     }
 
@@ -236,9 +251,16 @@ public:
         this->destroyCallback = destroyCallback;
     }
 
+    void setRandomize(bool enabled) {
+        allocBehavior = enabled ? AllocationCanRandomize : AllocationDeterministic;
+    }
+
 private:
     static size_t pageSize;
     static size_t largeAllocSize;
+#if WTF_OS_WINDOWS
+    static int64_t rngSeed;
+#endif
 
     static const size_t OVERSIZE_ALLOCATION = size_t(-1);
 
@@ -261,8 +283,9 @@ private:
     }
 
     // On OOM, this will return an Allocation where pages is NULL.
-    static ExecutablePool::Allocation systemAlloc(size_t n);
+    ExecutablePool::Allocation systemAlloc(size_t n);
     static void systemRelease(const ExecutablePool::Allocation& alloc);
+    void *computeRandomAllocationAddress();
 
     ExecutablePool* createPool(size_t n)
     {
@@ -445,8 +468,6 @@ public:
     {
         sync_instruction_memory((caddr_t)code, size);
     }
-#else
-    #error "The cacheFlush support is missing on this platform."
 #endif
 
 private:
@@ -466,6 +487,7 @@ private:
     typedef js::HashSet<ExecutablePool *, js::DefaultHasher<ExecutablePool *>, js::SystemAllocPolicy>
             ExecPoolHashSet;
     ExecPoolHashSet m_pools;    // All pools, just for stats purposes.
+    AllocationBehavior allocBehavior;
 
     static size_t determinePageSize();
 };

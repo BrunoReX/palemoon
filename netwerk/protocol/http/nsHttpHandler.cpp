@@ -1,50 +1,8 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* vim:set ts=4 sw=4 sts=4 et cin: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications.
- * Portions created by the Initial Developer are Copyright (C) 2001
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Darin Fisher <darin@netscape.com> (original author)
- *   Gagan Saksena <gagan@netscape.com>
- *   Pierre Phaneuf <pp@ludusdesign.com>
- *   Christopher Blizzard <blizzard@mozilla.org>
- *   Adrian Havill <havill@redhat.com>
- *   Gervase Markham <gerv@gerv.net>
- *   Bradley Baetz <bbaetz@netscape.com>
- *   Benjamin Smedberg <bsmedberg@covad.net>
- *   Josh Aas <josh@mozilla.com>
- *   Dão Gottwald <dao@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsHttp.h"
 #include "nsHttpHandler.h"
@@ -62,7 +20,7 @@
 #include "nsCategoryManagerUtils.h"
 #include "nsICacheService.h"
 #include "nsIPrefService.h"
-#include "nsIPrefBranch2.h"
+#include "nsIPrefBranch.h"
 #include "nsIPrefLocalizedString.h"
 #include "nsISocketProviderService.h"
 #include "nsISocketProvider.h"
@@ -77,7 +35,7 @@
 #include "nsAsyncRedirectVerifyHelper.h"
 #include "nsSocketTransportService2.h"
 #include "nsAlgorithm.h"
-#include "SpdySession.h"
+#include "ASpdySession.h"
 
 #include "nsIXULAppInfo.h"
 
@@ -128,6 +86,8 @@ static NS_DEFINE_CID(kSocketProviderServiceCID, NS_SOCKETPROVIDERSERVICE_CID);
 #define NETWORK_ENABLEIDN       "network.enableIDN"
 #define BROWSER_PREF_PREFIX     "browser.cache."
 #define DONOTTRACK_HEADER_ENABLED "privacy.donottrackheader.enabled"
+#define TELEMETRY_ENABLED        "toolkit.telemetry.enabled"
+#define ALLOW_EXPERIMENTS        "network.allow-experiments"
 
 #define UA_PREF(_pref) UA_PREF_PREFIX _pref
 #define HTTP_PREF(_pref) HTTP_PREF_PREFIX _pref
@@ -174,8 +134,8 @@ nsHttpHandler::nsHttpHandler()
     , mProxyCapabilities(NS_HTTP_ALLOW_KEEPALIVE)
     , mReferrerLevel(0xff) // by default we always send a referrer
     , mFastFallbackToIPv4(false)
-    , mIdleTimeout(10)
-    , mSpdyTimeout(180)
+    , mIdleTimeout(PR_SecondsToInterval(10))
+    , mSpdyTimeout(PR_SecondsToInterval(180))
     , mMaxRequestAttempts(10)
     , mMaxRequestDelay(10)
     , mIdleSynTimeout(250)
@@ -183,12 +143,18 @@ nsHttpHandler::nsHttpHandler()
     , mMaxConnectionsPerServer(8)
     , mMaxPersistentConnectionsPerServer(2)
     , mMaxPersistentConnectionsPerProxy(4)
-    , mMaxPipelinedRequests(2)
+    , mMaxPipelinedRequests(32)
+    , mMaxOptimisticPipelinedRequests(4)
+    , mPipelineAggressive(false)
+    , mMaxPipelineObjectSize(300000)
+    , mPipelineRescheduleOnTimeout(true)
+    , mPipelineRescheduleTimeout(PR_MillisecondsToInterval(1500))
+    , mPipelineReadTimeout(PR_MillisecondsToInterval(30000))
     , mRedirectionLimit(10)
     , mPhishyUserPassLength(1)
     , mQoSBits(0x00)
     , mPipeliningOverSSL(false)
-    , mInPrivateBrowsingMode(PRIVATE_BROWSING_UNKNOWN)
+    , mEnforceAssocReq(false)
     , mLastUniqueID(NowInSeconds())
     , mSessionStartTime(0)
     , mLegacyAppName("Mozilla")
@@ -200,10 +166,16 @@ nsHttpHandler::nsHttpHandler()
     , mSendSecureXSiteReferrer(true)
     , mEnablePersistentHttpsCaching(false)
     , mDoNotTrackEnabled(false)
+    , mTelemetryEnabled(false)
+    , mAllowExperiments(true)
     , mEnableSpdy(false)
+    , mSpdyV2(true)
+    , mSpdyV3(true)
     , mCoalesceSpdy(true)
     , mUseAlternateProtocol(false)
-    , mSpdySendingChunkSize(SpdySession::kSendingChunkSize)
+    , mSpdySendingChunkSize(ASpdySession::kSendingChunkSize)
+    , mSpdyPingThreshold(PR_SecondsToInterval(44))
+    , mSpdyPingTimeout(PR_SecondsToInterval(8))
 {
 #if defined(PR_LOGGING)
     gHttpLog = PR_NewLogModule("nsHttp");
@@ -258,7 +230,7 @@ nsHttpHandler::Init()
     InitUserAgentComponents();
 
     // monitor some preference changes
-    nsCOMPtr<nsIPrefBranch2> prefBranch = do_GetService(NS_PREFSERVICE_CONTRACTID);
+    nsCOMPtr<nsIPrefBranch> prefBranch = do_GetService(NS_PREFSERVICE_CONTRACTID);
     if (prefBranch) {
         prefBranch->AddObserver(HTTP_PREF_PREFIX, this, true);
         prefBranch->AddObserver(UA_PREF_PREFIX, this, true);
@@ -266,18 +238,23 @@ nsHttpHandler::Init()
         prefBranch->AddObserver(NETWORK_ENABLEIDN, this, true);
         prefBranch->AddObserver(BROWSER_PREF("disk_cache_ssl"), this, true);
         prefBranch->AddObserver(DONOTTRACK_HEADER_ENABLED, this, true);
+        prefBranch->AddObserver(TELEMETRY_ENABLED, this, true);
 
         PrefsChanged(prefBranch, nsnull);
     }
 
-    mMisc.AssignLiteral("rv:" MOZILLA_VERSION);
+    mMisc.AssignLiteral("rv:" MOZILLA_UAVERSION);
 
     nsCOMPtr<nsIXULAppInfo> appInfo =
         do_GetService("@mozilla.org/xre/app-info;1");
 
     mAppName.AssignLiteral(MOZ_APP_UA_NAME);
     if (mAppName.Length() == 0 && appInfo) {
-        appInfo->GetName(mAppName);
+        // Try to get the UA name from appInfo, falling back to the name
+        appInfo->GetUAName(mAppName);
+        if (mAppName.Length() == 0) {
+          appInfo->GetName(mAppName);
+        }
         appInfo->GetVersion(mAppVersion);
         mAppName.StripChars(" ()<>@,;:\\\"/[]?={}");
     } else {
@@ -329,8 +306,8 @@ nsHttpHandler::Init()
         mObserverService->AddObserver(this, "profile-change-net-restore", true);
         mObserverService->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, true);
         mObserverService->AddObserver(this, "net:clear-active-logins", true);
-        mObserverService->AddObserver(this, NS_PRIVATE_BROWSING_SWITCH_TOPIC, true);
         mObserverService->AddObserver(this, "net:prune-dead-connections", true);
+        mObserverService->AddObserver(this, "net:failed-to-process-uri-content", true);
     }
  
     return NS_OK;
@@ -356,7 +333,8 @@ nsHttpHandler::InitConnectionMgr()
                         mMaxPersistentConnectionsPerServer,
                         mMaxPersistentConnectionsPerProxy,
                         mMaxRequestDelay,
-                        mMaxPipelinedRequests);
+                        mMaxPipelinedRequests,
+                        mMaxOptimisticPipelinedRequests);
     return rv;
 }
 
@@ -438,6 +416,7 @@ nsHttpHandler::IsAcceptableEncoding(const char *enc)
 
 nsresult
 nsHttpHandler::GetCacheSession(nsCacheStoragePolicy storagePolicy,
+                               bool isPrivate,
                                nsICacheSession **result)
 {
     nsresult rv;
@@ -457,7 +436,7 @@ nsHttpHandler::GetCacheSession(nsCacheStoragePolicy storagePolicy,
     const char *sessionName = "HTTP";
     switch (storagePolicy) {
     case nsICache::STORE_IN_MEMORY:
-        sessionName = "HTTP-memory-only";
+        sessionName = isPrivate ? "HTTP-memory-only-PB" : "HTTP-memory-only";
         break;
     case nsICache::STORE_OFFLINE:
         sessionName = "HTTP-offline";
@@ -479,23 +458,6 @@ nsHttpHandler::GetCacheSession(nsCacheStoragePolicy storagePolicy,
     NS_ADDREF(*result = cacheSession);
 
     return NS_OK;
-}
-
-bool
-nsHttpHandler::InPrivateBrowsingMode()
-{
-    if (PRIVATE_BROWSING_UNKNOWN == mInPrivateBrowsingMode) {
-        // figure out if we're starting in private browsing mode
-        nsCOMPtr<nsIPrivateBrowsingService> pbs =
-            do_GetService(NS_PRIVATE_BROWSING_SERVICE_CONTRACTID);
-        if (!pbs)
-            return PRIVATE_BROWSING_OFF;
-
-        bool p = false;
-        pbs->GetPrivateBrowsingEnabled(&p);
-        mInPrivateBrowsingMode = p ? PRIVATE_BROWSING_ON : PRIVATE_BROWSING_OFF;
-    }
-    return PRIVATE_BROWSING_ON == mInPrivateBrowsingMode;
 }
 
 nsresult
@@ -534,6 +496,27 @@ nsHttpHandler::GetIOService(nsIIOService** result)
     return NS_OK;
 }
 
+PRUint32
+nsHttpHandler::Get32BitsOfPseudoRandom()
+{
+    // only confirm rand seeding on socket thread
+    NS_ABORT_IF_FALSE(PR_GetCurrentThread() == gSocketThread, "wrong thread");
+
+    // rand() provides different amounts of PRNG on different platforms.
+    // 15 or 31 bits are common amounts.
+
+    PR_STATIC_ASSERT(RAND_MAX >= 0xfff);
+    
+#if RAND_MAX < 0xffffU
+    return ((PRUint16) rand() << 20) |
+            (((PRUint16) rand() & 0xfff) << 8) |
+            ((PRUint16) rand() & 0xff);
+#elif RAND_MAX < 0xffffffffU
+    return ((PRUint16) rand() << 16) | ((PRUint16) rand() & 0xffff);
+#else
+    return (PRUint32) rand();
+#endif
+}
 
 void
 nsHttpHandler::NotifyObservers(nsIHttpChannel *chan, const char *event)
@@ -621,7 +604,7 @@ nsHttpHandler::BuildUserAgent()
     mUserAgent += mPlatform;
     mUserAgent.AppendLiteral("; ");
 #endif
-#ifdef ANDROID
+#if defined(ANDROID) || defined(MOZ_PLATFORM_MAEMO)
     if (!mCompatDevice.IsEmpty()) {
         mUserAgent += mCompatDevice;
         mUserAgent.AppendLiteral("; ");
@@ -653,8 +636,6 @@ nsHttpHandler::BuildUserAgent()
 }
 
 #ifdef XP_WIN
-typedef BOOL (WINAPI *IsWow64ProcessP) (HANDLE, PBOOL);
-
 #define WNT_BASE "Windows NT %ld.%ld"
 #define W64_PREFIX "; Win64"
 #endif
@@ -681,11 +662,11 @@ nsHttpHandler::InitUserAgentComponents()
 #endif
     );
 
-#if defined(ANDROID)
+#if defined(ANDROID) || defined(MOZ_PLATFORM_MAEMO)
     nsCOMPtr<nsIPropertyBag2> infoService = do_GetService("@mozilla.org/system-info;1");
     NS_ASSERTION(infoService, "Could not find a system info service");
 
-    bool isTablet;
+    bool isTablet = false;
     infoService->GetPropertyAsBool(NS_LITERAL_STRING("tablet"), &isTablet);
     if (isTablet)
         mCompatDevice.AssignLiteral("Tablet");
@@ -717,10 +698,7 @@ nsHttpHandler::InitUserAgentComponents()
         format = WNT_BASE W64_PREFIX "; x64";
 #else
         BOOL isWow64 = FALSE;
-        IsWow64ProcessP fnIsWow64Process = (IsWow64ProcessP)
-          GetProcAddress(GetModuleHandleW(L"kernel32"), "IsWow64Process");
-        if (fnIsWow64Process &&
-            !fnIsWow64Process(GetCurrentProcess(), &isWow64)) {
+        if (!IsWow64Process(GetCurrentProcess(), &isWow64)) {
             isWow64 = FALSE;
         }
         format = isWow64
@@ -845,7 +823,7 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
     if (PREF_CHANGED(HTTP_PREF("keep-alive.timeout"))) {
         rv = prefs->GetIntPref(HTTP_PREF("keep-alive.timeout"), &val);
         if (NS_SUCCEEDED(rv))
-            mIdleTimeout = (PRUint16) clamped(val, 1, 0xffff);
+            mIdleTimeout = PR_SecondsToInterval(clamped(val, 1, 0xffff));
     }
 
     if (PREF_CHANGED(HTTP_PREF("request.max-attempts"))) {
@@ -992,10 +970,67 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
     if (PREF_CHANGED(HTTP_PREF("pipelining.maxrequests"))) {
         rv = prefs->GetIntPref(HTTP_PREF("pipelining.maxrequests"), &val);
         if (NS_SUCCEEDED(rv)) {
-            mMaxPipelinedRequests = clamped(val, 1, NS_HTTP_MAX_PIPELINED_REQUESTS);
+            mMaxPipelinedRequests = clamped(val, 1, 0xffff);
             if (mConnMgr)
                 mConnMgr->UpdateParam(nsHttpConnectionMgr::MAX_PIPELINED_REQUESTS,
                                       mMaxPipelinedRequests);
+        }
+    }
+
+    if (PREF_CHANGED(HTTP_PREF("pipelining.max-optimistic-requests"))) {
+        rv = prefs->
+            GetIntPref(HTTP_PREF("pipelining.max-optimistic-requests"), &val);
+        if (NS_SUCCEEDED(rv)) {
+            mMaxOptimisticPipelinedRequests = clamped(val, 1, 0xffff);
+            if (mConnMgr)
+                mConnMgr->UpdateParam
+                    (nsHttpConnectionMgr::MAX_OPTIMISTIC_PIPELINED_REQUESTS,
+                     mMaxOptimisticPipelinedRequests);
+        }
+    }
+
+    if (PREF_CHANGED(HTTP_PREF("pipelining.aggressive"))) {
+        rv = prefs->GetBoolPref(HTTP_PREF("pipelining.aggressive"), &cVar);
+        if (NS_SUCCEEDED(rv))
+            mPipelineAggressive = cVar;
+    }
+
+    if (PREF_CHANGED(HTTP_PREF("pipelining.maxsize"))) {
+        rv = prefs->GetIntPref(HTTP_PREF("pipelining.maxsize"), &val);
+        if (NS_SUCCEEDED(rv)) {
+            mMaxPipelineObjectSize =
+                static_cast<PRInt64>(clamped(val, 1000, 100000000));
+        }
+    }
+
+    // Determines whether or not to actually reschedule after the
+    // reschedule-timeout has expired
+    if (PREF_CHANGED(HTTP_PREF("pipelining.reschedule-on-timeout"))) {
+        rv = prefs->GetBoolPref(HTTP_PREF("pipelining.reschedule-on-timeout"),
+                                &cVar);
+        if (NS_SUCCEEDED(rv))
+            mPipelineRescheduleOnTimeout = cVar;
+    }
+
+    // The amount of time head of line blocking is allowed (in ms)
+    // before the blocked transactions are moved to another pipeline
+    if (PREF_CHANGED(HTTP_PREF("pipelining.reschedule-timeout"))) {
+        rv = prefs->GetIntPref(HTTP_PREF("pipelining.reschedule-timeout"),
+                               &val);
+        if (NS_SUCCEEDED(rv)) {
+            mPipelineRescheduleTimeout =
+                PR_MillisecondsToInterval((PRUint16) clamped(val, 500, 0xffff));
+        }
+    }
+
+    // The amount of time a pipelined transaction is allowed to wait before
+    // being canceled and retried in a non-pipeline connection
+    if (PREF_CHANGED(HTTP_PREF("pipelining.read-timeout"))) {
+        rv = prefs->GetIntPref(HTTP_PREF("pipelining.read-timeout"), &val);
+        if (NS_SUCCEEDED(rv)) {
+            mPipelineReadTimeout =
+                PR_MillisecondsToInterval((PRUint16) clamped(val, 5000,
+                                                             0xffff));
         }
     }
 
@@ -1080,6 +1115,13 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
         }
     }
 
+    if (PREF_CHANGED(HTTP_PREF("assoc-req.enforce"))) {
+        cVar = false;
+        rv = prefs->GetBoolPref(HTTP_PREF("assoc-req.enforce"), &cVar);
+        if (NS_SUCCEEDED(rv))
+            mEnforceAssocReq = cVar;
+    }
+
     // enable Persistent caching for HTTPS - bug#205921    
     if (PREF_CHANGED(BROWSER_PREF("disk_cache_ssl"))) {
         cVar = false;
@@ -1100,6 +1142,18 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
             mEnableSpdy = cVar;
     }
 
+    if (PREF_CHANGED(HTTP_PREF("spdy.enabled.v2"))) {
+        rv = prefs->GetBoolPref(HTTP_PREF("spdy.enabled.v2"), &cVar);
+        if (NS_SUCCEEDED(rv))
+            mSpdyV2 = cVar;
+    }
+
+    if (PREF_CHANGED(HTTP_PREF("spdy.enabled.v3"))) {
+        rv = prefs->GetBoolPref(HTTP_PREF("spdy.enabled.v3"), &cVar);
+        if (NS_SUCCEEDED(rv))
+            mSpdyV3 = cVar;
+    }
+
     if (PREF_CHANGED(HTTP_PREF("spdy.coalesce-hostnames"))) {
         rv = prefs->GetBoolPref(HTTP_PREF("spdy.coalesce-hostnames"), &cVar);
         if (NS_SUCCEEDED(rv))
@@ -1116,7 +1170,7 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
     if (PREF_CHANGED(HTTP_PREF("spdy.timeout"))) {
         rv = prefs->GetIntPref(HTTP_PREF("spdy.timeout"), &val);
         if (NS_SUCCEEDED(rv))
-            mSpdyTimeout = (PRUint16) clamped(val, 1, 0xffff);
+            mSpdyTimeout = PR_SecondsToInterval(clamped(val, 1, 0xffff));
     }
 
     if (PREF_CHANGED(HTTP_PREF("spdy.chunk-size"))) {
@@ -1125,6 +1179,33 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
             mSpdySendingChunkSize = (PRUint32) clamped(val, 1, 0x7fffffff);
     }
 
+    // The amount of idle seconds on a spdy connection before initiating a
+    // server ping. 0 will disable.
+    if (PREF_CHANGED(HTTP_PREF("spdy.ping-threshold"))) {
+        rv = prefs->GetIntPref(HTTP_PREF("spdy.ping-threshold"), &val);
+        if (NS_SUCCEEDED(rv))
+            mSpdyPingThreshold =
+                PR_SecondsToInterval((PRUint16) clamped(val, 0, 0x7fffffff));
+    }
+
+    // The amount of seconds to wait for a spdy ping response before
+    // closing the session.
+    if (PREF_CHANGED(HTTP_PREF("spdy.ping-timeout"))) {
+        rv = prefs->GetIntPref(HTTP_PREF("spdy.ping-timeout"), &val);
+        if (NS_SUCCEEDED(rv))
+            mSpdyPingTimeout =
+                PR_SecondsToInterval((PRUint16) clamped(val, 0, 0x7fffffff));
+    }
+
+    // on transition of network.http.diagnostics to true print
+    // a bunch of information to the console
+    if (pref && PREF_CHANGED(HTTP_PREF("diagnostics"))) {
+        rv = prefs->GetBoolPref(HTTP_PREF("diagnostics"), &cVar);
+        if (NS_SUCCEEDED(rv) && cVar) {
+            if (mConnMgr)
+                mConnMgr->PrintDiagnostics();
+        }
+    }
     //
     // INTL options
     //
@@ -1169,6 +1250,30 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
         rv = prefs->GetBoolPref(DONOTTRACK_HEADER_ENABLED, &cVar);
         if (NS_SUCCEEDED(rv)) {
             mDoNotTrackEnabled = cVar;
+        }
+    }
+
+    //
+    // Telemetry
+    //
+
+    if (PREF_CHANGED(TELEMETRY_ENABLED)) {
+        cVar = false;
+        rv = prefs->GetBoolPref(TELEMETRY_ENABLED, &cVar);
+        if (NS_SUCCEEDED(rv)) {
+            mTelemetryEnabled = cVar;
+        }
+    }
+
+    //
+    // network.allow-experiments
+    //
+
+    if (PREF_CHANGED(ALLOW_EXPERIMENTS)) {
+        cVar = true;
+        rv = prefs->GetBoolPref(ALLOW_EXPERIMENTS, &cVar);
+        if (NS_SUCCEEDED(rv)) {
+            mAllowExperiments = cVar;
         }
     }
 
@@ -1279,12 +1384,13 @@ nsHttpHandler::SetAcceptEncodings(const char *aAcceptEncodings)
 // nsHttpHandler::nsISupports
 //-----------------------------------------------------------------------------
 
-NS_IMPL_THREADSAFE_ISUPPORTS5(nsHttpHandler,
+NS_IMPL_THREADSAFE_ISUPPORTS6(nsHttpHandler,
                               nsIHttpProtocolHandler,
                               nsIProxiedProtocolHandler,
                               nsIProtocolHandler,
                               nsIObserver,
-                              nsISupportsWeakReference)
+                              nsISupportsWeakReference,
+                              nsISpeculativeConnect)
 
 //-----------------------------------------------------------------------------
 // nsHttpHandler::nsIProtocolHandler
@@ -1509,32 +1615,89 @@ nsHttpHandler::Observe(nsISupports *subject,
     else if (strcmp(topic, "net:clear-active-logins") == 0) {
         mAuthCache.ClearAll();
     }
-    else if (strcmp(topic, NS_PRIVATE_BROWSING_SWITCH_TOPIC) == 0) {
-        if (NS_LITERAL_STRING(NS_PRIVATE_BROWSING_ENTER).Equals(data))
-            mInPrivateBrowsingMode = PRIVATE_BROWSING_ON;
-        else if (NS_LITERAL_STRING(NS_PRIVATE_BROWSING_LEAVE).Equals(data))
-            mInPrivateBrowsingMode = PRIVATE_BROWSING_OFF;
-        if (mConnMgr)
-            mConnMgr->ClosePersistentConnections();
-    }
     else if (strcmp(topic, "net:prune-dead-connections") == 0) {
         if (mConnMgr) {
             mConnMgr->PruneDeadConnections();
         }
     }
+    else if (strcmp(topic, "net:failed-to-process-uri-content") == 0) {
+        nsCOMPtr<nsIURI> uri = do_QueryInterface(subject);
+        if (uri && mConnMgr)
+            mConnMgr->ReportFailedToProcess(uri);
+    }
   
     return NS_OK;
+}
+
+// nsISpeculativeConnect
+
+NS_IMETHODIMP
+nsHttpHandler::SpeculativeConnect(nsIURI *aURI,
+                                  nsIInterfaceRequestor *aCallbacks,
+                                  nsIEventTarget *aTarget)
+{
+    nsIStrictTransportSecurityService* stss = gHttpHandler->GetSTSService();
+    bool isStsHost = false;
+    if (!stss)
+        return NS_OK;
+    
+    nsCOMPtr<nsIURI> clone;
+    if (NS_SUCCEEDED(stss->IsStsURI(aURI, &isStsHost)) && isStsHost) {
+        if (NS_SUCCEEDED(aURI->Clone(getter_AddRefs(clone)))) {
+            clone->SetScheme(NS_LITERAL_CSTRING("https"));
+            aURI = clone.get();
+        }
+    }
+
+    nsCAutoString scheme;
+    nsresult rv = aURI->GetScheme(scheme);
+    if (NS_FAILED(rv))
+        return rv;
+
+    // If this is HTTPS, make sure PSM is initialized as the channel
+    // creation path may have been bypassed
+    if (scheme.EqualsLiteral("https")) {
+        if (!IsNeckoChild()) {
+            // make sure PSM gets initialized on the main thread.
+            net_EnsurePSMInit();
+        }
+    }
+    // Ensure that this is HTTP or HTTPS, otherwise we don't do preconnect here
+    else if (!scheme.EqualsLiteral("http"))
+        return NS_ERROR_UNEXPECTED;
+
+    // Construct connection info object
+    bool usingSSL = false;
+    rv = aURI->SchemeIs("https", &usingSSL);
+    if (NS_FAILED(rv))
+        return rv;
+
+    nsCAutoString host;
+    rv = aURI->GetAsciiHost(host);
+    if (NS_FAILED(rv))
+        return rv;
+
+    PRInt32 port = -1;
+    rv = aURI->GetPort(&port);
+    if (NS_FAILED(rv))
+        return rv;
+
+    nsHttpConnectionInfo *ci =
+        new nsHttpConnectionInfo(host, port, nsnull, usingSSL);
+
+    return SpeculativeConnect(ci, aCallbacks, aTarget);
 }
 
 //-----------------------------------------------------------------------------
 // nsHttpsHandler implementation
 //-----------------------------------------------------------------------------
 
-NS_IMPL_THREADSAFE_ISUPPORTS4(nsHttpsHandler,
+NS_IMPL_THREADSAFE_ISUPPORTS5(nsHttpsHandler,
                               nsIHttpProtocolHandler,
                               nsIProxiedProtocolHandler,
                               nsIProtocolHandler,
-                              nsISupportsWeakReference)
+                              nsISupportsWeakReference,
+                              nsISpeculativeConnect)
 
 nsresult
 nsHttpsHandler::Init()

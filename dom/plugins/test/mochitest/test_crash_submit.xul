@@ -18,6 +18,12 @@
 SimpleTest.waitForExplicitFinish();
 SimpleTest.ignoreAllUncaughtExceptions();
 
+const isOSXLion = navigator.userAgent.indexOf("Mac OS X 10.7") != -1;
+if (isOSXLion) {
+  todo(false, "Can't test plugin crash notification on OS X 10.7, see bug 705047");
+  SimpleTest.finish();
+}
+
 Components.utils.import("resource://gre/modules/NetUtil.jsm");
 Components.utils.import("resource://gre/modules/Services.jsm");
 
@@ -93,12 +99,6 @@ function onPluginCrashed(aEvent) {
 }
 
 function runTests() {
-  if (navigator.userAgent.match(/ SeaMonkey\//)) {
-    todo(false, "Skipping this test on Seamonkey ftb. (Bug 604129)");
-    SimpleTest.finish();
-    return;
-  }
-
   if (!SimpleTest.testPluginIsOOP()) {
     todo(false, "Skipping this test when test plugin is not OOP.");
     SimpleTest.finish();
@@ -130,4 +130,3 @@ function runTests() {
 ]]>
 </script>
 </window>
-

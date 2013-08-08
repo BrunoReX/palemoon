@@ -26,6 +26,9 @@ skip-if(Android) include border-image/reftest.list
 # border-radius/
 include border-radius/reftest.list
 
+# -moz-box tests
+include box/reftest.list
+
 # box-ordinal/
 include box-ordinal/reftest.list
 
@@ -128,9 +131,6 @@ include datalist/reftest.list
 # dom/
 include dom/reftest.list
 
-# editor/
-include editor/reftest.list
-
 # generated-content/
 include generated-content/reftest.list
 
@@ -140,9 +140,6 @@ skip-if(Android) include first-letter/reftest.list
 # first-line/
 include first-line/reftest.list
 
-# flexbox/
-include flexbox/reftest.list
-
 # floats/
 include floats/reftest.list
 
@@ -151,6 +148,9 @@ include font-face/reftest.list
 
 # font features (opentype)
 include font-features/reftest.list
+
+# mobile font size inflation
+include font-inflation/reftest.list
 
 # font matching
 include font-matching/reftest.list
@@ -175,6 +175,9 @@ include image-rect/reftest.list
 
 # image-region/
 include image-region/reftest.list
+
+# indic shaping with harfbuzz
+include indic-shaping/reftest.list
 
 # inline borders and padding
 include inline-borderpadding/reftest.list
@@ -306,3 +309,6 @@ include z-index/reftest.list
 # reftest(s) to verify content bugfixes
 include ../../content/html/document/reftests/reftests.list
 include ../../content/html/content/reftests/reftest.list
+
+# editor/
+include ../../editor/reftests/reftest.list

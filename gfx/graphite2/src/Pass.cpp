@@ -63,82 +63,84 @@ Pass::~Pass()
     delete [] m_rules;
 }
 
-bool Pass::readPass(void *pass, size_t pass_length, size_t subtable_base, const Face & face)
+bool Pass::readPass(const byte * const pass_start, size_t pass_length, size_t subtable_base, const Face & face)
 {
-    const byte *                p = reinterpret_cast<const byte *>(pass),
-               * const pass_start = p,
+    const byte *                p = pass_start,
                * const pass_end   = p + pass_length;
     size_t numRanges;
 
     if (pass_length < 40) return false; 
     // Read in basic values
-    m_immutable = (*p++) & 0x1U;
-    m_iMaxLoop = *p++;
-    p++; // skip maxContext
-    p += sizeof(byte);     // skip maxBackup
+    m_immutable = be::read<byte>(p) & 0x1U;
+    m_iMaxLoop = be::read<byte>(p);
+    be::skip<byte>(p,2); // skip maxContext & maxBackup
     m_numRules = be::read<uint16>(p);
-    p += sizeof(uint16);   // not sure why we would want this
+    be::skip<uint16>(p);   // fsmOffset - not sure why we would want this
     const byte * const pcCode = pass_start + be::read<uint32>(p) - subtable_base,
                * const rcCode = pass_start + be::read<uint32>(p) - subtable_base,
                * const aCode  = pass_start + be::read<uint32>(p) - subtable_base;
-    p += sizeof(uint32);
+    be::skip<uint32>(p);
     m_sRows = be::read<uint16>(p);
     m_sTransition = be::read<uint16>(p);
     m_sSuccess = be::read<uint16>(p);
     m_sColumns = be::read<uint16>(p);
     numRanges = be::read<uint16>(p);
-    p += sizeof(uint16)   // skip searchRange
-         +  sizeof(uint16)   // skip entrySelector
-         +  sizeof(uint16);  // skip rangeShift
+    be::skip<uint16>(p, 3); // skip searchRange, entrySelector & rangeShift.
     assert(p - pass_start == 40);
     // Perform some sanity checks.
     if (   m_sTransition > m_sRows
             || m_sSuccess > m_sRows
-            || m_sSuccess + m_sTransition < m_sRows)
+            || m_sSuccess + m_sTransition < m_sRows
+            || numRanges == 0)
         return false;
 
     if (p + numRanges * 6 - 4 > pass_end) return false;
     m_numGlyphs = be::peek<uint16>(p + numRanges * 6 - 4) + 1;
-    // Caculate the start of vairous arrays.
+    // Calculate the start of various arrays.
     const byte * const ranges = p;
-    p += numRanges*sizeof(uint16)*3;
+    be::skip<uint16>(p, numRanges*3);
     const byte * const o_rule_map = p;
-    p += (m_sSuccess + 1)*sizeof(uint16);
+    be::skip<uint16>(p, m_sSuccess + 1);
 
     // More sanity checks
-    if (   reinterpret_cast<const byte *>(o_rule_map) > pass_end
+    if (reinterpret_cast<const byte *>(o_rule_map + m_sSuccess*sizeof(uint16)) > pass_end
             || p > pass_end)
         return false;
     const size_t numEntries = be::peek<uint16>(o_rule_map + m_sSuccess*sizeof(uint16));
     const byte * const   rule_map = p;
-    p += numEntries*sizeof(uint16);
+    be::skip<uint16>(p, numEntries);
 
-    if (p > pass_end) return false;
-    m_minPreCtxt = *p++;
-    m_maxPreCtxt = *p++;
+    if (p + 2*sizeof(uint8) > pass_end) return false;
+    m_minPreCtxt = be::read<uint8>(p);
+    m_maxPreCtxt = be::read<uint8>(p);
+    if (m_minPreCtxt > m_maxPreCtxt) return false;
     const byte * const start_states = p;
-    p += (m_maxPreCtxt - m_minPreCtxt + 1)*sizeof(int16);
+    be::skip<int16>(p, m_maxPreCtxt - m_minPreCtxt + 1);
     const uint16 * const sort_keys = reinterpret_cast<const uint16 *>(p);
-    p += m_numRules*sizeof(uint16);
+    be::skip<uint16>(p, m_numRules);
     const byte * const precontext = p;
-    p += m_numRules;
-    p += sizeof(byte);     // skip reserved byte
+    be::skip<byte>(p, m_numRules);
+    be::skip<byte>(p);     // skip reserved byte
 
-    if (p > pass_end) return false;
+    if (p + sizeof(uint16) > pass_end) return false;
     const size_t pass_constraint_len = be::read<uint16>(p);
     const uint16 * const o_constraint = reinterpret_cast<const uint16 *>(p);
-    p += (m_numRules + 1)*sizeof(uint16);
+    be::skip<uint16>(p, m_numRules + 1);
     const uint16 * const o_actions = reinterpret_cast<const uint16 *>(p);
-    p += (m_numRules + 1)*sizeof(uint16);
+    be::skip<uint16>(p, m_numRules + 1);
     const byte * const states = p;
-    p += m_sTransition*m_sColumns*sizeof(int16);
-    p += sizeof(byte);          // skip reserved byte
+    be::skip<int16>(p, m_sTransition*m_sColumns);
+    be::skip<byte>(p);          // skip reserved byte
     if (p != pcCode || p >= pass_end) return false;
-    p += pass_constraint_len;
-    if (p != rcCode || p >= pass_end) return false;
-    p += be::peek<uint16>(o_constraint + m_numRules);
+    be::skip<byte>(p, pass_constraint_len);
+    if (p != rcCode || p >= pass_end
+        || size_t(rcCode - pcCode) != pass_constraint_len) return false;
+    be::skip<byte>(p, be::peek<uint16>(o_constraint + m_numRules));
     if (p != aCode || p >= pass_end) return false;
-    if (size_t(rcCode - pcCode) != pass_constraint_len) return false;
+    be::skip<byte>(p, be::peek<uint16>(o_actions + m_numRules));
+
+    // We should be at the end or within the pass
+    if (p > pass_end) return false;
 
     // Load the pass constraint if there is one.
     if (pass_constraint_len)
@@ -341,6 +343,26 @@ bool Pass::runFSM(FiniteStateMachine& fsm, Slot * slot) const
     return true;
 }
 
+#if !defined GRAPHITE2_NTRACING
+
+inline
+Slot * input_slot(const SlotMap &  slots, const int n)
+{
+	Slot * s = slots[slots.context() + n];
+	if (!s->isCopied()) 	return s;
+
+	return s->prev() ? s->prev()->next() : (s->next() ? s->next()->prev() : slots.segment.last());
+}
+
+inline
+Slot * output_slot(const SlotMap &  slots, const int n)
+{
+	Slot * s = slots[slots.context() + n - 1];
+	return s ? s->next() : slots.segment.first();
+}
+
+#endif //!defined GRAPHITE2_NTRACING
+
 void Pass::findNDoRule(Slot * & slot, Machine &m, FiniteStateMachine & fsm) const
 {
     assert(slot);
@@ -366,18 +388,17 @@ void Pass::findNDoRule(Slot * & slot, Machine &m, FiniteStateMachine & fsm) cons
 					if (r->rule->action->deletes()) fsm.slots.collectGarbage();
 					adjustSlot(adv, slot, fsm.slots);
 					*dbgout		<< "cursor" << slotid(slot)
-								<< json::close	// Close "output" object
 							<< json::close; // Close RuelEvent object
 
 					return;
 				}
 				else
+				{
 					*dbgout 	<< json::close	// close "considered" array
-							<< "output" << json::object
-								<< "slots" 	<< json::array << json::close
-								<< "cursor"	<< slotid(slot->next())
-								<< json::close
+							<< "output" << json::null
+							<< "cursor"	<< slotid(slot->next())
 							<< json::close;
+				}
         	}
         }
         else
@@ -397,23 +418,6 @@ void Pass::findNDoRule(Slot * & slot, Machine &m, FiniteStateMachine & fsm) cons
 }
 
 #if !defined GRAPHITE2_NTRACING
-
-inline
-Slot * input_slot(const SlotMap &  slots, const int n)
-{
-	Slot * s = slots[slots.context() + n];
-	if (!s->isCopied()) 	return s;
-
-	return s->prev() ? s->prev()->next() :  s->next()->prev();
-}
-
-inline
-Slot * output_slot(const SlotMap &  slots, const int n)
-{
-	Slot * s = slots[slots.context() + n - 1];
-	return s ? s->next() : slots.segment.first();
-}
-
 
 void Pass::dumpRuleEventConsidered(const FiniteStateMachine & fsm, const RuleEntry & re) const
 {
@@ -445,11 +449,18 @@ void Pass::dumpRuleEventOutput(const FiniteStateMachine & fsm, const Rule & r, S
 						<< json::close	// close Rule object
 				<< json::close // close considered array
 				<< "output" << json::object
+					<< "range" << json::flat << json::object
+						<< "start"	<< slotid(input_slot(fsm.slots, 0))
+						<< "end"	<< slotid(last_slot)
+					<< json::close // close "input"
 					<< "slots"	<< json::array;
 	fsm.slots.segment.positionSlots(0);
+
 	for(Slot * slot = output_slot(fsm.slots, 0); slot != last_slot; slot = slot->next())
 		*dbgout 		<< dslot(&fsm.slots.segment, slot);
-	*dbgout 			<< json::close; // close "slots";
+	*dbgout 			<< json::close 	// close "slots"
+				<< json::close;			// close "output" object
+
 }
 
 #endif
@@ -475,14 +486,15 @@ bool Pass::testPassConstraint(Machine & m) const
 }
 
 
-bool Pass::testConstraint(const Rule &r, Machine & m) const
+bool Pass::testConstraint(const Rule & r, Machine & m) const
 {
-    if ((r.sort - r.preContext) > (m.slotMap().size() - m.slotMap().context()))    return false;
-    if (m.slotMap().context() - r.preContext < 0) return false;
-    if (!*r.constraint)                 return true;
+	const uint16 curr_context = m.slotMap().context();
+    if (unsigned(r.sort - r.preContext) > m.slotMap().size() - curr_context
+    	|| curr_context - r.preContext < 0) return false;
+    if (!*r.constraint) return true;
     assert(r.constraint->constraint());
 
-    vm::slotref * map = m.slotMap().begin() + m.slotMap().context() - r.preContext;
+    vm::slotref * map = m.slotMap().begin() + curr_context - r.preContext;
     for (int n = r.sort; n && map; --n, ++map)
     {
     	if (!*map) continue;

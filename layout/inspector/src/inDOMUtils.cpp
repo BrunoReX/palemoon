@@ -1,40 +1,6 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2001
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Joe Hewitt <hewitt@netscape.com> (original author)
- *   Christopher A. Aillon <christopher@aillon.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "inDOMUtils.h"
 #include "inLayoutUtils.h"
@@ -60,6 +26,7 @@
 #include "nsIAtom.h"
 #include "nsRange.h"
 #include "mozilla/dom/Element.h"
+#include "nsCSSStyleSheet.h"
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -138,11 +105,11 @@ inDOMUtils::GetParentForNode(nsIDOMNode* aNode,
       if (bindingManager) {
         bparent = bindingManager->GetInsertionParent(content);
       }
-    
+
       parent = do_QueryInterface(bparent);
     }
   }
-  
+
   if (!parent) {
     // Ok, just get the normal DOM parent node
     aNode->GetParentNode(getter_AddRefs(parent));
@@ -200,6 +167,7 @@ inDOMUtils::GetCSSStyleRules(nsIDOMElement *aElement,
 
   nsRuleNode* ruleNode = nsnull;
   nsCOMPtr<nsIContent> content = do_QueryInterface(aElement);
+  NS_ENSURE_STATE(content);
   nsRefPtr<nsStyleContext> styleContext;
   GetRuleNodeForContent(content, pseudoElt, getter_AddRefs(styleContext), &ruleNode);
   if (!ruleNode) {
@@ -262,7 +230,7 @@ inDOMUtils::IsInheritedProperty(const nsAString &aPropertyName, bool *_retval)
   return NS_OK;
 }
 
-NS_IMETHODIMP 
+NS_IMETHODIMP
 inDOMUtils::GetBindingURLs(nsIDOMElement *aElement, nsIArray **_retval)
 {
   NS_ENSURE_ARG_POINTER(aElement);
@@ -292,15 +260,15 @@ NS_IMETHODIMP
 inDOMUtils::SetContentState(nsIDOMElement *aElement, nsEventStates::InternalType aState)
 {
   NS_ENSURE_ARG_POINTER(aElement);
-  
+
   nsRefPtr<nsEventStateManager> esm = inLayoutUtils::GetEventStateManagerFor(aElement);
   if (esm) {
     nsCOMPtr<nsIContent> content;
     content = do_QueryInterface(aElement);
-  
+
     return esm->SetContentState(content, nsEventStates(aState));
   }
-  
+
   return NS_ERROR_FAILURE;
 }
 
@@ -356,4 +324,115 @@ inDOMUtils::GetUsedFontFaces(nsIDOMRange* aRange,
                              nsIDOMFontFaceList** aFontFaceList)
 {
   return static_cast<nsRange*>(aRange)->GetUsedFontFaces(aFontFaceList);
+}
+
+static nsEventStates
+GetStatesForPseudoClass(const nsAString& aStatePseudo)
+{
+  // An array of the states that are relevant for various pseudoclasses.
+  // XXXbz this duplicates code in nsCSSRuleProcessor
+  static const nsEventStates sPseudoClassStates[] = {
+#define CSS_PSEUDO_CLASS(_name, _value) \
+    nsEventStates(),
+#define CSS_STATE_PSEUDO_CLASS(_name, _value, _states) \
+    _states,
+#include "nsCSSPseudoClassList.h"
+#undef CSS_STATE_PSEUDO_CLASS
+#undef CSS_PSEUDO_CLASS
+
+    // Add more entries for our fake values to make sure we can't
+    // index out of bounds into this array no matter what.
+    nsEventStates(),
+    nsEventStates()
+  };
+  MOZ_STATIC_ASSERT(NS_ARRAY_LENGTH(sPseudoClassStates) ==
+                    nsCSSPseudoClasses::ePseudoClass_NotPseudoClass + 1,
+                    "Length of PseudoClassStates array is incorrect");
+
+  nsCOMPtr<nsIAtom> atom = do_GetAtom(aStatePseudo);
+
+  // Ignore :moz-any-link so we don't give the element simultaneous
+  // visited and unvisited style state
+  if (nsCSSPseudoClasses::GetPseudoType(atom) ==
+      nsCSSPseudoClasses::ePseudoClass_mozAnyLink) {
+    return nsEventStates();
+  }
+  // Our array above is long enough that indexing into it with
+  // NotPseudoClass is ok.
+  return sPseudoClassStates[nsCSSPseudoClasses::GetPseudoType(atom)];
+}
+
+NS_IMETHODIMP
+inDOMUtils::AddPseudoClassLock(nsIDOMElement *aElement,
+                               const nsAString &aPseudoClass)
+{
+  nsEventStates state = GetStatesForPseudoClass(aPseudoClass);
+  if (state.IsEmpty()) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<mozilla::dom::Element> element = do_QueryInterface(aElement);
+  NS_ENSURE_ARG_POINTER(element);
+
+  element->LockStyleStates(state);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+inDOMUtils::RemovePseudoClassLock(nsIDOMElement *aElement,
+                                  const nsAString &aPseudoClass)
+{
+  nsEventStates state = GetStatesForPseudoClass(aPseudoClass);
+  if (state.IsEmpty()) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<mozilla::dom::Element> element = do_QueryInterface(aElement);
+  NS_ENSURE_ARG_POINTER(element);
+
+  element->UnlockStyleStates(state);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+inDOMUtils::HasPseudoClassLock(nsIDOMElement *aElement,
+                               const nsAString &aPseudoClass,
+                               bool *_retval)
+{
+  nsEventStates state = GetStatesForPseudoClass(aPseudoClass);
+  if (state.IsEmpty()) {
+    *_retval = false;
+    return NS_OK;
+  }
+
+  nsCOMPtr<mozilla::dom::Element> element = do_QueryInterface(aElement);
+  NS_ENSURE_ARG_POINTER(element);
+
+  nsEventStates locks = element->LockedStyleStates();
+
+  *_retval = locks.HasAllStates(state);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+inDOMUtils::ClearPseudoClassLocks(nsIDOMElement *aElement)
+{
+  nsCOMPtr<mozilla::dom::Element> element = do_QueryInterface(aElement);
+  NS_ENSURE_ARG_POINTER(element);
+
+  element->ClearStyleStateLocks();
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+inDOMUtils::ParseStyleSheet(nsIDOMCSSStyleSheet *aSheet,
+                            const nsAString& aInput)
+{
+  nsRefPtr<nsCSSStyleSheet> sheet = do_QueryObject(aSheet);
+  NS_ENSURE_ARG_POINTER(sheet);
+
+  return sheet->ParseSheet(aInput);
 }

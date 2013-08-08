@@ -1,46 +1,13 @@
 /* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Graphite integration code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Jonathan Kew <jfkthame@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "prtypes.h"
 #include "prmem.h"
 #include "nsString.h"
 #include "nsBidiUtils.h"
 #include "nsMathUtils.h"
-#include "nsHashSets.h"
 
 #include "gfxTypes.h"
 
@@ -48,12 +15,11 @@
 #include "gfxPlatform.h"
 #include "gfxGraphiteShaper.h"
 #include "gfxFontUtils.h"
-#include "gfxUnicodeProperties.h"
 
 #include "graphite2/Font.h"
 #include "graphite2/Segment.h"
 
-#include "harfbuzz/hb-blob.h"
+#include "harfbuzz/hb.h"
 
 #include "cairo.h"
 
@@ -90,7 +56,6 @@ ReleaseTableFunc(const PRUint32& /* aKey */,
                  gfxGraphiteShaper::TableRec& aData,
                  void* /* aUserArg */)
 {
-    hb_blob_unlock(aData.mBlob);
     hb_blob_destroy(aData.mBlob);
     return PL_DHASH_REMOVE;
 }
@@ -124,11 +89,8 @@ gfxGraphiteShaper::GetTable(PRUint32 aTag, size_t *aLength)
         if (blob) {
             // mFont->GetFontTable() gives us a reference to the blob.
             // We will destroy (release) it in our destructor.
-            // Meanwhile, we hold the blob locked because Graphite expects
-            // the table pointer to remain valid for the life of the face.
             tableRec.mBlob = blob;
-            tableRec.mData = hb_blob_lock(blob);
-            tableRec.mLength = hb_blob_get_length(blob);
+            tableRec.mData = hb_blob_get_data(blob, &tableRec.mLength);
             mTables.Put(aTag, tableRec);
         } else {
             return nsnull;
@@ -160,13 +122,32 @@ MakeGraphiteLangTag(PRUint32 aTag)
     return grLangTag;
 }
 
+struct GrFontFeatures {
+    gr_face        *mFace;
+    gr_feature_val *mFeatures;
+};
+
+static PLDHashOperator
+AddFeature(const PRUint32& aTag, PRUint32& aValue, void *aUserArg)
+{
+    GrFontFeatures *f = static_cast<GrFontFeatures*>(aUserArg);
+
+    const gr_feature_ref* fref = gr_face_find_fref(f->mFace, aTag);
+    if (fref) {
+        gr_fref_set_feature_value(fref, aValue, f->mFeatures);
+    }
+    return PL_DHASH_NEXT;
+}
+
 bool
 gfxGraphiteShaper::ShapeWord(gfxContext      *aContext,
                              gfxShapedWord   *aShapedWord,
                              const PRUnichar *aText)
 {
     // some font back-ends require this in order to get proper hinted metrics
-    mFont->SetupCairoFont(aContext);
+    if (!mFont->SetupCairoFont(aContext)) {
+        return false;
+    }
 
     mCallbackData.mContext = aContext;
 
@@ -201,32 +182,21 @@ gfxGraphiteShaper::ShapeWord(gfxContext      *aContext,
     }
     gr_feature_val *grFeatures = gr_face_featureval_for_lang(mGrFace, grLang);
 
-    if (aShapedWord->DisableLigatures()) {
-        const gr_feature_ref* fref =
-            gr_face_find_fref(mGrFace, TRUETYPE_TAG('l','i','g','a'));
-        if (fref) {
-            gr_fref_set_feature_value(fref, 0, grFeatures);
-        }
-    }
+    nsDataHashtable<nsUint32HashKey,PRUint32> mergedFeatures;
 
-    const nsTArray<gfxFontFeature> *features = &style->featureSettings;
-    if (features->IsEmpty()) {
-        features = &entry->mFeatureSettings;
-    }
-    for (PRUint32 i = 0; i < features->Length(); ++i) {
-        const gr_feature_ref* fref =
-            gr_face_find_fref(mGrFace, (*features)[i].mTag);
-        if (fref) {
-            gr_fref_set_feature_value(fref, (*features)[i].mValue, grFeatures);
-        }
+    if (MergeFontFeatures(style->featureSettings, entry->mFeatureSettings,
+                          aShapedWord->DisableLigatures(), mergedFeatures)) {
+        // enumerate result and insert into Graphite feature list
+        GrFontFeatures f = {mGrFace, grFeatures};
+        mergedFeatures.Enumerate(AddFeature, &f);
     }
 
     gr_segment *seg = gr_make_seg(mGrFont, mGrFace, 0, grFeatures,
                                   gr_utf16, aText, aShapedWord->Length(),
                                   aShapedWord->IsRightToLeft());
-    if (features) {
-        gr_featureval_destroy(grFeatures);
-    }
+
+    gr_featureval_destroy(grFeatures);
+
     if (!seg) {
         return false;
     }

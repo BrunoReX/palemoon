@@ -1,40 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Mats Palmgren <matspal@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* struct containing the input to nsIFrame::Reflow */
 
@@ -56,9 +23,8 @@
 #include "nsIPercentHeightObserver.h"
 #include "nsLayoutUtils.h"
 #include "mozilla/Preferences.h"
-#ifdef IBMBIDI
 #include "nsBidiUtils.h"
-#endif
+#include "nsFontInflationData.h"
 
 #ifdef NS_DEBUG
 #undef NOISY_VERTICAL_ALIGN
@@ -87,13 +53,11 @@ static eNormalLineHeightControl sNormalLineHeightControl = eUninitialized;
 nsHTMLReflowState::nsHTMLReflowState(nsPresContext*       aPresContext,
                                      nsIFrame*            aFrame,
                                      nsRenderingContext* aRenderingContext,
-                                     const nsSize&        aAvailableSpace)
+                                     const nsSize&        aAvailableSpace,
+                                     PRUint32             aFlags)
   : nsCSSOffsetState(aFrame, aRenderingContext)
   , mBlockDelta(0)
   , mReflowDepth(0)
-  , mRestoreCurrentInflationContainer(aPresContext->mCurrentInflationContainer)
-  , mRestoreCurrentInflationContainerWidth(aPresContext->
-                                             mCurrentInflationContainerWidth)
 {
   NS_PRECONDITION(aPresContext, "no pres context");
   NS_PRECONDITION(aRenderingContext, "no rendering context");
@@ -103,15 +67,14 @@ nsHTMLReflowState::nsHTMLReflowState(nsPresContext*       aPresContext,
   availableHeight = aAvailableSpace.height;
   mFloatManager = nsnull;
   mLineLayout = nsnull;
-  mFlags.mSpecialHeightReflow = false;
-  mFlags.mIsTopOfPage = false;
-  mFlags.mTableIsSplittable = false;
-  mFlags.mNextInFlowUntouched = false;
-  mFlags.mAssumingHScrollbar = mFlags.mAssumingVScrollbar = false;
-  mFlags.mHasClearance = false;
-  mFlags.mHeightDependsOnAncestorCell = false;
+  memset(&mFlags, 0, sizeof(mFlags));
   mDiscoveredClearance = nsnull;
   mPercentHeightObserver = nsnull;
+
+  if (aFlags & DUMMY_PARENT_REFLOW_STATE) {
+    mFlags.mDummyParentReflowState = true;
+  }
+
   Init(aPresContext);
 }
 
@@ -136,9 +99,6 @@ nsHTMLReflowState::nsHTMLReflowState(nsPresContext*           aPresContext,
   , mBlockDelta(0)
   , mReflowDepth(aParentReflowState.mReflowDepth + 1)
   , mFlags(aParentReflowState.mFlags)
-  , mRestoreCurrentInflationContainer(aPresContext->mCurrentInflationContainer)
-  , mRestoreCurrentInflationContainerWidth(aPresContext->
-                                             mCurrentInflationContainerWidth)
 {
   NS_PRECONDITION(aPresContext, "no pres context");
   NS_PRECONDITION(aFrame, "no frame");
@@ -174,6 +134,8 @@ nsHTMLReflowState::nsHTMLReflowState(nsPresContext*           aPresContext,
     CheckNextInFlowParenthood(aFrame, aParentReflowState.frame);
   mFlags.mAssumingHScrollbar = mFlags.mAssumingVScrollbar = false;
   mFlags.mHasClearance = false;
+  mFlags.mIsColumnBalancing = false;
+  mFlags.mDummyParentReflowState = false;
 
   mDiscoveredClearance = nsnull;
   mPercentHeightObserver = (aParentReflowState.mPercentHeightObserver && 
@@ -302,9 +264,46 @@ nsHTMLReflowState::Init(nsPresContext* aPresContext,
       !(parent->GetType() == nsGkAtoms::scrollFrame &&
         parent->GetStyleDisplay()->mOverflowY != NS_STYLE_OVERFLOW_HIDDEN)) {
     frame->AddStateBits(NS_FRAME_IN_CONSTRAINED_HEIGHT);
-  } else if (mStylePosition->mHeight.GetUnit() != eStyleUnit_Auto ||
-             mStylePosition->mMaxHeight.GetUnit() != eStyleUnit_None) {
+  } else if (type == nsGkAtoms::svgForeignObjectFrame) {
+    // An SVG foreignObject frame is inherently constrained height.
     frame->AddStateBits(NS_FRAME_IN_CONSTRAINED_HEIGHT);
+  } else if ((mStylePosition->mHeight.GetUnit() != eStyleUnit_Auto ||
+              mStylePosition->mMaxHeight.GetUnit() != eStyleUnit_None) &&
+              // Don't set NS_FRAME_IN_CONSTRAINED_HEIGHT on body or html
+              // elements.
+             (frame->GetContent() &&
+            !(frame->GetContent()->IsHTML(nsGkAtoms::body) ||
+              frame->GetContent()->IsHTML(nsGkAtoms::html)))) {
+
+    // If our height was specified as a percentage, then this could
+    // actually resolve to 'auto', based on:
+    // http://www.w3.org/TR/CSS21/visudet.html#the-height-property
+    nsIFrame* containingBlk = frame;
+    while (containingBlk) {
+      const nsStylePosition* stylePos = containingBlk->GetStylePosition();
+      if ((stylePos->mHeight.IsCoordPercentCalcUnit() &&
+           !stylePos->mHeight.HasPercent()) ||
+          (stylePos->mMaxHeight.IsCoordPercentCalcUnit() &&
+           !stylePos->mMaxHeight.HasPercent())) {
+        frame->AddStateBits(NS_FRAME_IN_CONSTRAINED_HEIGHT);
+        break;
+      } else if ((stylePos->mHeight.IsCoordPercentCalcUnit() &&
+                  stylePos->mHeight.HasPercent()) ||
+                 (stylePos->mMaxHeight.IsCoordPercentCalcUnit() &&
+                  stylePos->mMaxHeight.HasPercent())) {
+        if (!(containingBlk = containingBlk->GetContainingBlock())) {
+          // If we've reached the top of the tree, then we don't have
+          // a constrained height.
+          frame->RemoveStateBits(NS_FRAME_IN_CONSTRAINED_HEIGHT);
+          break;
+        }
+
+        continue;
+      } else {
+        frame->RemoveStateBits(NS_FRAME_IN_CONSTRAINED_HEIGHT);
+        break;
+      }
+    }
   } else {
     frame->RemoveStateBits(NS_FRAME_IN_CONSTRAINED_HEIGHT);
   }
@@ -369,34 +368,97 @@ IsQuirkContainingBlockHeight(const nsHTMLReflowState* rs, nsIAtom* aFrameType)
 void
 nsHTMLReflowState::InitResizeFlags(nsPresContext* aPresContext, nsIAtom* aFrameType)
 {
-  mFlags.mHResize = !(frame->GetStateBits() & NS_FRAME_IS_DIRTY) &&
-                    frame->GetSize().width !=
-                      mComputedWidth + mComputedBorderPadding.LeftRight();
-  if (mFlags.mHResize &&
-      nsLayoutUtils::FontSizeInflationEnabled(aPresContext)) {
-    // When font size inflation is enabled, the change in the width of a
-    // block (or anything that returns true in
-    // IsContainerForFontSizeInflation) needs to cause a dirty reflow
-    // since it changes the size of text, line-heights, etc.  This is
-    // relatively similar to a classic case of style change reflow,
-    // except that because inflation doesn't affect the intrinsic sizing
-    // codepath, there's no need to invalidate intrinsic sizes.
-    //
-    // Note that this makes horizontal resizing a good bit more
-    // expensive.  However, font size inflation is targeted at a set of
-    // devices (zoom-and-pan devices) where the main use case for
-    // horizontal resizing needing to be efficient (window resizing) is
-    // not present.  It does still increase the cost of dynamic changes
-    // caused by script where a style or content change in one place
-    // causes a resize in another (e.g., rebalancing a table).
+  bool isHResize = frame->GetSize().width !=
+                     mComputedWidth + mComputedBorderPadding.LeftRight();
 
-    // FIXME: This isn't so great for the cases where
-    // nsHTMLReflowState::SetComputedWith is called, if the first time
-    // we go through InitResizeFlags we set mHResize to true, and then
-    // the second time we'd set it to false even without the
-    // NS_FRAME_IS_DIRTY bit already set.
-    frame->AddStateBits(NS_FRAME_IS_DIRTY);
+  if ((frame->GetStateBits() & NS_FRAME_FONT_INFLATION_FLOW_ROOT) &&
+      nsLayoutUtils::FontSizeInflationEnabled(aPresContext)) {
+    // Create our font inflation data if we don't have it already, and
+    // give it our current width information.
+    bool dirty = nsFontInflationData::UpdateFontInflationDataWidthFor(*this) &&
+                 // Avoid running this at the box-to-block interface
+                 // (where we shouldn't be inflating anyway, and where
+                 // reflow state construction is probably to construct a
+                 // dummy parent reflow state anyway).
+                 !mFlags.mDummyParentReflowState;
+
+    if (dirty || (!frame->GetParent() && isHResize)) {
+      // When font size inflation is enabled, a change in either:
+      //  * the effective width of a font inflation flow root
+      //  * the width of the frame
+      // needs to cause a dirty reflow since they change the font size
+      // inflation calculations, which in turn change the size of text,
+      // line-heights, etc.  This is relatively similar to a classic
+      // case of style change reflow, except that because inflation
+      // doesn't affect the intrinsic sizing codepath, there's no need
+      // to invalidate intrinsic sizes.
+      //
+      // Note that this makes horizontal resizing a good bit more
+      // expensive.  However, font size inflation is targeted at a set of
+      // devices (zoom-and-pan devices) where the main use case for
+      // horizontal resizing needing to be efficient (window resizing) is
+      // not present.  It does still increase the cost of dynamic changes
+      // caused by script where a style or content change in one place
+      // causes a resize in another (e.g., rebalancing a table).
+
+      // FIXME: This isn't so great for the cases where
+      // nsHTMLReflowState::SetComputedWidth is called, if the first time
+      // we go through InitResizeFlags we set mHResize to true, and then
+      // the second time we'd set it to false even without the
+      // NS_FRAME_IS_DIRTY bit already set.
+      if (frame->GetType() == nsGkAtoms::svgForeignObjectFrame) {
+        // Foreign object frames use dirty bits in a special way.
+        frame->AddStateBits(NS_FRAME_HAS_DIRTY_CHILDREN);
+        nsIFrame *kid = frame->GetFirstPrincipalChild();
+        if (kid) {
+          kid->AddStateBits(NS_FRAME_IS_DIRTY);
+        }
+      } else {
+        frame->AddStateBits(NS_FRAME_IS_DIRTY);
+      }
+
+      // Mark intrinsic widths on all descendants dirty.  We need to do
+      // this (1) since we're changing the size of text and need to
+      // clear text runs on text frames and (2) since we actually are
+      // changing some intrinsic widths, but only those that live inside
+      // of containers.
+
+      // It makes sense to do this for descendants but not ancestors
+      // (which is unusual) because we're only changing the unusual
+      // inflation-dependent intrinsic widths (i.e., ones computed with
+      // nsPresContext::mInflationDisabledForShrinkWrap set to false),
+      // which should never affect anything outside of their inflation
+      // flow root (or, for that matter, even their inflation
+      // container).
+
+      // This is also different from what PresShell::FrameNeedsReflow
+      // does because it doesn't go through placeholders.  It doesn't
+      // need to because we're actually doing something that cares about
+      // frame tree geometry (the width on an ancestor) rather than
+      // style.
+
+      nsAutoTArray<nsIFrame*, 32> stack;
+      stack.AppendElement(frame);
+
+      do {
+        nsIFrame *f = stack.ElementAt(stack.Length() - 1);
+        stack.RemoveElementAt(stack.Length() - 1);
+
+        nsIFrame::ChildListIterator lists(f);
+        for (; !lists.IsDone(); lists.Next()) {
+          nsFrameList::Enumerator childFrames(lists.CurrentList());
+          for (; !childFrames.AtEnd(); childFrames.Next()) {
+            nsIFrame* kid = childFrames.get();
+            kid->MarkIntrinsicWidthsDirty();
+            stack.AppendElement(kid);
+          }
+        }
+      } while (stack.Length() != 0);
+    }
   }
+
+  mFlags.mHResize = !(frame->GetStateBits() & NS_FRAME_IS_DIRTY) &&
+                    isHResize;
 
   // XXX Should we really need to null check mCBReflowState?  (We do for
   // at least nsBoxFrame).
@@ -812,7 +874,7 @@ nsHTMLReflowState::CalculateHorizBorderPaddingMargin(
                        nscoord* aInsideBoxSizing,
                        nscoord* aOutsideBoxSizing)
 {
-  const nsMargin& border = mStyleBorder->GetActualBorder();
+  const nsMargin& border = mStyleBorder->GetComputedBorder();
   nsMargin padding, margin;
 
   // See if the style system can provide us the padding directly
@@ -1243,9 +1305,13 @@ nsHTMLReflowState::InitAbsoluteConstraints(nsPresContext* aPresContext,
   bool widthIsAuto = eStyleUnit_Auto == mStylePosition->mWidth.GetUnit();
   bool heightIsAuto = eStyleUnit_Auto == mStylePosition->mHeight.GetUnit();
 
-  bool shrinkWrap = leftIsAuto || rightIsAuto;
+  PRUint32 computeSizeFlags = 0;
+  if (leftIsAuto || rightIsAuto) {
+    computeSizeFlags |= nsIFrame::eShrinkWrap;
+  }
+
   {
-    AutoMaybeNullInflationContainer an(frame);
+    AutoMaybeDisableFontInflation an(frame);
 
     nsSize size =
       frame->ComputeSize(rendContext,
@@ -1262,7 +1328,7 @@ nsHTMLReflowState::InitAbsoluteConstraints(nsPresContext* aPresContext,
                                   mComputedPadding.TopBottom()),
                          nsSize(mComputedPadding.LeftRight(),
                                 mComputedPadding.TopBottom()),
-                         shrinkWrap);
+                         computeSizeFlags);
     mComputedWidth = size.width;
     mComputedHeight = size.height;
   }
@@ -1867,13 +1933,21 @@ nsHTMLReflowState::InitConstraints(nsPresContext* aPresContext,
       InitAbsoluteConstraints(aPresContext, cbrs, aContainingBlockWidth,
                               aContainingBlockHeight, aFrameType);
     } else {
-      AutoMaybeNullInflationContainer an(frame);
+      AutoMaybeDisableFontInflation an(frame);
 
-      bool isBlock =
-        NS_CSS_FRAME_TYPE_BLOCK == NS_FRAME_GET_TYPE(mFrameType);
-      // make sure legend frames with display:block and width:auto still
-      // shrink-wrap
-      bool shrinkWrap = !isBlock || aFrameType == nsGkAtoms::legendFrame;
+      bool isBlock = NS_CSS_FRAME_TYPE_BLOCK == NS_FRAME_GET_TYPE(mFrameType);
+      PRUint32 computeSizeFlags = isBlock ? 0 : nsIFrame::eShrinkWrap;
+
+      // Make sure legend frames with display:block and width:auto still
+      // shrink-wrap.
+      if (isBlock &&
+          ((aFrameType == nsGkAtoms::legendFrame &&
+            frame->GetStyleContext()->GetPseudo() != nsCSSAnonBoxes::scrolledContent) ||
+           (aFrameType == nsGkAtoms::scrollFrame &&
+            frame->GetContentInsertionFrame()->GetType() == nsGkAtoms::legendFrame))) {
+        computeSizeFlags |= nsIFrame::eShrinkWrap;
+      }
+
       nsSize size =
         frame->ComputeSize(rendContext,
                            nsSize(aContainingBlockWidth,
@@ -1887,7 +1961,7 @@ nsHTMLReflowState::InitConstraints(nsPresContext* aPresContext,
                                     mComputedPadding.TopBottom()),
                            nsSize(mComputedPadding.LeftRight(),
                                   mComputedPadding.TopBottom()),
-                           shrinkWrap);
+                           computeSizeFlags);
 
       mComputedWidth = size.width;
       mComputedHeight = size.height;
@@ -1906,11 +1980,6 @@ nsHTMLReflowState::InitConstraints(nsPresContext* aPresContext,
   if (!mFlags.mBlinks && BlinkIsAllowed()) {
     const nsStyleTextReset* st = frame->GetStyleTextReset();
     mFlags.mBlinks = (st->mTextBlink != NS_STYLE_TEXT_BLINK_NONE);
-  }
-
-  if (nsLayoutUtils::IsContainerForFontSizeInflation(frame)) {
-    aPresContext->mCurrentInflationContainer = frame;
-    aPresContext->mCurrentInflationContainerWidth = mComputedWidth;
   }
 }
 
@@ -1999,7 +2068,7 @@ nsCSSOffsetState::InitOffsets(nscoord aContainingBlockWidth,
     mComputedBorderPadding = *aBorder;
   }
   else {
-    mComputedBorderPadding = frame->GetStyleBorder()->GetActualBorder();
+    mComputedBorderPadding = frame->GetStyleBorder()->GetComputedBorder();
   }
   mComputedBorderPadding += mComputedPadding;
 
@@ -2216,8 +2285,7 @@ nsHTMLReflowState::CalcLineHeight() const
     (mCBReflowState ? mCBReflowState->mComputedHeight : NS_AUTOHEIGHT);
 
   return CalcLineHeight(frame->GetStyleContext(), blockHeight,
-                        nsLayoutUtils::FontSizeInflationFor(frame,
-                          nsLayoutUtils::eInReflow));
+                        nsLayoutUtils::FontSizeInflationFor(frame));
 }
 
 /* static */ nscoord

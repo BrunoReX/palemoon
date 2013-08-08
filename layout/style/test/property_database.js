@@ -1,41 +1,8 @@
 /* -*- Mode: Java; tab-width: 4; indent-tabs-mode: t; c-basic-offset: 4 -*- */
 /* vim: set shiftwidth=4 tabstop=4 autoindent cindent noexpandtab: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is property_database.js.
- *
- * The Initial Developer of the Original Code is the Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2007
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   L. David Baron <dbaron@dbaron.org>, Mozilla Corporation (original author)
- *   Mats Palmgren <matspal@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // True longhand properties.
 const CSS_TYPE_LONGHAND = 0;
@@ -230,22 +197,81 @@ var gCSSProperties = {
 		],
 		invalid_values: [ "5%" ]
 	},
-	"-moz-border-image": {
-		domProp: "MozBorderImage",
+	"border-image": {
+		domProp: "borderImage",
 		inherited: false,
-		type: CSS_TYPE_LONGHAND,
+		type: CSS_TYPE_TRUE_SHORTHAND,
+		subproperties: [ "border-image-source", "border-image-slice", "border-image-width", "border-image-outset", "border-image-repeat" ],
 		initial_values: [ "none" ],
 		other_values: [ "url('border.png') 27 27 27 27",
 						"url('border.png') 27",
+						"stretch url('border.png')",
+						"url('border.png') 27 fill",
 						"url('border.png') 27 27 27 27 repeat",
+						"repeat url('border.png') 27 27 27 27",
+						"url('border.png') repeat 27 27 27 27",
+						"url('border.png') fill 27 27 27 27 repeat",
 						"url('border.png') 27 27 27 27 / 1em",
+						"27 27 27 27 / 1em url('border.png') ",
+						"url('border.png') 27 27 27 27 / 10 10 10 / 10 10 repeat",
+						"repeat 27 27 27 27 / 10 10 10 / 10 10 url('border.png')",
+						"url('border.png') 27 27 27 27 / / 10 10 1em",
+						"fill 27 27 27 27 / / 10 10 1em url('border.png')",
 						"url('border.png') 27 27 27 27 / 1em 1em 1em 1em repeat",
 						"url('border.png') 27 27 27 27 / 1em 1em 1em 1em stretch round" ],
-		invalid_values: [ "url('border.png')",
-						  "url('border.png') 27 27 27 27 27",
+		invalid_values: [ "url('border.png') 27 27 27 27 27",
 						  "url('border.png') 27 27 27 27 / 1em 1em 1em 1em 1em",
+						  "url('border.png') 27 27 27 27 /",
+						  "url('border.png') fill",
+						  "url('border.png') fill repeat",
+						  "fill repeat",
+						  "url('border.png') fill / 1em",
 						  "url('border.png') / repeat",
-						  "url('border.png') 27 27 27 27 /" ]
+						  "url('border.png') 1 /",
+						  "url('border.png') 1 / /",
+						  "1 / url('border.png')",
+						  "url('border.png') / 1",
+						  "url('border.png') / / 1"]
+	},
+	"border-image-source": {
+		domProp: "borderImageSource",
+		inherited: false,
+		type: CSS_TYPE_LONGHAND,
+		initial_values: [ "none" ],
+		other_values: [ "url('border.png')" ],
+		invalid_values: [ "url('border.png') url('border.png')" ]
+	},
+	"border-image-slice": {
+		domProp: "borderImageSlice",
+		inherited: false,
+		type: CSS_TYPE_LONGHAND,
+		initial_values: [ "100%", "100% 100% 100% 100%" ],
+		other_values: [ "0%", "10", "10 100% 0 2", "0 0 0 0", "fill 10 10", "10 10 fill" ],
+		invalid_values: [ "-10%", "-10", "10 10 10 10 10", "10 10 10 10 -10", "10px", "-10px", "fill", "fill fill 10px", "10px fill fill" ]
+	},
+	"border-image-width": {
+		domProp: "borderImageWidth",
+		inherited: false,
+		type: CSS_TYPE_LONGHAND,
+		initial_values: [ "1", "1 1 1 1" ],
+		other_values: [ "0", "0%", "0px", "auto auto auto auto", "10 10% auto 15px", "10px 10px 10px 10px", "10", "10 10", "10 10 10" ],
+		invalid_values: [ "-10", "-10px", "-10%", "10 10 10 10 10", "10 10 10 10 auto", "auto auto auto auto auto" ]
+	},
+	"border-image-outset": {
+		domProp: "borderImageOutset",
+		inherited: false,
+		type: CSS_TYPE_LONGHAND,
+		initial_values: [ "0", "0 0 0 0" ],
+		other_values: [ "10px", "10", "10 10", "10 10 10", "10 10 10 10", "10px 10 10 10px" ],
+		invalid_values: [ "-10", "-10px", "-10%", "10%", "10 10 10 10 10" ]
+	},
+	"border-image-repeat": {
+		domProp: "borderImageRepeat",
+		inherited: false,
+		type: CSS_TYPE_LONGHAND,
+		initial_values: [ "stretch", "stretch stretch" ],
+		other_values: [ "round", "repeat", "stretch round", "repeat round", "stretch repeat", "round round", "repeat repeat" ],
+		invalid_values: [ "none", "stretch stretch stretch", "0", "10", "0%", "0px" ]
 	},
 	"-moz-border-left-colors": {
 		domProp: "MozBorderLeftColors",
@@ -939,7 +965,7 @@ var gCSSProperties = {
 		type: CSS_TYPE_LONGHAND,
 		prerequisites: { "width": "300px", "height": "50px" },
 		initial_values: [ "none" ],
-		other_values: [ "translatex(1px)", "translatex(4em)", "translatex(-4px)", "translatex(3px)", "translatex(0px) translatex(1px) translatex(2px) translatex(3px) translatex(4px)", "translatey(4em)", "translate(3px)", "translate(10px, -3px)", "rotate(45deg)", "rotate(45grad)", "rotate(45rad)", "rotate(0)", "scalex(10)", "scaley(10)", "scale(10)", "scale(10, 20)", "skewx(30deg)", "skewx(0)", "skewy(0)", "skewx(30grad)", "skewx(30rad)", "skewy(30deg)", "skewy(30grad)", "skewy(30rad)", "matrix(1, 2, 3, 4, 5px, 6em)", "rotate(45deg) scale(2, 1)", "skewx(45deg) skewx(-50grad)", "translate(0, 0) scale(1, 1) skewx(0) skewy(0) matrix(1, 0, 0, 1, 0, 0)", "translatex(50%)", "translatey(50%)", "translate(50%)", "translate(3%, 5px)", "translate(5px, 3%)", "matrix(1, 2, 3, 4, 5px, 6%)", "matrix(1, 2, 3, 4, 5%, 6px)", "matrix(1, 2, 3, 4, 5%, 6%)", "matrix(1, 2, 3, 4, 5, 6)",
+		other_values: [ "translatex(1px)", "translatex(4em)", "translatex(-4px)", "translatex(3px)", "translatex(0px) translatex(1px) translatex(2px) translatex(3px) translatex(4px)", "translatey(4em)", "translate(3px)", "translate(10px, -3px)", "rotate(45deg)", "rotate(45grad)", "rotate(45rad)", "rotate(0.25turn)", "rotate(0)", "scalex(10)", "scaley(10)", "scale(10)", "scale(10, 20)", "skewx(30deg)", "skewx(0)", "skewy(0)", "skewx(30grad)", "skewx(30rad)", "skewx(0.08turn)", "skewy(30deg)", "skewy(30grad)", "skewy(30rad)", "skewy(0.08turn)", "matrix(1, 2, 3, 4, 5px, 6em)", "rotate(45deg) scale(2, 1)", "skewx(45deg) skewx(-50grad)", "translate(0, 0) scale(1, 1) skewx(0) skewy(0) matrix(1, 0, 0, 1, 0, 0)", "translatex(50%)", "translatey(50%)", "translate(50%)", "translate(3%, 5px)", "translate(5px, 3%)", "matrix(1, 2, 3, 4, 5px, 6%)", "matrix(1, 2, 3, 4, 5%, 6px)", "matrix(1, 2, 3, 4, 5%, 6%)", "matrix(1, 2, 3, 4, 5, 6)",
 			/* valid calc() values */
 			"translatex(-moz-calc(5px + 10%))",
 			"translatey(-moz-calc(0.25 * 5px + 10% / 3))",
@@ -948,7 +974,7 @@ var gCSSProperties = {
 			"translate(-50px, -moz-calc(5px - 10% * 3))",
 			"matrix(1, 0, 0, 1, -moz-calc(5px * 3), -moz-calc(10% - 3px))"
 		].concat(SpecialPowers.getBoolPref("layout.3d-transforms.enabled") ? [
-            "translatez(1px)", "translatez(4em)", "translatez(-4px)", "translatez(0px)", "translatez(2px) translatez(5px)", "translate3d(3px, 4px, 5px)", "translate3d(2em, 3px, 1em)", "translatex(2px) translate3d(4px, 5px, 6px) translatey(1px)", "scale3d(4, 4, 4)", "scale3d(-2, 3, -7)", "scalez(4)", "scalez(-6)", "rotate3d(2, 3, 4, 45deg)", "rotate3d(-3, 7, 0, 12rad)", "rotatex(15deg)", "rotatey(-12grad)", "rotatez(72rad)", "perspective(1000px)", "matrix3d(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)", "matrix3d(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13px, 14em, 15px, 16)", "matrix3d(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 20%, 10%, 15, 16)"
+            "translatez(1px)", "translatez(4em)", "translatez(-4px)", "translatez(0px)", "translatez(2px) translatez(5px)", "translate3d(3px, 4px, 5px)", "translate3d(2em, 3px, 1em)", "translatex(2px) translate3d(4px, 5px, 6px) translatey(1px)", "scale3d(4, 4, 4)", "scale3d(-2, 3, -7)", "scalez(4)", "scalez(-6)", "rotate3d(2, 3, 4, 45deg)", "rotate3d(-3, 7, 0, 12rad)", "rotatex(15deg)", "rotatey(-12grad)", "rotatez(72rad)", "rotatex(0.125turn)", "perspective(1000px)", "matrix3d(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)", "matrix3d(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13px, 14em, 15px, 16)", "matrix3d(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 20%, 10%, 15, 16)"
 		] : []),
 		invalid_values: ["1px", "#0000ff", "red", "auto", "translatex(1px 1px)", "translatex(translatex(1px))", "translatex(#0000ff)", "translatex(red)", "translatey()", "matrix(1px, 2px, 3px, 4px, 5px, 6px)", "scale(150%)", "skewx(red)", "matrix(1%, 0, 0, 0, 0px, 0px)", "matrix(0, 1%, 2, 3, 4px,5px)", "matrix(0, 1, 2%, 3, 4px, 5px)", "matrix(0, 1, 2, 3%, 4%, 5%)",
 			/* invalid calc() values */
@@ -968,11 +994,11 @@ var gCSSProperties = {
 		/* no subproperties */
 		prerequisites: { "width": "10px", "height": "10px", "display": "block"},
 		initial_values: [ "50% 50%", "center", "center center" ],
-		other_values: [ "25% 25%", "5px 5px", "20% 3em", "0 0", "0in 1in",
+		other_values: [ "25% 25%", "6px 5px", "20% 3em", "0 0", "0in 1in",
 						"top", "bottom","top left", "top right",
 						"top center", "center left", "center right",
 						"bottom left", "bottom right", "bottom center",
-						"20% center", "5px center", "13in bottom",
+						"20% center", "6px center", "13in bottom",
 						"left 50px", "right 13%", "center 40px",
 			"-moz-calc(20px)",
 			"-moz-calc(20px) 10px",
@@ -996,11 +1022,11 @@ var gCSSProperties = {
         /* no subproperties */
         prerequisites: { "width": "10px", "height": "10px", "display": "block"},
         initial_values: [ "50% 50%", "center", "center center" ],
-        other_values: [ "25% 25%", "5px 5px", "20% 3em", "0 0", "0in 1in",
+        other_values: [ "25% 25%", "6px 5px", "20% 3em", "0 0", "0in 1in",
                         "top", "bottom","top left", "top right",
                         "top center", "center left", "center right",
                         "bottom left", "bottom right", "bottom center",
-                        "20% center", "5px center", "13in bottom",
+                        "20% center", "6px center", "13in bottom",
                         "left 50px", "right 13%", "center 40px",
                         "-moz-calc(20px)",
                         "-moz-calc(20px) 10px",
@@ -1020,9 +1046,9 @@ var gCSSProperties = {
 		domProp: "MozPerspective",
 		inherited: false,
 		type: CSS_TYPE_LONGHAND,
-		initial_values: [ "none", "0" ],
-		other_values: [ "1000px", "500.2px", "-100px", "-27.2em" ],
-		invalid_values: [ "pants", "200" ]
+		initial_values: [ "none" ],
+		other_values: [ "1000px", "500.2px" ],
+		invalid_values: [ "pants", "200", "0", "-100px", "-27.2em" ]
 	},
     "-moz-backface-visibility": {
         domProp: "MozBackfaceVisibility",
@@ -1108,6 +1134,7 @@ var gCSSProperties = {
 			"50%",
 			"-moz-radial-gradient(10% bottom, #ffffff, black) scroll no-repeat",
 			"-moz-linear-gradient(10px 10px -45deg, red, blue) repeat",
+			"-moz-linear-gradient(10px 10px -0.125turn, red, blue) repeat",
 			"-moz-repeating-radial-gradient(10% bottom, #ffffff, black) scroll no-repeat",
 			"-moz-repeating-linear-gradient(10px 10px -45deg, red, blue) repeat",
 			"-moz-element(#test) lime",
@@ -1224,12 +1251,14 @@ var gCSSProperties = {
 		"-moz-linear-gradient(20% bottom -300deg, red, blue)",
 		"-moz-linear-gradient(center 20% 1.95929rad, red, blue)",
 		"-moz-linear-gradient(left 35px 30grad, red, blue)",
+		"-moz-linear-gradient(left 35px 0.1turn, red, blue)",
 		"-moz-linear-gradient(10% 10em 99999deg, red, blue)",
 		"-moz-linear-gradient(44px top -33deg, red, blue)",
 
 		"-moz-linear-gradient(-33deg, red, blue)",
 		"-moz-linear-gradient(30grad left 35px, red, blue)",
 		"-moz-linear-gradient(10deg 20px, red, blue)",
+		"-moz-linear-gradient(1turn 20px, red, blue)",
 		"-moz-linear-gradient(.414rad bottom, red, blue)",
 
 		"-moz-radial-gradient(red, blue)",
@@ -1500,7 +1529,7 @@ var gCSSProperties = {
 		domProp: "backgroundPosition",
 		inherited: false,
 		type: CSS_TYPE_LONGHAND,
-		initial_values: [ "top left", "left top", "0% 0%", "0% top", "left 0%" ],
+		initial_values: [ "top 0% left 0%", "top 0% left", "top left", "left top", "0% 0%", "0% top", "left 0%" ],
 		other_values: [ "top", "left", "right", "bottom", "center", "center bottom", "bottom center", "center right", "right center", "center top", "top center", "center left", "left center", "right bottom", "bottom right", "50%", "top left, top left", "top left, top right", "top right, top left", "left top, 0% 0%", "10% 20%, 30%, 40%", "top left, bottom right", "right bottom, left top", "0%", "0px", "30px", "0%, 10%, 20%, 30%", "top, top, top, top, top",
 			"-moz-calc(20px)",
 			"-moz-calc(20px) 10px",
@@ -1512,22 +1541,52 @@ var gCSSProperties = {
 			"-moz-calc(20px + 50%) -moz-calc(50% - 10px)",
 			"-moz-calc(-20px) -moz-calc(-50%)",
 			"-moz-calc(-20%) -moz-calc(-50%)",
-			"0px 0px"
+			"0px 0px",
+			"right 20px top 60px",
+			"right 20px bottom 60px",
+			"left 20px top 60px",
+			"left 20px bottom 60px",
+			"right -50px top -50px",
+			"left -50px bottom -50px",
+			"right 20px top -50px",
+			"right -20px top 50px",
+			"right 3em bottom 10px",
+			"bottom 3em right 10px",
+			"top 3em right 10px",
+			"left 15px",
+			"10px top",
+			"left top 15px",
+			"left 10px top",
+			"left 20%",
+			"right 20%"
 		],
-		invalid_values: [ "50% left", "top 50%" ]
+		invalid_values: [ "center 10px center 4px", "center 10px center", 
+		                  "top 20%", "bottom 20%", "50% left", "top 50%", 
+		                  "50% bottom 10%", "right 10% 50%", "left right", 
+		                  "top bottom", "left 10% right", 
+		                  "top 20px bottom 20px", "left left" ]
 	},
 	"background-repeat": {
 		domProp: "backgroundRepeat",
 		inherited: false,
 		type: CSS_TYPE_LONGHAND,
-		initial_values: [ "repeat" ],
+		initial_values: [ "repeat", "repeat repeat" ],
 		other_values: [ "repeat-x", "repeat-y", "no-repeat",
 			"repeat-x, repeat-x",
 			"repeat, no-repeat",
 			"repeat-y, no-repeat, repeat-y",
-			"repeat, repeat, repeat"
+			"repeat, repeat, repeat",
+			"repeat no-repeat",
+			"no-repeat repeat",
+			"no-repeat no-repeat",
+			"repeat repeat, repeat repeat",
 		],
-		invalid_values: [ "repeat repeat" ]
+		invalid_values: [ "repeat repeat repeat", 
+		                  "repeat-x repeat-y",
+		                  "repeat repeat-x", 
+		                  "repeat repeat-y",
+		                  "repeat-x repeat", 
+		                  "repeat-y repeat" ]
 	},
 	"background-size": {
 		domProp: "backgroundSize",
@@ -1552,7 +1611,7 @@ var gCSSProperties = {
 		domProp: "border",
 		inherited: false,
 		type: CSS_TYPE_TRUE_SHORTHAND,
-		subproperties: [ "border-bottom-color", "border-bottom-style", "border-bottom-width", "border-left-color", "border-left-style", "border-left-width", "border-right-color", "border-right-style", "border-right-width", "border-top-color", "border-top-style", "border-top-width", "-moz-border-top-colors", "-moz-border-right-colors", "-moz-border-bottom-colors", "-moz-border-left-colors", "-moz-border-image" ],
+		subproperties: [ "border-bottom-color", "border-bottom-style", "border-bottom-width", "border-left-color", "border-left-style", "border-left-width", "border-right-color", "border-right-style", "border-right-width", "border-top-color", "border-top-style", "border-top-width", "-moz-border-top-colors", "-moz-border-right-colors", "-moz-border-bottom-colors", "-moz-border-left-colors", "border-image-source", "border-image-slice", "border-image-width", "border-image-outset", "border-image-repeat" ],
 		initial_values: [ "none", "medium", "currentColor", "thin", "none medium currentcolor", "-moz-calc(4px - 1px) none" ],
 		other_values: [ "solid", "medium solid", "green solid", "10px solid", "thick solid", "-moz-calc(2px) solid blue" ],
 		invalid_values: [ "5%" ]
@@ -1944,8 +2003,19 @@ var gCSSProperties = {
 		inherited: true,
 		type: CSS_TYPE_LONGHAND,
 		initial_values: [ "normal" ],
-		other_values: [ "'liga=1'", "\"liga=1\"", "'foo,bar=\"hello\"'" ],
-		invalid_values: [ "liga=1", "foo,bar=\"hello\"" ]
+		other_values: [
+			"'liga' on", "'liga'", "\"liga\" 1", "'liga', 'clig' 1",
+			"\"liga\" off", "\"liga\" 0", '"cv01" 3, "cv02" 4',
+			'"cswh", "smcp" off, "salt" 4', '"cswh" 1, "smcp" off, "salt" 4',
+			'"cswh" 0, \'blah\', "liga", "smcp" off, "salt" 4',
+			'"liga"        ,"smcp" 0         , "blah"'
+		],
+		invalid_values: [
+			'liga', 'liga 1', 'liga normal', '"liga" normal', 'normal liga', 
+			'normal "liga"', 'normal, "liga"', '"liga=1"', "'foobar' on",
+			'"blahblah" 0', '"liga" 3.14', '"liga" 1 3.14', '"liga" 1 normal',
+			'"liga" 1 off', '"liga" on off', '"liga" , 0 "smcp"', '"liga" "smcp"'
+		]
 	},
 	"-moz-font-language-override": {
 		domProp: "MozFontLanguageOverride",
@@ -1953,7 +2023,7 @@ var gCSSProperties = {
 		type: CSS_TYPE_LONGHAND,
 		initial_values: [ "normal" ],
 		other_values: [ "'ENG'", "'TRK'", "\"TRK\"", "'N\\'Ko'" ],
-		invalid_values: [ "TRK" ]
+		invalid_values: [ "TRK", "ja" ]
 	},
 	"font-size": {
 		domProp: "fontSize",
@@ -2863,6 +2933,14 @@ var gCSSProperties = {
 			"-moz-calc(3em * 3em / 100%)"
 		]
 	},
+	"word-break": {
+		domProp: "wordBreak",
+		inherited: true,
+		type: CSS_TYPE_LONGHAND,
+		initial_values: [ "normal" ],
+		other_values: [ "break-all", "keep-all" ],
+		invalid_values: []
+	},
 	"word-spacing": {
 		domProp: "wordSpacing",
 		inherited: true,
@@ -3154,6 +3232,14 @@ var gCSSProperties = {
 		type: CSS_TYPE_LONGHAND,
 		initial_values: [ "auto" ],
 		other_values: [ "optimizeSpeed", "optimizeLegibility", "geometricPrecision" ],
+		invalid_values: []
+	},
+	"vector-effect": {
+		domProp: "vectorEffect",
+		inherited: false,
+		type: CSS_TYPE_LONGHAND,
+		initial_values: [ "none" ],
+		other_values: [ "non-scaling-stroke" ],
 		invalid_values: []
 	}
 }

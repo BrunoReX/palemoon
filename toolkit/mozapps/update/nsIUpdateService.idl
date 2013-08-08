@@ -1,39 +1,7 @@
 /* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is the Application Update Service
- *
- * The Initial Developer of the Original Code is Google Inc.
- * Portions created by the Initial Developer are Copyright (C) 2005
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  Ben Goodger <ben@mozilla.org>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsISupports.idl"
 
@@ -44,13 +12,14 @@ interface nsIRequest;
 interface nsIRequestObserver;
 interface nsISimpleEnumerator;
 interface nsIXMLHttpRequest;
+interface nsIFile;
 
 /**
  * An interface that describes an object representing a patch file that can
  * be downloaded and applied to a version of this application so that it
  * can be updated.
  */
-[scriptable, uuid(60523512-bb69-417c-9b2c-87a0664b0bbe)]
+[scriptable, uuid(1134957d-9449-481b-a515-4d88b9998278)]
 interface nsIUpdatePatch : nsISupports
 {
   /**
@@ -249,6 +218,8 @@ interface nsIUpdate : nsISupports
    *   "pending"            The update is ready to be applied.
    *   "pending-service"    The update is ready to be applied with the service.
    *   "applying"           The update is being applied.
+   *   "applied"            The update is ready to be switched to.
+   *   "applied-service"    The update is ready to be switched to with the service.
    *   "succeeded"          The update was successfully applied.
    *   "download-failed"    The update failed to be downloaded.
    *   "failed"             The update failed to be applied.
@@ -382,7 +353,7 @@ interface nsIUpdateChecker : nsISupports
  * background update checks and provides utilities for selecting and
  * downloading update patches.
  */
-[scriptable, uuid(b5811144-ed30-4343-aff9-c514034aa19a)]
+[scriptable, uuid(900b4a18-3bef-4f3e-bcf5-84dce0021c6d)]
 interface nsIApplicationUpdateService : nsISupports
 {
   /**
@@ -425,6 +396,17 @@ interface nsIApplicationUpdateService : nsISupports
   AString downloadUpdate(in nsIUpdate update, in boolean background);
 
   /**
+   * Apply an update in the background.
+   */
+  void applyUpdateInBackground(in nsIUpdate update);
+
+  /**
+   * Get the Active Updates directory
+   * @returns The active updates directory.
+   */
+  nsIFile getUpdatesDirectory();
+
+  /**
    * Pauses the active update download process
    */
   void pauseDownload();
@@ -447,13 +429,32 @@ interface nsIApplicationUpdateService : nsISupports
    * privileges to the install directory.
    */
   readonly attribute boolean canApplyUpdates;
+
+  /**
+   * Whether the Update Service is able to stage updates.
+   */
+  readonly attribute boolean canStageUpdates;
+};
+
+/**
+ * An interface describing a component which handles the job of processing
+ * an update after it's been downloaded.
+ */
+[scriptable, uuid(74439497-d796-4915-8cef-3dfe43027e4d)]
+interface nsIUpdateProcessor : nsISupports
+{
+  /**
+   * Processes the update which has been downloaded.
+   * This happens without restarting the application.
+   */
+  void processUpdate(in nsIUpdate update);
 };
 
 /**
  * An interface describing a global application service that maintains a list
  * of updates previously performed as well as the current active update.
  */
-[scriptable, uuid(fede66a9-9f96-4507-a22a-775ee885577e)]
+[scriptable, uuid(c5df56de-919d-406b-aaf9-106dfa9b685b)]
 interface nsIUpdateManager : nsISupports
 {
   /**
@@ -478,6 +479,11 @@ interface nsIUpdateManager : nsISupports
    * Saves all updates to disk.
    */
   void saveUpdates();
+
+  /**
+   * Refresh the update status based on the information in update.status.
+   */
+  void refreshUpdateStatus(in nsIUpdate update);
 };
 
 /**

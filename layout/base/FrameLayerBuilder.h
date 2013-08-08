@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Corporation code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Robert O'Callahan <robert@ocallahan.org>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef FRAMELAYERBUILDER_H_
 #define FRAMELAYERBUILDER_H_
@@ -62,6 +30,11 @@ enum LayerState {
   LAYER_ACTIVE_FORCE,
   // Special layer that is metadata only.
   LAYER_ACTIVE_EMPTY
+};
+
+class RefCountedRegion : public RefCounted<RefCountedRegion> {
+public:
+  nsRegion mRegion;
 };
 
 /**
@@ -163,6 +136,17 @@ public:
     bool mInTransformedSubtree;
     bool mInActiveTransformedSubtree;
     bool mDisableSubpixelAntialiasingInDescendants;
+    /**
+     * When this is false, ThebesLayer coordinates are drawn to with an integer
+     * translation and the scale in mXScale/mYScale.
+     */
+    bool AllowResidualTranslation()
+    {
+      // If we're in a transformed subtree, but no ancestor transform is actively
+      // changing, we'll use the residual translation when drawing into the
+      // ThebesLayer to ensure that snapping exactly matches the ideal transform.
+      return mInTransformedSubtree && !mInActiveTransformedSubtree;
+    }
   };
   /**
    * Build a container layer for a display item that contains a child
@@ -249,7 +233,7 @@ public:
    * Dumps this FrameLayerBuilder's retained layer manager's retained
    * layer tree to stderr.
    */
-  void DumpRetainedLayerTree();
+  void DumpRetainedLayerTree(FILE* aFile = stdout);
 #endif
 
   /******* PRIVATE METHODS to FrameLayerBuilder.cpp ********/
@@ -336,6 +320,17 @@ public:
   nsIntPoint GetLastPaintOffset(ThebesLayer* aLayer);
 
   /**
+   * Return resolution and scroll offset of ThebesLayer content associated
+   * with aFrame's subtree.
+   * Returns true if some ThebesLayer was found.
+   * This just looks for the first ThebesLayer and returns its data. There
+   * could be other ThebesLayers with different resolution and offsets.
+   */
+  static bool GetThebesLayerResolutionForFrame(nsIFrame* aFrame,
+                                               double* aXRes, double* aYRes,
+                                               gfxPoint* aPoint);
+
+  /**
    * Clip represents the intersection of an optional rectangle with a
    * list of rounded rectangles.
    */
@@ -372,7 +367,23 @@ public:
 
     // Apply this |Clip| to the given gfxContext.  Any saving of state
     // or clearing of other clips must be done by the caller.
-    void ApplyTo(gfxContext* aContext, nsPresContext* aPresContext);
+    // See aBegin/aEnd note on ApplyRoundedRectsTo.
+    void ApplyTo(gfxContext* aContext, nsPresContext* aPresContext,
+                 PRUint32 aBegin = 0, PRUint32 aEnd = PR_UINT32_MAX);
+
+    void ApplyRectTo(gfxContext* aContext, PRInt32 A2D) const;
+    // Applies the rounded rects in this Clip to aContext
+    // Will only apply rounded rects from aBegin (inclusive) to aEnd
+    // (exclusive) or the number of rounded rects, whichever is smaller.
+    void ApplyRoundedRectsTo(gfxContext* aContext, PRInt32 A2DPRInt32,
+                             PRUint32 aBegin, PRUint32 aEnd) const;
+
+    // Draw (fill) the rounded rects in this clip to aContext
+    void DrawRoundedRectsTo(gfxContext* aContext, PRInt32 A2D,
+                            PRUint32 aBegin, PRUint32 aEnd) const;
+    // 'Draw' (create as a path, does not stroke or fill) aRoundRect to aContext
+    void AddRoundedRectPathTo(gfxContext* aContext, PRInt32 A2D,
+                              const RoundedRect &aRoundRect) const;
 
     // Return a rectangle contained in the intersection of aRect with this
     // clip region. Tries to return the largest possible rectangle, but may
@@ -414,7 +425,7 @@ protected:
 
     nsRefPtr<Layer> mLayer;
     PRUint32        mDisplayItemKey;
-    LayerState    mLayerState;
+    LayerState      mLayerState;
   };
 
   static void RemoveFrameFromLayerManager(nsIFrame* aFrame, void* aPropertyValue);
@@ -429,18 +440,21 @@ protected:
    */
   class DisplayItemDataEntry : public nsPtrHashKey<nsIFrame> {
   public:
-    DisplayItemDataEntry(const nsIFrame *key) : nsPtrHashKey<nsIFrame>(key) {}
+    DisplayItemDataEntry(const nsIFrame *key) : nsPtrHashKey<nsIFrame>(key), mIsSharingContainerLayer(false) {}
     DisplayItemDataEntry(DisplayItemDataEntry &toCopy) :
-      nsPtrHashKey<nsIFrame>(toCopy.mKey)
+      nsPtrHashKey<nsIFrame>(toCopy.mKey), mIsSharingContainerLayer(toCopy.mIsSharingContainerLayer)
     {
       // This isn't actually a copy-constructor; notice that it steals toCopy's
-      // array.  Be careful.
+      // array and invalid region.  Be careful.
       mData.SwapElements(toCopy.mData);
+      mInvalidRegion.swap(toCopy.mInvalidRegion);
     }
 
     bool HasNonEmptyContainerLayer();
 
     nsAutoTArray<DisplayItemData, 1> mData;
+    nsRefPtr<RefCountedRegion> mInvalidRegion;
+    bool mIsSharingContainerLayer;
 
     enum { ALLOW_MEMMOVE = false };
   };
@@ -497,11 +511,12 @@ protected:
    * We accumulate ClippedDisplayItem elements in a hashtable during
    * the paint process. This is the hashentry for that hashtable.
    */
+public:
   class ThebesLayerItemsEntry : public nsPtrHashKey<ThebesLayer> {
   public:
     ThebesLayerItemsEntry(const ThebesLayer *key) :
         nsPtrHashKey<ThebesLayer>(key), mContainerLayerFrame(nsnull),
-        mHasExplicitLastPaintOffset(false) {}
+        mHasExplicitLastPaintOffset(false), mCommonClipCount(0) {}
     ThebesLayerItemsEntry(const ThebesLayerItemsEntry &toCopy) :
       nsPtrHashKey<ThebesLayer>(toCopy.mKey), mItems(toCopy.mItems)
     {
@@ -514,12 +529,28 @@ protected:
     // layer tree.
     nsIntPoint mLastPaintOffset;
     bool mHasExplicitLastPaintOffset;
+    /**
+      * The first mCommonClipCount rounded rectangle clips are identical for
+      * all items in the layer. Computed in ThebesLayerData.
+      */
+    PRUint32 mCommonClipCount;
 
     enum { ALLOW_MEMMOVE = true };
   };
 
+  /**
+   * Get the ThebesLayerItemsEntry object associated with aLayer in this
+   * FrameLayerBuilder
+   */
+  ThebesLayerItemsEntry* GetThebesLayerItemsEntry(ThebesLayer* aLayer)
+  {
+    return mThebesLayerItems.GetEntry(aLayer);
+  }
+
+protected:
   void RemoveThebesItemsForLayerSubtree(Layer* aLayer);
 
+  static void SetAndClearInvalidRegion(DisplayItemDataEntry* aEntry);
   static PLDHashOperator UpdateDisplayItemDataForFrame(DisplayItemDataEntry* aEntry,
                                                        void* aUserArg);
   static PLDHashOperator StoreNewDisplayItemData(DisplayItemDataEntry* aEntry,

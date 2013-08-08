@@ -1,40 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set sw=2 ts=2 et tw=80: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla.org client code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Ehsan Akhgari <ehsan@mozilla.com> (Original Author)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsTextEditorState.h"
 
@@ -65,6 +33,7 @@
 #include "nsServiceManagerUtils.h"
 #include "nsIEditor.h"
 #include "nsTextEditRules.h"
+#include "nsTypedSelection.h"
 #include "nsEventListenerManager.h"
 #include "nsContentUtils.h"
 
@@ -84,6 +53,10 @@ public:
   }
 
   NS_IMETHOD Run() {
+    if (!mTextEditorState) {
+      return NS_OK;
+    }
+
     if (mFrame) {
       // SetSelectionRange leads to Selection::AddRange which flushes Layout -
       // need to block script to avoid nested PrepareEditor calls (bug 642800).
@@ -105,6 +78,7 @@ public:
   // Let the text editor tell us we're no longer relevant - avoids use of nsWeakFrame
   void Revoke() {
     mFrame = nsnull;
+    mTextEditorState = nsnull;
   }
 
 private:
@@ -140,6 +114,20 @@ nsITextControlElement::GetWrapPropertyEnum(nsIContent* aContent,
   return false;
 }
 
+/*static*/
+already_AddRefed<nsITextControlElement>
+nsITextControlElement::GetTextControlElementFromEditingHost(nsIContent* aHost)
+{
+  if (!aHost) {
+    return nsnull;
+  }
+
+  nsCOMPtr<nsITextControlElement> parent =
+    do_QueryInterface(aHost->GetParent());
+
+  return parent.forget();
+}
+
 static bool
 SuppressEventHandlers(nsPresContext* aPresContext)
 {
@@ -159,7 +147,7 @@ SuppressEventHandlers(nsPresContext* aPresContext)
   return suppressHandlers;
 }
 
-class nsAnonDivObserver : public nsStubMutationObserver
+class nsAnonDivObserver MOZ_FINAL : public nsStubMutationObserver
 {
 public:
   nsAnonDivObserver(nsTextEditorState* aTextEditorState)
@@ -174,8 +162,8 @@ private:
   nsTextEditorState* mTextEditorState;
 };
 
-class nsTextInputSelectionImpl : public nsSupportsWeakReference
-                               , public nsISelectionController
+class nsTextInputSelectionImpl MOZ_FINAL : public nsSupportsWeakReference
+                                         , public nsISelectionController
 {
 public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -642,6 +630,7 @@ public:
   void SetFrame(nsTextControlFrame *aFrame){mFrame = aFrame;}
 
   void SettingValue(bool aValue) { mSettingValue = aValue; }
+  void SetValueChanged(bool aSetValueChanged) { mSetValueChanged = aSetValueChanged; }
 
   NS_DECL_ISUPPORTS
 
@@ -679,6 +668,11 @@ protected:
    * refrain from calling OnValueChanged.
    */
   bool mSettingValue;
+  /**
+   * Whether we are in the process of a SetValue call that doesn't want
+   * |SetValueChanged| to be called.
+   */
+  bool mSetValueChanged;
 };
 
 
@@ -693,6 +687,7 @@ nsTextInputListener::nsTextInputListener(nsITextControlElement* aTxtCtrlElement)
 , mHadUndoItems(false)
 , mHadRedoItems(false)
 , mSettingValue(false)
+, mSetValueChanged(true)
 {
 }
 
@@ -869,19 +864,13 @@ nsTextInputListener::EditAction()
 
   // Make sure we know we were changed (do NOT set this to false if there are
   // no undo items; JS could change the value and we'd still need to save it)
-  frame->SetValueChanged(true);
+  if (mSetValueChanged) {
+    frame->SetValueChanged(true);
+  }
 
   if (!mSettingValue) {
     mTxtCtrlElement->OnValueChanged(true);
   }
-
-  // Fire input event
-  bool trusted = false;
-  editor->GetLastKeypressEventTrusted(&trusted);
-  frame->FireOnInput(trusted);
-
-  // mFrame may be dead after this, but we don't need to check for it, because
-  // we are not uisng it in this function any more.
 
   return NS_OK;
 }
@@ -978,22 +967,24 @@ nsTextEditorState::Clear()
   NS_IF_RELEASE(mTextListener);
 }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsTextEditorState)
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(nsTextEditorState, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(nsTextEditorState, Release)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_NATIVE(nsTextEditorState)
+void nsTextEditorState::Unlink()
+{
+  nsTextEditorState* tmp = this;
   tmp->Clear();
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mSelCon)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mEditor)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mRootNode)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mPlaceholderDiv)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NATIVE_BEGIN(nsTextEditorState)
+}
+
+void nsTextEditorState::Traverse(nsCycleCollectionTraversalCallback& cb)
+{
+  nsTextEditorState* tmp = this;
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR_AMBIGUOUS(mSelCon, nsISelectionController)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mEditor)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mRootNode)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mPlaceholderDiv)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+}
 
 nsFrameSelection*
 nsTextEditorState::GetConstFrameSelection() {
@@ -1173,10 +1164,6 @@ nsTextEditorState::PrepareEditor(const nsAString *aValue)
   // All nsTextControlFrames are widgets
   editorFlags |= nsIPlaintextEditor::eEditorWidgetMask;
 
-  // Use async reflow and painting for text widgets to improve
-  // performance.
-  editorFlags |= nsIPlaintextEditor::eEditorUseAsyncUpdatesMask;
-  
   // Spell check is diabled at creation time. It is enabled once
   // the editor comes into focus.
   editorFlags |= nsIPlaintextEditor::eEditorSkipSpellCheck;
@@ -1327,12 +1314,7 @@ nsTextEditorState::PrepareEditor(const nsAString *aValue)
   // editor for us.
 
   if (!defaultValue.IsEmpty()) {
-    // Avoid causing reentrant painting and reflowing by telling the editor
-    // that we don't want it to force immediate view refreshes or force
-    // immediate reflows during any editor calls.
-
-    rv = newEditor->SetFlags(editorFlags |
-                             nsIPlaintextEditor::eEditorUseAsyncUpdatesMask);
+    rv = newEditor->SetFlags(editorFlags);
     NS_ENSURE_SUCCESS(rv, rv);
 
     // Now call SetValue() which will make the necessary editor calls to set
@@ -1343,7 +1325,7 @@ nsTextEditorState::PrepareEditor(const nsAString *aValue)
     rv = newEditor->EnableUndo(false);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    SetValue(defaultValue, false);
+    SetValue(defaultValue, false, false);
 
     rv = newEditor->EnableUndo(true);
     NS_ASSERTION(NS_SUCCEEDED(rv),"Transaction Manager must have failed");
@@ -1527,7 +1509,7 @@ nsTextEditorState::UnbindFromFrame(nsTextControlFrame* aFrame)
   // Now that we don't have a frame any more, store the value in the text buffer.
   // The only case where we don't do this is if a value transfer is in progress.
   if (!mValueTransferInProgress) {
-    SetValue(value, false);
+    SetValue(value, false, false);
   }
 
   if (mRootNode && mMutationObserver) {
@@ -1576,6 +1558,9 @@ nsTextEditorState::CreateRootNode()
 nsresult
 nsTextEditorState::InitializeRootNode()
 {
+  // Make our root node editable
+  mRootNode->SetFlags(NODE_IS_EDITABLE);
+
   // Set the necessary classes on the text control. We use class values
   // instead of a 'style' attribute so that the style comes from a user-agent
   // style sheet and is still applied even if author styles are disabled.
@@ -1743,7 +1728,8 @@ nsTextEditorState::GetValue(nsAString& aValue, bool aIgnoreWrap) const
 }
 
 void
-nsTextEditorState::SetValue(const nsAString& aValue, bool aUserInput)
+nsTextEditorState::SetValue(const nsAString& aValue, bool aUserInput,
+                            bool aSetValueChanged)
 {
   if (mEditor && mBoundFrame) {
     // The InsertText call below might flush pending notifications, which
@@ -1752,11 +1738,6 @@ nsTextEditorState::SetValue(const nsAString& aValue, bool aUserInput)
     // before InsertText returns.  This script blocker makes sure that
     // PrepareEditor cannot be called prematurely.
     nsAutoScriptBlocker scriptBlocker;
-
-    bool fireChangeEvent = mBoundFrame->GetFireChangeEventState();
-    if (aUserInput) {
-      mBoundFrame->SetFireChangeEventState(true);
-    }
 
 #ifdef DEBUG
     if (IsSingleLineTextControl()) {
@@ -1784,8 +1765,7 @@ nsTextEditorState::SetValue(const nsAString& aValue, bool aUserInput)
     // this is necessary to avoid infinite recursion
     if (!currentValue.Equals(aValue))
     {
-      nsTextControlFrame::ValueSetter valueSetter(mBoundFrame,
-                                                  mBoundFrame->mFocusedValue.Equals(currentValue));
+      nsTextControlFrame::ValueSetter valueSetter(mBoundFrame, mEditor);
 
       // \r is an illegal character in the dom, but people use them,
       // so convert windows and mac platform linebreaks to \n:
@@ -1850,11 +1830,11 @@ nsTextEditorState::SetValue(const nsAString& aValue, bool aUserInput)
         flags = savedFlags;
         flags &= ~(nsIPlaintextEditor::eEditorDisabledMask);
         flags &= ~(nsIPlaintextEditor::eEditorReadonlyMask);
-        flags |= nsIPlaintextEditor::eEditorUseAsyncUpdatesMask;
         flags |= nsIPlaintextEditor::eEditorDontEchoPassword;
         mEditor->SetFlags(flags);
 
         mTextListener->SettingValue(true);
+        mTextListener->SetValueChanged(aSetValueChanged);
 
         // Also don't enforce max-length here
         PRInt32 savedMaxLength;
@@ -1862,11 +1842,12 @@ nsTextEditorState::SetValue(const nsAString& aValue, bool aUserInput)
         plaintextEditor->SetMaxTextLength(-1);
 
         if (insertValue.IsEmpty()) {
-          mEditor->DeleteSelection(nsIEditor::eNone);
+          mEditor->DeleteSelection(nsIEditor::eNone, nsIEditor::eStrip);
         } else {
           plaintextEditor->InsertText(insertValue);
         }
 
+        mTextListener->SetValueChanged(true);
         mTextListener->SettingValue(false);
 
         if (!weakFrame.IsAlive()) {
@@ -1876,7 +1857,7 @@ nsTextEditorState::SetValue(const nsAString& aValue, bool aUserInput)
           // the existing selection -- see bug 574558), in which case we don't
           // need to reset the value here.
           if (!mBoundFrame) {
-            SetValue(newValue, false);
+            SetValue(newValue, false, aSetValueChanged);
           }
           valueSetter.Cancel();
           return;
@@ -1905,9 +1886,6 @@ nsTextEditorState::SetValue(const nsAString& aValue, bool aUserInput)
       scrollableFrame->ScrollTo(nsPoint(0, 0), nsIScrollableFrame::INSTANT);
     }
 
-    if (aUserInput) {
-      mBoundFrame->SetFireChangeEventState(fireChangeEvent);
-    }
   } else {
     if (!mValue) {
       mValue = new nsCString;
@@ -1968,16 +1946,9 @@ nsTextEditorState::ValueWasChanged(bool aNotify)
     return;
   }
 
-  bool showPlaceholder = false;
-  nsCOMPtr<nsIContent> content = do_QueryInterface(mTextCtrlElement);
-  if (!nsContentUtils::IsFocusedContent(content)) {
-    // If the content is focused, we don't care about the changes because
-    // the placeholder is going to be hidden/shown on blur.
-    nsAutoString valueString;
-    GetValue(valueString, true);
-    showPlaceholder = valueString.IsEmpty();
-  }
-  SetPlaceholderClass(showPlaceholder, aNotify);
+  nsAutoString valueString;
+  GetValue(valueString, true);
+  SetPlaceholderClass(valueString.IsEmpty(), aNotify);
 }
 
 void

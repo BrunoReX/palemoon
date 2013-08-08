@@ -9,8 +9,17 @@
       android:sharedUserId="@MOZ_ANDROID_SHARED_ID@"
 #endif
       >
+
     <uses-sdk android:minSdkVersion="5"
               android:targetSdkVersion="11"/>
+
+    <compatible-screens>
+        <!-- all xlarge size screens -->
+        <screen android:screenSize="xlarge" android:screenDensity="ldpi" />
+        <screen android:screenSize="xlarge" android:screenDensity="mdpi" />
+        <screen android:screenSize="xlarge" android:screenDensity="hdpi" />
+        <screen android:screenSize="xlarge" android:screenDensity="xhdpi" />
+    </compatible-screens>
 
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>

@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Mounir Lamouri <mounir.lamouri@mozilla.com> (Original Author)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SmsFilter.h"
 #include "SmsManager.h"
@@ -68,14 +36,14 @@ namespace sms {
 NS_IMPL_CYCLE_COLLECTION_CLASS(SmsManager)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(SmsManager,
-                                                  nsDOMEventTargetWrapperCache)
+                                                  nsDOMEventTargetHelper)
   NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(received)
   NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(sent)
   NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(delivered)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(SmsManager,
-                                                nsDOMEventTargetWrapperCache)
+                                                nsDOMEventTargetHelper)
   NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(received)
   NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(sent)
   NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(delivered)
@@ -83,19 +51,18 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(SmsManager)
   NS_INTERFACE_MAP_ENTRY(nsIDOMMozSmsManager)
+  NS_INTERFACE_MAP_ENTRY(nsIObserver)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDOMMozSmsManager)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(MozSmsManager)
-NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetWrapperCache)
+NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetHelper)
 
-NS_IMPL_ADDREF_INHERITED(SmsManager, nsDOMEventTargetWrapperCache)
-NS_IMPL_RELEASE_INHERITED(SmsManager, nsDOMEventTargetWrapperCache)
+NS_IMPL_ADDREF_INHERITED(SmsManager, nsDOMEventTargetHelper)
+NS_IMPL_RELEASE_INHERITED(SmsManager, nsDOMEventTargetHelper)
 
 void
-SmsManager::Init(nsPIDOMWindow *aWindow, nsIScriptContext* aScriptContext)
+SmsManager::Init(nsPIDOMWindow *aWindow)
 {
-  // Those vars come from nsDOMEventTargetHelper.
-  mOwner = aWindow;
-  mScriptContext = aScriptContext;
+  BindToOwner(aWindow);
 
   nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
   // GetObserverService() can return null is some situations like shutdown.
@@ -145,17 +112,22 @@ SmsManager::Send(JSContext* aCx, JSObject* aGlobal, JSString* aNumber,
 
   nsCOMPtr<nsIDOMMozSmsRequest> request;
 
-  int requestId =
-    SmsRequestManager::GetInstance()->CreateRequest(mOwner, mScriptContext,
-                                                    getter_AddRefs(request));
-  NS_ASSERTION(request, "The request object must have been created!");
+  nsCOMPtr<nsISmsRequestManager> requestManager = do_GetService(SMS_REQUEST_MANAGER_CONTRACTID);
+
+  PRInt32 requestId;
+  nsresult rv = requestManager->CreateRequest(this, getter_AddRefs(request),
+                                              &requestId);
+  if (NS_FAILED(rv)) {
+    NS_ERROR("Failed to create the request!");
+    return rv;
+  }
 
   nsDependentJSString number;
   number.init(aCx, aNumber);
 
   smsService->Send(number, aMessage, requestId, 0);
 
-  nsresult rv = nsContentUtils::WrapNative(aCx, aGlobal, request, aRequest);
+  rv = nsContentUtils::WrapNative(aCx, aGlobal, request, aRequest);
   if (NS_FAILED(rv)) {
     NS_ERROR("Failed to create the js value!");
     return rv;
@@ -167,7 +139,10 @@ SmsManager::Send(JSContext* aCx, JSObject* aGlobal, JSString* aNumber,
 NS_IMETHODIMP
 SmsManager::Send(const jsval& aNumber, const nsAString& aMessage, jsval* aReturn)
 {
-  JSContext* cx = mScriptContext->GetNativeContext();
+  nsresult rv;
+  nsIScriptContext* sc = GetContextForEventHandlers(&rv);
+  NS_ENSURE_STATE(sc);
+  JSContext* cx = sc->GetNativeContext();
   NS_ASSERTION(cx, "Failed to get a context!");
 
   if (!aNumber.isString() &&
@@ -175,7 +150,7 @@ SmsManager::Send(const jsval& aNumber, const nsAString& aMessage, jsval* aReturn
     return NS_ERROR_INVALID_ARG;
   }
 
-  JSObject* global = mScriptContext->GetNativeGlobal();
+  JSObject* global = sc->GetNativeGlobal();
   NS_ASSERTION(global, "Failed to get global object!");
 
   JSAutoRequest ar(cx);
@@ -192,12 +167,12 @@ SmsManager::Send(const jsval& aNumber, const nsAString& aMessage, jsval* aReturn
   // Must be an array then.
   JSObject& numbers = aNumber.toObject();
 
-  jsuint size;
+  uint32_t size;
   JS_ALWAYS_TRUE(JS_GetArrayLength(cx, &numbers, &size));
 
   jsval* requests = new jsval[size];
 
-  for (jsuint i=0; i<size; ++i) {
+  for (uint32_t i=0; i<size; ++i) {
     jsval number;
     if (!JS_GetElement(cx, &numbers, i, &number)) {
       return NS_ERROR_INVALID_ARG;
@@ -216,9 +191,14 @@ SmsManager::Send(const jsval& aNumber, const nsAString& aMessage, jsval* aReturn
 NS_IMETHODIMP
 SmsManager::GetMessageMoz(PRInt32 aId, nsIDOMMozSmsRequest** aRequest)
 {
-  int requestId =
-    SmsRequestManager::GetInstance()->CreateRequest(mOwner, mScriptContext, aRequest);
-  NS_ASSERTION(*aRequest, "The request object must have been created!");
+  nsCOMPtr<nsISmsRequestManager> requestManager = do_GetService(SMS_REQUEST_MANAGER_CONTRACTID);
+
+  PRInt32 requestId;
+  nsresult rv = requestManager->CreateRequest(this, aRequest, &requestId);
+  if (NS_FAILED(rv)) {
+    NS_ERROR("Failed to create the request!");
+    return rv;
+  }
 
   nsCOMPtr<nsISmsDatabaseService> smsDBService =
     do_GetService(SMS_DATABASE_SERVICE_CONTRACTID);
@@ -232,9 +212,14 @@ SmsManager::GetMessageMoz(PRInt32 aId, nsIDOMMozSmsRequest** aRequest)
 nsresult
 SmsManager::Delete(PRInt32 aId, nsIDOMMozSmsRequest** aRequest)
 {
-  int requestId =
-    SmsRequestManager::GetInstance()->CreateRequest(mOwner, mScriptContext, aRequest);
-  NS_ASSERTION(*aRequest, "The request object must have been created!");
+  nsCOMPtr<nsISmsRequestManager> requestManager = do_GetService(SMS_REQUEST_MANAGER_CONTRACTID);
+
+  PRInt32 requestId;
+  nsresult rv = requestManager->CreateRequest(this, aRequest, &requestId);
+  if (NS_FAILED(rv)) {
+    NS_ERROR("Failed to create the request!");
+    return rv;
+  }
 
   nsCOMPtr<nsISmsDatabaseService> smsDBService =
     do_GetService(SMS_DATABASE_SERVICE_CONTRACTID);
@@ -256,9 +241,12 @@ SmsManager::Delete(const jsval& aParam, nsIDOMMozSmsRequest** aRequest)
     return NS_ERROR_INVALID_ARG;
   }
 
+  nsresult rv;
+  nsIScriptContext* sc = GetContextForEventHandlers(&rv);
+  NS_ENSURE_STATE(sc);
   nsCOMPtr<nsIDOMMozSmsMessage> message =
     do_QueryInterface(nsContentUtils::XPConnect()->GetNativeOfWrapper(
-          mScriptContext->GetNativeContext(), &aParam.toObject()));
+          sc->GetNativeContext(), &aParam.toObject()));
   NS_ENSURE_TRUE(message, NS_ERROR_INVALID_ARG);
 
   PRInt32 id;
@@ -277,15 +265,44 @@ SmsManager::GetMessages(nsIDOMMozSmsFilter* aFilter, bool aReverse,
     filter = new SmsFilter();
   }
 
-  int requestId =
-    SmsRequestManager::GetInstance()->CreateRequest(mOwner, mScriptContext, aRequest);
-  NS_ASSERTION(*aRequest, "The request object must have been created!");
+  nsCOMPtr<nsISmsRequestManager> requestManager = do_GetService(SMS_REQUEST_MANAGER_CONTRACTID);
+
+  PRInt32 requestId;
+  nsresult rv = requestManager->CreateRequest(this, aRequest,
+                                              &requestId);
+  if (NS_FAILED(rv)) {
+    NS_ERROR("Failed to create the request!");
+    return rv;
+  }
 
   nsCOMPtr<nsISmsDatabaseService> smsDBService =
     do_GetService(SMS_DATABASE_SERVICE_CONTRACTID);
   NS_ENSURE_TRUE(smsDBService, NS_ERROR_FAILURE);
 
   smsDBService->CreateMessageList(filter, aReverse, requestId, 0);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+SmsManager::MarkMessageRead(PRInt32 aId, bool aValue,
+                            nsIDOMMozSmsRequest** aRequest)
+{
+  nsCOMPtr<nsISmsRequestManager> requestManager =
+    do_GetService(SMS_REQUEST_MANAGER_CONTRACTID);
+
+  PRInt32 requestId;
+  nsresult rv = requestManager->CreateRequest(this, aRequest, &requestId);
+  if (NS_FAILED(rv)) {
+    NS_ERROR("Failed to create the request!");
+    return rv;
+  }
+
+  nsCOMPtr<nsISmsDatabaseService> smsDBService =
+    do_GetService(SMS_DATABASE_SERVICE_CONTRACTID);
+  NS_ENSURE_TRUE(smsDBService, NS_ERROR_FAILURE);
+
+  smsDBService->MarkMessageRead(aId, aValue, requestId, 0);
 
   return NS_OK;
 }

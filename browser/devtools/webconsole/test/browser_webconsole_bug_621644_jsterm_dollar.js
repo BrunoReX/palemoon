@@ -7,47 +7,62 @@
  *   Mihai Sucan <mihai.sucan@gmail.com>
  */
 
-const TEST_URI = "http://example.com/browser/browser/devtools/webconsole/test//test-bug-621644-jsterm-dollar.html";
+const TEST_URI = "http://example.com/browser/browser/devtools/webconsole/test/test-bug-621644-jsterm-dollar.html";
 
-function tabLoad(aEvent) {
-  browser.removeEventListener(aEvent.type, arguments.callee, true);
+function test$(HUD) {
+  HUD.jsterm.clearOutput();
 
-  waitForFocus(function () {
-    openConsole();
+  HUD.jsterm.setInputValue("$(document.body)");
+  HUD.jsterm.execute();
 
-    let hudId = HUDService.getHudIdByWindow(content);
-    let HUD = HUDService.hudReferences[hudId];
+  waitForSuccess({
+    name: "jsterm output for $()",
+    validatorFn: function()
+    {
+      return HUD.outputNode.querySelector(".webconsole-msg-output:last-child");
+    },
+    successFn: function()
+    {
+      let outputItem = HUD.outputNode.
+                       querySelector(".webconsole-msg-output:last-child");
+      ok(outputItem.textContent.indexOf("<p>") > -1,
+         "jsterm output is correct for $()");
 
-    HUD.jsterm.clearOutput();
-
-    HUD.jsterm.setInputValue("$(document.body)");
-    HUD.jsterm.execute();
-
-    let outputItem = HUD.outputNode.
-                     querySelector(".webconsole-msg-output:last-child");
-    ok(outputItem.textContent.indexOf("<p>") > -1,
-       "jsterm output is correct for $()");
-
-    HUD.jsterm.clearOutput();
-
-    HUD.jsterm.setInputValue("$$(document)");
-    HUD.jsterm.execute();
-
-    outputItem = HUD.outputNode.
-                     querySelector(".webconsole-msg-output:last-child");
-    ok(outputItem.textContent.indexOf("621644") > -1,
-       "jsterm output is correct for $$()");
-
-    executeSoon(finishTest);
-  }, content);
+      test$$(HUD);
+    },
+    failureFn: test$$.bind(null, HUD),
+  });
 }
 
-registerCleanupFunction(function() {
-  Services.prefs.clearUserPref("devtools.gcli.enable");
-});
+function test$$(HUD) {
+  HUD.jsterm.clearOutput();
+
+  HUD.jsterm.setInputValue("$$(document)");
+  HUD.jsterm.execute();
+
+  waitForSuccess({
+    name: "jsterm output for $$()",
+    validatorFn: function()
+    {
+      return HUD.outputNode.querySelector(".webconsole-msg-output:last-child");
+    },
+    successFn: function()
+    {
+      let outputItem = HUD.outputNode.
+                       querySelector(".webconsole-msg-output:last-child");
+      ok(outputItem.textContent.indexOf("621644") > -1,
+         "jsterm output is correct for $$()");
+
+      executeSoon(finishTest);
+    },
+    failureFn: finishTest,
+  });
+}
 
 function test() {
-  Services.prefs.setBoolPref("devtools.gcli.enable", false);
   addTab(TEST_URI);
-  browser.addEventListener("load", tabLoad, true);
+  browser.addEventListener("load", function onLoad() {
+    browser.removeEventListener("load", onLoad, true);
+    openConsole(null, test$);
+  }, true);
 }

@@ -1,41 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:set ts=2 sw=2 sts=2 et cindent: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla code.
- *
- * The Initial Developer of the Original Code is the Mozilla Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  Chris Double <chris.double@double.co.nz>
- *  Chris Pearce <chris@pearce.org.nz>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "nsDebug.h"
 #include "nsOggCodecState.h"
 #include "nsOggDecoder.h"
@@ -44,7 +11,10 @@
 #include "VideoUtils.h"
 #include "nsBuiltinDecoderReader.h"
 
-#include "mozilla/StdInt.h"
+#include "mozilla/StandardInteger.h"
+#include "mozilla/Util.h" // DebugOnly
+
+using namespace mozilla;
 
 #ifdef PR_LOGGING
 extern PRLogModuleInfo* gBuiltinDecoderLog;
@@ -53,6 +23,36 @@ extern PRLogModuleInfo* gBuiltinDecoderLog;
 #define LOG(type, msg)
 #endif
 
+// Reads a little-endian encoded unsigned 32bit integer at p.
+static PRUint32 LEUint32(const unsigned char* p)
+{
+  return p[0] +
+        (p[1] << 8) +
+        (p[2] << 16) +
+        (p[3] << 24);
+}
+
+// Reads a little-endian encoded 64bit integer at p.
+static PRInt64 LEInt64(const unsigned char* p)
+{
+  PRUint32 lo = LEUint32(p);
+  PRUint32 hi = LEUint32(p + 4);
+  return static_cast<PRInt64>(lo) | (static_cast<PRInt64>(hi) << 32);
+}
+
+// Reads a little-endian encoded unsigned 16bit integer at p.
+static PRUint16 LEUint16(const unsigned char* p)
+{
+  return p[0] + (p[1] << 8);
+}
+
+// Reads a little-endian encoded signed 16bit integer at p.
+static PRInt16 LEInt16(const unsigned char* p)
+{
+  return static_cast<PRInt16>(LEUint16(p));
+}
+
+/** Decoder base class for Ogg-encapsulated streams. */
 nsOggCodecState*
 nsOggCodecState::Create(ogg_page* aPage)
 {
@@ -62,6 +62,10 @@ nsOggCodecState::Create(ogg_page* aPage)
     codecState = new nsTheoraState(aPage);
   } else if (aPage->body_len > 6 && memcmp(aPage->body+1, "vorbis", 6) == 0) {
     codecState = new nsVorbisState(aPage);
+#ifdef MOZ_OPUS
+  } else if (aPage->body_len > 8 && memcmp(aPage->body, "OpusHead", 8) == 0) {
+    codecState = new nsOpusState(aPage);
+#endif
   } else if (aPage->body_len > 8 && memcmp(aPage->body, "fishead\0", 8) == 0) {
     codecState = new nsSkeletonState(aPage);
   } else {
@@ -262,6 +266,7 @@ bool nsTheoraState::Init() {
 bool
 nsTheoraState::DecodeHeader(ogg_packet* aPacket)
 {
+  nsAutoRef<ogg_packet> autoRelease(aPacket);
   mPacketCount++;
   int ret = th_decode_headerin(&mInfo,
                                &mComment,
@@ -285,14 +290,14 @@ nsTheoraState::DecodeHeader(ogg_packet* aPacket)
   bool isSetupHeader = aPacket->bytes > 0 && aPacket->packet[0] == 0x82;
   if (ret < 0 || mPacketCount > 3) {
     // We've received an error, or the first three packets weren't valid
-    // header packets, assume bad input, and don't activate the bitstream.
-    mDoneReadingHeaders = true;
+    // header packets. Assume bad input.
+    // Our caller will deactivate the bitstream.
+    return false;
   } else if (ret > 0 && isSetupHeader && mPacketCount == 3) {
     // Successfully read the three header packets.
     mDoneReadingHeaders = true;
-    mActive = true;
   }
-  return mDoneReadingHeaders;
+  return true;
 }
 
 PRInt64
@@ -318,33 +323,27 @@ PRInt64 nsTheoraState::Time(th_info* aInfo, PRInt64 aGranulepos)
   if (aGranulepos < 0 || aInfo->fps_numerator == 0) {
     return -1;
   }
-  PRInt64 t = 0;
   // Implementation of th_granule_frame inlined here to operate
   // on the th_info structure instead of the theora_state.
   int shift = aInfo->keyframe_granule_shift; 
   ogg_int64_t iframe = aGranulepos >> shift;
   ogg_int64_t pframe = aGranulepos - (iframe << shift);
   PRInt64 frameno = iframe + pframe - TH_VERSION_CHECK(aInfo, 3, 2, 1);
-  if (!AddOverflow(frameno, 1, t))
+  CheckedInt64 t = ((CheckedInt64(frameno) + 1) * USECS_PER_S) * aInfo->fps_denominator;
+  if (!t.isValid())
     return -1;
-  if (!MulOverflow(t, USECS_PER_S, t))
-    return -1;
-  if (!MulOverflow(t, aInfo->fps_denominator, t))
-    return -1;
-  return t / aInfo->fps_numerator;
+  t /= aInfo->fps_numerator;
+  return t.isValid() ? t.value() : -1;
 }
 
 PRInt64 nsTheoraState::StartTime(PRInt64 granulepos) {
   if (granulepos < 0 || !mActive || mInfo.fps_numerator == 0) {
     return -1;
   }
-  PRInt64 t = 0;
-  PRInt64 frameno = th_granule_frame(mCtx, granulepos);
-  if (!MulOverflow(frameno, USECS_PER_S, t))
+  CheckedInt64 t = (CheckedInt64(th_granule_frame(mCtx, granulepos)) * USECS_PER_S) * mInfo.fps_denominator;
+  if (!t.isValid())
     return -1;
-  if (!MulOverflow(t, mInfo.fps_denominator, t))
-    return -1;
-  return t / mInfo.fps_numerator;
+  return t.value() / mInfo.fps_numerator;
 }
 
 PRInt64
@@ -361,9 +360,7 @@ nsTheoraState::MaxKeyframeOffset()
   PRInt64 keyframeDiff = (1 << mInfo.keyframe_granule_shift) - 1;
 
   // Length of frame in usecs.
-  PRInt64 d = 0; // d will be 0 if multiplication overflows.
-  MulOverflow(USECS_PER_S, mInfo.fps_denominator, d);
-  frameDuration = d / mInfo.fps_numerator;
+  frameDuration = (mInfo.fps_denominator * USECS_PER_S) / mInfo.fps_numerator;
 
   // Total time in usecs keyframe can be offset from any given frame.
   return frameDuration * keyframeDiff;
@@ -531,6 +528,7 @@ nsVorbisState::~nsVorbisState() {
 }
 
 bool nsVorbisState::DecodeHeader(ogg_packet* aPacket) {
+  nsAutoRef<ogg_packet> autoRelease(aPacket);
   mPacketCount++;
   int ret = vorbis_synthesis_headerin(&mInfo,
                                       &mComment,
@@ -555,15 +553,15 @@ bool nsVorbisState::DecodeHeader(ogg_packet* aPacket) {
 
   if (ret < 0 || mPacketCount > 3) {
     // We've received an error, or the first three packets weren't valid
-    // header packets, assume bad input, and deactivate the bitstream.
-    mDoneReadingHeaders = true;
-    mActive = false;
+    // header packets. Assume bad input. Our caller will deactivate the
+    // bitstream.
+    return false;
   } else if (ret == 0 && isSetupHeader && mPacketCount == 3) {
     // Successfully read the three header packets.
     // The bitstream remains active.
     mDoneReadingHeaders = true;
   }
-  return mDoneReadingHeaders;
+  return true;
 }
 
 bool nsVorbisState::Init()
@@ -601,9 +599,10 @@ PRInt64 nsVorbisState::Time(vorbis_info* aInfo, PRInt64 aGranulepos)
   if (aGranulepos == -1 || aInfo->rate == 0) {
     return -1;
   }
-  PRInt64 t = 0;
-  MulOverflow(USECS_PER_S, aGranulepos, t);
-  return t / aInfo->rate;
+  CheckedInt64 t = CheckedInt64(aGranulepos) * USECS_PER_S;
+  if (!t.isValid())
+    t = 0;
+  return t.value() / aInfo->rate;
 }
 
 bool
@@ -757,12 +756,360 @@ nsresult nsVorbisState::ReconstructVorbisGranulepos()
   return NS_OK;
 }
 
+#ifdef MOZ_OPUS
+nsOpusState::nsOpusState(ogg_page* aBosPage) :
+  nsOggCodecState(aBosPage, true),
+  mRate(0),
+  mNominalRate(0),
+  mChannels(0),
+  mPreSkip(0),
+#ifdef MOZ_SAMPLE_TYPE_FLOAT32
+  mGain(1.0f),
+#else
+  mGain_Q16(65536),
+#endif
+  mChannelMapping(0),
+  mStreams(0),
+  mDecoder(NULL),
+  mSkip(0),
+  mPrevPacketGranulepos(0),
+  mPrevPageGranulepos(0)
+{
+  MOZ_COUNT_CTOR(nsOpusState);
+}
 
-nsSkeletonState::nsSkeletonState(ogg_page* aBosPage)
-  : nsOggCodecState(aBosPage, true),
-    mVersion(0),
-    mPresentationTime(0),
-    mLength(0)
+nsOpusState::~nsOpusState() {
+  MOZ_COUNT_DTOR(nsOpusState);
+  Reset();
+
+  if (mDecoder) {
+    opus_decoder_destroy(mDecoder);
+    mDecoder = NULL;
+  }
+}
+
+nsresult nsOpusState::Reset()
+{
+  return Reset(false);
+}
+
+nsresult nsOpusState::Reset(bool aStart)
+{
+  nsresult res = NS_OK;
+
+  if (mActive && mDecoder) {
+    // Reset the decoder.
+    opus_decoder_ctl(mDecoder, OPUS_RESET_STATE);
+    // Let the seek logic handle pre-roll if we're not seeking to the start.
+    mSkip = aStart ? mPreSkip : 0;
+    // This lets us distinguish the first page being the last page vs. just
+    // not having processed the previous page when we encounter the last page.
+    mPrevPageGranulepos = aStart ? 0 : -1;
+    mPrevPacketGranulepos = aStart ? 0 : -1;
+  }
+
+  // Clear queued data.
+  if (NS_FAILED(nsOggCodecState::Reset())) {
+    return NS_ERROR_FAILURE;
+  }
+
+  LOG(PR_LOG_DEBUG, ("Opus decoder reset, to skip %d", mSkip));
+
+  return res;
+}
+
+bool nsOpusState::Init(void)
+{
+  if (!mActive)
+    return false;
+
+  int error;
+
+  NS_ASSERTION(mDecoder == NULL, "leaking OpusDecoder");
+
+  mDecoder = opus_decoder_create(mRate, mChannels, &error);
+  mSkip = mPreSkip;
+
+  LOG(PR_LOG_DEBUG, ("Opus decoder init, to skip %d", mSkip));
+
+  return error == OPUS_OK;
+}
+
+bool nsOpusState::DecodeHeader(ogg_packet* aPacket)
+{
+  nsAutoRef<ogg_packet> autoRelease(aPacket);
+  switch(mPacketCount++) {
+    // Parse the id header.
+    case 0: {
+      if (aPacket->bytes < 19 || memcmp(aPacket->packet, "OpusHead", 8)) {
+        LOG(PR_LOG_DEBUG, ("Invalid Opus file: unrecognized header"));
+        return false;
+      }
+
+      mRate = 48000; // The Opus decoder runs at 48 kHz regardless.
+
+      int version = aPacket->packet[8];
+      // Accept file format versions 0.x.
+      if ((version & 0xf0) != 0) {
+        LOG(PR_LOG_DEBUG, ("Rejecting unknown Opus file version %d", version));
+        return false;
+      }
+
+      mChannels= aPacket->packet[9];
+      mPreSkip = LEUint16(aPacket->packet + 10);
+      mNominalRate = LEUint32(aPacket->packet + 12);
+      double gain_dB = LEInt16(aPacket->packet + 16) / 256.0;
+#ifdef MOZ_SAMPLE_TYPE_FLOAT32
+      mGain = static_cast<float>(pow(10,0.05*gain_dB));
+#else
+      mGain_Q16 = static_cast<PRInt32>(NS_MIN(65536*pow(10,0.05*gain_dB)+0.5,
+                                              static_cast<double>(PR_INT32_MAX)));
+#endif
+      mChannelMapping = aPacket->packet[18];
+
+      if (mChannelMapping == 0) {
+        mStreams = 1;
+      } else if (aPacket->bytes > 19) {
+        mStreams = aPacket->packet[19];
+      } else {
+        LOG(PR_LOG_DEBUG, ("Invalid Opus file: channel mapping %d,"
+                           " but no channel mapping table", mChannelMapping));
+        return false;
+      }
+
+#ifdef DEBUG
+      LOG(PR_LOG_DEBUG, ("Opus stream header:"));
+      LOG(PR_LOG_DEBUG, (" channels: %d", mChannels));
+      LOG(PR_LOG_DEBUG, ("  preskip: %d", mPreSkip));
+      LOG(PR_LOG_DEBUG, (" original: %d Hz", mNominalRate));
+      LOG(PR_LOG_DEBUG, ("     gain: %.2f dB", gain_dB));
+      LOG(PR_LOG_DEBUG, ("Channel Mapping:"));
+      LOG(PR_LOG_DEBUG, ("   family: %d", mChannelMapping));
+      LOG(PR_LOG_DEBUG, ("  streams: %d", mStreams));
+#endif
+    }
+    break;
+
+    // Parse the metadata header.
+    case 1: {
+      if (aPacket->bytes < 16 || memcmp(aPacket->packet, "OpusTags", 8))
+        return false;
+
+      // We don't actually need any of the data here, but validating the
+      // contents helps reduce the propagation of broken files.
+      // This only checks for actual malicious content: too little data, too
+      // many comments, or comments that are too long.
+      // It does not ensure they are valid UTF-8, nor does it validate the
+      // required ASCII_TAG=value format of the user comments.
+      const unsigned char *buf = aPacket->packet + 8;
+      PRUint32 bytes = aPacket->bytes - 8;
+      PRUint32 len;
+      // Skip the vendor string.
+      len = LEUint32(buf);
+      buf += 4;
+      bytes -= 4;
+      if (len > bytes)
+        return false;
+      buf += len;
+      bytes -= len;
+      // Skip the user comments.
+      if (bytes < 4)
+        return false;
+      PRUint32 ncomments = LEUint32(buf);
+      buf += 4;
+      bytes -= 4;
+      // If there are so many comments even their length fields won't fit in
+      // the packet, stop reading now.
+      if (ncomments > (bytes>>2))
+        return false;
+      PRUint32 i;
+      for (i = 0; i < ncomments; i++) {
+        if (bytes < 4)
+          return false;
+        len = LEUint32(buf);
+        buf += 4;
+        bytes -= 4;
+        if (len > bytes)
+          return false;
+        buf += len;
+        bytes -= len;
+      }
+    }
+    break;
+
+    // We made it to the first data packet (which includes reconstructing
+    // timestamps for it in PageIn). Success!
+    default: {
+      mDoneReadingHeaders = true;
+      // Put it back on the queue so we can decode it.
+      mPackets.PushFront(autoRelease.disown());
+    }
+    break;
+  }
+  return true;
+}
+
+/* Return the timestamp (in microseconds) equivalent to a granulepos. */
+PRInt64 nsOpusState::Time(PRInt64 aGranulepos)
+{
+  if (!mActive)
+    return -1;
+
+  return Time(mPreSkip, aGranulepos);
+}
+
+PRInt64 nsOpusState::Time(int aPreSkip, PRInt64 aGranulepos)
+{
+  if (aGranulepos < 0)
+    return -1;
+
+  // Ogg Opus always runs at a granule rate of 48 kHz.
+  CheckedInt64 t = CheckedInt64(aGranulepos - aPreSkip) * USECS_PER_S;
+  return t.isValid() ? t.value() / 48000 : -1;
+}
+
+bool nsOpusState::IsHeader(ogg_packet* aPacket)
+{
+  return aPacket->bytes >= 16 &&
+         (!memcmp(aPacket->packet, "OpusHead", 8) ||
+          !memcmp(aPacket->packet, "OpusTags", 8));
+}
+
+nsresult nsOpusState::PageIn(ogg_page* aPage)
+{
+  if (!mActive)
+    return NS_OK;
+  NS_ASSERTION(static_cast<PRUint32>(ogg_page_serialno(aPage)) == mSerial,
+               "Page must be for this stream!");
+  if (ogg_stream_pagein(&mState, aPage) == -1)
+    return NS_ERROR_FAILURE;
+
+  bool haveGranulepos;
+  nsresult rv = PacketOutUntilGranulepos(haveGranulepos);
+  if (NS_FAILED(rv) || !haveGranulepos || mPacketCount < 2)
+    return rv;
+  if(!ReconstructOpusGranulepos())
+    return NS_ERROR_FAILURE;
+  for (PRUint32 i = 0; i < mUnstamped.Length(); i++) {
+    ogg_packet* packet = mUnstamped[i];
+    NS_ASSERTION(!IsHeader(packet), "Don't try to play a header packet");
+    NS_ASSERTION(packet->granulepos != -1, "Packet should have a granulepos");
+    mPackets.Append(packet);
+  }
+  mUnstamped.Clear();
+  return NS_OK;
+}
+
+// Helper method to return the change in granule position due to an Opus packet
+// (as distinct from the number of samples in the packet, which depends on the
+// decoder rate). It should work with a multistream Opus file, and continue to
+// work should we ever allow the decoder to decode at a rate other than 48 kHz.
+// It even works before we've created the actual Opus decoder.
+static int GetOpusDeltaGP(ogg_packet* packet)
+{
+  int nframes;
+  nframes = opus_packet_get_nb_frames(packet->packet, packet->bytes);
+  if (nframes > 0) {
+    return nframes*opus_packet_get_samples_per_frame(packet->packet, 48000);
+  }
+  NS_WARNING("Invalid Opus packet.");
+  return nframes;
+}
+
+bool nsOpusState::ReconstructOpusGranulepos(void)
+{
+  NS_ASSERTION(mUnstamped.Length() > 0, "Must have unstamped packets");
+  ogg_packet* last = mUnstamped[mUnstamped.Length()-1];
+  NS_ASSERTION(last->e_o_s || last->granulepos > 0,
+      "Must know last granulepos!");
+  PRInt64 gp;
+  // If this is the last page, and we've seen at least one previous page (or
+  // this is the first page)...
+  if (last->e_o_s) {
+    if (mPrevPageGranulepos != -1) {
+      // If this file only has one page and the final granule position is
+      // smaller than the pre-skip amount, we MUST reject the stream.
+      if (!mDoneReadingHeaders && last->granulepos < mPreSkip)
+        return false;
+      PRInt64 last_gp = last->granulepos;
+      gp = mPrevPageGranulepos;
+      // Loop through the packets forwards, adding the current packet's
+      // duration to the previous granulepos to get the value for the
+      // current packet.
+      for (PRUint32 i = 0; i < mUnstamped.Length() - 1; ++i) {
+        ogg_packet* packet = mUnstamped[i];
+        int offset = GetOpusDeltaGP(packet);
+        // Check for error (negative offset) and overflow.
+        if (offset >= 0 && gp <= PR_INT64_MAX - offset) {
+          gp += offset;
+          if (gp >= last_gp) {
+            NS_WARNING("Opus end trimming removed more than a full packet.");
+            // We were asked to remove a full packet's worth of data or more.
+            // Encoders SHOULD NOT produce streams like this, but we'll handle
+            // it for them anyway.
+            gp = last_gp;
+            for (PRUint32 j = i+1; j < mUnstamped.Length(); ++j) {
+              nsOggCodecState::ReleasePacket(mUnstamped[j]);
+            }
+            mUnstamped.RemoveElementsAt(i+1, mUnstamped.Length() - (i+1));
+            last = packet;
+            last->e_o_s = 1;
+          }
+        }
+        packet->granulepos = gp;
+      }
+      mPrevPageGranulepos = last_gp;
+      return true;
+    } else {
+      NS_WARNING("No previous granule position to use for Opus end trimming.");
+      // If we don't have a previous granule position, fall through.
+      // We simply won't trim any samples from the end.
+      // TODO: Are we guaranteed to have seen a previous page if there is one?
+    }
+  }
+
+  gp = last->granulepos;
+  // Loop through the packets backwards, subtracting the next
+  // packet's duration from its granulepos to get the value
+  // for the current packet.
+  for (PRUint32 i = mUnstamped.Length() - 1; i > 0; i--) {
+    int offset = GetOpusDeltaGP(mUnstamped[i]);
+    // Check for error (negative offset) and overflow.
+    if (offset >= 0) {
+      if (offset <= gp) {
+        gp -= offset;
+      } else {
+        // If the granule position of the first data page is smaller than the
+        // number of decodable audio samples on that page, then we MUST reject
+        // the stream.
+        if (!mDoneReadingHeaders)
+          return false;
+        // It's too late to reject the stream.
+        // If we get here, this almost certainly means the file has screwed-up
+        // timestamps somewhere after the first page.
+        NS_WARNING("Clamping negative Opus granulepos to zero.");
+        gp = 0;
+      }
+    }
+    mUnstamped[i - 1]->granulepos = gp;
+  }
+
+  // Check to make sure the first granule position is at least as large as the
+  // total number of samples decodable from the first page with completed
+  // packets. This requires looking at the duration of the first packet, too.
+  // We MUST reject such streams.
+  if (!mDoneReadingHeaders && GetOpusDeltaGP(mUnstamped[0]) > gp)
+    return false;
+  mPrevPageGranulepos = last->granulepos;
+  return true;
+}
+#endif /* MOZ_OPUS */
+
+nsSkeletonState::nsSkeletonState(ogg_page* aBosPage) :
+  nsOggCodecState(aBosPage, true),
+  mVersion(0),
+  mPresentationTime(0),
+  mLength(0)
 {
   MOZ_COUNT_CTOR(nsSkeletonState);
 }
@@ -817,29 +1164,6 @@ static bool IsSkeletonIndex(ogg_packet* aPacket)
          memcmp(reinterpret_cast<char*>(aPacket->packet), "index", 5) == 0;
 }
 
-// Reads a little-endian encoded unsigned 32bit integer at p.
-static PRUint32 LEUint32(const unsigned char* p)
-{
-  return p[0] +
-        (p[1] << 8) + 
-        (p[2] << 16) +
-        (p[3] << 24);
-}
-
-// Reads a little-endian encoded 64bit integer at p.
-static PRInt64 LEInt64(const unsigned char* p)
-{
-  PRUint32 lo = LEUint32(p);
-  PRUint32 hi = LEUint32(p + 4);
-  return static_cast<PRInt64>(lo) | (static_cast<PRInt64>(hi) << 32);
-}
-
-// Reads a little-endian encoded unsigned 16bit integer at p.
-static PRUint16 LEUint16(const unsigned char* p)
-{
-  return p[0] + (p[1] << 8);  
-}
-
 // Reads a variable length encoded integer at p. Will not read
 // past aLimit. Returns pointer to character after end of integer.
 static const unsigned char* ReadVariableLengthInt(const unsigned char* p,
@@ -872,7 +1196,6 @@ bool nsSkeletonState::DecodeIndex(ogg_packet* aPacket)
   PRUint32 serialno = LEUint32(aPacket->packet + INDEX_SERIALNO_OFFSET);
   PRInt64 numKeyPoints = LEInt64(aPacket->packet + INDEX_NUM_KEYPOINTS_OFFSET);
 
-  PRInt64 n = 0;
   PRInt64 endTime = 0, startTime = 0;
   const unsigned char* p = aPacket->packet;
 
@@ -884,34 +1207,32 @@ bool nsSkeletonState::DecodeIndex(ogg_packet* aPacket)
   }
 
   // Extract the start time.
-  n = LEInt64(p + INDEX_FIRST_NUMER_OFFSET);
-  PRInt64 t;
-  if (!MulOverflow(n, USECS_PER_S, t)) {
+  CheckedInt64 t = CheckedInt64(LEInt64(p + INDEX_FIRST_NUMER_OFFSET)) * USECS_PER_S;
+  if (!t.isValid()) {
     return (mActive = false);
   } else {
-    startTime = t / timeDenom;
+    startTime = t.value() / timeDenom;
   }
 
   // Extract the end time.
-  n = LEInt64(p + INDEX_LAST_NUMER_OFFSET);
-  if (!MulOverflow(n, USECS_PER_S, t)) {
+  t = LEInt64(p + INDEX_LAST_NUMER_OFFSET) * USECS_PER_S;
+  if (!t.isValid()) {
     return (mActive = false);
   } else {
-    endTime = t / timeDenom;
+    endTime = t.value() / timeDenom;
   }
 
   // Check the numKeyPoints value read, ensure we're not going to run out of
   // memory while trying to decode the index packet.
-  PRInt64 minPacketSize;
-  if (!MulOverflow(numKeyPoints, MIN_KEY_POINT_SIZE, minPacketSize) ||
-      !AddOverflow(INDEX_KEYPOINT_OFFSET, minPacketSize, minPacketSize))
+  CheckedInt64 minPacketSize = (CheckedInt64(numKeyPoints) * MIN_KEY_POINT_SIZE) + INDEX_KEYPOINT_OFFSET;
+  if (!minPacketSize.isValid())
   {
     return (mActive = false);
   }
   
   PRInt64 sizeofIndex = aPacket->bytes - INDEX_KEYPOINT_OFFSET;
   PRInt64 maxNumKeyPoints = sizeofIndex / MIN_KEY_POINT_SIZE;
-  if (aPacket->bytes < minPacketSize ||
+  if (aPacket->bytes < minPacketSize.value() ||
       numKeyPoints > maxNumKeyPoints || 
       numKeyPoints < 0)
   {
@@ -933,32 +1254,34 @@ bool nsSkeletonState::DecodeIndex(ogg_packet* aPacket)
   p = aPacket->packet + INDEX_KEYPOINT_OFFSET;
   const unsigned char* limit = aPacket->packet + aPacket->bytes;
   PRInt64 numKeyPointsRead = 0;
-  PRInt64 offset = 0;
-  PRInt64 time = 0;
+  CheckedInt64 offset = 0;
+  CheckedInt64 time = 0;
   while (p < limit &&
          numKeyPointsRead < numKeyPoints)
   {
     PRInt64 delta = 0;
     p = ReadVariableLengthInt(p, limit, delta);
+    offset += delta;
     if (p == limit ||
-        !AddOverflow(offset, delta, offset) ||
-        offset > mLength ||
-        offset < 0)
+        !offset.isValid() ||
+        offset.value() > mLength ||
+        offset.value() < 0)
     {
       return (mActive = false);
     }
     p = ReadVariableLengthInt(p, limit, delta);
-    if (!AddOverflow(time, delta, time) ||
-        time > endTime ||
-        time < startTime)
+    time += delta;
+    if (!time.isValid() ||
+        time.value() > endTime ||
+        time.value() < startTime)
     {
       return (mActive = false);
     }
-    PRInt64 timeUsecs = 0;
-    if (!MulOverflow(time, USECS_PER_S, timeUsecs))
+    CheckedInt64 timeUsecs = time * USECS_PER_S;
+    if (!timeUsecs.isValid())
       return mActive = false;
     timeUsecs /= timeDenom;
-    keyPoints->Add(offset, timeUsecs);
+    keyPoints->Add(offset.value(), timeUsecs.value());
     numKeyPointsRead++;
   }
 
@@ -1064,11 +1387,14 @@ nsresult nsSkeletonState::GetDuration(const nsTArray<PRUint32>& aTracks,
     }
   }
   NS_ASSERTION(endTime > startTime, "Duration must be positive");
-  return AddOverflow(endTime, -startTime, aDuration) ? NS_OK : NS_ERROR_FAILURE;
+  CheckedInt64 duration = CheckedInt64(endTime) - startTime;
+  aDuration = duration.isValid() ? duration.value() : 0;
+  return duration.isValid() ? NS_OK : NS_ERROR_FAILURE;
 }
 
 bool nsSkeletonState::DecodeHeader(ogg_packet* aPacket)
 {
+  nsAutoRef<ogg_packet> autoRelease(aPacket);
   if (IsSkeletonBOS(aPacket)) {
     PRUint16 verMajor = LEUint16(aPacket->packet + SKELETON_VERSION_MAJOR_OFFSET);
     PRUint16 verMinor = LEUint16(aPacket->packet + SKELETON_VERSION_MINOR_OFFSET);
@@ -1080,37 +1406,25 @@ bool nsSkeletonState::DecodeHeader(ogg_packet* aPacket)
     mPresentationTime = d == 0 ? 0 : (static_cast<float>(n) / static_cast<float>(d)) * USECS_PER_S;
 
     mVersion = SKELETON_VERSION(verMajor, verMinor);
+    // We can only care to parse Skeleton version 4.0+.
     if (mVersion < SKELETON_VERSION(4,0) ||
         mVersion >= SKELETON_VERSION(5,0) ||
         aPacket->bytes < SKELETON_4_0_MIN_HEADER_LEN)
-    {
-      // We can only care to parse Skeleton version 4.0+.
-      mActive = false;
-      return mDoneReadingHeaders = true;
-    }
+      return false;
 
     // Extract the segment length.
     mLength = LEInt64(aPacket->packet + SKELETON_FILE_LENGTH_OFFSET);
 
     LOG(PR_LOG_DEBUG, ("Skeleton segment length: %lld", mLength));
 
-    // Initialize the serianlno-to-index map.
-    bool init = mIndex.Init();
-    if (!init) {
-      NS_WARNING("Failed to initialize Ogg skeleton serialno-to-index map");
-      mActive = false;
-      return mDoneReadingHeaders = true;
-    }
-    mActive = true;
+    // Initialize the serialno-to-index map.
+    mIndex.Init();
+    return true;
   } else if (IsSkeletonIndex(aPacket) && mVersion >= SKELETON_VERSION(4,0)) {
-    if (!DecodeIndex(aPacket)) {
-      // Failed to parse index, or invalid/hostile index. DecodeIndex() will
-      // have deactivated the track.
-      return mDoneReadingHeaders = true;
-    }
-
+    return DecodeIndex(aPacket);
   } else if (aPacket->e_o_s) {
     mDoneReadingHeaders = true;
+    return true;
   }
-  return mDoneReadingHeaders;
+  return false;
 }

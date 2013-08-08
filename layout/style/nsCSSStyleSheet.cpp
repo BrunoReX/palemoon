@@ -1,43 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 // vim:cindent:tabstop=2:expandtab:shiftwidth=2:
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   L. David Baron <dbaron@dbaron.org>
- *   Pierre Phaneuf <pp@ludusdesign.com>
- *   Daniel Glazman <glazman@netscape.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* representation of a CSS style sheet */
 
@@ -874,6 +839,30 @@ nsCSSStyleSheet::RebuildChildList(css::Rule* aRule, void* aBuilder)
   return true;
 }
 
+size_t
+nsCSSStyleSheet::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = 0;
+  const nsCSSStyleSheet* s = this;
+  while (s) {
+    n += aMallocSizeOf(s);
+    n += s->mInner->SizeOfIncludingThis(aMallocSizeOf);
+
+    // Measurement of the following members may be added later if DMD finds it is
+    // worthwhile:
+    // - s->mTitle
+    // - s->mMedia
+    // - s->mRuleCollection
+    // - s->mRuleProcessors
+    //
+    // The following members are not measured:
+    // - s->mOwnerRule, because it's non-owning
+
+    s = s->mNext;
+  }
+  return n;
+}
+
 nsCSSStyleSheetInner::nsCSSStyleSheetInner(nsCSSStyleSheetInner& aCopy,
                                            nsCSSStyleSheet* aPrimarySheet)
   : mSheets(),
@@ -981,6 +970,28 @@ nsCSSStyleSheetInner::CreateNamespaceMap()
   // return the wildcard namespace instead of the null namespace.
   mNameSpaceMap->AddPrefix(nsnull, kNameSpaceID_Unknown);
   return NS_OK;
+}
+
+size_t
+nsCSSStyleSheetInner::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = aMallocSizeOf(this);
+  n += mOrderedRules.SizeOfExcludingThis(css::Rule::SizeOfCOMArrayElementIncludingThis,
+                                         aMallocSizeOf);
+  n += mFirstChild ? mFirstChild->SizeOfIncludingThis(aMallocSizeOf) : 0;
+
+  // Measurement of the following members may be added later if DMD finds it is
+  // worthwhile:
+  // - mSheetURI
+  // - mOriginalSheetURI
+  // - mBaseURI
+  // - mPrincipal
+  // - mNameSpaceMap
+  //
+  // The following members are not measured:
+  // - mSheets, because it's non-owning
+
+  return n;
 }
 
 // -------------------------------
@@ -1740,6 +1751,17 @@ nsCSSStyleSheet::InsertRule(const nsAString& aRule,
   return InsertRuleInternal(aRule, aIndex, aReturn);
 }
 
+static bool
+RuleHasPendingChildSheet(css::Rule *cssRule)
+{
+  nsCOMPtr<nsIDOMCSSImportRule> importRule(do_QueryInterface(cssRule));
+  NS_ASSERTION(importRule, "Rule which has type IMPORT_RULE and does not implement nsIDOMCSSImportRule!");
+  nsCOMPtr<nsIDOMCSSStyleSheet> childSheet;
+  importRule->GetStyleSheet(getter_AddRefs(childSheet));
+  nsRefPtr<nsCSSStyleSheet> cssSheet = do_QueryObject(childSheet);
+  return cssSheet != nsnull && !cssSheet->IsComplete();
+}
+
 nsresult
 nsCSSStyleSheet::InsertRuleInternal(const nsAString& aRule, 
                                     PRUint32 aIndex, 
@@ -1860,23 +1882,16 @@ nsCSSStyleSheet::InsertRuleInternal(const nsAString& aRule,
       NS_ENSURE_SUCCESS(result, result);
     }
 
-    // We don't notify immediately for @import rules, but rather when
-    // the sheet the rule is importing is loaded
-    bool notify = true;
-    if (type == css::Rule::IMPORT_RULE) {
-      nsCOMPtr<nsIDOMCSSImportRule> importRule(do_QueryInterface(cssRule));
-      NS_ASSERTION(importRule, "Rule which has type IMPORT_RULE and does not implement nsIDOMCSSImportRule!");
-      nsCOMPtr<nsIDOMCSSStyleSheet> childSheet;
-      importRule->GetStyleSheet(getter_AddRefs(childSheet));
-      if (!childSheet) {
-        notify = false;
-      }
+    if (type == css::Rule::IMPORT_RULE && RuleHasPendingChildSheet(cssRule)) {
+      // We don't notify immediately for @import rules, but rather when
+      // the sheet the rule is importing is loaded (see StyleSheetLoaded)
+      continue;
     }
-    if (mDocument && notify) {
+    if (mDocument) {
       mDocument->StyleRuleAdded(this, cssRule);
     }
   }
-  
+
   *aReturn = aIndex;
   return NS_OK;
 }
@@ -2047,6 +2062,9 @@ nsCSSStyleSheet::StyleSheetLoaded(nsCSSStyleSheet* aSheet,
                                   bool aWasAlternate,
                                   nsresult aStatus)
 {
+  if (aSheet->GetParentSheet() == nsnull) {
+    return NS_OK; // ignore if sheet has been detached already (see parseSheet)
+  }
   NS_ASSERTION(this == aSheet->GetParentSheet(),
                "We are being notified of a sheet load for a sheet that is not our child!");
 
@@ -2058,6 +2076,72 @@ nsCSSStyleSheet::StyleSheetLoaded(nsCSSStyleSheet* aSheet,
     mDocument->StyleRuleAdded(this, aSheet->GetOwnerRule());
   }
 
+  return NS_OK;
+}
+
+nsresult
+nsCSSStyleSheet::ParseSheet(const nsAString& aInput)
+{
+  // Not doing this if the sheet is not complete!
+  if (!mInner->mComplete) {
+    return NS_ERROR_DOM_INVALID_ACCESS_ERR;
+  }
+
+  // Hold strong ref to the CSSLoader in case the document update
+  // kills the document
+  nsRefPtr<css::Loader> loader;
+  if (mDocument) {
+    loader = mDocument->CSSLoader();
+    NS_ASSERTION(loader, "Document with no CSS loader!");
+  } else {
+    loader = new css::Loader();
+  }
+
+  nsCSSParser parser(loader, this);
+
+  mozAutoDocUpdate updateBatch(mDocument, UPDATE_STYLE, true);
+
+  nsresult rv = WillDirty();
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // detach existing rules (including child sheets via import rules)
+  int ruleCount;
+  while ((ruleCount = mInner->mOrderedRules.Count()) != 0) {
+    nsRefPtr<css::Rule> rule = mInner->mOrderedRules.ObjectAt(ruleCount - 1);
+    mInner->mOrderedRules.RemoveObjectAt(ruleCount - 1);
+    rule->SetStyleSheet(nsnull);
+    if (mDocument) {
+      mDocument->StyleRuleRemoved(this, rule);
+    }
+  }
+
+  // nuke child sheets list and current namespace map
+  for (nsCSSStyleSheet* child = mInner->mFirstChild; child; child = child->mNext) {
+    NS_ASSERTION(child->mParent == this, "Child sheet is not parented to this!");
+    child->mParent = nsnull;
+    child->mDocument = nsnull;
+  }
+  mInner->mFirstChild = nsnull;
+  mInner->mNameSpaceMap = nsnull;
+
+  // allow unsafe rules if the style sheet's principal is the system principal
+  bool allowUnsafeRules = nsContentUtils::IsSystemPrincipal(mInner->mPrincipal);
+  rv = parser.ParseSheet(aInput, mInner->mSheetURI, mInner->mBaseURI,
+                         mInner->mPrincipal, 1, allowUnsafeRules);
+  DidDirty(); // we are always 'dirty' here since we always remove rules first
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // notify document of all new rules
+  if (mDocument) {
+    for (PRInt32 index = 0; index < mInner->mOrderedRules.Count(); ++index) {
+      nsRefPtr<css::Rule> rule = mInner->mOrderedRules.ObjectAt(index);
+      if (rule->GetType() == css::Rule::IMPORT_RULE &&
+          RuleHasPendingChildSheet(rule)) {
+        continue; // notify when loaded (see StyleSheetLoaded)
+      }
+      mDocument->StyleRuleAdded(this, rule);
+    }
+  }
   return NS_OK;
 }
 

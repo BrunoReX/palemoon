@@ -1,42 +1,7 @@
 #
-# ***** BEGIN LICENSE BLOCK *****
-# Version: MPL 1.1/GPL 2.0/LGPL 2.1
-#
-# The contents of this file are subject to the Mozilla Public License Version
-# 1.1 (the "License"); you may not use this file except in compliance with
-# the License. You may obtain a copy of the License at
-# http://www.mozilla.org/MPL/
-#
-# Software distributed under the License is distributed on an "AS IS" basis,
-# WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
-# for the specific language governing rights and limitations under the
-# License.
-#
-# The Original Code is mozilla.org code.
-#
-# The Initial Developer of the Original Code is
-# the Mozilla Foundation.
-# Portions created by the Initial Developer are Copyright (C) 1998
-# the Initial Developer. All Rights Reserved.
-#
-# Contributor(s):
-#   Robert Sayre <sayrer@gmail.com>
-#   Jeff Walden <jwalden+bmo@mit.edu>
-#   Serge Gautherie <sgautherie.bz@free.fr>
-#
-# Alternatively, the contents of this file may be used under the terms of
-# either the GNU General Public License Version 2 or later (the "GPL"), or
-# the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
-# in which case the provisions of the GPL or the LGPL are applicable instead
-# of those above. If you wish to allow use of your version of this file only
-# under the terms of either the GPL or the LGPL, and not to allow others to
-# use your version of this file under the terms of the MPL, indicate your
-# decision by deleting the provisions above and replace them with the notice
-# and other provisions required by the GPL or the LGPL. If you do not delete
-# the provisions above, a recipient may use your version of this file under
-# the terms of any one of the MPL, the GPL or the LGPL.
-#
-# ***** END LICENSE BLOCK *****
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 """
 Runs the Mochitest test harness.
@@ -248,6 +213,11 @@ class MochitestOptions(optparse.OptionParser):
                     help = "JSON list of tests that we want to not run, cannot be specified with --run-only-tests.")
     defaults["excludeTests"] = None
 
+    self.add_option("--failure-file",
+                    action = "store", type="string", dest = "failureFile",
+                    help = "Filename of the output file where we can store a .json list of failures to be run in the future with --run-only-tests.")
+    defaults["failureFile"] = None
+
     # -h, --help are automatically handled by OptionParser
 
     self.set_defaults(**defaults)
@@ -314,13 +284,13 @@ See <http://mochikit.com/doc/html/MochiKit/Logging.html> for details on the logg
     if options.runOnlyTests != None and options.excludeTests != None:
       self.error("We can only support --run-only-tests OR --exclude-tests, not both.")
       
-    if (options.runOnlyTests):
-      if (not os.path.exists(os.path.join(os.path.dirname(__file__), options.runOnlyTests))):
-        self.error("unable to find --run-only-tests file '%s'" % (options.runOnlyTests));
+    if options.runOnlyTests:
+      if not os.path.exists(os.path.abspath(options.runOnlyTests)):
+        self.error("unable to find --run-only-tests file '%s'" % options.runOnlyTests);
         
-    if (options.excludeTests):
-      if (not os.path.exists(os.path.join(os.path.dirname(__file__), options.excludeTests))):
-        self.error("unable to find --exclude-tests file '%s'" % (options.excludeTests));
+    if options.excludeTests:
+      if not os.path.exists(os.path.abspath(options.excludeTests)):
+        self.error("unable to find --exclude-tests file '%s'" % options.excludeTests);
 
     return options
 
@@ -594,6 +564,8 @@ class Mochitest(object):
         self.urlOpts.append("testname=%s" % ("/").join([self.TEST_PATH, options.testPath]))
       if options.runOnlyTests:
         self.urlOpts.append("runOnlyTests=%s" % options.runOnlyTests)
+      if options.failureFile:
+        self.urlOpts.append("failureFile=%s" % options.failureFile)
       elif options.excludeTests:
         self.urlOpts.append("excludeTests=%s" % options.excludeTests)
 
@@ -686,7 +658,7 @@ class Mochitest(object):
       self.automation.log.info("INFO | runtests.py | Received keyboard interrupt.\n");
       status = -1
     except:
-      self.automation.log.info("INFO | runtests.py | Received unexpected exception while running application '%s'\n" % (sys.exc_info()[1]))
+      self.automation.log.exception("INFO | runtests.py | Received unexpected exception while running application\n")
       status = 1
 
     if options.vmwareRecording:
@@ -695,6 +667,7 @@ class Mochitest(object):
     self.stopWebServer(options)
     self.stopWebSocketServer(options)
     processLeakLog(self.leak_report_file, options.leakThreshold)
+
     self.automation.log.info("\nINFO | runtests.py | Running tests: end.")
 
     if manifest is not None:

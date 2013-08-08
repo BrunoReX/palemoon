@@ -1,41 +1,8 @@
 /* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * PR assertion checker.
@@ -64,6 +31,17 @@ js_memcpy(void *dst_, const void *src_, size_t len)
 
 #ifdef __cplusplus
 namespace js {
+
+template <class T>
+struct AlignmentTestStruct
+{
+    char c;
+    T t;
+};
+
+/* This macro determines the alignment requirements of a type. */
+#define JS_ALIGNMENT_OF(t_) \
+  (sizeof(js::AlignmentTestStruct<t_>) - sizeof(t_))
 
 template <class T>
 class AlignedPtrAndFlag
@@ -192,96 +170,6 @@ class AutoScopedAssign
     ~AutoScopedAssign() { *addr = old; }
 };
 
-template <class RefCountable>
-class AlreadyIncRefed
-{
-    typedef RefCountable *****ConvertibleToBool;
-
-    RefCountable *obj;
-
-  public:
-    explicit AlreadyIncRefed(RefCountable *obj = NULL) : obj(obj) {}
-
-    bool null() const { return obj == NULL; }
-    operator ConvertibleToBool() const { return (ConvertibleToBool)obj; }
-
-    RefCountable *operator->() const { JS_ASSERT(!null()); return obj; }
-    RefCountable &operator*() const { JS_ASSERT(!null()); return *obj; }
-    RefCountable *get() const { return obj; }
-};
-
-template <class RefCountable>
-class NeedsIncRef
-{
-    typedef RefCountable *****ConvertibleToBool;
-
-    RefCountable *obj;
-
-  public:
-    explicit NeedsIncRef(RefCountable *obj = NULL) : obj(obj) {}
-
-    bool null() const { return obj == NULL; }
-    operator ConvertibleToBool() const { return (ConvertibleToBool)obj; }
-
-    RefCountable *operator->() const { JS_ASSERT(!null()); return obj; }
-    RefCountable &operator*() const { JS_ASSERT(!null()); return *obj; }
-    RefCountable *get() const { return obj; }
-};
-
-template <class RefCountable>
-class AutoRefCount
-{
-    typedef RefCountable *****ConvertibleToBool;
-
-    JSContext *const cx;
-    RefCountable *obj;
-
-    AutoRefCount(const AutoRefCount &other) MOZ_DELETE;
-    void operator=(const AutoRefCount &other) MOZ_DELETE;
-
-  public:
-    explicit AutoRefCount(JSContext *cx)
-      : cx(cx), obj(NULL)
-    {}
-
-    AutoRefCount(JSContext *cx, NeedsIncRef<RefCountable> aobj)
-      : cx(cx), obj(aobj.get())
-    {
-        if (obj)
-            obj->incref(cx);
-    }
-
-    AutoRefCount(JSContext *cx, AlreadyIncRefed<RefCountable> aobj)
-      : cx(cx), obj(aobj.get())
-    {}
-
-    ~AutoRefCount() {
-        if (obj)
-            obj->decref(cx);
-    }
-
-    void reset(NeedsIncRef<RefCountable> aobj) {
-        if (obj)
-            obj->decref(cx);
-        obj = aobj.get();
-        if (obj)
-            obj->incref(cx);
-    }
-
-    void reset(AlreadyIncRefed<RefCountable> aobj) {
-        if (obj)
-            obj->decref(cx);
-        obj = aobj.get();
-    }
-
-    bool null() const { return obj == NULL; }
-    operator ConvertibleToBool() const { return (ConvertibleToBool)obj; }
-
-    RefCountable *operator->() const { JS_ASSERT(!null()); return obj; }
-    RefCountable &operator*() const { JS_ASSERT(!null()); return *obj; }
-    RefCountable *get() const { return obj; }
-};
-
 template <class T>
 JS_ALWAYS_INLINE static void
 PodZero(T *t)
@@ -363,6 +251,15 @@ PodEqual(T *one, T *two, size_t len)
     return !memcmp(one, two, len * sizeof(T));
 }
 
+template <class T>
+JS_ALWAYS_INLINE static void
+Swap(T &t, T &u)
+{
+    T tmp(Move(t));
+    t = Move(u);
+    u = Move(tmp);
+}
+
 JS_ALWAYS_INLINE static size_t
 UnsignedPtrDiff(const void *bigger, const void *smaller)
 {
@@ -377,6 +274,66 @@ UnsignedPtrDiff(const void *bigger, const void *smaller)
  * MaybeReportError.
  */
 enum MaybeReportError { REPORT_ERROR = true, DONT_REPORT_ERROR = false };
+
+/*****************************************************************************/
+
+/* A bit array is an array of bits represented by an array of words (size_t). */
+
+static inline unsigned
+NumWordsForBitArrayOfLength(size_t length)
+{
+    return (length + (JS_BITS_PER_WORD - 1)) / JS_BITS_PER_WORD;
+}
+
+static inline unsigned
+BitArrayIndexToWordIndex(size_t length, size_t bitIndex)
+{
+    unsigned wordIndex = bitIndex / JS_BITS_PER_WORD;
+    JS_ASSERT(wordIndex < length);
+    return wordIndex;
+}
+
+static inline size_t
+BitArrayIndexToWordMask(size_t i)
+{
+    return size_t(1) << (i % JS_BITS_PER_WORD);
+}
+
+static inline bool
+IsBitArrayElementSet(size_t *array, size_t length, size_t i)
+{
+    return array[BitArrayIndexToWordIndex(length, i)] & BitArrayIndexToWordMask(i);
+}
+
+static inline bool
+IsAnyBitArrayElementSet(size_t *array, size_t length)
+{
+    unsigned numWords = NumWordsForBitArrayOfLength(length);
+    for (unsigned i = 0; i < numWords; ++i) {
+        if (array[i])
+            return true;
+    }
+    return false;
+}
+
+static inline void
+SetBitArrayElement(size_t *array, size_t length, size_t i)
+{
+    array[BitArrayIndexToWordIndex(length, i)] |= BitArrayIndexToWordMask(i);
+}
+
+static inline void
+ClearBitArrayElement(size_t *array, size_t length, size_t i)
+{
+    array[BitArrayIndexToWordIndex(length, i)] &= ~BitArrayIndexToWordMask(i);
+}
+
+static inline void
+ClearAllBitArrayElements(size_t *array, size_t length)
+{
+    for (unsigned i = 0; i < length; ++i)
+        array[i] = 0;
+}
 
 }  /* namespace js */
 #endif  /* __cplusplus */
@@ -421,9 +378,9 @@ inline __attribute__ ((unused)) void MUST_FLOW_THROUGH(const char *label) {}
 #ifdef JS_CRASH_DIAGNOSTICS
 # define JS_POISON(p, val, size) memset((p), (val), (size))
 # define JS_OPT_ASSERT(expr)                                                  \
-    ((expr) ? (void)0 : JS_Assert(#expr, __FILE__, __LINE__))
+    ((expr) ? (void)0 : MOZ_Assert(#expr, __FILE__, __LINE__))
 # define JS_OPT_ASSERT_IF(cond, expr)                                         \
-    ((!(cond) || (expr)) ? (void)0 : JS_Assert(#expr, __FILE__, __LINE__))
+    ((!(cond) || (expr)) ? (void)0 : MOZ_Assert(#expr, __FILE__, __LINE__))
 #else
 # define JS_POISON(p, val, size) ((void) 0)
 # define JS_OPT_ASSERT(expr) ((void) 0)

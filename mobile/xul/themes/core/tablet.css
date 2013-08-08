@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 
 .button-actionbar {
   visibility: collapse;
@@ -211,7 +215,7 @@ arrowbox {
 %ifndef honeycomb
 @media (min-width: @tablet_panel_minwidth@) {
   #awesome-panels {
-    -moz-box-shadow: 0px 0px @shadow_width_small@ black;
+    box-shadow: 0px 0px @shadow_width_small@ black;
   }
   #search-engines-popup {
     max-width: -moz-calc(@tablet_panel_minwidth@);

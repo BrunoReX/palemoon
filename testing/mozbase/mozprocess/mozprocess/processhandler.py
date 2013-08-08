@@ -1,41 +1,6 @@
-# ***** BEGIN LICENSE BLOCK *****
-# Version: MPL 1.1/GPL 2.0/LGPL 2.1
-#
-# The contents of this file are subject to the Mozilla Public License Version
-# 1.1 (the "License"); you may not use this file except in compliance with
-# the License. You may obtain a copy of the License at
-# http://www.mozilla.org/MPL/
-#
-# Software distributed under the License is distributed on an "AS IS" basis,
-# WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
-# for the specific language governing rights and limitations under the
-# License.
-#
-# The Original Code is mozprocess.
-#
-# The Initial Developer of the Original Code is
-#  The Mozilla Foundation.
-# Portions created by the Initial Developer are Copyright (C) 2011
-# the Initial Developer. All Rights Reserved.
-#
-# Contributor(s):
-#  Clint Talbert <ctalbert@mozilla.com>
-#  Jonathan Griffin <jgriffin@mozilla.com>
-#  Jeff Hammel <jhammel@mozilla.com>
-#
-# Alternatively, the contents of this file may be used under the terms of
-# either the GNU General Public License Version 2 or later (the "GPL"), or
-# the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
-# in which case the provisions of the GPL or the LGPL are applicable instead
-# of those above. If you wish to allow use of your version of this file only
-# under the terms of either the GPL or the LGPL, and not to allow others to
-# use your version of this file under the terms of the MPL, indicate your
-# decision by deleting the provisions above and replace them with the notice
-# and other provisions required by the GPL or the LGPL. If you do not delete
-# the provisions above, a recipient may use your version of this file under
-# the terms of any one of the MPL, the GPL or the LGPL.
-#
-# ***** END LICENSE BLOCK *****
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import logging
 import mozinfo
@@ -128,13 +93,15 @@ class ProcessHandlerMixin(object):
                     winprocess.TerminateJobObject(self._job, winprocess.ERROR_CONTROL_C_EXIT)
                     self.returncode = winprocess.GetExitCodeProcess(self._handle)
                 elif self._handle:
+                    err = None
                     try:
                         winprocess.TerminateProcess(self._handle, winprocess.ERROR_CONTROL_C_EXIT)
                     except:
-                        raise OSError("Could not terminate process")
-                    finally:
-                        self.returncode = winprocess.GetExitCodeProcess(self._handle)
-                        self._cleanup()
+                        err = "Could not terminate process"
+                    self.returncode = winprocess.GetExitCodeProcess(self._handle)
+                    self._cleanup()
+                    if err is not None:
+                        raise OSError(err)
                 else:
                     pass
             else:
@@ -145,15 +112,10 @@ class ProcessHandlerMixin(object):
                         if getattr(e, "errno", None) != 3:
                             # Error 3 is "no such process", which is ok
                             print >> sys.stderr, "Could not kill process, could not find pid: %s" % self.pid
-                    finally:
-                        # Try to get the exit status
-                        if self.returncode is None:
-                            self.returncode = subprocess.Popen._internal_poll(self)
-
                 else:
                     os.kill(self.pid, signal.SIGKILL)
-                    if self.returncode is None:
-                        self.returncode = subprocess.Popen._internal_poll(self)
+                if self.returncode is None:
+                    self.returncode = subprocess.Popen._internal_poll(self)
 
             self._cleanup()
             return self.returncode
@@ -392,6 +354,7 @@ falling back to not using job objects for managing child processes"""
                     # We use queues to synchronize between the thread and this
                     # function because events just didn't have robust enough error
                     # handling on pre-2.7 versions
+                    err = None
                     try:
                         # timeout is the max amount of time the procmgr thread will wait for
                         # child processes to shutdown before killing them with extreme prejudice.
@@ -400,11 +363,14 @@ falling back to not using job objects for managing child processes"""
                         if item[self.pid] == 'FINISHED':
                             self._process_events.task_done()
                     except:
-                        raise OSError("IO Completion Port failed to signal process shutdown")
-                    finally:
-                        # Either way, let's try to get this code
-                        self.returncode = winprocess.GetExitCodeProcess(self._handle)
-                        self._cleanup()
+                        err = "IO Completion Port failed to signal process shutdown"
+                    # Either way, let's try to get this code
+                    self.returncode = winprocess.GetExitCodeProcess(self._handle)
+                    self._cleanup()
+
+                    if err is not None:
+                        raise OSError(err)
+
 
                 else:
                     # Not managing with job objects, so all we can reasonably do

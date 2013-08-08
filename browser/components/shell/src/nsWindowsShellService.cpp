@@ -1,47 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Shell Service.
- *
- * The Initial Developer of the Original Code is mozilla.org.
- * Portions created by the Initial Developer are Copyright (C) 2004
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  Ben Goodger    <ben@mozilla.org>       (Clients, Mail, New Default Browser)
- *  Joe Hewitt     <hewitt@netscape.com>   (Set Background)
- *  Blake Ross     <blake@cs.stanford.edu> (Desktop Color, DDE support)
- *  Jungshik Shin  <jshin@mailaps.org>     (I18N)
- *  Robert Strong  <robert.bugzilla@gmail.com>
- *  Asaf Romano    <mano@mozilla.com>
- *  Ryan Jones     <sciguyryan@gmail.com>
- *  Paul O'Shannessy <paul@oshannessy.com>
- *  Jim Mathies    <jmathies@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "imgIContainer.h"
 #include "imgIRequest.h"
@@ -66,6 +26,7 @@
 #include "nsUnicharUtils.h"
 #include "nsIWinTaskbar.h"
 #include "nsISupportsPrimitives.h"
+#include "nsThreadUtils.h"
 
 #include "windows.h"
 #include "shellapi.h"
@@ -78,6 +39,7 @@
 #include <shlobj.h>
 
 #include <mbstring.h>
+#include <shlwapi.h>
 
 #ifndef MAX_BUF
 #define MAX_BUF 4096
@@ -90,6 +52,11 @@
   (val != ERROR_SUCCESS)
 
 #define NS_TASKBAR_CONTRACTID "@mozilla.org/windows-taskbar;1"
+
+// We clear the prefetch files one time after the browser is started after
+// 3 minutes.  After this is done once we set a pref so this will never happen
+// again except in updater code.
+#define CLEAR_PREFETCH_TIMEOUT_MS 180000
 
 NS_IMPL_ISUPPORTS2(nsWindowsShellService, nsIWindowsShellService, nsIShellService)
 
@@ -129,23 +96,17 @@ OpenKeyForReading(HKEY aKeyRoot, const nsAString& aKeyName, HKEY* aKey)
 //
 //   HKCU\SOFTWARE\Classes\FirefoxHTML\
 //     DefaultIcon                      (default)         REG_SZ     <apppath>,1
-//     shell\open\command               (default)         REG_SZ     <apppath> -requestPending -osint -url "%1"
-//     shell\open\ddeexec               (default)         REG_SZ     "%1",,0,0,,,,
-//     shell\open\ddeexec               NoActivateHandler REG_SZ
-//                       \Application   (default)         REG_SZ     Firefox
-//                       \Topic         (default)         REG_SZ     WWW_OpenURL
+//     shell\open\command               (default)         REG_SZ     <apppath> -osint -url "%1"
+//     shell\open\ddeexec               (default)         REG_SZ     <empty string>
 //
-// - Windows Vista Protocol Handler
+// - Windows Vista and above Protocol Handler
 //
 //   HKCU\SOFTWARE\Classes\FirefoxURL\  (default)         REG_SZ     <appname> URL
 //                                      EditFlags         REG_DWORD  2
 //                                      FriendlyTypeName  REG_SZ     <appname> URL
 //     DefaultIcon                      (default)         REG_SZ     <apppath>,1
-//     shell\open\command               (default)         REG_SZ     <apppath> -requestPending -osint -url "%1"
-//     shell\open\ddeexec               (default)         REG_SZ     "%1",,0,0,,,,
-//     shell\open\ddeexec               NoActivateHandler REG_SZ
-//                       \Application   (default)         REG_SZ     Firefox
-//                       \Topic         (default)         REG_SZ     WWW_OpenURL
+//     shell\open\command               (default)         REG_SZ     <apppath> -osint -url "%1"
+//     shell\open\ddeexec               (default)         REG_SZ     <empty string>
 //
 // - Protocol Mappings
 //   -----------------
@@ -155,13 +116,10 @@ OpenKeyForReading(HKEY aKeyRoot, const nsAString& aKeyName, HKEY* aKey)
 //
 //   HKCU\SOFTWARE\Classes\<protocol>\
 //     DefaultIcon                      (default)         REG_SZ     <apppath>,1
-//     shell\open\command               (default)         REG_SZ     <apppath> -requestPending -osint -url "%1"
-//     shell\open\ddeexec               (default)         REG_SZ     "%1",,0,0,,,,
-//     shell\open\ddeexec               NoActivateHandler REG_SZ
-//                       \Application   (default)         REG_SZ     Firefox
-//                       \Topic         (default)         REG_SZ     WWW_OpenURL
+//     shell\open\command               (default)         REG_SZ     <apppath> -osint -url "%1"
+//     shell\open\ddeexec               (default)         REG_SZ     <empty string>
 //
-// - Windows Start Menu (Win2K SP2, XP SP1, and newer)
+// - Windows Start Menu (XP SP1 and newer)
 //   -------------------------------------------------
 //   The following keys are set to make Firefox appear in the Start Menu as the
 //   browser:
@@ -180,19 +138,22 @@ OpenKeyForReading(HKEY aKeyRoot, const nsAString& aKeyName, HKEY* aKey)
 //     shell\safemode\command           (default)         REG_SZ     <apppath> -safe-mode
 //
 
+// The values checked are all default values so the value name is not needed.
 typedef struct {
   char* keyName;
-  char* valueName;
   char* valueData;
+  char* oldValueData;
 } SETTING;
 
 #define APP_REG_NAME L"Pale Moon"
-#define CLS_HTML "FirefoxHTML"
-#define CLS_URL "FirefoxURL"
-#define VAL_OPEN "\"%APPPATH%\" -requestPending -osint -url \"%1\""
 #define VAL_FILE_ICON "%APPPATH%,1"
+#define VAL_OPEN "\"%APPPATH%\" -osint -url \"%1\""
+#define OLD_VAL_OPEN "\"%APPPATH%\" -requestPending -osint -url \"%1\""
 #define DI "\\DefaultIcon"
-#define SOP "\\shell\\open\\command"
+#define SOC "\\shell\\open\\command"
+#define SOD "\\shell\\open\\ddeexec"
+// Used for updating the FTP protocol handler's shell open command under HKCU.
+#define FTP_SOC L"Software\\Classes\\ftp\\shell\\open\\command"
 
 #define MAKE_KEY_NAME1(PREFIX, MID) \
   PREFIX MID
@@ -201,20 +162,52 @@ typedef struct {
 // Firefox is the default browser for file handlers since other applications
 // (e.g. MS Office) may modify the DefaultIcon registry key value to add Icon
 // Handlers. see http://msdn2.microsoft.com/en-us/library/aa969357.aspx for
-// more info.
+// more info. The FTP protocol is not checked so advanced users can set the FTP
+// handler to another application and still have Firefox check if it is the
+// default HTTP and HTTPS handler.
 static SETTING gSettings[] = {
   // File Handler Class
-  { MAKE_KEY_NAME1(CLS_HTML, SOP), "", VAL_OPEN },
+  { MAKE_KEY_NAME1("FirefoxHTML", SOC), VAL_OPEN, OLD_VAL_OPEN },
 
   // Protocol Handler Class - for Vista and above
-  { MAKE_KEY_NAME1(CLS_URL, SOP), "", VAL_OPEN },
+  { MAKE_KEY_NAME1("FirefoxURL", SOC), VAL_OPEN, OLD_VAL_OPEN },
 
   // Protocol Handlers
-  { MAKE_KEY_NAME1("HTTP", DI),    "", VAL_FILE_ICON },
-  { MAKE_KEY_NAME1("HTTP", SOP),   "", VAL_OPEN },
-  { MAKE_KEY_NAME1("HTTPS", DI),   "", VAL_FILE_ICON },
-  { MAKE_KEY_NAME1("HTTPS", SOP),  "", VAL_OPEN }
+  { MAKE_KEY_NAME1("HTTP", DI), VAL_FILE_ICON },
+  { MAKE_KEY_NAME1("HTTP", SOC), VAL_OPEN, OLD_VAL_OPEN },
+  { MAKE_KEY_NAME1("HTTPS", DI), VAL_FILE_ICON },
+  { MAKE_KEY_NAME1("HTTPS", SOC), VAL_OPEN, OLD_VAL_OPEN }
 };
+
+// The settings to disable DDE are separate from the default browser settings
+// since they are only checked when Firefox is the default browser and if they
+// are incorrect they are fixed without notifying the user.
+static SETTING gDDESettings[] = {
+  // File Handler Class
+  { MAKE_KEY_NAME1("Software\\Classes\\FirefoxHTML", SOD) },
+
+  // Protocol Handler Class - for Vista and above
+  { MAKE_KEY_NAME1("Software\\Classes\\FirefoxURL", SOD) },
+
+  // Protocol Handlers
+  { MAKE_KEY_NAME1("Software\\Classes\\FTP", SOD) },
+  { MAKE_KEY_NAME1("Software\\Classes\\HTTP", SOD) },
+  { MAKE_KEY_NAME1("Software\\Classes\\HTTPS", SOD) }
+};
+
+// See Bug 770883
+#if 0
+#if defined(MOZ_MAINTENANCE_SERVICE)
+
+#define ONLY_SERVICE_LAUNCHING
+#include "updatehelper.h"
+#include "updatehelper.cpp"
+
+static const char *kPrefetchClearedPref =
+  "app.update.service.lastVersionPrefetchCleared";
+static nsCOMPtr<nsIThread> sThread;
+#endif
+#endif
 
 nsresult
 GetHelperPath(nsAutoString& aPath)
@@ -236,7 +229,11 @@ GetHelperPath(nsAutoString& aPath)
   rv = appHelper->AppendNative(NS_LITERAL_CSTRING("helper.exe"));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  return appHelper->GetPath(aPath);
+  rv = appHelper->GetPath(aPath);
+
+  aPath.Insert(L'"', 0);
+  aPath.Append(L'"');
+  return rv;
 }
 
 nsresult
@@ -245,11 +242,10 @@ LaunchHelper(nsAutoString& aPath)
   STARTUPINFOW si = {sizeof(si), 0};
   PROCESS_INFORMATION pi = {0};
 
-  BOOL ok = CreateProcessW(NULL, (LPWSTR)aPath.get(), NULL, NULL,
-                           FALSE, 0, NULL, NULL, &si, &pi);
-
-  if (!ok)
+  if (!CreateProcessW(NULL, (LPWSTR)aPath.get(), NULL, NULL, FALSE, 0, NULL,
+                      NULL, &si, &pi)) {
     return NS_ERROR_FAILURE;
+  }
 
   CloseHandle(pi.hProcess);
   CloseHandle(pi.hThread);
@@ -336,7 +332,6 @@ nsWindowsShellService::ShortcutMaintenance()
 bool
 nsWindowsShellService::IsDefaultBrowserVista(bool* aIsDefaultBrowser)
 {
-#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   IApplicationAssociationRegistration* pAAR;
   
   HRESULT hr = CoCreateInstance(CLSID_ApplicationAssociationRegistration,
@@ -355,7 +350,6 @@ nsWindowsShellService::IsDefaultBrowserVista(bool* aIsDefaultBrowser)
     pAAR->Release();
     return true;
   }
-#endif  
   return false;
 }
 
@@ -368,9 +362,6 @@ nsWindowsShellService::IsDefaultBrowser(bool aStartupCheck,
   // default browser dialog).
   if (aStartupCheck)
     mCheckedThisSession = true;
-
-  SETTING* settings;
-  SETTING* end = gSettings + sizeof(gSettings)/sizeof(SETTING);
 
   *aIsDefaultBrowser = true;
 
@@ -385,41 +376,179 @@ nsWindowsShellService::IsDefaultBrowser(bool aStartupCheck,
 
   nsAutoString appLongPath(exePath);
 
+  HKEY theKey;
+  DWORD res;
   nsresult rv;
   PRUnichar currValue[MAX_BUF];
-  for (settings = gSettings; settings < end; ++settings) {
-    NS_ConvertUTF8toUTF16 dataLongPath(settings->valueData);
-    NS_ConvertUTF8toUTF16 key(settings->keyName);
-    NS_ConvertUTF8toUTF16 value(settings->valueName);
-    PRInt32 offset = dataLongPath.Find("%APPPATH%");
-    dataLongPath.Replace(offset, 9, appLongPath);
 
-    ::ZeroMemory(currValue, sizeof(currValue));
-    HKEY theKey;
-    rv = OpenKeyForReading(HKEY_CLASSES_ROOT, key, &theKey);
+  SETTING* settings;
+  SETTING* end = gSettings + sizeof(gSettings) / sizeof(SETTING);
+
+  for (settings = gSettings; settings < end; ++settings) {
+    NS_ConvertUTF8toUTF16 keyName(settings->keyName);
+    NS_ConvertUTF8toUTF16 valueData(settings->valueData);
+    PRInt32 offset = valueData.Find("%APPPATH%");
+    valueData.Replace(offset, 9, appLongPath);
+
+    rv = OpenKeyForReading(HKEY_CLASSES_ROOT, keyName, &theKey);
     if (NS_FAILED(rv)) {
       *aIsDefaultBrowser = false;
       return NS_OK;
     }
 
+    ::ZeroMemory(currValue, sizeof(currValue));
     DWORD len = sizeof currValue;
-    DWORD res = ::RegQueryValueExW(theKey, PromiseFlatString(value).get(),
-                                   NULL, NULL, (LPBYTE)currValue, &len);
-    // Close the key we opened.
+    res = ::RegQueryValueExW(theKey, L"", NULL, NULL, (LPBYTE)currValue, &len);
+    // Close the key that was opened.
     ::RegCloseKey(theKey);
     if (REG_FAILED(res) ||
-        !dataLongPath.Equals(currValue, CaseInsensitiveCompare)) {
-      // Key wasn't set, or was set to something other than our registry entry
-      *aIsDefaultBrowser = false;
-      return NS_OK;
+        !valueData.Equals(currValue, CaseInsensitiveCompare)) {
+      // Key wasn't set or was set to something other than our registry entry.
+      NS_ConvertUTF8toUTF16 oldValueData(settings->oldValueData);
+      offset = oldValueData.Find("%APPPATH%");
+      oldValueData.Replace(offset, 9, appLongPath);
+      // The current registry value doesn't match the current or the old format.
+      if (!oldValueData.Equals(currValue, CaseInsensitiveCompare)) {
+        *aIsDefaultBrowser = false;
+        return NS_OK;
+      }
+
+      res = ::RegOpenKeyExW(HKEY_CLASSES_ROOT, PromiseFlatString(keyName).get(),
+                            0, KEY_SET_VALUE, &theKey);
+      if (REG_FAILED(res)) {
+        // If updating the open command fails try to update it using the helper
+        // application when setting Firefox as the default browser.
+        *aIsDefaultBrowser = false;
+        return NS_OK;
+      }
+
+      const nsString &flatValue = PromiseFlatString(valueData);
+      res = ::RegSetValueExW(theKey, L"", 0, REG_SZ,
+                             (const BYTE *) flatValue.get(),
+                             (flatValue.Length() + 1) * sizeof(PRUnichar));
+      // Close the key that was created.
+      ::RegCloseKey(theKey);
+      if (REG_FAILED(res)) {
+        // If updating the open command fails try to update it using the helper
+        // application when setting Firefox as the default browser.
+        *aIsDefaultBrowser = false;
+        return NS_OK;
+      }
     }
   }
 
-  // Only check if Firefox is the default browser on Vista if the previous
-  // checks show that Firefox is the default browser.
-  if (*aIsDefaultBrowser)
+  // Only check if Firefox is the default browser on Vista and above if the
+  // previous checks show that Firefox is the default browser.
+  if (*aIsDefaultBrowser) {
     IsDefaultBrowserVista(aIsDefaultBrowser);
+  }
 
+  // To handle the case where DDE isn't disabled due for a user because there
+  // account didn't perform a Firefox update this will check if Firefox is the
+  // default browser and if dde is disabled for each handler
+  // and if it isn't disable it. When Firefox is not the default browser the
+  // helper application will disable dde for each handler.
+  if (*aIsDefaultBrowser) {
+    // Check ftp settings
+
+    end = gDDESettings + sizeof(gDDESettings) / sizeof(SETTING);
+
+    for (settings = gDDESettings; settings < end; ++settings) {
+      NS_ConvertUTF8toUTF16 keyName(settings->keyName);
+
+      rv = OpenKeyForReading(HKEY_CURRENT_USER, keyName, &theKey);
+      if (NS_FAILED(rv)) {
+        ::RegCloseKey(theKey);
+        // If disabling DDE fails try to disable it using the helper
+        // application when setting Firefox as the default browser.
+        *aIsDefaultBrowser = false;
+        return NS_OK;
+      }
+
+      ::ZeroMemory(currValue, sizeof(currValue));
+      DWORD len = sizeof currValue;
+      res = ::RegQueryValueExW(theKey, L"", NULL, NULL, (LPBYTE)currValue,
+                               &len);
+      // Close the key that was opened.
+      ::RegCloseKey(theKey);
+      if (REG_FAILED(res) || PRUnichar('\0') != *currValue) {
+        // Key wasn't set or was set to something other than our registry entry.
+        // Delete the key along with all of its childrean and then recreate it.
+        const nsString &flatName = PromiseFlatString(keyName);
+        ::SHDeleteKeyW(HKEY_CURRENT_USER, flatName.get());
+        res = ::RegCreateKeyExW(HKEY_CURRENT_USER, flatName.get(), 0, NULL,
+                                REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL,
+                                &theKey, NULL);
+        if (REG_FAILED(res)) {
+          // If disabling DDE fails try to disable it using the helper
+          // application when setting Firefox as the default browser.
+          *aIsDefaultBrowser = false;
+          return NS_OK;
+        }
+
+        res = ::RegSetValueExW(theKey, L"", 0, REG_SZ, (const BYTE *) L"",
+                               sizeof(PRUnichar));
+        // Close the key that was created.
+        ::RegCloseKey(theKey);
+        if (REG_FAILED(res)) {
+          // If disabling DDE fails try to disable it using the helper
+          // application when setting Firefox as the default browser.
+          *aIsDefaultBrowser = false;
+          return NS_OK;
+        }
+      }
+    }
+
+    // Update the FTP protocol handler's shell open command if it is the old
+    // format.
+    res = ::RegOpenKeyExW(HKEY_CURRENT_USER, FTP_SOC, 0, KEY_ALL_ACCESS,
+                          &theKey);
+    // Don't update the FTP protocol handler's shell open command when opening
+    // its registry key fails under HKCU since it most likely doesn't exist.
+    if (NS_FAILED(rv)) {
+      return NS_OK;
+    }
+
+    NS_ConvertUTF8toUTF16 oldValueOpen(OLD_VAL_OPEN);
+    PRInt32 offset = oldValueOpen.Find("%APPPATH%");
+    oldValueOpen.Replace(offset, 9, appLongPath);
+
+    ::ZeroMemory(currValue, sizeof(currValue));
+    DWORD len = sizeof currValue;
+    res = ::RegQueryValueExW(theKey, L"", NULL, NULL, (LPBYTE)currValue,
+                             &len);
+
+    // Don't update the FTP protocol handler's shell open command when the
+    // current registry value doesn't exist or matches the old format.
+    if (REG_FAILED(res) ||
+        !oldValueOpen.Equals(currValue, CaseInsensitiveCompare)) {
+      ::RegCloseKey(theKey);
+      return NS_OK;
+    }
+
+    NS_ConvertUTF8toUTF16 valueData(VAL_OPEN);
+    valueData.Replace(offset, 9, appLongPath);
+    const nsString &flatValue = PromiseFlatString(valueData);
+    res = ::RegSetValueExW(theKey, L"", 0, REG_SZ,
+                           (const BYTE *) flatValue.get(),
+                           (flatValue.Length() + 1) * sizeof(PRUnichar));
+    // Close the key that was created.
+    ::RegCloseKey(theKey);
+    // If updating the FTP protocol handlers shell open command fails try to
+    // update it using the helper application when setting Firefox as the
+    // default browser.
+    if (REG_FAILED(res)) {
+      *aIsDefaultBrowser = false;
+    }
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsWindowsShellService::GetCanSetDesktopBackground(bool* aResult)
+{
+  *aResult = true;
   return NS_OK;
 }
 
@@ -640,6 +769,14 @@ nsWindowsShellService::SetDesktopBackground(nsIDOMElement* aElement,
         style.AssignLiteral("2");
         tile.AssignLiteral("0");
         break;
+      case BACKGROUND_FILL:
+        style.AssignLiteral("10");
+        tile.AssignLiteral("0");
+        break;
+      case BACKGROUND_FIT:
+        style.AssignLiteral("6");
+        tile.AssignLiteral("0");
+        break;
     }
 
     rv = regKey->WriteStringValue(NS_LITERAL_STRING("TileWallpaper"), tile);
@@ -794,6 +931,138 @@ nsWindowsShellService::SetDesktopBackgroundColor(PRUint32 aColor)
 
   return regKey->Close();
 }
+
+nsWindowsShellService::nsWindowsShellService() : 
+  mCheckedThisSession(false) 
+{
+// See Bug 770883
+#if 0
+#if defined(MOZ_MAINTENANCE_SERVICE)
+
+  // Check to make sure the service is installed
+  PRUint32 installed = 0;
+  nsCOMPtr<nsIWindowsRegKey> regKey = 
+    do_CreateInstance("@mozilla.org/windows-registry-key;1");
+  if (!regKey || 
+      NS_FAILED(regKey->Open(nsIWindowsRegKey::ROOT_KEY_LOCAL_MACHINE,
+                             NS_LITERAL_STRING(
+                               "SOFTWARE\\Mozilla\\MaintenanceService"),
+                             nsIWindowsRegKey::ACCESS_READ |
+                             nsIWindowsRegKey::WOW64_64)) ||
+      NS_FAILED(regKey->ReadIntValue(NS_LITERAL_STRING("Installed"), 
+                &installed)) ||
+      !installed) {
+    return;
+  }
+
+  // check to see if we have attempted to do the one time operation of clearing
+  // the prefetch.  We do it once per version upgrade.
+  nsCString lastClearedVer;
+  nsCOMPtr<nsIPrefBranch> prefBranch;
+  nsCOMPtr<nsIPrefService> prefs =
+    do_GetService(NS_PREFSERVICE_CONTRACTID);
+  if (!prefs || 
+      NS_FAILED(prefs->GetBranch(nsnull, getter_AddRefs(prefBranch))) ||
+      (NS_SUCCEEDED(prefBranch->GetCharPref(kPrefetchClearedPref, 
+                                            getter_Copies(lastClearedVer))))) {
+    // If the versions are the same, then bail out early.  We only want to clear
+    // once per version.
+    if (!strcmp(MOZ_APP_VERSION, lastClearedVer.get())) {
+      return;
+    }
+  }
+
+  // In a minute after startup is definitely complete, launch the
+  // service command.
+  mTimer = do_CreateInstance(NS_TIMER_CONTRACTID);
+  if (mTimer) {
+    mTimer->InitWithFuncCallback(
+      nsWindowsShellService::LaunchPrefetchClearCommand, 
+      nsnull, CLEAR_PREFETCH_TIMEOUT_MS, nsITimer::TYPE_ONE_SHOT);
+  }
+#endif
+#endif
+}
+
+nsWindowsShellService::~nsWindowsShellService()
+{
+// See Bug 770883
+#if 0
+#if defined(MOZ_MAINTENANCE_SERVICE)
+ if (mTimer) {
+    mTimer->Cancel();
+    mTimer = nsnull;
+  }
+  if (sThread) {
+    sThread->Shutdown();
+    sThread = nsnull;
+  }
+#endif
+#endif
+}
+
+// See Bug 770883
+#if 0
+#if defined(MOZ_MAINTENANCE_SERVICE)
+
+class ClearPrefetchEvent : public nsRunnable {
+public:
+  ClearPrefetchEvent()
+  {
+  }
+
+  NS_IMETHOD Run() 
+  {
+    // Start the service command
+    LPCWSTR updaterServiceArgv[2];
+    updaterServiceArgv[0] = L"MozillaMaintenance";
+    updaterServiceArgv[1] = L"clear-prefetch";
+    // If this command fails, it is not critical as prefetch will be cleared
+    // on the next software update.
+    StartServiceCommand(NS_ARRAY_LENGTH(updaterServiceArgv), 
+                        updaterServiceArgv);
+    return NS_OK;
+  }
+};
+#endif
+#endif
+
+/**
+ * For faster startup we attempt to clear the prefetch if the maintenance
+ * service is installed.  Please see the definition of ClearPrefetch()
+ * in toolkit/components/maintenanceservice/prefetch.cpp for more info.
+ * For now the only application that gets prefetch cleaned is Firefox
+ * since we have not done performance checking for other applications.
+ * This is done on every update but also there is a one time operation done
+ * from within the program for first time installs.
+ */ 
+// See Bug 770883
+#if 0
+#if defined(MOZ_MAINTENANCE_SERVICE)
+void
+nsWindowsShellService::LaunchPrefetchClearCommand(nsITimer *aTimer, void*)
+{
+  // Make sure we don't call this again from the application, it will be
+  // called on each application update instead.
+  nsCOMPtr<nsIPrefBranch> prefBranch;
+  nsCOMPtr<nsIPrefService> prefs =
+    do_GetService(NS_PREFSERVICE_CONTRACTID);
+  if (prefs) {
+    if (NS_SUCCEEDED(prefs->GetBranch(nsnull, getter_AddRefs(prefBranch)))) {
+      prefBranch->SetCharPref(kPrefetchClearedPref, MOZ_APP_VERSION);
+    }
+  }
+
+  // Starting the sevice can take a bit of time and we don't want to block the 
+  // main thread, so start an event on another thread to handle the operation
+  NS_NewThread(getter_AddRefs(sThread));
+  if (sThread) {
+    nsCOMPtr<nsIRunnable> prefetchEvent = new ClearPrefetchEvent();
+    sThread->Dispatch(prefetchEvent, NS_DISPATCH_NORMAL);
+  }
+}
+#endif
+#endif
 
 NS_IMETHODIMP
 nsWindowsShellService::OpenApplicationWithURI(nsILocalFile* aApplication,

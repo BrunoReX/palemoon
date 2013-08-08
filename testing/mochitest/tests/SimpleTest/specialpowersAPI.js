@@ -1,40 +1,6 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Special Powers code
- *
- * The Initial Developer of the Original Code is
- * Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Clint Talbert cmtalbert@gmail.com
- *   Joel Maher joel.maher@gmail.com
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK *****/
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /* This code is loaded in every child process that is started by mochitest in
  * order to be used as a replacement for UniversalXPConnect
  */
@@ -71,13 +37,19 @@ function bindDOMWindowUtils(aWindow) {
   // apply to call them from this privileged scope. This way we don't
   // have to explicitly stub out new methods that appear on
   // nsIDOMWindowUtils.
+  //
+  // Note that this will be a chrome object that is (possibly) exposed to
+  // content. Make sure to define __exposedProps__ for each property to make
+  // sure that it gets through the security membrane.
   var proto = Object.getPrototypeOf(util);
-  var target = {};
+  var target = { __exposedProps__: {} };
   function rebind(desc, prop) {
     if (prop in desc && typeof(desc[prop]) == "function") {
       var oldval = desc[prop];
       try {
-        desc[prop] = function() { return oldval.apply(util, arguments); };
+        desc[prop] = function() {
+          return oldval.apply(util, arguments);
+        };
       } catch (ex) {
         dump("WARNING: Special Powers failed to rebind function: " + desc + "::" + prop + "\n");
       }
@@ -89,48 +61,10 @@ function bindDOMWindowUtils(aWindow) {
     rebind(desc, "set");
     rebind(desc, "value");
     Object.defineProperty(target, i, desc);
+    target.__exposedProps__[i] = 'rw';
   }
   return target;
 }
-
-function Observer(specialPowers, aTopic, aCallback, aIsPref) {
-  this._sp = specialPowers;
-  this._topic = aTopic;
-  this._callback = aCallback;
-  this._isPref = aIsPref;
-}
-
-Observer.prototype = {
-  _sp: null,
-  _topic: null,
-  _callback: null,
-  _isPref: false,
-
-  observe: function(aSubject, aTopic, aData) {
-    if ((!this._isPref && aTopic == this._topic) ||
-        (this._isPref && aTopic == "nsPref:changed")) {
-      if (aData == this._topic) {
-       this.cleanup();
-        /* The callback must execute asynchronously after all the preference observers have run */
-        content.window.setTimeout(this._callback, 0);
-        content.window.setTimeout(this._sp._finishPrefEnv, 0);
-      }
-    }
-  },
-
-  cleanup: function() {
-    if (this._isPref) {
-      var os = Cc["@mozilla.org/preferences-service;1"].getService()
-               .QueryInterface(Ci.nsIPrefBranch2);
-      os.removeObserver(this._topic, this);
-    } else {
-      var os = Cc["@mozilla.org/observer-service;1"]
-              .getService(Ci.nsIObserverService)
-              .QueryInterface(Ci.nsIObserverService);
-      os.removeObserver(this, this._topic);
-    }
-  },
-};
 
 function isWrappable(x) {
   if (typeof x === "object")
@@ -225,6 +159,26 @@ function crawlProtoChain(obj, fn) {
     return crawlProtoChain(Object.getPrototypeOf(obj), fn);
 };
 
+/*
+ * We want to waive the __exposedProps__ security check for SpecialPowers-wrapped
+ * objects. We do this by creating a proxy singleton that just always returns 'rw'
+ * for any property name.
+ */
+function ExposedPropsWaiverHandler() {
+  // NB: XPConnect denies access if the relevant member of __exposedProps__ is not
+  // enumerable.
+  var _permit = { value: 'rw', writable: false, configurable: false, enumerable: true };
+  return {
+    getOwnPropertyDescriptor: function(name) { return _permit; },
+    getPropertyDescriptor: function(name) { return _permit; },
+    getOwnPropertyNames: function() { throw Error("Can't enumerate ExposedPropsWaiver"); },
+    getPropertyNames: function() { throw Error("Can't enumerate ExposedPropsWaiver"); },
+    enumerate: function() { throw Error("Can't enumerate ExposedPropsWaiver"); },
+    defineProperty: function(name) { throw Error("Can't define props on ExposedPropsWaiver"); },
+    delete: function(name) { throw Error("Can't delete props from ExposedPropsWaiver"); }
+  };
+};
+ExposedPropsWaiver = Proxy.create(ExposedPropsWaiverHandler());
 
 function SpecialPowersHandler(obj) {
   this.wrappedObject = obj;
@@ -237,6 +191,10 @@ SpecialPowersHandler.prototype.doGetPropertyDescriptor = function(name, own) {
   // Handle our special API.
   if (name == "SpecialPowers_wrappedObject")
     return { value: this.wrappedObject, writeable: false, configurable: false, enumerable: false };
+
+  // Handle __exposedProps__.
+  if (name == "__exposedProps__")
+    return { value: ExposedPropsWaiver, writable: false, configurable: false, enumerable: false };
 
   // In general, we want Xray wrappers for content DOM objects, because waiving
   // Xray gives us Xray waiver wrappers that clamp the principal when we cross
@@ -418,15 +376,16 @@ SpecialPowersAPI.prototype = {
    *    properties. This is explained in a comment in the wrapper code above,
    *    and shouldn't be a problem.
    */
-  wrap: wrapPrivileged,
-  unwrap: unwrapPrivileged,
+  wrap: function(obj) { return isWrapper(obj) ? obj : wrapPrivileged(obj); },
+  unwrap: unwrapIfWrapped,
+  isWrapper: isWrapper,
 
   get MockFilePicker() {
     return MockFilePicker
   },
 
   getDOMWindowUtils: function(aWindow) {
-    if (aWindow == this.window && this.DOMWindowUtils != null)
+    if (aWindow == this.window.get() && this.DOMWindowUtils != null)
       return this.DOMWindowUtils;
 
     return bindDOMWindowUtils(aWindow);
@@ -466,7 +425,7 @@ SpecialPowersAPI.prototype = {
    * what we have set.
    *
    * prefs: {set|clear: [[pref, value], [pref, value, Iid], ...], set|clear: [[pref, value], ...], ...}
-   * ex: {'set': [['foo.bar', 2], ['browser.magic', '0xfeedface']], 'remove': [['bad.pref']] }
+   * ex: {'set': [['foo.bar', 2], ['browser.magic', '0xfeedface']], 'clear': [['bad.pref']] }
    *
    * In the scenario where our prefs specify the same pref more than once, we do not guarantee
    * the behavior.  
@@ -608,7 +567,19 @@ SpecialPowersAPI.prototype = {
     var callback = transaction[1];
 
     var lastPref = pendingActions[pendingActions.length-1];
-    this._addObserver(lastPref.name, callback, true);
+
+    var pb = Cc["@mozilla.org/preferences-service;1"].getService(Ci.nsIPrefBranch);
+    var self = this;
+    pb.addObserver(lastPref.name, function prefObs(subject, topic, data) {
+      pb.removeObserver(lastPref.name, prefObs);
+
+      content.window.setTimeout(callback, 0);
+      content.window.setTimeout(function () {
+        self._applyingPrefs = false;
+        // Now apply any prefs that may have been queued while we were applying
+        self._applyPrefs();
+      }, 0);
+    }, false);
 
     for (var idx in pendingActions) {
       var pref = pendingActions[idx];
@@ -618,31 +589,6 @@ SpecialPowersAPI.prototype = {
         this.clearUserPref(pref.name);
       }
     }
-  },
-
-  _addObserver: function(aTopic, aCallback, aIsPref) {
-    var observer = new Observer(this, aTopic, aCallback, aIsPref);
-
-    if (aIsPref) {
-      var os = Cc["@mozilla.org/preferences-service;1"].getService()
-               .QueryInterface(Ci.nsIPrefBranch2);	
-      os.addObserver(aTopic, observer, false);
-    } else {
-      var os = Cc["@mozilla.org/observer-service;1"]
-              .getService(Ci.nsIObserverService)
-              .QueryInterface(Ci.nsIObserverService);
-      os.addObserver(observer, aTopic, false);
-    }
-  },
-
-  /* called from the observer when we get a pref:changed.  */
-  _finishPrefEnv: function() {
-    /*
-      Any subsequent pref environment pushes that occurred while waiting 
-      for the preference update are pending, and will now be executed.
-    */
-    this.wrappedJSObject.SpecialPowers._applyingPrefs = false;
-    this.wrappedJSObject.SpecialPowers._applyPrefs();
   },
 
   addObserver: function(obs, notification, weak) {
@@ -756,6 +702,18 @@ SpecialPowersAPI.prototype = {
                                                            listener,
                                                            false);
   },
+  getFormFillController: function(window) {
+    return Components.classes["@mozilla.org/satchel/form-fill-controller;1"]
+                     .getService(Components.interfaces.nsIFormFillController);
+  },
+  attachFormFillControllerTo: function(window) {
+    this.getFormFillController()
+        .attachToBrowser(this._getDocShell(window),
+                         this._getAutoCompletePopup(window));
+  },
+  detachFormFillControllerFrom: function(window) {
+    this.getFormFillController().detachFromBrowser(this._getDocShell(window));
+  },
   isBackButtonEnabled: function(window) {
     return !this._getTopChromeWindow(window).document
                                       .getElementById("Browser:Back")
@@ -809,12 +767,11 @@ SpecialPowersAPI.prototype = {
   },
 
   createSystemXHR: function() {
-    return Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
-             .createInstance(Ci.nsIXMLHttpRequest);
+    return this.wrap(Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest));
   },
 
   snapshotWindow: function (win, withCaret) {
-    var el = this.window.document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
+    var el = this.window.get().document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
     el.width = win.innerWidth;
     el.height = win.innerHeight;
     var ctx = el.getContext("2d");
@@ -856,13 +813,13 @@ SpecialPowersAPI.prototype = {
     doPreciseGCandCC();
   },
 
-  hasContentProcesses: function() {
+  isMainProcess: function() {
     try {
-      var rt = Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime);
-      return rt.processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
-    } catch (e) {
-      return true;
-    }
+      return Cc["@mozilla.org/xre/app-info;1"].
+               getService(Ci.nsIXULRuntime).
+               processType == Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
+    } catch (e) { }
+    return true;
   },
 
   _xpcomabi: null,
@@ -911,6 +868,19 @@ SpecialPowersAPI.prototype = {
     Cc["@mozilla.org/eventlistenerservice;1"].
       getService(Ci.nsIEventListenerService).
       removeSystemEventListener(target, type, listener, useCapture);
+  },
+
+  getDOMRequestService: function() {
+    var serv = Cc["@mozilla.org/dom/dom-request-service;1"].
+      getService(Ci.nsIDOMRequestService);
+    var res = { __exposedProps__: {} };
+    var props = ["createRequest", "fireError", "fireSuccess"];
+    for (i in props) {
+      let prop = props[i];
+      res[prop] = function() { return serv[prop].apply(serv, arguments) };
+      res.__exposedProps__[prop] = "r";
+    }
+    return res;
   },
 
   setLogFile: function(path) {
@@ -1029,7 +999,7 @@ SpecialPowersAPI.prototype = {
   },
 
   snapshotWindow: function (win, withCaret) {
-    var el = this.window.document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
+    var el = this.window.get().document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
     el.width = win.innerWidth;
     el.height = win.innerHeight;
     var ctx = el.getContext("2d");
@@ -1080,5 +1050,73 @@ SpecialPowersAPI.prototype = {
     var el = this._getElement(aWindow, target);
     return el.dispatchEvent(event);
   },
-};
 
+  get isDebugBuild() {
+    delete this.isDebugBuild;
+    var debug = Cc["@mozilla.org/xpcom/debug;1"].getService(Ci.nsIDebug2);
+    return this.isDebugBuild = debug.isDebugBuild;
+  },
+
+  /**
+   * Get the message manager associated with an <iframe mozbrowser>.
+   */
+  getBrowserFrameMessageManager: function(aFrameElement) {
+    return this.wrap(aFrameElement.QueryInterface(Ci.nsIFrameLoaderOwner)
+                                  .frameLoader
+                                  .messageManager);
+  },
+  
+  setFullscreenAllowed: function(document) {
+    var pm = Cc["@mozilla.org/permissionmanager;1"].getService(Ci.nsIPermissionManager);
+    var uri = this.getDocumentURIObject(document);
+    pm.add(uri, "fullscreen", Ci.nsIPermissionManager.ALLOW_ACTION);
+    var obsvc = Cc['@mozilla.org/observer-service;1']
+                   .getService(Ci.nsIObserverService);
+    obsvc.notifyObservers(document, "fullscreen-approved", null);
+  },
+  
+  removeFullscreenAllowed: function(document) {
+    var pm = Cc["@mozilla.org/permissionmanager;1"].getService(Ci.nsIPermissionManager);
+    var uri = this.getDocumentURIObject(document);
+    pm.remove(uri.host, "fullscreen");
+  },
+
+  _getURI: function(urlOrDocument) {
+    if (typeof(urlOrDocument) == "string") {
+      return Cc["@mozilla.org/network/io-service;1"].
+               getService(Ci.nsIIOService).
+               newURI(url, null, null);
+    }
+    // Assume document.
+    return this.getDocumentURIObject(urlOrDocument);
+  },
+
+  addPermission: function(type, allow, urlOrDocument) {
+    let uri = this._getURI(urlOrDocument);
+
+    let permission = allow ?
+                     Ci.nsIPermissionManager.ALLOW_ACTION :
+                     Ci.nsIPermissionManager.DENY_ACTION;
+
+    var msg = {
+      'op': "add",
+      'type': type,
+      'url': uri.spec,
+      'permission': permission
+    };
+
+    this._sendSyncMessage('SPPermissionManager', msg);
+  },
+
+  removePermission: function(type, urlOrDocument) {
+    let uri = this._getURI(urlOrDocument);
+
+    var msg = {
+      'op': "remove",
+      'type': type,
+      'url': uri.spec
+    };
+
+    this._sendSyncMessage('SPPermissionManager', msg);
+  }
+};

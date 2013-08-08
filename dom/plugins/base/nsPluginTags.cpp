@@ -1,42 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Sean Echevarria <sean@beatnik.com>
- *   Håkan Waara <hwaara@chello.se>
- *   Josh Aas <josh@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsPluginTags.h"
 
@@ -45,8 +10,6 @@
 #include "nsIPluginInstanceOwner.h"
 #include "nsIDocument.h"
 #include "nsServiceManagerUtils.h"
-#include "nsIPrefService.h"
-#include "nsIPrefBranch.h"
 #include "nsPluginsDir.h"
 #include "nsPluginHost.h"
 #include "nsIUnicodeDecoder.h"
@@ -56,7 +19,9 @@
 #include "nsICategoryManager.h"
 #include "nsNPAPIPlugin.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/Preferences.h"
 
+using namespace mozilla;
 using mozilla::TimeStamp;
 
 inline char* new_str(const char* str)
@@ -80,7 +45,6 @@ mMimeTypes(aPluginTag->mMimeTypes),
 mMimeDescriptions(aPluginTag->mMimeDescriptions),
 mExtensions(aPluginTag->mExtensions),
 mLibrary(nsnull),
-mCanUnloadLibrary(true),
 mIsJavaPlugin(aPluginTag->mIsJavaPlugin),
 mIsNPRuntimeEnabledJavaPlugin(aPluginTag->mIsNPRuntimeEnabledJavaPlugin),
 mIsFlashPlugin(aPluginTag->mIsFlashPlugin),
@@ -97,11 +61,6 @@ nsPluginTag::nsPluginTag(nsPluginInfo* aPluginInfo)
 mName(aPluginInfo->fName),
 mDescription(aPluginInfo->fDescription),
 mLibrary(nsnull),
-#ifdef XP_MACOSX
-mCanUnloadLibrary(false),
-#else
-mCanUnloadLibrary(true),
-#endif
 mIsJavaPlugin(false),
 mIsNPRuntimeEnabledJavaPlugin(false),
 mIsFlashPlugin(false),
@@ -128,13 +87,11 @@ nsPluginTag::nsPluginTag(const char* aName,
                          const char* const* aExtensions,
                          PRInt32 aVariants,
                          PRInt64 aLastModifiedTime,
-                         bool aCanUnload,
                          bool aArgsAreUTF8)
 : mPluginHost(nsnull),
 mName(aName),
 mDescription(aDescription),
 mLibrary(nsnull),
-mCanUnloadLibrary(aCanUnload),
 mIsJavaPlugin(false),
 mIsNPRuntimeEnabledJavaPlugin(false),
 mIsFlashPlugin(false),
@@ -231,6 +188,7 @@ void nsPluginTag::InitMime(const char* const* aMimeTypes,
   }
 }
 
+#if !defined(XP_WIN) && !defined(XP_MACOSX)
 static nsresult ConvertToUTF8(nsIUnicodeDecoder *aUnicodeDecoder,
                               nsAFlatCString& aString)
 {
@@ -250,6 +208,7 @@ static nsresult ConvertToUTF8(nsIUnicodeDecoder *aUnicodeDecoder,
   
   return NS_OK;
 }
+#endif
 
 nsresult nsPluginTag::EnsureMembersAreUTF8()
 {
@@ -394,10 +353,6 @@ nsPluginTag::RegisterWithCategoryManager(bool aOverrideInternalTypes,
   
   const char *contractId = "@mozilla.org/content/plugin/document-loader-factory;1";
   
-  nsCOMPtr<nsIPrefBranch> psvc(do_GetService(NS_PREFSERVICE_CONTRACTID));
-  if (!psvc)
-    return; // NS_ERROR_OUT_OF_MEMORY
-  
   // A preference controls whether or not the full page plugin is disabled for
   // a particular type. The string must be in the form:
   //   type1,type2,type3,type4
@@ -405,11 +360,11 @@ nsPluginTag::RegisterWithCategoryManager(bool aOverrideInternalTypes,
   // (and other plugin host settings) so applications can reliably disable 
   // plugins - without relying on implementation details such as prefs/category
   // manager entries.
-  nsXPIDLCString overrideTypes;
   nsCAutoString overrideTypesFormatted;
   if (aType != ePluginUnregister) {
-    psvc->GetCharPref("plugin.disable_full_page_plugin_for_types", getter_Copies(overrideTypes));
     overrideTypesFormatted.Assign(',');
+    nsAdoptingCString overrideTypes =
+      Preferences::GetCString("plugin.disable_full_page_plugin_for_types");
     overrideTypesFormatted += overrideTypes;
     overrideTypesFormatted.Append(',');
   }
@@ -512,28 +467,16 @@ bool nsPluginTag::Equals(nsPluginTag *aPluginTag)
   return true;
 }
 
-void nsPluginTag::TryUnloadPlugin()
+void nsPluginTag::TryUnloadPlugin(bool inShutdown)
 {
-  if (mEntryPoint) {
-    mEntryPoint->Shutdown();
-    mEntryPoint = nsnull;
+  // We never want to send NPP_Shutdown to an in-process plugin unless
+  // this process is shutting down.
+  if (mLibrary && !inShutdown) {
+    return;
   }
-  
-  // before we unload check if we are allowed to, see bug #61388
-  if (mLibrary && mCanUnloadLibrary) {
-    // unload the plugin asynchronously by posting a PLEvent
-    nsPluginHost::PostPluginUnloadEvent(mLibrary);
-  }
-  
-  // we should zero it anyway, it is going to be unloaded by
-  // CleanUnsedLibraries before we need to call the library
-  // again so the calling code should not be fooled and reload
-  // the library fresh
-  mLibrary = nsnull;
-  
-  // Remove mime types added to the category manager
-  // only if we were made 'active' by setting the host
-  if (mPluginHost) {
-    RegisterWithCategoryManager(false, nsPluginTag::ePluginUnregister);
+
+  if (mPlugin) {
+    mPlugin->Shutdown();
+    mPlugin = nsnull;
   }
 }

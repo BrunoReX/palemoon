@@ -27,7 +27,9 @@ of the License or (at your option) any later version.
 // JSON debug logging
 // Author: Tim Eves
 
-#include <stdio.h>
+#if !defined GRAPHITE2_NTRACING
+
+#include <cstdio>
 #include "inc/json.h"
 
 using namespace graphite2;
@@ -55,10 +57,10 @@ void json::context(const char current) throw()
 
 void json::indent(const int d) throw()
 {
-	if (*_context == member)
+	if (*_context == member || (_flatten  && _flatten < _context))
 		fputc(' ', _stream);
 	else
-		fprintf(_stream, _flatten  && _flatten < _context ? " " : "\n%*s",  4*int(_context - _contexts + d), "");
+		fprintf(_stream,  "\n%*s",  4*int(_context - _contexts + d), "");
 }
 
 
@@ -119,4 +121,6 @@ json & json::operator << (json::integer d) throw()	{ context(seq); fprintf(_stre
 json & json::operator << (long unsigned d) throw()	{ context(seq); fprintf(_stream, "%ld", d); return *this; }
 json & json::operator << (json::boolean b) throw()	{ context(seq); fputs(b ? "true" : "false", _stream); return *this; }
 json & json::operator << (json::_null_t) throw()	{ context(seq); fputs("null",_stream); return *this; }
+
+#endif
 

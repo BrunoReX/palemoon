@@ -1,44 +1,13 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Mounir Lamouri <mounir.lamouri@mozilla.com> (Original Author)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SmsRequestManager.h"
 #include "nsIDOMSmsMessage.h"
 #include "nsDOMEvent.h"
 #include "SmsCursor.h"
+#include "SmsManager.h"
 
 /**
  * We have to use macros here because our leak analysis tool things we are
@@ -51,33 +20,11 @@ namespace mozilla {
 namespace dom {
 namespace sms {
 
-SmsRequestManager* SmsRequestManager::sInstance = nsnull;
+NS_IMPL_ISUPPORTS1(SmsRequestManager, nsISmsRequestManager)
 
-void
-SmsRequestManager::Init()
-{
-  NS_PRECONDITION(!sInstance,
-                  "sInstance shouldn't be set. Did you call Init() twice?");
-  sInstance = new SmsRequestManager();
-}
-
-void
-SmsRequestManager::Shutdown()
-{
-  NS_PRECONDITION(sInstance, "sInstance should be set. Did you call Init()?");
-
-  delete sInstance;
-  sInstance = nsnull;
-}
-
-/* static */ SmsRequestManager*
-SmsRequestManager::GetInstance()
-{
-  return sInstance;
-}
-
-PRInt32
-SmsRequestManager::AddRequest(nsIDOMMozSmsRequest* aRequest)
+NS_IMETHODIMP
+SmsRequestManager::AddRequest(nsIDOMMozSmsRequest* aRequest,
+                              PRInt32* aRequestId)
 {
   // TODO: merge with CreateRequest
   PRInt32 size = mRequests.Count();
@@ -89,20 +36,23 @@ SmsRequestManager::AddRequest(nsIDOMMozSmsRequest* aRequest)
     }
 
     mRequests.ReplaceObjectAt(aRequest, i);
-    return i;
+    *aRequestId = i;
+    return NS_OK;
   }
 
   mRequests.AppendObject(aRequest);
-  return size;
+  *aRequestId = size;
+  return NS_OK;
 }
 
-PRInt32
-SmsRequestManager::CreateRequest(nsPIDOMWindow* aWindow,
-                                 nsIScriptContext* aScriptContext,
-                                 nsIDOMMozSmsRequest** aRequest)
+
+NS_IMETHODIMP
+SmsRequestManager::CreateRequest(nsIDOMMozSmsManager* aManager,
+                                 nsIDOMMozSmsRequest** aRequest,
+                                 PRInt32* aRequestId)
 {
   nsCOMPtr<nsIDOMMozSmsRequest> request =
-    new SmsRequest(aWindow, aScriptContext);
+    new SmsRequest(static_cast<SmsManager*>(aManager));
 
   PRInt32 size = mRequests.Count();
 
@@ -114,12 +64,14 @@ SmsRequestManager::CreateRequest(nsPIDOMWindow* aWindow,
 
     mRequests.ReplaceObjectAt(request, i);
     NS_ADDREF(*aRequest = request);
-    return i;
+    *aRequestId = i;
+    return NS_OK;
   }
 
   mRequests.AppendObject(request);
   NS_ADDREF(*aRequest = request);
-  return size;
+  *aRequestId = size;
+  return NS_OK;
 }
 
 nsresult
@@ -130,7 +82,7 @@ SmsRequestManager::DispatchTrustedEventToRequest(const nsAString& aEventName,
   nsresult rv = event->InitEvent(aEventName, false, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = event->SetTrusted(PR_TRUE);
+  rv = event->SetTrusted(true);
   NS_ENSURE_SUCCESS(rv, rv);
 
   bool dummy;
@@ -149,66 +101,67 @@ SmsRequestManager::GetRequest(PRInt32 aRequestId)
 }
 
 template <class T>
-void
+nsresult
 SmsRequestManager::NotifySuccess(PRInt32 aRequestId, T aParam)
 {
   SmsRequest* request = GetRequest(aRequestId);
   request->SetSuccess(aParam);
 
-  DispatchTrustedEventToRequest(SUCCESS_EVENT_NAME, request);
+  nsresult rv = DispatchTrustedEventToRequest(SUCCESS_EVENT_NAME, request);
 
   mRequests.ReplaceObjectAt(nsnull, aRequestId);
+  return rv;
 }
 
-void
-SmsRequestManager::NotifyError(PRInt32 aRequestId, SmsRequest::ErrorType aError)
+nsresult
+SmsRequestManager::NotifyError(PRInt32 aRequestId, PRInt32 aError)
 {
   SmsRequest* request = GetRequest(aRequestId);
   request->SetError(aError);
 
-  DispatchTrustedEventToRequest(ERROR_EVENT_NAME, request);
+  nsresult rv = DispatchTrustedEventToRequest(ERROR_EVENT_NAME, request);
 
   mRequests.ReplaceObjectAt(nsnull, aRequestId);
+  return rv;
 }
 
-void
+NS_IMETHODIMP
 SmsRequestManager::NotifySmsSent(PRInt32 aRequestId, nsIDOMMozSmsMessage* aMessage)
 {
-  NotifySuccess<nsIDOMMozSmsMessage*>(aRequestId, aMessage);
+  return NotifySuccess<nsIDOMMozSmsMessage*>(aRequestId, aMessage);
 }
 
-void
-SmsRequestManager::NotifySmsSendFailed(PRInt32 aRequestId, SmsRequest::ErrorType aError)
+NS_IMETHODIMP
+SmsRequestManager::NotifySmsSendFailed(PRInt32 aRequestId, PRInt32 aError)
 {
-  NotifyError(aRequestId, aError);
+  return NotifyError(aRequestId, aError);
 }
 
-void
+NS_IMETHODIMP
 SmsRequestManager::NotifyGotSms(PRInt32 aRequestId, nsIDOMMozSmsMessage* aMessage)
 {
-  NotifySuccess<nsIDOMMozSmsMessage*>(aRequestId, aMessage);
+  return NotifySuccess<nsIDOMMozSmsMessage*>(aRequestId, aMessage);
 }
 
-void
-SmsRequestManager::NotifyGetSmsFailed(PRInt32 aRequestId,
-                                      SmsRequest::ErrorType aError)
+NS_IMETHODIMP
+SmsRequestManager::NotifyGetSmsFailed(PRInt32 aRequestId, PRInt32 aError)
 {
-  NotifyError(aRequestId, aError);
+  return NotifyError(aRequestId, aError);
 }
 
-void
+NS_IMETHODIMP
 SmsRequestManager::NotifySmsDeleted(PRInt32 aRequestId, bool aDeleted)
 {
-  NotifySuccess<bool>(aRequestId, aDeleted);
+  return NotifySuccess<bool>(aRequestId, aDeleted);
 }
 
-void
-SmsRequestManager::NotifySmsDeleteFailed(PRInt32 aRequestId, SmsRequest::ErrorType aError)
+NS_IMETHODIMP
+SmsRequestManager::NotifySmsDeleteFailed(PRInt32 aRequestId, PRInt32 aError)
 {
-  NotifyError(aRequestId, aError);
+  return NotifyError(aRequestId, aError);
 }
 
-void
+NS_IMETHODIMP
 SmsRequestManager::NotifyNoMessageInList(PRInt32 aRequestId)
 {
   SmsRequest* request = GetRequest(aRequestId);
@@ -220,10 +173,10 @@ SmsRequestManager::NotifyNoMessageInList(PRInt32 aRequestId)
     static_cast<SmsCursor*>(cursor.get())->Disconnect();
   }
 
-  NotifySuccess<nsIDOMMozSmsCursor*>(aRequestId, cursor);
+  return NotifySuccess<nsIDOMMozSmsCursor*>(aRequestId, cursor);
 }
 
-void
+NS_IMETHODIMP
 SmsRequestManager::NotifyCreateMessageList(PRInt32 aRequestId, PRInt32 aListId,
                                            nsIDOMMozSmsMessage* aMessage)
 {
@@ -232,10 +185,10 @@ SmsRequestManager::NotifyCreateMessageList(PRInt32 aRequestId, PRInt32 aListId,
   nsCOMPtr<SmsCursor> cursor = new SmsCursor(aListId, request);
   cursor->SetMessage(aMessage);
 
-  NotifySuccess<nsIDOMMozSmsCursor*>(aRequestId, cursor);
+  return NotifySuccess<nsIDOMMozSmsCursor*>(aRequestId, cursor);
 }
 
-void
+NS_IMETHODIMP
 SmsRequestManager::NotifyGotNextMessage(PRInt32 aRequestId, nsIDOMMozSmsMessage* aMessage)
 {
   SmsRequest* request = GetRequest(aRequestId);
@@ -244,12 +197,11 @@ SmsRequestManager::NotifyGotNextMessage(PRInt32 aRequestId, nsIDOMMozSmsMessage*
   NS_ASSERTION(cursor, "Request should have an cursor in that case!");
   cursor->SetMessage(aMessage);
 
-  NotifySuccess<nsIDOMMozSmsCursor*>(aRequestId, cursor);
+  return NotifySuccess<nsIDOMMozSmsCursor*>(aRequestId, cursor);
 }
 
-void
-SmsRequestManager::NotifyReadMessageListFailed(PRInt32 aRequestId,
-                                               SmsRequest::ErrorType aError)
+NS_IMETHODIMP
+SmsRequestManager::NotifyReadMessageListFailed(PRInt32 aRequestId, PRInt32 aError)
 {
   SmsRequest* request = GetRequest(aRequestId);
 
@@ -258,7 +210,19 @@ SmsRequestManager::NotifyReadMessageListFailed(PRInt32 aRequestId,
     static_cast<SmsCursor*>(cursor.get())->Disconnect();
   }
 
-  NotifyError(aRequestId, aError);
+  return NotifyError(aRequestId, aError);
+}
+
+NS_IMETHODIMP
+SmsRequestManager::NotifyMarkedMessageRead(PRInt32 aRequestId, bool aRead)
+{
+  return NotifySuccess<bool>(aRequestId, aRead);
+}
+
+NS_IMETHODIMP
+SmsRequestManager::NotifyMarkMessageReadFailed(PRInt32 aRequestId, PRInt32 aError)
+{
+  return NotifyError(aRequestId, aError);
 }
 
 } // namespace sms

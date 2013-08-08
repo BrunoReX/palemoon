@@ -43,11 +43,7 @@ function sync_httpd_setup() {
 }
 
 function setUp() {
-  Service.username = "johndoe";
-  Service.password = "ilovejane";
-  Service.passphrase = "sekrit";
-  Service.clusterURL = "http://localhost:8080/";
-  new FakeCryptoService();
+  new SyncTestingInfrastructure("johndoe", "ilovejane", "sekrit");
 }
 
 function run_test() {

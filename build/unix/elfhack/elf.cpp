@@ -1,39 +1,6 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is elfhack.
- *
- * The Initial Developer of the Original Code is
- * Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Mike Hommey <mh@glandium.org>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #undef NDEBUG
 #include <cstring>
@@ -265,6 +232,15 @@ Elf::Elf(std::ifstream &file)
     file.seekg(ehdr->e_phoff);
     for (int i = 0; i < ehdr->e_phnum; i++) {
         Elf_Phdr phdr(file, e_ident[EI_CLASS], e_ident[EI_DATA]);
+        if (phdr.p_type == PT_LOAD) {
+            // Default alignment for PT_LOAD on x86-64 prevents elfhack from
+            // doing anything useful. However, the system doesn't actually
+            // require such a big alignment, so in order for elfhack to work
+            // efficiently, reduce alignment when it's originally the default
+            // one.
+            if ((ehdr->e_machine == EM_X86_64) && (phdr.p_align == 0x200000))
+              phdr.p_align = 0x1000;
+        }
         ElfSegment *segment = new ElfSegment(&phdr);
         // Some segments aren't entirely filled (if at all) by sections
         // For those, we use fake sections
@@ -503,12 +479,17 @@ unsigned int ElfSection::getOffset()
     if (previous->getType() != SHT_NOBITS)
         offset += previous->getSize();
 
+    Elf32_Word align = 0x1000;
+    for (std::vector<ElfSegment *>::iterator seg = segments.begin(); seg != segments.end(); seg++)
+        align = std::max(align, (*seg)->getAlign());
+
+    Elf32_Word mask = align - 1;
     // SHF_TLS is used for .tbss which is some kind of special case.
     if (((getType() != SHT_NOBITS) || (getFlags() & SHF_TLS)) && (getFlags() & SHF_ALLOC)) {
-        if ((getAddr() & 4095) < (offset & 4095))
-            offset = (offset | 4095) + (getAddr() & 4095) + 1;
+        if ((getAddr() & mask) < (offset & mask))
+            offset = (offset | mask) + (getAddr() & mask) + 1;
         else
-            offset = (offset & ~4095) + (getAddr() & 4095);
+            offset = (offset & ~mask) + (getAddr() & mask);
     }
     if ((getType() != SHT_NOBITS) && (offset & (getAddrAlign() - 1)))
         offset = (offset | (getAddrAlign() - 1)) + 1;
@@ -632,7 +613,7 @@ ElfSegment *ElfSegment::splitBefore(ElfSection *section)
     phdr.p_vaddr = 0;
     phdr.p_paddr = phdr.p_vaddr + v_p_diff;
     phdr.p_flags = flags;
-    phdr.p_align = 0x1000;
+    phdr.p_align = getAlign();
     phdr.p_filesz = (unsigned int)-1;
     phdr.p_memsz = (unsigned int)-1;
     ElfSegment *segment = new ElfSegment(&phdr);

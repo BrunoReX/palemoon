@@ -1,49 +1,26 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  * vim: set ts=8 sw=4 et tw=99 ft=cpp:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at:
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Code.
- *
- * The Initial Developer of the Original Code is
- *   The Mozilla Foundation
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Jeff Walden <jwalden+code@mit.edu>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* Implementations of runtime and static assertion macros for C and C++. */
 
 #ifndef mozilla_Assertions_h_
 #define mozilla_Assertions_h_
 
+#include "mozilla/Attributes.h"
 #include "mozilla/Types.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#ifndef WIN32
+#  include <signal.h>
+#endif
+#ifdef ANDROID
+#  include <android/log.h>
+#endif
 
 /*
  * MOZ_STATIC_ASSERT may be used to assert a condition *at compile time*.  This
@@ -126,26 +103,71 @@
 
 #define MOZ_STATIC_ASSERT_IF(cond, expr, reason)  MOZ_STATIC_ASSERT(!(cond) || (expr), reason)
 
-/*
- * XXX: we're cheating here in order to avoid creating object files
- * for mfbt /just/ to provide a function like FatalError() to be used
- * by MOZ_ASSERT().  (It'll happen eventually, but for just ASSERT()
- * it isn't worth the pain.)  JS_Assert(), although unfortunately
- * named, is part of SpiderMonkey's stable, external API, so this
- * isn't quite as bad as it seems.
- *
- * Once mfbt needs object files, this unholy union with JS_Assert()
- * will be broken.
- *
- * JS_Assert is present even in release builds, for the benefit of applications
- * that build DEBUG and link against a non-DEBUG SpiderMonkey library.
- */
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#if defined(WIN32)
+   /*
+    * We used to call DebugBreak() on Windows, but amazingly, it causes
+    * the MSVS 2010 debugger not to be able to recover a call stack.
+    */
+#  define MOZ_CRASH() \
+     do { \
+       *((volatile int *) NULL) = 123; \
+       exit(3); \
+     } while (0)
+#elif defined(ANDROID)
+   /*
+    * On Android, raise(SIGABRT) is handled asynchronously. Seg fault now
+    * so we crash immediately and capture the current call stack. We need
+    * to specifically use the global namespace in the C++ case.
+    */
+#  ifdef __cplusplus
+#    define MOZ_CRASH() \
+       do { \
+         *((volatile int *) NULL) = 123; \
+         ::abort(); \
+       } while (0)
+#  else
+#    define MOZ_CRASH() \
+       do { \
+         *((volatile int *) NULL) = 123; \
+         abort(); \
+       } while (0)
+#  endif
+#elif defined(__APPLE__)
+   /*
+    * On Mac OS X, Breakpad ignores signals. Only real Mach exceptions are
+    * trapped.
+    */
+#  define MOZ_CRASH() \
+     do { \
+       *((volatile int *) NULL) = 123; \
+       raise(SIGABRT);  /* In case above statement gets nixed by the optimizer. */ \
+     } while (0)
+#else
+#  define MOZ_CRASH() \
+     do { \
+       raise(SIGABRT);  /* To continue from here in GDB: "signal 0". */ \
+     } while (0)
+#endif
+
+
 extern MFBT_API(void)
-JS_Assert(const char* s, const char* file, int ln);
+MOZ_Assert(const char* s, const char* file, int ln);
+
+static MOZ_ALWAYS_INLINE void
+MOZ_OutputAssertMessage(const char* s, const char *file, int ln)
+{
+#ifdef ANDROID
+  __android_log_print(ANDROID_LOG_FATAL, "MOZ_Assert",
+                      "Assertion failure: %s, at %s:%d\n", s, file, ln);
+#else
+  fprintf(stderr, "Assertion failure: %s, at %s:%d\n", s, file, ln);
+  fflush(stderr);
+#endif
+}
 
 #ifdef __cplusplus
 } /* extern "C" */
@@ -186,24 +208,46 @@ JS_Assert(const char* s, const char* file, int ln);
 #ifdef DEBUG
    /* First the single-argument form. */
 #  define MOZ_ASSERT_HELPER1(expr) \
-     ((expr) ? ((void)0) : JS_Assert(#expr, __FILE__, __LINE__))
+     do { \
+       if (!(expr)) { \
+         MOZ_OutputAssertMessage(#expr, __FILE__, __LINE__); \
+         MOZ_CRASH(); \
+       } \
+     } while (0)
    /* Now the two-argument form. */
 #  define MOZ_ASSERT_HELPER2(expr, explain) \
-     ((expr) ? ((void)0) : JS_Assert(#expr " (" explain ")", __FILE__, __LINE__))
+     do { \
+       if (!(expr)) { \
+         MOZ_OutputAssertMessage(#expr " (" explain ")", __FILE__, __LINE__); \
+         MOZ_CRASH(); \
+       } \
+     } while (0)
    /* And now, helper macrology up the wazoo. */
-   /* Count the number of arguments passed to MOZ_ASSERT. */
-#  define MOZ_COUNT_ASSERT_ARGS(...) \
-     MOZ_COUNT_ASSERT_ARGS_IMPL(__VA_ARGS__, 2, 1, 0)
-#  define MOZ_COUNT_ASSERT_ARGS_IMPL(_1, _2, count, ...) \
+   /*
+    * Count the number of arguments passed to MOZ_ASSERT, very carefully
+    * tiptoeing around an MSVC bug where it improperly expands __VA_ARGS__ as a
+    * single token in argument lists.  See these URLs for details:
+    *
+    *   http://connect.microsoft.com/VisualStudio/feedback/details/380090/variadic-macro-replacement
+    *   http://cplusplus.co.il/2010/07/17/variadic-macro-to-count-number-of-arguments/#comment-644
+    */
+#  define MOZ_COUNT_ASSERT_ARGS_IMPL2(_1, _2, count, ...) \
      count
-   /* Invoke the right helper. */
-#  define MOZ_ASSERT_VAHELP2(count, ...) MOZ_ASSERT_HELPER##count(__VA_ARGS__)
-#  define MOZ_ASSERT_VAHELP(count, ...) MOZ_ASSERT_VAHELP2(count, __VA_ARGS__)
+#  define MOZ_COUNT_ASSERT_ARGS_IMPL(args) \
+	 MOZ_COUNT_ASSERT_ARGS_IMPL2 args
+#  define MOZ_COUNT_ASSERT_ARGS(...) \
+     MOZ_COUNT_ASSERT_ARGS_IMPL((__VA_ARGS__, 2, 1, 0))
+   /* Pick the right helper macro to invoke. */
+#  define MOZ_ASSERT_CHOOSE_HELPER2(count) MOZ_ASSERT_HELPER##count
+#  define MOZ_ASSERT_CHOOSE_HELPER1(count) MOZ_ASSERT_CHOOSE_HELPER2(count)
+#  define MOZ_ASSERT_CHOOSE_HELPER(count) MOZ_ASSERT_CHOOSE_HELPER1(count)
    /* The actual macro. */
+#  define MOZ_ASSERT_GLUE(x, y) x y
 #  define MOZ_ASSERT(...) \
-     MOZ_ASSERT_VAHELP(MOZ_COUNT_ASSERT_ARGS(__VA_ARGS__), __VA_ARGS__)
+     MOZ_ASSERT_GLUE(MOZ_ASSERT_CHOOSE_HELPER(MOZ_COUNT_ASSERT_ARGS(__VA_ARGS__)), \
+                     (__VA_ARGS__))
 #else
-#  define MOZ_ASSERT(...) ((void)0)
+#  define MOZ_ASSERT(...) do { } while(0)
 #endif /* DEBUG */
 
 /*
@@ -216,9 +260,28 @@ JS_Assert(const char* s, const char* file, int ln);
  * designed to catch bugs during debugging, not "in the field".
  */
 #ifdef DEBUG
-#  define MOZ_ASSERT_IF(cond, expr)  ((cond) ? MOZ_ASSERT(expr) : ((void)0))
+#  define MOZ_ASSERT_IF(cond, expr) \
+     do { \
+       if (cond) \
+         MOZ_ASSERT(expr); \
+     } while (0)
 #else
-#  define MOZ_ASSERT_IF(cond, expr)  ((void)0)
+#  define MOZ_ASSERT_IF(cond, expr)  do { } while (0)
+#endif
+
+/* MOZ_NOT_REACHED_MARKER() expands (in compilers which support it) to an
+ * expression which states that it is undefined behavior for the compiler to
+ * reach this point. Most code should probably use the higher level
+ * MOZ_NOT_REACHED (which expands to this when appropriate).
+ */
+#if defined(__clang__)
+#  define MOZ_NOT_REACHED_MARKER() __builtin_unreachable()
+#elif defined(__GNUC__)
+#  if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 5)
+#    define MOZ_NOT_REACHED_MARKER() __builtin_unreachable()
+#  endif
+#elif defined(_MSC_VER)
+# define MOZ_NOT_REACHED_MARKER() __assume(0)
 #endif
 
 /*
@@ -238,10 +301,39 @@ JS_Assert(const char* s, const char* file, int ln);
  *       MOZ_NOT_REACHED("boolean literal that's not true or false?");
  *   }
  */
-#ifdef DEBUG
-#  define MOZ_NOT_REACHED(reason)    JS_Assert(reason, __FILE__, __LINE__)
+#if defined(MOZ_NOT_REACHED_MARKER)
+#  if defined(DEBUG)
+#    define MOZ_NOT_REACHED(reason)  do { \
+                                       MOZ_Assert(reason, __FILE__, __LINE__); \
+                                       MOZ_NOT_REACHED_MARKER();        \
+                                     } while (0)
+#  else
+#    define MOZ_NOT_REACHED(reason)  MOZ_NOT_REACHED_MARKER()
+#  endif
 #else
-#  define MOZ_NOT_REACHED(reason)    ((void)0)
+#  if defined(__GNUC__)
+     /*
+      * On older versions of gcc we need to call a noreturn function to mark the
+      * code as unreachable. Since what we want is an unreachable version of
+      * MOZ_Assert, we use an asm label
+      * (http://gcc.gnu.org/onlinedocs/gcc-4.6.2/gcc/Asm-Labels.html) to create
+      * a new declaration to the same symbol. MOZ_ASSERT_NR should only be
+      * used via this macro, as it is a very specific hack to older versions of
+      * gcc.
+      */
+#    define MOZ_GETASMPREFIX2(X) #X
+#    define MOZ_GETASMPREFIX(X) MOZ_GETASMPREFIX2(X)
+#    define MOZ_ASMPREFIX MOZ_GETASMPREFIX(__USER_LABEL_PREFIX__)
+     extern MOZ_NORETURN MFBT_API(void)
+     MOZ_ASSERT_NR(const char* s, const char* file, int ln) \
+       asm (MOZ_ASMPREFIX "MOZ_Assert");
+
+#    define MOZ_NOT_REACHED(reason)    MOZ_ASSERT_NR(reason, __FILE__, __LINE__)
+#  elif defined(DEBUG)
+#    define MOZ_NOT_REACHED(reason)    MOZ_Assert(reason, __FILE__, __LINE__)
+#  else
+#    define MOZ_NOT_REACHED(reason)    ((void)0)
+#  endif
 #endif
 
 /*

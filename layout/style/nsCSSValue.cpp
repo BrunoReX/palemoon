@@ -1,39 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* vim: set ts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* representation of simple property values within CSS declarations */
 
@@ -261,6 +230,7 @@ double nsCSSValue::GetAngleValueInRadians() const
 
   switch (GetUnit()) {
   case eCSSUnit_Radian: return angle;
+  case eCSSUnit_Turn:   return angle * 2 * M_PI;
   case eCSSUnit_Degree: return angle * M_PI / 180.0;
   case eCSSUnit_Grad:   return angle * M_PI / 200.0;
 
@@ -653,7 +623,7 @@ nsCSSValue::BufferFromString(const nsString& aValue)
     return buffer;
   }
 
-  PRUnichar length = aValue.Length();
+  nsString::size_type length = aValue.Length();
 
   // NOTE: Alloc prouduces a new, already-addref'd (refcnt = 1) buffer.
   // NOTE: String buffer allocation is currently fallible.
@@ -751,14 +721,6 @@ nsCSSValue::AppendToString(nsCSSProperty aProperty, nsAString& aResult) const
     nsCSSValue::Array *array = GetArrayValue();
     bool mark = false;
     for (size_t i = 0, i_end = array->Count(); i < i_end; ++i) {
-      if (aProperty == eCSSProperty_border_image && i >= 5) {
-        if (array->Item(i).GetUnit() == eCSSUnit_Null) {
-          continue;
-        }
-        if (i == 5) {
-          aResult.AppendLiteral(" /");
-        }
-      }
       if (mark && array->Item(i).GetUnit() != eCSSUnit_Null) {
         if (unit == eCSSUnit_Array &&
             eCSSProperty_transition_timing_function != aProperty)
@@ -867,7 +829,8 @@ nsCSSValue::AppendToString(nsCSSProperty aProperty, nsAString& aResult) const
       }
     }
     else if (eCSSProperty_unicode_bidi == aProperty) {
-      PR_STATIC_ASSERT(NS_STYLE_UNICODE_BIDI_NORMAL == 0);
+      MOZ_STATIC_ASSERT(NS_STYLE_UNICODE_BIDI_NORMAL == 0,
+                        "unicode-bidi style constants not as expected");
       PRInt32 intValue = GetIntValue();
       if (NS_STYLE_UNICODE_BIDI_NORMAL == intValue) {
         AppendASCIItoUTF16(nsCSSProps::LookupPropertyValue(aProperty, intValue),
@@ -1042,7 +1005,14 @@ nsCSSValue::AppendToString(nsCSSProperty aProperty, nsAString& aResult) const
   } else if (eCSSUnit_List == unit || eCSSUnit_ListDep == unit) {
     GetListValue()->AppendToString(aProperty, aResult);
   } else if (eCSSUnit_PairList == unit || eCSSUnit_PairListDep == unit) {
-    GetPairListValue()->AppendToString(aProperty, aResult);
+    switch (aProperty) {
+      case eCSSProperty_font_feature_settings:
+        nsStyleUtil::AppendFontFeatureSettings(*this, aResult);
+        break;
+      default:
+        GetPairListValue()->AppendToString(aProperty, aResult);
+        break;
+    }
   }
 
   switch (unit) {
@@ -1112,6 +1082,7 @@ nsCSSValue::AppendToString(nsCSSProperty aProperty, nsAString& aResult) const
     case eCSSUnit_Degree:       aResult.AppendLiteral("deg");  break;
     case eCSSUnit_Grad:         aResult.AppendLiteral("grad"); break;
     case eCSSUnit_Radian:       aResult.AppendLiteral("rad");  break;
+    case eCSSUnit_Turn:         aResult.AppendLiteral("turn");  break;
 
     case eCSSUnit_Hertz:        aResult.AppendLiteral("Hz");   break;
     case eCSSUnit_Kilohertz:    aResult.AppendLiteral("kHz");  break;
@@ -1119,6 +1090,142 @@ nsCSSValue::AppendToString(nsCSSProperty aProperty, nsAString& aResult) const
     case eCSSUnit_Seconds:      aResult.Append(PRUnichar('s'));    break;
     case eCSSUnit_Milliseconds: aResult.AppendLiteral("ms");   break;
   }
+}
+
+size_t
+nsCSSValue::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = 0;
+
+  switch (GetUnit()) {
+    // No value: nothing extra to measure.
+    case eCSSUnit_Null:
+    case eCSSUnit_Auto:
+    case eCSSUnit_Inherit:
+    case eCSSUnit_Initial:
+    case eCSSUnit_None:
+    case eCSSUnit_Normal:
+    case eCSSUnit_System_Font:
+    case eCSSUnit_All:
+    case eCSSUnit_Dummy:
+    case eCSSUnit_DummyInherit:
+      break;
+
+    // String
+    case eCSSUnit_String:
+    case eCSSUnit_Ident:
+    case eCSSUnit_Families:
+    case eCSSUnit_Attr:
+    case eCSSUnit_Local_Font:
+    case eCSSUnit_Font_Format:
+    case eCSSUnit_Element:
+      n += mValue.mString->SizeOfIncludingThisIfUnshared(aMallocSizeOf);
+      break;
+
+    // Array
+    case eCSSUnit_Array:
+    case eCSSUnit_Counter:
+    case eCSSUnit_Counters:
+    case eCSSUnit_Cubic_Bezier:
+    case eCSSUnit_Steps:
+    case eCSSUnit_Function:
+    case eCSSUnit_Calc:
+    case eCSSUnit_Calc_Plus:
+    case eCSSUnit_Calc_Minus:
+    case eCSSUnit_Calc_Times_L:
+    case eCSSUnit_Calc_Times_R:
+    case eCSSUnit_Calc_Divided:
+      break;
+
+    // URL
+    case eCSSUnit_URL:
+      n += mValue.mURL->SizeOfIncludingThis(aMallocSizeOf);
+      break;
+
+    // Image
+    case eCSSUnit_Image:
+      // Not yet measured.  Measurement may be added later if DMD finds it
+      // worthwhile.
+      break;
+
+    // Gradient
+    case eCSSUnit_Gradient:
+      n += mValue.mGradient->SizeOfIncludingThis(aMallocSizeOf);
+      break;
+
+    // Pair
+    case eCSSUnit_Pair:
+      n += mValue.mPair->SizeOfIncludingThis(aMallocSizeOf);
+      break;
+
+    // Triplet
+    case eCSSUnit_Triplet:
+      n += mValue.mTriplet->SizeOfIncludingThis(aMallocSizeOf);
+      break;
+
+    // Rect
+    case eCSSUnit_Rect:
+      n += mValue.mRect->SizeOfIncludingThis(aMallocSizeOf);
+      break;
+
+    // List
+    case eCSSUnit_List:
+      n += mValue.mList->SizeOfIncludingThis(aMallocSizeOf);
+      break;
+
+    // ListDep: not measured because it's non-owning.
+    case eCSSUnit_ListDep:
+      break;
+
+    // PairList
+    case eCSSUnit_PairList:
+      n += mValue.mPairList->SizeOfIncludingThis(aMallocSizeOf);
+      break;
+
+    // PairListDep: not measured because it's non-owning.
+    case eCSSUnit_PairListDep:
+      break;
+
+    // Int: nothing extra to measure.
+    case eCSSUnit_Integer:
+    case eCSSUnit_Enumerated:
+    case eCSSUnit_EnumColor:
+      break;
+
+    // Color: nothing extra to measure.
+    case eCSSUnit_Color:
+      break;
+
+    // Float: nothing extra to measure.
+    case eCSSUnit_Percent:
+    case eCSSUnit_Number:
+    case eCSSUnit_PhysicalMillimeter:
+    case eCSSUnit_EM:
+    case eCSSUnit_XHeight:
+    case eCSSUnit_Char:
+    case eCSSUnit_RootEM:
+    case eCSSUnit_Point:
+    case eCSSUnit_Inch:
+    case eCSSUnit_Millimeter:
+    case eCSSUnit_Centimeter:
+    case eCSSUnit_Pica:
+    case eCSSUnit_Pixel:
+    case eCSSUnit_Degree:
+    case eCSSUnit_Grad:
+    case eCSSUnit_Turn:
+    case eCSSUnit_Radian:
+    case eCSSUnit_Hertz:
+    case eCSSUnit_Kilohertz:
+    case eCSSUnit_Seconds:
+    case eCSSUnit_Milliseconds:
+      break;
+
+    default:
+      NS_ABORT_IF_FALSE(false, "bad nsCSSUnit");
+      break;
+  }
+
+  return n;
 }
 
 // --- nsCSSValueList -----------------
@@ -1182,6 +1289,28 @@ nsCSSValueList::operator==(const nsCSSValueList& aOther) const
   return !p1 && !p2; // true if same length, false otherwise
 }
 
+size_t
+nsCSSValueList::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = 0;
+  const nsCSSValueList* v = this;
+  while (v) {
+    n += aMallocSizeOf(v);
+    n += v->mValue.SizeOfExcludingThis(aMallocSizeOf);
+    v = v->mNext;
+  }
+  return n;
+}
+
+size_t
+nsCSSValueList_heap::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = aMallocSizeOf(this);
+  n += mValue.SizeOfExcludingThis(aMallocSizeOf);
+  n += mNext ? mNext->SizeOfIncludingThis(aMallocSizeOf) : 0;
+  return n;
+}
+
 // --- nsCSSRect -----------------
 
 nsCSSRect::nsCSSRect(void)
@@ -1211,17 +1340,31 @@ nsCSSRect::AppendToString(nsCSSProperty aProperty, nsAString& aResult) const
                     mTop.GetUnit() != eCSSUnit_Initial,
                     "parser should have used a bare value");
 
-  NS_NAMED_LITERAL_STRING(comma, ", ");
+  if (eCSSProperty_border_image_slice == aProperty ||
+      eCSSProperty_border_image_width == aProperty ||
+      eCSSProperty_border_image_outset == aProperty) {
+    NS_NAMED_LITERAL_STRING(space, " ");
 
-  aResult.AppendLiteral("rect(");
-  mTop.AppendToString(aProperty, aResult);
-  aResult.Append(comma);
-  mRight.AppendToString(aProperty, aResult);
-  aResult.Append(comma);
-  mBottom.AppendToString(aProperty, aResult);
-  aResult.Append(comma);
-  mLeft.AppendToString(aProperty, aResult);
-  aResult.Append(PRUnichar(')'));
+    mTop.AppendToString(aProperty, aResult);
+    aResult.Append(space);
+    mRight.AppendToString(aProperty, aResult);
+    aResult.Append(space);
+    mBottom.AppendToString(aProperty, aResult);
+    aResult.Append(space);
+    mLeft.AppendToString(aProperty, aResult);
+  } else {
+    NS_NAMED_LITERAL_STRING(comma, ", ");
+
+    aResult.AppendLiteral("rect(");
+    mTop.AppendToString(aProperty, aResult);
+    aResult.Append(comma);
+    mRight.AppendToString(aProperty, aResult);
+    aResult.Append(comma);
+    mBottom.AppendToString(aProperty, aResult);
+    aResult.Append(comma);
+    mLeft.AppendToString(aProperty, aResult);
+    aResult.Append(PRUnichar(')'));
+  }
 }
 
 void nsCSSRect::SetAllSidesTo(const nsCSSValue& aValue)
@@ -1232,8 +1375,20 @@ void nsCSSRect::SetAllSidesTo(const nsCSSValue& aValue)
   mLeft = aValue;
 }
 
-PR_STATIC_ASSERT(NS_SIDE_TOP == 0 && NS_SIDE_RIGHT == 1 &&
-                 NS_SIDE_BOTTOM == 2 && NS_SIDE_LEFT == 3);
+size_t
+nsCSSRect_heap::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = aMallocSizeOf(this);
+  n += mTop   .SizeOfExcludingThis(aMallocSizeOf);
+  n += mRight .SizeOfExcludingThis(aMallocSizeOf);
+  n += mBottom.SizeOfExcludingThis(aMallocSizeOf);
+  n += mLeft  .SizeOfExcludingThis(aMallocSizeOf);
+  return n;
+}
+
+MOZ_STATIC_ASSERT(NS_SIDE_TOP == 0 && NS_SIDE_RIGHT == 1 &&
+                  NS_SIDE_BOTTOM == 2 && NS_SIDE_LEFT == 3,
+                  "box side constants not top/right/bottom/left == 0/1/2/3");
 
 /* static */ const nsCSSRect::side_type nsCSSRect::sides[4] = {
   &nsCSSRect::mTop,
@@ -1255,7 +1410,25 @@ nsCSSValuePair::AppendToString(nsCSSProperty aProperty,
   }
 }
 
-// --- nsCSSValueTriple -----------------
+size_t
+nsCSSValuePair::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = 0;
+  n += mXValue.SizeOfExcludingThis(aMallocSizeOf);
+  n += mYValue.SizeOfExcludingThis(aMallocSizeOf);
+  return n;
+}
+
+size_t
+nsCSSValuePair_heap::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = aMallocSizeOf(this);
+  n += mXValue.SizeOfExcludingThis(aMallocSizeOf);
+  n += mYValue.SizeOfExcludingThis(aMallocSizeOf);
+  return n;
+}
+
+// --- nsCSSValueTriplet -----------------
 
 void
 nsCSSValueTriplet::AppendToString(nsCSSProperty aProperty,
@@ -1270,6 +1443,16 @@ nsCSSValueTriplet::AppendToString(nsCSSProperty aProperty,
             mZValue.AppendToString(aProperty, aResult);
         }
     }
+}
+
+size_t
+nsCSSValueTriplet_heap::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = aMallocSizeOf(this);
+  n += mXValue.SizeOfExcludingThis(aMallocSizeOf);
+  n += mYValue.SizeOfExcludingThis(aMallocSizeOf);
+  n += mZValue.SizeOfExcludingThis(aMallocSizeOf);
+  return n;
 }
 
 // --- nsCSSValuePairList -----------------
@@ -1333,6 +1516,40 @@ nsCSSValuePairList::operator==(const nsCSSValuePairList& aOther) const
       return false;
   }
   return !p1 && !p2; // true if same length, false otherwise
+}
+
+size_t
+nsCSSValuePairList::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = 0;
+  const nsCSSValuePairList* v = this;
+  while (v) {
+    n += aMallocSizeOf(v);
+    n += v->mXValue.SizeOfExcludingThis(aMallocSizeOf);
+    n += v->mYValue.SizeOfExcludingThis(aMallocSizeOf);
+    v = v->mNext;
+  }
+  return n;
+}
+
+size_t
+nsCSSValuePairList_heap::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = aMallocSizeOf(this);
+  n += mXValue.SizeOfExcludingThis(aMallocSizeOf);
+  n += mYValue.SizeOfExcludingThis(aMallocSizeOf);
+  n += mNext ? mNext->SizeOfIncludingThis(aMallocSizeOf) : 0;
+  return n;
+}
+
+size_t
+nsCSSValue::Array::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = aMallocSizeOf(this);
+  for (size_t i = 0; i < mCount; i++) {
+    n += mArray[i].SizeOfExcludingThis(aMallocSizeOf);
+  }
+  return n;
 }
 
 nsCSSValue::URL::URL(nsIURI* aURI, nsStringBuffer* aString,
@@ -1411,6 +1628,24 @@ nsCSSValue::URL::GetURI() const
   return mURI;
 }
 
+size_t
+nsCSSValue::URL::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = aMallocSizeOf(this);
+
+  // This string is unshared.
+  n += mString->SizeOfIncludingThisMustBeUnshared(aMallocSizeOf);
+
+  // Measurement of the following members may be added later if DMD finds it is
+  // worthwhile:
+  // - mURI
+  // - mReferrer
+  // - mOriginPrincipal
+
+  return n;
+}
+
+
 nsCSSValue::Image::Image(nsIURI* aURI, nsStringBuffer* aString,
                          nsIURI* aReferrer, nsIPrincipal* aOriginPrincipal,
                          nsIDocument* aDocument)
@@ -1451,6 +1686,15 @@ nsCSSValueGradientStop::~nsCSSValueGradientStop()
   MOZ_COUNT_DTOR(nsCSSValueGradientStop);
 }
 
+size_t
+nsCSSValueGradientStop::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = 0;
+  n += mLocation.SizeOfExcludingThis(aMallocSizeOf);
+  n += mColor   .SizeOfExcludingThis(aMallocSizeOf);
+  return n;
+}
+
 nsCSSValueGradient::nsCSSValueGradient(bool aIsRadial,
                                        bool aIsRepeating)
   : mIsRadial(aIsRadial),
@@ -1461,6 +1705,21 @@ nsCSSValueGradient::nsCSSValueGradient(bool aIsRadial,
     mRadialShape(eCSSUnit_None),
     mRadialSize(eCSSUnit_None)
 {
+}
+
+size_t
+nsCSSValueGradient::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = aMallocSizeOf(this);
+  n += mBgPos      .SizeOfExcludingThis(aMallocSizeOf);
+  n += mAngle      .SizeOfExcludingThis(aMallocSizeOf);
+  n += mRadialShape.SizeOfExcludingThis(aMallocSizeOf);
+  n += mRadialSize .SizeOfExcludingThis(aMallocSizeOf);
+  n += mStops      .SizeOfExcludingThis(aMallocSizeOf);
+  for (PRUint32 i = 0; i < mStops.Length(); i++) {
+    n += mStops[i].SizeOfExcludingThis(aMallocSizeOf);
+  }
+  return n;
 }
 
 // --- nsCSSCornerSizes -----------------
@@ -1492,8 +1751,9 @@ nsCSSCornerSizes::Reset()
   }
 }
 
-PR_STATIC_ASSERT(NS_CORNER_TOP_LEFT == 0 && NS_CORNER_TOP_RIGHT == 1 && \
-    NS_CORNER_BOTTOM_RIGHT == 2 && NS_CORNER_BOTTOM_LEFT == 3);
+MOZ_STATIC_ASSERT(NS_CORNER_TOP_LEFT == 0 && NS_CORNER_TOP_RIGHT == 1 &&
+                  NS_CORNER_BOTTOM_RIGHT == 2 && NS_CORNER_BOTTOM_LEFT == 3,
+                  "box corner constants not tl/tr/br/bl == 0/1/2/3");
 
 /* static */ const nsCSSCornerSizes::corner_type
 nsCSSCornerSizes::corners[4] = {

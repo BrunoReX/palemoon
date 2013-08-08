@@ -1,41 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Daniel Glazman <glazman@netscape.com>
- *   Kathleen Brade <brade@netscape.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef nsHTMLEditor_h__
 #define nsHTMLEditor_h__
@@ -71,6 +37,10 @@
 #include "nsPoint.h"
 #include "nsTArray.h"
 #include "nsAutoPtr.h"
+#include "nsAttrName.h"
+
+#include "mozilla/Attributes.h"
+#include "mozilla/dom/Element.h"
 
 class nsIDOMKeyEvent;
 class nsITransferable;
@@ -106,29 +76,6 @@ class nsHTMLEditor : public nsPlaintextEditor,
 
 public:
 
-  enum OperationID
-  {
-    kOpInsertBreak         = 3000,
-    kOpMakeList            = 3001,
-    kOpIndent              = 3002,
-    kOpOutdent             = 3003,
-    kOpAlign               = 3004,
-    kOpMakeBasicBlock      = 3005,
-    kOpRemoveList          = 3006,
-    kOpMakeDefListItem     = 3007,
-    kOpInsertElement       = 3008,
-    kOpInsertQuotation     = 3009,
-    kOpSetTextProperty     = 3010,
-    kOpRemoveTextProperty  = 3011,
-    kOpHTMLPaste           = 3012,
-    kOpLoadHTML            = 3013,
-    kOpResetTextProperties = 3014,
-    kOpSetAbsolutePosition = 3015,
-    kOpRemoveAbsolutePosition = 3016,
-    kOpDecreaseZIndex      = 3017,
-    kOpIncreaseZIndex      = 3018
-  };
-
   enum ResizingRequestID
   {
     kX      = 0,
@@ -156,8 +103,12 @@ public:
   virtual already_AddRefed<nsIContent> GetFocusedContent();
   virtual bool IsActiveInDOMWindow();
   virtual already_AddRefed<nsIDOMEventTarget> GetDOMEventTarget();
+  virtual mozilla::dom::Element* GetEditorRoot() MOZ_OVERRIDE;
   virtual already_AddRefed<nsIContent> FindSelectionRoot(nsINode *aNode);
   virtual bool IsAcceptableInputEvent(nsIDOMEvent* aEvent);
+  virtual already_AddRefed<nsIContent> GetInputEventTargetContent();
+  virtual bool IsEditable(nsIContent *aNode);
+  using nsEditor::IsEditable;
 
   /* ------------ nsStubMutationObserver overrides --------- */
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTAPPENDED
@@ -313,14 +264,15 @@ public:
 
   /** All editor operations which alter the doc should be prefaced
    *  with a call to StartOperation, naming the action and direction */
-  NS_IMETHOD StartOperation(PRInt32 opID, nsIEditor::EDirection aDirection);
+  NS_IMETHOD StartOperation(OperationID opID,
+                            nsIEditor::EDirection aDirection);
 
   /** All editor operations which alter the doc should be followed
    *  with a call to EndOperation */
   NS_IMETHOD EndOperation();
 
   /** returns true if aParentTag can contain a child of type aChildTag */
-  virtual bool TagCanContainTag(const nsAString& aParentTag, const nsAString& aChildTag);
+  virtual bool TagCanContainTag(nsIAtom* aParentTag, nsIAtom* aChildTag);
   
   /** returns true if aNode is a container */
   virtual bool IsContainer(nsINode* aNode);
@@ -337,11 +289,15 @@ public:
                                          const nsAString & aAttribute,
                                          bool aSuppressTransaction);
 
-  /** join together any afjacent editable text nodes in the range */
+  /** join together any adjacent editable text nodes in the range */
   NS_IMETHOD CollapseAdjacentTextNodes(nsIDOMRange *aInRange);
 
-  virtual bool NodesSameType(nsIDOMNode *aNode1, nsIDOMNode *aNode2);
+  virtual bool AreNodesSameType(nsIContent* aNode1, nsIContent* aNode2)
+    MOZ_OVERRIDE;
 
+  NS_IMETHOD DeleteSelectionImpl(EDirection aAction,
+                                 EStripWrappers aStripWrappers);
+  nsresult DeleteNode(nsINode* aNode);
   NS_IMETHODIMP DeleteNode(nsIDOMNode * aNode);
   NS_IMETHODIMP DeleteText(nsIDOMCharacterData *aTextNode,
                            PRUint32             aOffset,
@@ -362,13 +318,12 @@ public:
                               nsresult aStatus);
 
   /* ------------ Utility Routines, not part of public API -------------- */
-  NS_IMETHOD TypedText(const nsAString& aString, PRInt32 aAction);
+  NS_IMETHOD TypedText(const nsAString& aString, ETypingAction aAction);
   nsresult InsertNodeAtPoint( nsIDOMNode *aNode, 
                               nsCOMPtr<nsIDOMNode> *ioParent, 
                               PRInt32 *ioOffset, 
                               bool aNoEmptyNodes);
-  already_AddRefed<nsIDOMNode> FindUserSelectAllNode(nsIDOMNode* aNode);
-                                
+  virtual already_AddRefed<nsIDOMNode> FindUserSelectAllNode(nsIDOMNode* aNode);
 
   /** returns the absolute position of the end points of aSelection
     * in the document as a text stream.
@@ -385,8 +340,15 @@ public:
   // aSelection is optional -- if null, we get current seletion
   nsresult CollapseSelectionToDeepestNonTableFirstChild(nsISelection *aSelection, nsIDOMNode *aNode);
 
+  /**
+   * aNode must be a non-null text node.
+   */
   virtual bool IsTextInDirtyFrameVisible(nsIContent *aNode);
 
+  /**
+   * aNode must be a non-null text node.
+   * outIsEmptyNode must be non-null.
+   */
   nsresult IsVisTextNode(nsIContent* aNode,
                          bool* outIsEmptyNode,
                          bool aSafeToAskFrames);
@@ -418,7 +380,21 @@ public:
                                   nsCSSStyleSheet *aStyleSheet);
 
   nsresult RemoveStyleSheetFromList(const nsAString &aURL);
-                       
+
+  bool IsCSSEnabled()
+  {
+    // TODO: removal of mCSSAware and use only the presence of mHTMLCSSUtils
+    return mCSSAware && mHTMLCSSUtils && mHTMLCSSUtils->IsCSSPrefChecked();
+  }
+
+  static bool HasAttributes(mozilla::dom::Element* aElement)
+  {
+    MOZ_ASSERT(aElement);
+    PRUint32 attrCount = aElement->GetAttrCount();
+    return attrCount > 1 ||
+           (1 == attrCount && !aElement->GetAttrNameAt(0)->Equals(nsGkAtoms::mozdirty));
+  }
+
 protected:
 
   NS_IMETHOD  InitRules();
@@ -439,17 +415,11 @@ protected:
 
   // Return TRUE if aElement is a table-related elemet and caret was set
   bool SetCaretInTableCell(nsIDOMElement* aElement);
-  bool IsNodeInActiveEditor(nsIDOMNode* aNode);
 
   // key event helpers
   NS_IMETHOD TabInTable(bool inIsShift, bool *outHandled);
   NS_IMETHOD CreateBR(nsIDOMNode *aNode, PRInt32 aOffset, 
                       nsCOMPtr<nsIDOMNode> *outBRNode, nsIEditor::EDirection aSelect = nsIEditor::eNone);
-  NS_IMETHOD CreateBRImpl(nsCOMPtr<nsIDOMNode> *aInOutParent, 
-                         PRInt32 *aInOutOffset, 
-                         nsCOMPtr<nsIDOMNode> *outBRNode, 
-                         nsIEditor::EDirection aSelect);
-  NS_IMETHOD InsertBR(nsCOMPtr<nsIDOMNode> *outBRNode);
 
 // Table Editing (implemented in nsTableEditor.cpp)
 
@@ -533,16 +503,22 @@ protected:
     * @param aValue     The value of aAttribute, example: blue in <FONT color="blue">
     *                   May be null.  Ignored if aAttribute is null.
     * @param aIsSet     [OUT] true if <aProperty aAttribute=aValue> effects aNode.
-    * @param aStyleNode [OUT] set to the node representing <aProperty aAttribute=aValue>, if found.
-    *                   null if aIsSet is returned as false;
+    * @param outValue   [OUT] the value of the attribute, if aIsSet is true
+    *
+    * The nsIContent variant returns aIsSet instead of using an out parameter.
     */
-  virtual void IsTextPropertySetByContent(nsIDOMNode        *aNode,
-                                          nsIAtom           *aProperty, 
-                                          const nsAString   *aAttribute,
-                                          const nsAString   *aValue,
-                                          bool              &aIsSet,
-                                          nsIDOMNode       **aStyleNode,
-                                          nsAString *outValue = nsnull);
+  bool IsTextPropertySetByContent(nsIContent*      aContent,
+                                  nsIAtom*         aProperty,
+                                  const nsAString* aAttribute,
+                                  const nsAString* aValue,
+                                  nsAString*       outValue = nsnull);
+
+  void IsTextPropertySetByContent(nsIDOMNode*      aNode,
+                                  nsIAtom*         aProperty,
+                                  const nsAString* aAttribute,
+                                  const nsAString* aValue,
+                                  bool&            aIsSet,
+                                  nsAString*       outValue = nsnull);
 
   // Methods for handling plaintext quotations
   NS_IMETHOD PasteAsPlaintextQuotation(PRInt32 aSelectionType);
@@ -559,11 +535,20 @@ protected:
   NS_IMETHOD InsertAsPlaintextQuotation(const nsAString & aQuotedText,
                                         bool aAddCites,
                                         nsIDOMNode **aNodeInserted);
+  // Return true if the data is safe to insert as the source and destination
+  // principals match, or we are in a editor context where this doesn't matter.
+  // Otherwise, the data must be sanitized first.
+  bool IsSafeToInsertData(nsIDOMDocument* aSourceDoc);
+
+  nsresult InsertObject(const char* aType, nsISupports* aObject, bool aIsSafe,
+                        nsIDOMDocument *aSourceDoc,
+                        nsIDOMNode *aDestinationNode,
+                        PRInt32 aDestOffset,
+                        bool aDoDeleteSelection);
 
   // factored methods for handling insertion of data from transferables (drag&drop or clipboard)
   NS_IMETHOD PrepareTransferable(nsITransferable **transferable);
   NS_IMETHOD PrepareHTMLTransferable(nsITransferable **transferable, bool havePrivFlavor);
-  nsresult   PutDragDataInTransferable(nsITransferable **aTransferable);
   NS_IMETHOD InsertFromTransferable(nsITransferable *transferable, 
                                     nsIDOMDocument *aSourceDoc,
                                     const nsAString & aContextStr,
@@ -571,6 +556,12 @@ protected:
                                     nsIDOMNode *aDestinationNode,
                                     PRInt32 aDestinationOffset,
                                     bool aDoDeleteSelection);
+  nsresult InsertFromDataTransfer(nsIDOMDataTransfer *aDataTransfer,
+                                  PRInt32 aIndex,
+                                  nsIDOMDocument *aSourceDoc,
+                                  nsIDOMNode *aDestinationNode,
+                                  PRInt32 aDestOffset,
+                                  bool aDoDeleteSelection);
   bool HavePrivateHTMLFlavor( nsIClipboard *clipboard );
   nsresult   ParseCFHTML(nsCString & aCfhtml, PRUnichar **aStuffToPaste, PRUnichar **aCfcontext);
   nsresult   DoContentFilterCallback(const nsAString &aFlavor,
@@ -649,9 +640,9 @@ protected:
                                          nsIDOMCharacterData *aTextNode, 
                                          PRInt32 aStartOffset,
                                          PRInt32 aEndOffset);
-  nsresult RelativeFontChangeOnNode( PRInt32 aSizeChange, 
+  nsresult RelativeFontChangeOnNode( PRInt32 aSizeChange,
                                      nsIDOMNode *aNode);
-  nsresult RelativeFontChangeHelper( PRInt32 aSizeChange, 
+  nsresult RelativeFontChangeHelper( PRInt32 aSizeChange,
                                      nsIDOMNode *aNode);
 
   /* helper routines for inline style */
@@ -665,6 +656,10 @@ protected:
                                     nsIAtom *aProperty, 
                                     const nsAString *aAttribute,
                                     const nsAString *aValue);
+  nsresult SetInlinePropertyOnNode(nsIContent* aNode,
+                                   nsIAtom* aProperty,
+                                   const nsAString* aAttribute,
+                                   const nsAString* aValue);
 
   nsresult PromoteInlineRange(nsIDOMRange *inRange);
   nsresult PromoteRangeIfStartsOrEndsInNamedAnchor(nsIDOMRange *inRange);
@@ -681,20 +676,24 @@ protected:
   nsresult RemoveStyleInside(nsIDOMNode *aNode, 
                              nsIAtom *aProperty, 
                              const nsAString *aAttribute, 
-                             bool aChildrenOnly = false);
+                             const bool aChildrenOnly = false);
   nsresult RemoveInlinePropertyImpl(nsIAtom *aProperty, const nsAString *aAttribute);
 
   bool NodeIsProperty(nsIDOMNode *aNode);
   bool HasAttr(nsIDOMNode *aNode, const nsAString *aAttribute);
-  bool HasAttrVal(nsIDOMNode *aNode, const nsAString *aAttribute, const nsAString *aValue);
   bool IsAtFrontOfNode(nsIDOMNode *aNode, PRInt32 aOffset);
   bool IsAtEndOfNode(nsIDOMNode *aNode, PRInt32 aOffset);
   bool IsOnlyAttribute(nsIDOMNode *aElement, const nsAString *aAttribute);
+  bool IsOnlyAttribute(const nsIContent* aElement, const nsAString& aAttribute);
 
   nsresult RemoveBlockContainer(nsIDOMNode *inNode);
+  nsIContent* GetPriorHTMLSibling(nsINode* aNode);
   nsresult GetPriorHTMLSibling(nsIDOMNode *inNode, nsCOMPtr<nsIDOMNode> *outNode);
+  nsIContent* GetPriorHTMLSibling(nsINode* aParent, PRInt32 aOffset);
   nsresult GetPriorHTMLSibling(nsIDOMNode *inParent, PRInt32 inOffset, nsCOMPtr<nsIDOMNode> *outNode);
+  nsIContent* GetNextHTMLSibling(nsINode* aNode);
   nsresult GetNextHTMLSibling(nsIDOMNode *inNode, nsCOMPtr<nsIDOMNode> *outNode);
+  nsIContent* GetNextHTMLSibling(nsINode* aParent, PRInt32 aOffset);
   nsresult GetNextHTMLSibling(nsIDOMNode *inParent, PRInt32 inOffset, nsCOMPtr<nsIDOMNode> *outNode);
   nsresult GetPriorHTMLNode(nsIDOMNode *inNode, nsCOMPtr<nsIDOMNode> *outNode, bool bNoBlockCrossing = false);
   nsresult GetPriorHTMLNode(nsIDOMNode *inParent, PRInt32 inOffset, nsCOMPtr<nsIDOMNode> *outNode, bool bNoBlockCrossing = false);
@@ -709,9 +708,6 @@ protected:
   nsresult GetFirstEditableLeaf( nsIDOMNode *aNode, nsCOMPtr<nsIDOMNode> *aOutFirstLeaf);
   nsresult GetLastEditableLeaf( nsIDOMNode *aNode, nsCOMPtr<nsIDOMNode> *aOutLastLeaf);
 
-  //XXX Kludge: Used to suppress spurious drag/drop events (bug 50703)
-  bool     mIgnoreSpuriousDragEvent;
-
   nsresult GetInlinePropertyBase(nsIAtom *aProperty, 
                              const nsAString *aAttribute,
                              const nsAString *aValue,
@@ -720,8 +716,8 @@ protected:
                              bool *aAll,
                              nsAString *outValue,
                              bool aCheckDefaults = true);
-  nsresult HasStyleOrIdOrClass(nsIDOMElement * aElement, bool *aHasStyleOrIdOrClass);
-  nsresult RemoveElementIfNoStyleOrIdOrClass(nsIDOMElement * aElement, nsIAtom * aTag);
+  bool HasStyleOrIdOrClass(mozilla::dom::Element* aElement);
+  nsresult RemoveElementIfNoStyleOrIdOrClass(nsIDOMNode* aElement);
 
   // Whether the outer window of the DOM event target has focus or not.
   bool     OurWindowHasFocus();
@@ -742,6 +738,9 @@ protected:
                                    PRInt32 aDestOffset,
                                    bool aDeleteSelection,
                                    bool aTrustedInput);
+
+  nsresult ClearStyle(nsCOMPtr<nsIDOMNode>* aNode, PRInt32* aOffset,
+                      nsIAtom* aProperty, const nsAString* aAttribute);
 
 // Data members
 protected:
@@ -941,6 +940,18 @@ public:
 friend class nsHTMLEditRules;
 friend class nsTextEditRules;
 friend class nsWSRunObject;
+friend class nsHTMLEditorEventListener;
+
+private:
+  // Helpers
+  bool IsSimpleModifiableNode(nsIContent* aContent,
+                              nsIAtom* aProperty,
+                              const nsAString* aAttribute,
+                              const nsAString* aValue);
+  nsresult SetInlinePropertyOnNodeImpl(nsIContent* aNode,
+                                       nsIAtom* aProperty,
+                                       const nsAString* aAttribute,
+                                       const nsAString* aValue);
 
 };
 #endif //nsHTMLEditor_h__

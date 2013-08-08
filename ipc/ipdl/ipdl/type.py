@@ -1,34 +1,6 @@
-# ***** BEGIN LICENSE BLOCK *****
-# Version: MPL 1.1/GPL 2.0/LGPL 2.1
-#
-# The contents of this file are subject to the Mozilla Public License Version
-# 1.1 (the "License"); you may not use this file except in compliance with
-# the License. You may obtain a copy of the License at
-# http://www.mozilla.org/MPL/
-#
-# Software distributed under the License is distributed on an "AS IS" basis,
-# WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
-# for the specific language governing rights and limitations under the
-# License.
-#
-# The Original Code is mozilla.org code.
-#
-# Contributor(s):
-#   Chris Jones <jones.chris.g@gmail.com>
-#
-# Alternatively, the contents of this file may be used under the terms of
-# either of the GNU General Public License Version 2 or later (the "GPL"),
-# or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
-# in which case the provisions of the GPL or the LGPL are applicable instead
-# of those above. If you wish to allow use of your version of this file only
-# under the terms of either the GPL or the LGPL, and not to allow others to
-# use your version of this file under the terms of the MPL, indicate your
-# decision by deleting the provisions above and replace them with the notice
-# and other provisions required by the GPL or the LGPL. If you do not delete
-# the provisions above, a recipient may use your version of this file under
-# the terms of any one of the MPL, the GPL or the LGPL.
-#
-# ***** END LICENSE BLOCK *****
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import os, sys
 
@@ -299,6 +271,7 @@ class ProtocolType(IPDLType):
         self.manages = [ ]
         self.stateless = stateless
         self.hasDelete = False
+        self.hasReentrantDelete = False
     def isProtocol(self): return True
 
     def name(self):
@@ -813,6 +786,8 @@ class GatherDecls(TcheckVisitor):
                 "destructor declaration `%s(...)' required for managed protocol `%s'",
                 _DELETE_MSG, p.name)
 
+        p.decl.type.hasReentrantDelete = p.decl.type.hasDelete and self.symtab.lookup(_DELETE_MSG).type.isRpc()
+
         for managed in p.managesStmts:
             mgdname = managed.name
             ctordecl = self.symtab.lookup(mgdname +'Constructor')
@@ -831,13 +806,17 @@ class GatherDecls(TcheckVisitor):
             if 0 == len(p.startStates):
                 p.startStates = [ p.transitionStmts[0] ]
 
-        # declare implicit "any" and "dead" states
+        # declare implicit "any", "dead", and "dying" states
         self.declare(loc=State.ANY.loc,
                      type=StateType(p.decl.type, State.ANY.name, start=False),
                      progname=State.ANY.name)
         self.declare(loc=State.DEAD.loc,
                      type=StateType(p.decl.type, State.DEAD.name, start=False),
                      progname=State.DEAD.name)
+        if p.decl.type.hasReentrantDelete:
+            self.declare(loc=State.DYING.loc,
+                         type=StateType(p.decl.type, State.DYING.name, start=False),
+                         progname=State.DYING.name)
 
         # declare each state before decorating their mention
         for trans in p.transitionStmts:
@@ -857,6 +836,9 @@ class GatherDecls(TcheckVisitor):
             # add a special state |state DEAD: null goto DEAD;|
             deadtrans = TransitionStmt.makeNullStmt(State.DEAD)
             p.states[State.DEAD] = deadtrans           
+            if p.decl.type.hasReentrantDelete:
+                dyingtrans = TransitionStmt.makeNullStmt(State.DYING)
+                p.states[State.DYING] = dyingtrans
 
         # visit the message decls once more and resolve the state names
         # attached to actor params and returns

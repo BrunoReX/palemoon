@@ -1,46 +1,7 @@
 /* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Foundation code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2005
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Vladimir Vukicevic <vladimir@mozilla.com>
- *   Masayuki Nakano <masayuki@d-toybox.com>
- *   Behdad Esfahbod <behdad@gnome.org>
- *   Mats Palmgren <mats.palmgren@bredband.net>
- *   Karl Tomlinson <karlt+@karlt.net>, Mozilla Corporation
- *
- * based on nsFontMetricsPango.cpp by
- *   Christopher Blizzard <blizzard@mozilla.org>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Util.h"
 
@@ -63,16 +24,16 @@
 #include "gfxPangoFonts.h"
 #include "gfxFT2FontBase.h"
 #include "gfxFT2Utils.h"
-#include "harfbuzz/hb-unicode.h"
-#include "harfbuzz/hb-ot-tag.h"
+#include "harfbuzz/hb.h"
+#include "harfbuzz/hb-ot.h"
 #include "gfxHarfBuzzShaper.h"
 #ifdef MOZ_GRAPHITE
 #include "gfxGraphiteShaper.h"
 #endif
-#include "gfxUnicodeProperties.h"
+#include "nsUnicodeProperties.h"
+#include "nsUnicodeScriptCodes.h"
 #include "gfxFontconfigUtils.h"
 #include "gfxUserFontSet.h"
-#include "gfxAtoms.h"
 
 #include <cairo.h>
 #include <cairo-ft.h>
@@ -90,6 +51,7 @@
 #include <math.h>
 
 using namespace mozilla;
+using namespace mozilla::unicode;
 
 #define FLOAT_PANGO_SCALE ((gfxFloat)PANGO_SCALE)
 
@@ -327,9 +289,9 @@ gfxFcFontEntry::ShouldUseHarfBuzz(PRInt32 aRunScript) {
     }
 
     // Mimicing gfxHarfBuzzShaper::ShapeWord
-    hb_script_t script =
-        aRunScript <= HB_SCRIPT_INHERITED ? HB_SCRIPT_LATIN
-        : static_cast<hb_script_t>(aRunScript);
+    hb_script_t script = (aRunScript <= MOZ_SCRIPT_INHERITED) ?
+        HB_SCRIPT_LATIN :
+        hb_script_t(GetScriptTagForCode(aRunScript));
 
     // Prefer HarfBuzz if the font also has support for OpenType shaping of
     // this script.
@@ -339,9 +301,10 @@ gfxFcFontEntry::ShouldUseHarfBuzz(PRInt32 aRunScript) {
     // Subtract 5, for 4 characters and NUL. 
     const PRUint32 scriptOffset = ArrayLength(otCapTemplate) - 5;
 
-    for (const hb_tag_t *scriptTags = hb_ot_tags_from_script(script);
-         hb_tag_t scriptTag = *scriptTags;
-         scriptTags++) {
+    hb_tag_t tags[2];
+    hb_ot_tags_from_script(script, &tags[0], &tags[1]);
+    for (int i = 0; i < 2; ++i) {
+        hb_tag_t scriptTag = tags[i];
         if (scriptTag == HB_TAG('D','F','L','T')) { // e.g. HB_SCRIPT_UNKNOWN
             continue;
         }
@@ -1301,8 +1264,8 @@ FindFontPatterns(gfxUserFontSet *mUserFontSet,
                                      needsBold, aWaitForUserFont));
 
     // Accept synthetic oblique for italic and oblique.
-    if (!fontEntry && aStyle != FONT_STYLE_NORMAL) {
-        style.style = FONT_STYLE_NORMAL;
+    if (!fontEntry && aStyle != NS_FONT_STYLE_NORMAL) {
+        style.style = NS_FONT_STYLE_NORMAL;
         fontEntry = static_cast<gfxUserFcFontEntry*>
             (mUserFontSet->FindFontEntry(utf16Family, style, aFoundFamily,
                                          needsBold, aWaitForUserFont));
@@ -2052,8 +2015,8 @@ gfxPangoFontGroup::FindFontForChar(PRUint32 aCh, PRUint32 aPrevCh,
         // Don't switch fonts for control characters, regardless of
         // whether they are present in the current font, as they won't
         // actually be rendered (see bug 716229)
-        PRUint8 category = gfxUnicodeProperties::GetGeneralCategory(aCh);
-        if (category == HB_CATEGORY_CONTROL) {
+        PRUint8 category = GetGeneralCategory(aCh);
+        if (category == HB_UNICODE_GENERAL_CATEGORY_CONTROL) {
             return nsRefPtr<gfxFont>(aPrevMatchedFont).forget();
         }
 
@@ -2123,7 +2086,8 @@ gfxPangoFontGroup::FindFontForChar(PRUint32 aCh, PRUint32 aPrevCh,
         nextFont = 1;
     }
 
-    // Pango, GLib, and HarfBuzz all happen to use the same script codes.
+    // Pango, GLib, and Thebes (but not harfbuzz!) all happen to use the same
+    // script codes, so we can just cast the value here.
     const PangoScript script = static_cast<PangoScript>(aRunScript);
     // Might be nice to call pango_language_includes_script only once for the
     // run rather than for each character.
@@ -2150,6 +2114,15 @@ gfxPangoFontGroup::FindFontForChar(PRUint32 aCh, PRUint32 aPrevCh,
 
     return nsnull;
 }
+
+// Sanity-check: spot-check a few constants to confirm that Thebes and
+// Pango script codes really do match
+PR_STATIC_ASSERT(MOZ_SCRIPT_COMMON    == PANGO_SCRIPT_COMMON);
+PR_STATIC_ASSERT(MOZ_SCRIPT_INHERITED == PANGO_SCRIPT_INHERITED);
+PR_STATIC_ASSERT(MOZ_SCRIPT_ARABIC    == PANGO_SCRIPT_ARABIC);
+PR_STATIC_ASSERT(MOZ_SCRIPT_LATIN     == PANGO_SCRIPT_LATIN);
+PR_STATIC_ASSERT(MOZ_SCRIPT_UNKNOWN   == PANGO_SCRIPT_UNKNOWN);
+PR_STATIC_ASSERT(MOZ_SCRIPT_NKO       == PANGO_SCRIPT_NKO);
 
 /**
  ** gfxFcFont

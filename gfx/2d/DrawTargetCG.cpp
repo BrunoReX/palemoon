@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Corporation code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Jeff Muizelaar <jmuizelaar@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "DrawTargetCG.h"
 #include "SourceSurfaceCG.h"
 #include "Rect.h"
@@ -171,7 +139,7 @@ GetImageFromSourceSurface(SourceSurface *aSurface)
     return static_cast<SourceSurfaceCGBitmapContext*>(aSurface)->GetImage();
   else if (aSurface->GetType() == SURFACE_DATA)
     return static_cast<DataSourceSurfaceCG*>(aSurface)->GetImage();
-  assert(0);
+  abort();
 }
 
 TemporaryRef<SourceSurface>
@@ -699,7 +667,8 @@ DrawTargetCG::Fill(const Path *aPath, const Pattern &aPattern, const DrawOptions
 
 
 void
-DrawTargetCG::FillGlyphs(ScaledFont *aFont, const GlyphBuffer &aBuffer, const Pattern &aPattern, const DrawOptions &aDrawOptions)
+DrawTargetCG::FillGlyphs(ScaledFont *aFont, const GlyphBuffer &aBuffer, const Pattern &aPattern, const DrawOptions &aDrawOptions,
+                         const GlyphRenderingOptions*)
 {
   MarkChanged();
 
@@ -723,14 +692,13 @@ DrawTargetCG::FillGlyphs(ScaledFont *aFont, const GlyphBuffer &aBuffer, const Pa
   glyphs.resize(aBuffer.mNumGlyphs);
   positions.resize(aBuffer.mNumGlyphs);
 
-  CGFloat xprev = aBuffer.mGlyphs[0].mPosition.x;
-  CGFloat yprev = aBuffer.mGlyphs[0].mPosition.y;
-  CGContextSetTextPosition(cg, xprev, yprev);
-
   // Handle the flip
-  CGAffineTransform matrix = CGAffineTransformMakeScale(1, -1);//CGAffineTransformMake(1, 0, 0, -1, 0, -mSize.height);
-  // "Note that the text matrix is not a part of the graphics state"
-  CGContextSetTextMatrix(cg, matrix);
+  CGAffineTransform matrix = CGAffineTransformMakeScale(1, -1);
+  CGContextConcatCTM(cg, matrix);
+  // CGContextSetTextMatrix works differently with kCGTextClip && kCGTextFill
+  // It seems that it transforms the positions with TextFill and not with TextClip
+  // Therefore we'll avoid it. See also:
+  // http://cgit.freedesktop.org/cairo/commit/?id=9c0d761bfcdd28d52c83d74f46dd3c709ae0fa69
 
   for (unsigned int i = 0; i < aBuffer.mNumGlyphs; i++) {
     glyphs[i] = aBuffer.mGlyphs[i].mIndex;
@@ -872,7 +840,7 @@ DrawTargetCG::Init(const IntSize &aSize, SurfaceFormat &)
 {
   // XXX: we should come up with some consistent semantics for dealing
   // with zero area drawtargets
-  if (aSize.width == 0 || aSize.height == 0 ||
+  if (aSize.width <= 0 || aSize.height <= 0 ||
       // 32767 is the maximum size supported by cairo
       // we clamp to that to make it easier to interoperate
       aSize.width > 32767 || aSize.height > 32767) {

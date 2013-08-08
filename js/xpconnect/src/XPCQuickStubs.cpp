@@ -1,40 +1,7 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- *   Mozilla Foundation
- * Portions created by the Initial Developer are Copyright (C) 2008
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Jason Orendorff <jorendorff@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Util.h"
 
@@ -116,102 +83,22 @@ LookupInterfaceOrAncestor(PRUint32 tableSize, const xpc_qsHashEntry *table,
     return entry;
 }
 
-// Apply |op| to |obj|, |id|, and |vp|. If |op| is a setter, treat the assignment as lenient.
-template<typename Op>
-static inline JSBool ApplyPropertyOp(JSContext *cx, Op op, JSObject *obj, jsid id, jsval *vp);
-
-template<>
-inline JSBool
-ApplyPropertyOp<JSPropertyOp>(JSContext *cx, JSPropertyOp op, JSObject *obj, jsid id, jsval *vp)
-{
-    return op(cx, obj, id, vp);
-}
-
-template<>
-inline JSBool
-ApplyPropertyOp<JSStrictPropertyOp>(JSContext *cx, JSStrictPropertyOp op, JSObject *obj,
-                                    jsid id, jsval *vp)
-{
-    return op(cx, obj, id, true, vp);
-}
-
-template<typename Op>
-static JSBool
-PropertyOpForwarder(JSContext *cx, uintN argc, jsval *vp)
-{
-    // Layout:
-    //   this = our this
-    //   property op to call = callee reserved slot 0
-    //   name of the property = callee reserved slot 1
-
-    JSObject *callee = JSVAL_TO_OBJECT(JS_CALLEE(cx, vp));
-    JSObject *obj = JS_THIS_OBJECT(cx, vp);
-    if (!obj)
-        return false;
-
-    jsval v = js::GetFunctionNativeReserved(callee, 0);
-
-    JSObject *ptrobj = JSVAL_TO_OBJECT(v);
-    Op *popp = static_cast<Op *>(JS_GetPrivate(cx, ptrobj));
-
-    v = js::GetFunctionNativeReserved(callee, 1);
-
-    jsval argval = (argc > 0) ? JS_ARGV(cx, vp)[0] : JSVAL_VOID;
-    jsid id;
-    if (!JS_ValueToId(cx, argval, &id))
-        return false;
-    JS_SET_RVAL(cx, vp, argval);
-    return ApplyPropertyOp<Op>(cx, *popp, obj, id, vp);
-}
-
 static void
-PointerFinalize(JSContext *cx, JSObject *obj)
+PointerFinalize(JSFreeOp *fop, JSObject *obj)
 {
-    JSPropertyOp *popp = static_cast<JSPropertyOp *>(JS_GetPrivate(cx, obj));
+    JSPropertyOp *popp = static_cast<JSPropertyOp *>(JS_GetPrivate(obj));
     delete popp;
 }
 
-static JSClass
+JSClass
 PointerHolderClass = {
     "Pointer", JSCLASS_HAS_PRIVATE,
     JS_PropertyStub, JS_PropertyStub, JS_PropertyStub, JS_StrictPropertyStub,
-    JS_EnumerateStub, JS_ResolveStub, JS_ConvertStub, PointerFinalize,
-    JSCLASS_NO_OPTIONAL_MEMBERS
+    JS_EnumerateStub, JS_ResolveStub, JS_ConvertStub, PointerFinalize
 };
 
-template<typename Op>
-static JSObject *
-GeneratePropertyOp(JSContext *cx, JSObject *obj, jsid id, uintN argc, Op pop)
-{
-    // The JS engine provides two reserved slots on function objects for
-    // XPConnect to use. Use them to stick the necessary info here.
-    JSFunction *fun =
-        js::NewFunctionByIdWithReserved(cx, PropertyOpForwarder<Op>, argc, 0, obj, id);
-    if (!fun)
-        return nsnull;
-
-    JSObject *funobj = JS_GetFunctionObject(fun);
-
-    JS::AutoObjectRooter tvr(cx, funobj);
-
-    // Unfortunately, we cannot guarantee that Op is aligned. Use a
-    // second object to work around this.
-    JSObject *ptrobj = JS_NewObject(cx, &PointerHolderClass, nsnull, funobj);
-    if (!ptrobj)
-        return nsnull;
-    Op *popp = new Op;
-    if (!popp)
-        return nsnull;
-    *popp = pop;
-    JS_SetPrivate(cx, ptrobj, popp);
-
-    js::SetFunctionNativeReserved(funobj, 0, OBJECT_TO_JSVAL(ptrobj));
-    js::SetFunctionNativeReserved(funobj, 1, js::IdToJsval(id));
-    return funobj;
-}
-
 static JSBool
-ReifyPropertyOps(JSContext *cx, JSObject *obj, jsid id, uintN orig_attrs,
+ReifyPropertyOps(JSContext *cx, JSObject *obj, jsid id, unsigned orig_attrs,
                  JSPropertyOp getter, JSStrictPropertyOp setter,
                  JSObject **getterobjp, JSObject **setterobjp)
 {
@@ -219,7 +106,7 @@ ReifyPropertyOps(JSContext *cx, JSObject *obj, jsid id, uintN orig_attrs,
     jsval roots[2] = { JSVAL_NULL, JSVAL_NULL };
     JS::AutoArrayRooter tvr(cx, ArrayLength(roots), roots);
 
-    uintN attrs = JSPROP_SHARED | (orig_attrs & JSPROP_ENUMERATE);
+    unsigned attrs = JSPROP_SHARED | (orig_attrs & JSPROP_ENUMERATE);
     JSObject *getterobj;
     if (getter) {
         getterobj = GeneratePropertyOp(cx, obj, id, 0, getter);
@@ -251,7 +138,7 @@ ReifyPropertyOps(JSContext *cx, JSObject *obj, jsid id, uintN orig_attrs,
 }
 
 static JSBool
-LookupGetterOrSetter(JSContext *cx, JSBool wantGetter, uintN argc, jsval *vp)
+LookupGetterOrSetter(JSContext *cx, JSBool wantGetter, unsigned argc, jsval *vp)
 {
     XPC_QS_ASSERT_CONTEXT_OK(cx);
 
@@ -319,21 +206,21 @@ LookupGetterOrSetter(JSContext *cx, JSBool wantGetter, uintN argc, jsval *vp)
 }
 
 static JSBool
-SharedLookupGetter(JSContext *cx, uintN argc, jsval *vp)
+SharedLookupGetter(JSContext *cx, unsigned argc, jsval *vp)
 {
     return LookupGetterOrSetter(cx, true, argc, vp);
 }
 
 static JSBool
-SharedLookupSetter(JSContext *cx, uintN argc, jsval *vp)
+SharedLookupSetter(JSContext *cx, unsigned argc, jsval *vp)
 {
     return LookupGetterOrSetter(cx, false, argc, vp);
 }
 
 static JSBool
-DefineGetterOrSetter(JSContext *cx, uintN argc, JSBool wantGetter, jsval *vp)
+DefineGetterOrSetter(JSContext *cx, unsigned argc, JSBool wantGetter, jsval *vp)
 {
-    uintN attrs;
+    unsigned attrs;
     JSBool found;
     JSPropertyOp getter;
     JSStrictPropertyOp setter;
@@ -374,20 +261,20 @@ DefineGetterOrSetter(JSContext *cx, uintN argc, JSBool wantGetter, jsval *vp)
 }
 
 static JSBool
-SharedDefineGetter(JSContext *cx, uintN argc, jsval *vp)
+SharedDefineGetter(JSContext *cx, unsigned argc, jsval *vp)
 {
     return DefineGetterOrSetter(cx, argc, true, vp);
 }
 
 static JSBool
-SharedDefineSetter(JSContext *cx, uintN argc, jsval *vp)
+SharedDefineSetter(JSContext *cx, unsigned argc, jsval *vp)
 {
     return DefineGetterOrSetter(cx, argc, false, vp);
 }
 
 
 JSBool
-xpc_qsDefineQuickStubs(JSContext *cx, JSObject *proto, uintN flags,
+xpc_qsDefineQuickStubs(JSContext *cx, JSObject *proto, unsigned flags,
                        PRUint32 ifacec, const nsIID **interfaces,
                        PRUint32 tableSize, const xpc_qsHashEntry *table,
                        const xpc_qsPropertySpec *propspecs,
@@ -475,31 +362,31 @@ xpc_qsThrow(JSContext *cx, nsresult rv)
 static void
 GetMemberInfo(JSObject *obj, jsid memberId, const char **ifaceName)
 {
-    // Get the interface name.  From DefinePropertyIfFound (in
-    // xpcwrappednativejsops.cpp) and XPCThrower::Verbosify.
-    //
-    // We could instead make the quick stub could pass in its interface name,
-    // but this code often produces a more specific error message, e.g.
     *ifaceName = "Unknown";
 
-    NS_ASSERTION(IS_WRAPPER_CLASS(js::GetObjectClass(obj)) ||
-                 js::GetObjectClass(obj) == &XPC_WN_Tearoff_JSClass,
-                 "obj must be a wrapper");
-    XPCWrappedNativeProto *proto;
-    if (IS_SLIM_WRAPPER(obj)) {
-        proto = GetSlimWrapperProto(obj);
-    } else {
-        XPCWrappedNative *wrapper = (XPCWrappedNative *) js::GetObjectPrivate(obj);
-        proto = wrapper->GetProto();
-    }
-    if (proto) {
-        XPCNativeSet *set = proto->GetSet();
-        if (set) {
-            XPCNativeMember *member;
-            XPCNativeInterface *iface;
+    // Don't try to generate a useful name if there are security wrappers,
+    // because it isn't worth the risk of something going wrong just to generate
+    // an error message. Instead, only handle the simple case where we have the
+    // reflector in hand.
+    if (IS_WRAPPER_CLASS(js::GetObjectClass(obj))) {
+        XPCWrappedNativeProto *proto;
+        if (IS_SLIM_WRAPPER_OBJECT(obj)) {
+            proto = GetSlimWrapperProto(obj);
+        } else {
+            MOZ_ASSERT(IS_WN_WRAPPER_OBJECT(obj));
+            XPCWrappedNative *wrapper =
+                static_cast<XPCWrappedNative *>(js::GetObjectPrivate(obj));
+            proto = wrapper->GetProto();
+        }
+        if (proto) {
+            XPCNativeSet *set = proto->GetSet();
+            if (set) {
+                XPCNativeMember *member;
+                XPCNativeInterface *iface;
 
-            if (set->FindMember(memberId, &member, &iface))
-                *ifaceName = iface->GetNameString();
+                if (set->FindMember(memberId, &member, &iface))
+                    *ifaceName = iface->GetNameString();
+            }
         }
     }
 }
@@ -516,7 +403,7 @@ GetMethodInfo(JSContext *cx, jsval *vp, const char **ifaceNamep, jsid *memberIdp
     *memberIdp = methodId;
 }
 
-static JSBool
+static bool
 ThrowCallFailed(JSContext *cx, nsresult rv,
                 const char *ifaceName, jsid memberId, const char *memberName)
 {
@@ -592,17 +479,17 @@ xpc_qsThrowMethodFailedWithCcx(XPCCallContext &ccx, nsresult rv)
     return false;
 }
 
-void
+bool
 xpc_qsThrowMethodFailedWithDetails(JSContext *cx, nsresult rv,
                                    const char *ifaceName,
                                    const char *memberName)
 {
-    ThrowCallFailed(cx, rv, ifaceName, JSID_VOID, memberName);
+    return ThrowCallFailed(cx, rv, ifaceName, JSID_VOID, memberName);
 }
 
 static void
 ThrowBadArg(JSContext *cx, nsresult rv, const char *ifaceName,
-            jsid memberId, const char *memberName, uintN paramnum)
+            jsid memberId, const char *memberName, unsigned paramnum)
 {
     /* Only one memberId or memberName should be given. */
     JS_ASSERT(JSID_IS_VOID(memberId) != !memberName);
@@ -630,7 +517,7 @@ ThrowBadArg(JSContext *cx, nsresult rv, const char *ifaceName,
 }
 
 void
-xpc_qsThrowBadArg(JSContext *cx, nsresult rv, jsval *vp, uintN paramnum)
+xpc_qsThrowBadArg(JSContext *cx, nsresult rv, jsval *vp, unsigned paramnum)
 {
     const char *ifaceName;
     jsid memberId;
@@ -639,13 +526,13 @@ xpc_qsThrowBadArg(JSContext *cx, nsresult rv, jsval *vp, uintN paramnum)
 }
 
 void
-xpc_qsThrowBadArgWithCcx(XPCCallContext &ccx, nsresult rv, uintN paramnum)
+xpc_qsThrowBadArgWithCcx(XPCCallContext &ccx, nsresult rv, unsigned paramnum)
 {
     XPCThrower::ThrowBadParam(rv, paramnum, ccx);
 }
 
 void
-xpc_qsThrowBadArgWithDetails(JSContext *cx, nsresult rv, uintN paramnum,
+xpc_qsThrowBadArgWithDetails(JSContext *cx, nsresult rv, unsigned paramnum,
                              const char *ifaceName, const char *memberName)
 {
     ThrowBadArg(cx, rv, ifaceName, JSID_VOID, memberName, paramnum);
@@ -661,7 +548,7 @@ xpc_qsThrowBadSetterValue(JSContext *cx, nsresult rv,
 }
 
 JSBool
-xpc_qsGetterOnlyPropertyStub(JSContext *cx, JSObject *obj, jsid id, JSBool strict, jsval *vp)
+xpc_qsGetterOnlyPropertyStub(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict, jsval *vp)
 {
     return JS_ReportErrorFlagsAndNumber(cx,
                                         JSREPORT_WARNING | JSREPORT_STRICT |
@@ -782,22 +669,51 @@ getNativeFromWrapper(JSContext *cx,
 nsresult
 getWrapper(JSContext *cx,
            JSObject *obj,
-           JSObject *callee,
            XPCWrappedNative **wrapper,
            JSObject **cur,
            XPCWrappedNativeTearOff **tearoff)
 {
-    if (XPCWrapper::IsSecurityWrapper(obj) &&
-        !(obj = XPCWrapper::Unwrap(cx, obj))) {
-        return NS_ERROR_XPC_SECURITY_MANAGER_VETO;
+    // We can have at most three layers in need of unwrapping here:
+    // * A (possible) security wrapper
+    // * A (possible) Xray waiver
+    // * A (possible) outer window
+    //
+    // If we pass stopAtOuter == false, we can handle all three with one call
+    // to XPCWrapper::Unwrap.
+    if (js::IsWrapper(obj)) {
+        obj = XPCWrapper::Unwrap(cx, obj, false);
+
+        // The safe unwrap might have failed for SCRIPT_ACCESS_ONLY objects. If it
+        // didn't fail though, we should be done with wrappers.
+        if (!obj)
+            return NS_ERROR_XPC_SECURITY_MANAGER_VETO;
+        MOZ_ASSERT(!js::IsWrapper(obj));
     }
 
-    *cur = obj;
+    // Start with sane values.
+    *wrapper = nsnull;
+    *cur = nsnull;
     *tearoff = nsnull;
 
-    *wrapper =
-        XPCWrappedNative::GetWrappedNativeOfJSObject(cx, obj, callee, cur,
-                                                     tearoff);
+    // Handle tearoffs.
+    //
+    // If |obj| is of the tearoff class, that means we're dealing with a JS
+    // object reflection of a particular interface (ie, |foo.nsIBar|). These
+    // JS objects are parented to their wrapper, so we snag the tearoff object
+    // along the way (if desired), and then set |obj| to its parent.
+    if (js::GetObjectClass(obj) == &XPC_WN_Tearoff_JSClass) {
+        *tearoff = (XPCWrappedNativeTearOff*) js::GetObjectPrivate(obj);
+        obj = js::GetObjectParent(obj);
+    }
+
+    // If we've got a WN or slim wrapper, store things the way callers expect.
+    // Otherwise, leave things null and return.
+    if (IS_WRAPPER_CLASS(js::GetObjectClass(obj))) {
+        if (IS_WN_WRAPPER_OBJECT(obj))
+            *wrapper = (XPCWrappedNative*) js::GetObjectPrivate(obj);
+        else
+            *cur = obj;
+    }
 
     return NS_OK;
 }
@@ -872,24 +788,24 @@ xpc_qsUnwrapThisFromCcxImpl(XPCCallContext &ccx,
 }
 
 JSObject*
-xpc_qsUnwrapObj(jsval v, nsISupports **ppArgRef, nsresult *rv)
+xpc_qsUnwrapObj(JS::Value v, nsISupports **ppArgRef, nsresult *rv)
 {
-    if (JSVAL_IS_VOID(v) || JSVAL_IS_NULL(v)) {
+    if (v.isNullOrUndefined()) {
         *ppArgRef = nsnull;
         *rv = NS_OK;
         return nsnull;
     }
 
-    if (!JSVAL_IS_OBJECT(v)) {
+    if (!v.isObject()) {
         *ppArgRef = nsnull;
-        *rv = ((JSVAL_IS_INT(v) && JSVAL_TO_INT(v) == 0)
+        *rv = ((v.isInt32() && v.toInt32() == 0)
                ? NS_ERROR_XPC_BAD_CONVERT_JS_ZERO_ISNOT_NULL
                : NS_ERROR_XPC_BAD_CONVERT_JS);
         return nsnull;
     }
 
     *rv = NS_OK;
-    return JSVAL_TO_OBJECT(v);
+    return &v.toObject();
 }
 
 nsresult
@@ -915,7 +831,7 @@ xpc_qsUnwrapArgImpl(JSContext *cx,
         wrapper = nsnull;
         obj2 = src;
     } else {
-        rv = getWrapper(cx, src, nsnull, &wrapper, &obj2, &tearoff);
+        rv = getWrapper(cx, src, &wrapper, &obj2, &tearoff);
         NS_ENSURE_SUCCESS(rv, rv);
     }
 
@@ -1019,14 +935,19 @@ xpc_qsJsvalToWcharStr(JSContext *cx, jsval v, jsval *pval, const PRUnichar **pst
 namespace xpc {
 
 bool
-StringToJsval(JSContext *cx, nsString &str, JS::Value *rval)
+StringToJsval(JSContext *cx, nsAString &str, JS::Value *rval)
 {
     // From the T_DOMSTRING case in XPCConvert::NativeData2JS.
     if (str.IsVoid()) {
         *rval = JSVAL_NULL;
         return true;
     }
+    return NonVoidStringToJsval(cx, str, rval);
+}
 
+bool
+NonVoidStringToJsval(JSContext *cx, nsAString &str, JS::Value *rval)
+{
     nsStringBuffer* sharedBuffer;
     jsval jsstr = XPCStringConvert::ReadableToJSVal(cx, str, &sharedBuffer);
     if (JSVAL_IS_NULL(jsstr))
@@ -1076,16 +997,10 @@ xpc_qsXPCOMObjectToJsval(XPCLazyCallContext &lccx, qsObjectHelper &aHelper,
 
     JSContext *cx = lccx.GetJSContext();
 
-    // XXX The OBJ_IS_NOT_GLOBAL here is not really right. In
-    // fact, this code is depending on the fact that the
-    // global object will not have been collected, and
-    // therefore this NativeInterface2JSObject will not end up
-    // creating a new XPCNativeScriptableShared.
-
     nsresult rv;
     if (!XPCConvert::NativeInterface2JSObject(lccx, rval, nsnull,
                                               aHelper, iid, iface,
-                                              true, OBJ_IS_NOT_GLOBAL, &rv)) {
+                                              true, &rv)) {
         // I can't tell if NativeInterface2JSObject throws JS exceptions
         // or not.  This is a sloppy stab at the right semantics; the
         // method really ought to be fixed to behave consistently.

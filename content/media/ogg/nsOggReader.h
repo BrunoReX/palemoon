@@ -1,41 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:set ts=2 sw=2 sts=2 et cindent: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla code.
- *
- * The Initial Developer of the Original Code is the Mozilla Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2007
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  Chris Double <chris.double@double.co.nz>
- *  Chris Pearce <chris@pearce.org.nz>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #if !defined(nsOggReader_h_)
 #define nsOggReader_h_
 
@@ -72,7 +39,8 @@ public:
                                   PRInt64 aTimeThreshold);
 
   virtual bool HasAudio() {
-    return mVorbisState != 0 && mVorbisState->mActive;
+    return (mVorbisState != 0 && mVorbisState->mActive) ||
+           (mOpusState != 0 && mOpusState->mActive);
   }
 
   virtual bool HasVideo() {
@@ -83,7 +51,16 @@ public:
   virtual nsresult Seek(PRInt64 aTime, PRInt64 aStartTime, PRInt64 aEndTime, PRInt64 aCurrentTime);
   virtual nsresult GetBuffered(nsTimeRanges* aBuffered, PRInt64 aStartTime);
 
+  // We use bisection to seek in buffered range.
+  virtual bool IsSeekableInBufferedRanges() {
+    return true;
+  }
+
 private:
+
+  // Specialized Reset() method to signal if the seek is
+  // to the start of the stream.
+  nsresult ResetDecode(bool start);
 
   bool HasSkeleton() {
     return mSkeletonState != 0 && mSkeletonState->mActive;
@@ -136,11 +113,13 @@ private:
   };
 
   // Seeks to aTarget usecs in the buffered range aRange using bisection search,
-  // or to the keyframe prior to aTarget if we have video. aStartTime must be
-  // the presentation time at the start of media, and aEndTime the time at
-  // end of media. aRanges must be the time/byte ranges buffered in the media
-  // cache as per GetSeekRanges().
+  // or to the keyframe prior to aTarget if we have video. aAdjustedTarget is
+  // an adjusted version of the target used to account for Opus pre-roll, if
+  // necessary. aStartTime must be the presentation time at the start of media,
+  // and aEndTime the time at end of media. aRanges must be the time/byte ranges
+  // buffered in the media cache as per GetSeekRanges().
   nsresult SeekInBufferedRange(PRInt64 aTarget,
+                               PRInt64 aAdjustedTarget,
                                PRInt64 aStartTime,
                                PRInt64 aEndTime,
                                const nsTArray<SeekRange>& aRanges,
@@ -193,7 +172,7 @@ private:
 
   // Fills aRanges with SeekRanges denoting the sections of the media which
   // have been downloaded and are stored in the media cache. The reader
-  // monitor must must be held with exactly one lock count. The nsMediaStream
+  // monitor must must be held with exactly one lock count. The MediaResource
   // must be pinned while calling this.
   nsresult GetSeekRanges(nsTArray<SeekRange>& aRanges);
 
@@ -215,6 +194,10 @@ private:
   // Decodes a packet of Vorbis data, and inserts its samples into the 
   // audio queue.
   nsresult DecodeVorbis(ogg_packet* aPacket);
+
+  // Decodes a packet of Opus data, and inserts its samples into the
+  // audio queue.
+  nsresult DecodeOpus(ogg_packet* aPacket);
 
   // Decodes a packet of Theora data, and inserts its frame into the
   // video queue. May return NS_ERROR_OUT_OF_MEMORY. Caller must have obtained
@@ -238,6 +221,10 @@ private:
   // The caller is responsible for deleting the packet and its |packet| field.
   ogg_packet* NextOggPacket(nsOggCodecState* aCodecState);
 
+  // Fills aTracks with the serial numbers of each active stream, for use by
+  // various nsSkeletonState functions.
+  void BuildSerialList(nsTArray<PRUint32>& aTracks);
+
   // Maps Ogg serialnos to nsOggStreams.
   nsClassHashtable<nsUint32HashKey, nsOggCodecState> mCodecStates;
 
@@ -253,21 +240,31 @@ private:
   // Decode state of the Vorbis bitstream we're decoding, if we have audio.
   nsVorbisState* mVorbisState;
 
+  // Decode state of the Opus bitstream we're decoding, if we have one.
+  nsOpusState *mOpusState;
+
+  // Represents the user pref media.opus.enabled at the time our
+  // contructor was called. We can't check it dynamically because
+  // we're not on the main thread;
+  bool mOpusEnabled;
+
   // Decode state of the Skeleton bitstream.
   nsSkeletonState* mSkeletonState;
 
   // Ogg decoding state.
   ogg_sync_state mOggState;
 
-  // Vorbis/Theora data used to compute timestamps. This is written on the
+  // Vorbis/Opus/Theora data used to compute timestamps. This is written on the
   // decoder thread and read on the main thread. All reading on the main
   // thread must be done after metadataloaded. We can't use the existing
   // data in the codec states due to threading issues. You must check the
   // associated mTheoraState or mVorbisState pointer is non-null before
   // using this codec data.
   PRUint32 mVorbisSerial;
+  PRUint32 mOpusSerial;
   PRUint32 mTheoraSerial;
   vorbis_info mVorbisInfo;
+  int mOpusPreSkip;
   th_info mTheoraInfo;
 
   // The offset of the end of the last page we've read, or the start of

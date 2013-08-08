@@ -1,41 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Joe Hewitt <hewitt@netscape.com> (Original Author)
- *   Dean Tessman <dean_tessman@hotmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsFormFillController.h"
 
@@ -81,6 +47,9 @@ NS_IMPL_ISUPPORTS5(nsFormFillController,
                    nsIMutationObserver)
 
 nsFormFillController::nsFormFillController() :
+  mFocusedInput(nsnull),
+  mFocusedInputNode(nsnull),
+  mListNode(nsnull),
   mTimeout(50),
   mMinResultsForPopup(1),
   mMaxRows(0),
@@ -96,8 +65,29 @@ nsFormFillController::nsFormFillController() :
   mPwmgrInputs.Init();
 }
 
+struct PwmgrInputsEnumData
+{
+  PwmgrInputsEnumData(nsFormFillController* aFFC, nsIDocument* aDoc)
+  : mFFC(aFFC), mDoc(aDoc) {}
+
+  nsFormFillController* mFFC;
+  nsCOMPtr<nsIDocument> mDoc;
+};
+
 nsFormFillController::~nsFormFillController()
 {
+  if (mListNode) {
+    mListNode->RemoveMutationObserver(this);
+    mListNode = nsnull;
+  }
+  if (mFocusedInputNode) {
+    MaybeRemoveMutationObserver(mFocusedInputNode);
+    mFocusedInputNode = nsnull;
+    mFocusedInput = nsnull;
+  }
+  PwmgrInputsEnumData ed(this, nsnull);
+  mPwmgrInputs.Enumerate(RemoveForDocumentEnumerator, &ed);
+
   // Remove ourselves as a focus listener from all cached docShells
   PRUint32 count;
   mDocShells->Count(&count);
@@ -119,7 +109,9 @@ nsFormFillController::AttributeChanged(nsIDocument* aDocument,
                                        PRInt32 aNameSpaceID,
                                        nsIAtom* aAttribute, PRInt32 aModType)
 {
-  RevalidateDataList();
+  if (mListNode && mListNode->Contains(aElement)) {
+    RevalidateDataList();
+  }
 }
 
 void
@@ -128,7 +120,9 @@ nsFormFillController::ContentAppended(nsIDocument* aDocument,
                                       nsIContent* aChild,
                                       PRInt32 aIndexInContainer)
 {
-  RevalidateDataList();
+  if (mListNode && mListNode->Contains(aContainer)) {
+    RevalidateDataList();
+  }
 }
 
 void
@@ -137,7 +131,9 @@ nsFormFillController::ContentInserted(nsIDocument* aDocument,
                                       nsIContent* aChild,
                                       PRInt32 aIndexInContainer)
 {
-  RevalidateDataList();
+  if (mListNode && mListNode->Contains(aContainer)) {
+    RevalidateDataList();
+  }
 }
 
 void
@@ -147,7 +143,9 @@ nsFormFillController::ContentRemoved(nsIDocument* aDocument,
                                      PRInt32 aIndexInContainer,
                                      nsIContent* aPreviousSibling)
 {
-  RevalidateDataList();
+  if (mListNode && mListNode->Contains(aContainer)) {
+    RevalidateDataList();
+  }
 }
 
 void
@@ -180,6 +178,25 @@ nsFormFillController::ParentChainChanged(nsIContent* aContent)
 void
 nsFormFillController::NodeWillBeDestroyed(const nsINode* aNode)
 {
+  mPwmgrInputs.Remove(aNode);
+  if (aNode == mListNode) {
+    mListNode = nsnull;
+    RevalidateDataList();
+  } else if (aNode == mFocusedInputNode) {
+    mFocusedInputNode = nsnull;
+    mFocusedInput = nsnull;
+  }
+}
+
+void
+nsFormFillController::MaybeRemoveMutationObserver(nsINode* aNode)
+{
+  // Nodes being tracked in mPwmgrInputs will have their observers removed when
+  // they stop being tracked. 
+  bool dummy;
+  if (!mPwmgrInputs.Get(aNode, &dummy)) {
+    aNode->RemoveMutationObserver(this);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -229,7 +246,10 @@ nsFormFillController::MarkAsLoginManagerField(nsIDOMHTMLInputElement *aInput)
    * autocomplete. The form manager also checks for this tag when saving
    * form history (so it doesn't save usernames).
    */
-  mPwmgrInputs.Put(aInput, 1);
+  nsCOMPtr<nsINode> node = do_QueryInterface(aInput);
+  NS_ENSURE_STATE(node);
+  mPwmgrInputs.Put(node, true);
+  node->AddMutationObserverUnlessExists(this);
 
   if (!mLoginManager)
     mLoginManager = do_GetService("@mozilla.org/login-manager;1");
@@ -281,8 +301,8 @@ nsFormFillController::SetPopupOpen(bool aPopupOpen)
       docShell->GetPresShell(getter_AddRefs(presShell));
       NS_ENSURE_STATE(presShell);
       presShell->ScrollContentIntoView(content,
-                                       NS_PRESSHELL_SCROLL_IF_NOT_VISIBLE,
-                                       NS_PRESSHELL_SCROLL_IF_NOT_VISIBLE,
+                                       nsIPresShell::ScrollAxis(),
+                                       nsIPresShell::ScrollAxis(),
                                        nsIPresShell::SCROLL_OVERFLOW_HIDDEN);
       // mFocusedPopup can be destroyed after ScrollContentIntoView, see bug 420089
       if (mFocusedPopup)
@@ -564,8 +584,8 @@ nsFormFillController::StartSearch(const nsAString &aSearchString, const nsAStrin
 
   // If the login manager has indicated it's responsible for this field, let it
   // handle the autocomplete. Otherwise, handle with form history.
-  PRInt32 dummy;
-  if (mPwmgrInputs.Get(mFocusedInput, &dummy)) {
+  bool dummy;
+  if (mPwmgrInputs.Get(mFocusedInputNode, &dummy)) {
     // XXX aPreviousResult shouldn't ever be a historyResult type, since we're not letting
     // satchel manage the field?
     rv = mLoginManager->AutoCompleteSearch(aSearchString,
@@ -609,8 +629,15 @@ nsFormFillController::StartSearch(const nsAString &aSearchString, const nsAStrin
       mFocusedInput->GetList(getter_AddRefs(list));
 
       nsCOMPtr<nsINode> node = do_QueryInterface(list);
-      if(node) {
-        node->AddMutationObserverUnlessExists(this);
+      if (mListNode != node) {
+        if (mListNode) {
+          mListNode->RemoveMutationObserver(this);
+          mListNode = nsnull;
+        }
+        if (node) {
+          node->AddMutationObserverUnlessExists(this);
+          mListNode = node;
+        }
       }
     }
   }
@@ -647,6 +674,9 @@ private:
 
 void nsFormFillController::RevalidateDataList()
 {
+  if (!mLastListener) {
+    return;
+  }
   nsresult rv;
   nsCOMPtr <nsIInputListAutoComplete> inputListAutoComplete =
     do_GetService("@mozilla.org/satchel/inputlist-autocomplete;1", &rv);
@@ -728,7 +758,9 @@ nsFormFillController::HandleEvent(nsIDOMEvent* aEvent)
         StopControllingInput();
     }
 
-    mPwmgrInputs.Enumerate(RemoveForDOMDocumentEnumerator, domDoc);
+    nsCOMPtr<nsIDocument> doc = do_QueryInterface(domDoc);
+    PwmgrInputsEnumData ed(this, doc);
+    mPwmgrInputs.Enumerate(RemoveForDocumentEnumerator, &ed);
   }
 
   return NS_OK;
@@ -736,17 +768,18 @@ nsFormFillController::HandleEvent(nsIDOMEvent* aEvent)
 
 
 /* static */ PLDHashOperator
-nsFormFillController::RemoveForDOMDocumentEnumerator(nsISupports* aKey,
-                                                  PRInt32& aEntry,
+nsFormFillController::RemoveForDocumentEnumerator(const nsINode* aKey,
+                                                  bool& aEntry,
                                                   void* aUserData)
 {
-  nsIDOMDocument* domDoc = static_cast<nsIDOMDocument*>(aUserData);
-  nsCOMPtr<nsIDOMHTMLInputElement> element = do_QueryInterface(aKey);
-  nsCOMPtr<nsIDOMDocument> elementDoc;
-  element->GetOwnerDocument(getter_AddRefs(elementDoc));
-  if (elementDoc == domDoc)
+  PwmgrInputsEnumData* ed = static_cast<PwmgrInputsEnumData*>(aUserData);
+  if (aKey && (!ed->mDoc || aKey->OwnerDoc() == ed->mDoc)) {
+    // mFocusedInputNode's observer is tracked separately, don't remove it here.
+    if (aKey != ed->mFFC->mFocusedInputNode) {
+      const_cast<nsINode*>(aKey)->RemoveMutationObserver(ed->mFFC);
+    }
     return PL_DHASH_REMOVE;
-
+  }
   return PL_DHASH_NEXT;
 }
 
@@ -757,7 +790,8 @@ nsFormFillController::Focus(nsIDOMEvent* aEvent)
   aEvent->GetTarget(getter_AddRefs(target));
 
   nsCOMPtr<nsIDOMHTMLInputElement> input = do_QueryInterface(target);
-  if (!input)
+  nsCOMPtr<nsINode> inputNode = do_QueryInterface(input); 
+  if (!inputNode)
     return NS_OK;
 
   bool isReadOnly = false;
@@ -769,14 +803,14 @@ nsFormFillController::Focus(nsIDOMEvent* aEvent)
   input->GetList(getter_AddRefs(datalist));
   bool hasList = datalist != nsnull;
 
-  PRInt32 dummy;
+  bool dummy;
   bool isPwmgrInput = false;
-  if (mPwmgrInputs.Get(input, &dummy))
+  if (mPwmgrInputs.Get(inputNode, &dummy))
       isPwmgrInput = true;
 
   nsCOMPtr<nsIFormControl> formControl = do_QueryInterface(input);
   if (isPwmgrInput || (formControl &&
-                       formControl->IsSingleLineTextControl(PR_TRUE) &&
+                       formControl->IsSingleLineTextControl(true) &&
                        (hasList || autocomplete) && !isReadOnly)) {
     StartControllingInput(input);
   }
@@ -949,7 +983,9 @@ nsFormFillController::RemoveWindowListeners(nsIDOMWindow *aWindow)
 
   nsCOMPtr<nsIDOMDocument> domDoc;
   aWindow->GetDocument(getter_AddRefs(domDoc));
-  mPwmgrInputs.Enumerate(RemoveForDOMDocumentEnumerator, domDoc);
+  nsCOMPtr<nsIDocument> doc = do_QueryInterface(domDoc);
+  PwmgrInputsEnumData ed(this, doc);
+  mPwmgrInputs.Enumerate(RemoveForDocumentEnumerator, &ed);
 
   nsCOMPtr<nsPIDOMWindow> privateDOMWindow(do_QueryInterface(aWindow));
   nsIDOMEventTarget* target = nsnull;
@@ -1008,8 +1044,24 @@ nsFormFillController::StartControllingInput(nsIDOMHTMLInputElement *aInput)
   // Cache the popup for the focused docShell
   mPopups->GetElementAt(index, getter_AddRefs(mFocusedPopup));
 
+  nsCOMPtr<nsINode> node = do_QueryInterface(aInput);
+  if (!node) {
+    return;
+  }
+
   AddKeyListener(aInput);
+  
+  node->AddMutationObserverUnlessExists(this);
+  mFocusedInputNode = node;
   mFocusedInput = aInput;
+
+  nsCOMPtr<nsIDOMHTMLElement> list;
+  mFocusedInput->GetList(getter_AddRefs(list));
+  nsCOMPtr<nsINode> listNode = do_QueryInterface(list);
+  if (listNode) {
+    listNode->AddMutationObserverUnlessExists(this);
+    mListNode = listNode;
+  }
 
   // Now we are the autocomplete controller's bitch
   mController->SetInput(this);
@@ -1020,14 +1072,9 @@ nsFormFillController::StopControllingInput()
 {
   RemoveKeyListener();
 
-  if(mFocusedInput) {
-    nsCOMPtr<nsIDOMHTMLElement> list;
-    mFocusedInput->GetList(getter_AddRefs(list));
-
-    nsCOMPtr<nsINode> node = do_QueryInterface(list);
-    if (node) {
-      node->RemoveMutationObserver(this);
-    }
+  if (mListNode) {
+    mListNode->RemoveMutationObserver(this);
+    mListNode = nsnull;
   }
 
   // Reset the controller's input, but not if it has been switched
@@ -1038,7 +1085,11 @@ nsFormFillController::StopControllingInput()
   if (input == this)
     mController->SetInput(nsnull);
 
-  mFocusedInput = nsnull;
+  if (mFocusedInputNode) {
+    MaybeRemoveMutationObserver(mFocusedInputNode);
+    mFocusedInputNode = nsnull;
+    mFocusedInput = nsnull;
+  }
   mFocusedPopup = nsnull;
 }
 

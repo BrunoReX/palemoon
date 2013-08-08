@@ -1,44 +1,9 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set sw=2 ts=8 et tw=80 : */
 
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- *  The Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Daniel Witte <dwitte@mozilla.com>
- *   Frederic Plourde <bugzillaFred@gmail.com>
- *   Jason Duell <jduell.mcbugs@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/net/HttpBaseChannel.h"
 
@@ -52,7 +17,9 @@
 #include "nsIEncodedChannel.h"
 #include "nsIResumableChannel.h"
 #include "nsIApplicationCacheChannel.h"
+#include "nsILoadContext.h"
 #include "nsEscape.h"
+#include "nsStreamListenerWrapper.h"
 
 #include "prnetdb.h"
 
@@ -60,7 +27,8 @@ namespace mozilla {
 namespace net {
 
 HttpBaseChannel::HttpBaseChannel()
-  : mStartPos(LL_MAXUINT)
+  : PrivateBrowsingConsumer(this)
+  , mStartPos(LL_MAXUINT)
   , mStatus(NS_OK)
   , mLoadFlags(LOAD_NORMAL)
   , mPriority(PRIORITY_NORMAL)
@@ -173,17 +141,18 @@ HttpBaseChannel::Init(nsIURI *aURI,
 // HttpBaseChannel::nsISupports
 //-----------------------------------------------------------------------------
 
-NS_IMPL_ISUPPORTS_INHERITED9(HttpBaseChannel,
-                             nsHashPropertyBag, 
-                             nsIRequest,
-                             nsIChannel,
-                             nsIEncodedChannel,
-                             nsIHttpChannel,
-                             nsIHttpChannelInternal,
-                             nsIUploadChannel,
-                             nsIUploadChannel2,
-                             nsISupportsPriority,
-                             nsITraceableChannel)
+NS_IMPL_ISUPPORTS_INHERITED10(HttpBaseChannel,
+                              nsHashPropertyBag, 
+                              nsIRequest,
+                              nsIChannel,
+                              nsIEncodedChannel,
+                              nsIHttpChannel,
+                              nsIHttpChannelInternal,
+                              nsIUploadChannel,
+                              nsIUploadChannel2,
+                              nsISupportsPriority,
+                              nsITraceableChannel,
+                              nsIPrivateBrowsingConsumer)
 
 //-----------------------------------------------------------------------------
 // HttpBaseChannel::nsIRequest
@@ -589,14 +558,43 @@ HttpBaseChannel::ApplyContentConversions()
     return NS_OK;
   }
 
-  const char *val = mResponseHead->PeekHeader(nsHttp::Content_Encoding);
-  if (gHttpHandler->IsAcceptableEncoding(val)) {
-    nsCOMPtr<nsIStreamConverterService> serv;
-    nsresult rv = gHttpHandler->
-            GetStreamConverterService(getter_AddRefs(serv));
-    // we won't fail to load the page just because we couldn't load the
-    // stream converter service.. carry on..
-    if (NS_SUCCEEDED(rv)) {
+  nsCAutoString contentEncoding;
+  char *cePtr, *val;
+  nsresult rv;
+
+  rv = mResponseHead->GetHeader(nsHttp::Content_Encoding, contentEncoding);
+  if (NS_FAILED(rv) || contentEncoding.IsEmpty())
+    return NS_OK;
+
+  // The encodings are listed in the order they were applied
+  // (see rfc 2616 section 14.11), so they need to removed in reverse
+  // order. This is accomplished because the converter chain ends up
+  // being a stack with the last converter created being the first one
+  // to accept the raw network data.
+
+  cePtr = contentEncoding.BeginWriting();
+  PRUint32 count = 0;
+  while ((val = nsCRT::strtok(cePtr, HTTP_LWS ",", &cePtr))) {
+    if (++count > 16) {
+      // That's ridiculous. We only understand 2 different ones :)
+      // but for compatibility with old code, we will just carry on without
+      // removing the encodings
+      LOG(("Too many Content-Encodings. Ignoring remainder.\n"));
+      break;
+    }
+
+    if (gHttpHandler->IsAcceptableEncoding(val)) {
+      nsCOMPtr<nsIStreamConverterService> serv;
+      rv = gHttpHandler->GetStreamConverterService(getter_AddRefs(serv));
+
+      // we won't fail to load the page just because we couldn't load the
+      // stream converter service.. carry on..
+      if (NS_FAILED(rv)) {
+        if (val)
+          LOG(("Unknown content encoding '%s', ignoring\n", val));
+        continue;
+      }
+
       nsCOMPtr<nsIStreamListener> converter;
       nsCAutoString from(val);
       ToLowerCase(from);
@@ -605,13 +603,18 @@ HttpBaseChannel::ApplyContentConversions()
                                   mListener,
                                   mListenerContext,
                                   getter_AddRefs(converter));
-      if (NS_SUCCEEDED(rv)) {
-        LOG(("converter installed from \'%s\' to \'uncompressed\'\n", val));
-        mListener = converter;
+      if (NS_FAILED(rv)) {
+        LOG(("Unexpected failure of AsyncConvertData %s\n", val));
+        return rv;
       }
+
+      LOG(("converter removed '%s' content-encoding\n", val));
+      mListener = converter;
     }
-  } else if (val != nsnull) {
-    LOG(("Unknown content encoding '%s', ignoring\n", val));
+    else {
+      if (val)
+        LOG(("Unknown content encoding '%s', ignoring\n", val));
+    }
   }
 
   return NS_OK;
@@ -1394,36 +1397,6 @@ HttpBaseChannel::GetEntityID(nsACString& aEntityID)
 }
 
 //-----------------------------------------------------------------------------
-// nsStreamListenerWrapper <private>
-//-----------------------------------------------------------------------------
-
-// Wrapper class to make replacement of nsHttpChannel's listener
-// from JavaScript possible. It is workaround for bug 433711.
-class nsStreamListenerWrapper : public nsIStreamListener
-{
-public:
-  nsStreamListenerWrapper(nsIStreamListener *listener);
-
-  NS_DECL_ISUPPORTS
-  NS_FORWARD_NSIREQUESTOBSERVER(mListener->)
-  NS_FORWARD_NSISTREAMLISTENER(mListener->)
-
-private:
-  ~nsStreamListenerWrapper() {}
-  nsCOMPtr<nsIStreamListener> mListener;
-};
-
-nsStreamListenerWrapper::nsStreamListenerWrapper(nsIStreamListener *listener)
-  : mListener(listener)
-{
-  NS_ASSERTION(mListener, "no stream listener specified");
-}
-
-NS_IMPL_ISUPPORTS2(nsStreamListenerWrapper,
-                   nsIStreamListener,
-                   nsIRequestObserver)
-
-//-----------------------------------------------------------------------------
 // nsHttpChannel::nsITraceableChannel
 //-----------------------------------------------------------------------------
 
@@ -1518,14 +1491,13 @@ bool
 HttpBaseChannel::ShouldRewriteRedirectToGET(PRUint32 httpStatus,
                                             nsHttpAtom method)
 {
-  // always rewrite for 301 and 302, but see bug 598304
-  // and  RFC 2616, Section 8.3.
+  // for 301 and 302, only rewrite POST
   if (httpStatus == 301 || httpStatus == 302)
-    return true;
+    return method == nsHttp::Post;
 
-  // always rewrite for 303
+  // rewrite for 303 unless it was HEAD
   if (httpStatus == 303)
-    return true;
+    return method != nsHttp::Head;
 
   // otherwise, such as for 307, do not rewrite
   return false;

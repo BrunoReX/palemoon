@@ -1,47 +1,15 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- *   Vladimir Vukicevic <vladimir@pobox.com>
- * Portions created by the Initial Developer are Copyright (C) 2005
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsHTMLCanvasElement.h"
 
 #include "mozilla/Base64.h"
+#include "mozilla/CheckedInt.h"
 #include "nsNetUtil.h"
 #include "prmem.h"
 #include "nsDOMFile.h"
-#include "CheckedInt.h"
 
 #include "nsIScriptSecurityManager.h"
 #include "nsIXPConnect.h"
@@ -49,6 +17,7 @@
 #include "nsContentUtils.h"
 #include "nsJSUtils.h"
 #include "nsMathUtils.h"
+#include "nsStreamUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Telemetry.h"
 
@@ -214,6 +183,36 @@ nsHTMLCanvasElement::ToDataURL(const nsAString& aType, nsIVariant* aParams,
   }
 
   return ToDataURLImpl(aType, aParams, aDataURL);
+}
+
+// nsHTMLCanvasElement::mozFetchAsStream
+
+NS_IMETHODIMP
+nsHTMLCanvasElement::MozFetchAsStream(nsIInputStreamCallback *aCallback,
+                                      const nsAString& aType)
+{
+  if (!nsContentUtils::IsCallerChrome())
+    return NS_ERROR_FAILURE;
+
+  nsresult rv;
+  bool fellBackToPNG = false;
+  nsCOMPtr<nsIInputStream> inputData;
+
+  rv = ExtractData(aType, EmptyString(), getter_AddRefs(inputData), fellBackToPNG);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIAsyncInputStream> asyncData = do_QueryInterface(inputData, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIThread> mainThread;
+  rv = NS_GetMainThread(getter_AddRefs(mainThread));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIInputStreamCallback> asyncCallback;
+  rv = NS_NewInputStreamReadyEvent(getter_AddRefs(asyncCallback), aCallback, mainThread);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return asyncCallback->OnInputStreamReady(asyncData);
 }
 
 nsresult
@@ -467,7 +466,7 @@ nsHTMLCanvasElement::GetContextHelper(const nsAString& aContextId,
 
 NS_IMETHODIMP
 nsHTMLCanvasElement::GetContext(const nsAString& aContextId,
-                                const jsval& aContextOptions,
+                                const JS::Value& aContextOptions,
                                 nsISupports **aContext)
 {
   nsresult rv;
@@ -490,52 +489,50 @@ nsHTMLCanvasElement::GetContext(const nsAString& aContextId,
       return NS_ERROR_FAILURE;
     }
 
+    // note: if any contexts end up supporting something other
+    // than objects, e.g. plain strings, then we'll need to expand
+    // this to know how to create nsISupportsStrings etc.
+
     nsCOMPtr<nsIWritablePropertyBag2> contextProps;
-    if (!JSVAL_IS_NULL(aContextOptions) &&
-        !JSVAL_IS_VOID(aContextOptions))
-    {
-      JSContext *cx = nsContentUtils::GetCurrentJSContext();
+    if (aContextOptions.isObject()) {
+      JSContext* cx = nsContentUtils::GetCurrentJSContext();
 
-      // note: if any contexts end up supporting something other
-      // than objects, e.g. plain strings, then we'll need to expand
-      // this to know how to create nsISupportsStrings etc.
-      if (JSVAL_IS_OBJECT(aContextOptions)) {
-        contextProps = do_CreateInstance("@mozilla.org/hash-property-bag;1");
+      contextProps = do_CreateInstance("@mozilla.org/hash-property-bag;1");
 
-        JSObject *opts = JSVAL_TO_OBJECT(aContextOptions);
-        JS::AutoIdArray props(cx, JS_Enumerate(cx, opts));
-        for (size_t i = 0; !!props && i < props.length(); ++i) {
-          jsid propid = props[i];
-          jsval propname, propval;
-          if (!JS_IdToValue(cx, propid, &propname) ||
-              !JS_GetPropertyById(cx, opts, propid, &propval)) {
-            continue;
-          }
+      JSObject& opts = aContextOptions.toObject();
+      JS::AutoIdArray props(cx, JS_Enumerate(cx, &opts));
+      for (size_t i = 0; !!props && i < props.length(); ++i) {
+        jsid propid = props[i];
+        jsval propname, propval;
+        if (!JS_IdToValue(cx, propid, &propname) ||
+            !JS_GetPropertyById(cx, &opts, propid, &propval)) {
+          return NS_ERROR_FAILURE;
+        }
 
-          JSString *propnameString = JS_ValueToString(cx, propname);
-          nsDependentJSString pstr;
-          if (!propnameString || !pstr.init(cx, propnameString)) {
+        JSString *propnameString = JS_ValueToString(cx, propname);
+        nsDependentJSString pstr;
+        if (!propnameString || !pstr.init(cx, propnameString)) {
+          mCurrentContext = nsnull;
+          return NS_ERROR_FAILURE;
+        }
+
+        if (JSVAL_IS_BOOLEAN(propval)) {
+          contextProps->SetPropertyAsBool(pstr, JSVAL_TO_BOOLEAN(propval));
+        } else if (JSVAL_IS_INT(propval)) {
+          contextProps->SetPropertyAsInt32(pstr, JSVAL_TO_INT(propval));
+        } else if (JSVAL_IS_DOUBLE(propval)) {
+          contextProps->SetPropertyAsDouble(pstr, JSVAL_TO_DOUBLE(propval));
+        } else if (JSVAL_IS_STRING(propval)) {
+          JSString *propvalString = JS_ValueToString(cx, propval);
+          nsDependentJSString vstr;
+          if (!propvalString || !vstr.init(cx, propvalString)) {
             mCurrentContext = nsnull;
             return NS_ERROR_FAILURE;
           }
 
-          if (JSVAL_IS_BOOLEAN(propval)) {
-            contextProps->SetPropertyAsBool(pstr, JSVAL_TO_BOOLEAN(propval));
-          } else if (JSVAL_IS_INT(propval)) {
-            contextProps->SetPropertyAsInt32(pstr, JSVAL_TO_INT(propval));
-          } else if (JSVAL_IS_DOUBLE(propval)) {
-            contextProps->SetPropertyAsDouble(pstr, JSVAL_TO_DOUBLE(propval));
-          } else if (JSVAL_IS_STRING(propval)) {
-            JSString *propvalString = JS_ValueToString(cx, propval);
-            nsDependentJSString vstr;
-            if (!propvalString || !vstr.init(cx, propvalString)) {
-              mCurrentContext = nsnull;
-              return NS_ERROR_FAILURE;
-            }
-
-            contextProps->SetPropertyAsAString(pstr, vstr);
-          }
+          contextProps->SetPropertyAsAString(pstr, vstr);
         }
+
       }
     }
 
@@ -628,12 +625,6 @@ nsHTMLCanvasElement::UpdateContext(nsIPropertyBag *aNewContextOptions)
   return rv;
 }
 
-nsIFrame *
-nsHTMLCanvasElement::GetPrimaryCanvasFrame()
-{
-  return GetPrimaryFrame(Flush_Frames);
-}
-
 nsIntSize
 nsHTMLCanvasElement::GetSize()
 {
@@ -680,6 +671,8 @@ nsHTMLCanvasElement::InvalidateCanvasContent(const gfxRect* damageRect)
       // then make it a nsRect
       invalRect = nsRect(realRect.X(), realRect.Y(),
                          realRect.Width(), realRect.Height());
+
+      invalRect = invalRect.Intersect(nsRect(nsPoint(0,0), contentArea.Size()));
     }
   } else {
     invalRect = nsRect(nsPoint(0, 0), contentArea.Size());
@@ -761,12 +754,12 @@ nsHTMLCanvasElement::GetSizeExternal()
 }
 
 NS_IMETHODIMP
-nsHTMLCanvasElement::RenderContextsExternal(gfxContext *aContext, gfxPattern::GraphicsFilter aFilter)
+nsHTMLCanvasElement::RenderContextsExternal(gfxContext *aContext, gfxPattern::GraphicsFilter aFilter, PRUint32 aFlags)
 {
   if (!mCurrentContext)
     return NS_OK;
 
-  return mCurrentContext->Render(aContext, aFilter);
+  return mCurrentContext->Render(aContext, aFilter, aFlags);
 }
 
 nsresult NS_NewCanvasRenderingContext2DThebes(nsIDOMCanvasRenderingContext2D** aResult);

@@ -1,57 +1,21 @@
 /* vim:set ts=2 sw=2 sts=2 et: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Web Console test suite.
- *
- * The Initial Developer of the Original Code is
- * The Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Mihai Sucan <mihai.sucan@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const TEST_URI = "data:text/html,<p>bug 585991 - autocomplete popup keyboard usage test";
+const TEST_URI = "data:text/html;charset=utf-8,<p>bug 585991 - autocomplete popup keyboard usage test";
 let HUD;
 
-registerCleanupFunction(function() {
-  Services.prefs.clearUserPref("devtools.gcli.enable");
-});
-
 function test() {
-  Services.prefs.setBoolPref("devtools.gcli.enable", false);
   addTab(TEST_URI);
-  browser.addEventListener("load", tabLoaded, true);
+  browser.addEventListener("load", function onLoad() {
+    browser.removeEventListener("load", onLoad, true);
+    openConsole(null, consoleOpened);
+  }, true);
 }
 
-function tabLoaded() {
-  browser.removeEventListener("load", tabLoaded, true);
-  openConsole();
+function consoleOpened(aHud) {
+  HUD = aHud;
 
   content.wrappedJSObject.foobarBug585991 = {
     "item0": "value0",
@@ -60,16 +24,14 @@ function tabLoaded() {
     "item3": "value3",
   };
 
-  let hudId = HUDService.getHudIdByWindow(content);
-  HUD = HUDService.hudReferences[hudId];
   let jsterm = HUD.jsterm;
   let popup = jsterm.autocompletePopup;
   let completeNode = jsterm.completeNode;
 
   ok(!popup.isOpen, "popup is not open");
 
-  popup._panel.addEventListener("popupshown", function() {
-    popup._panel.removeEventListener("popupshown", arguments.callee, false);
+  popup._panel.addEventListener("popupshown", function onShown() {
+    popup._panel.removeEventListener("popupshown", onShown, false);
 
     ok(popup.isOpen, "popup is open");
 
@@ -117,7 +79,7 @@ function autocompletePopupHidden()
   let completeNode = jsterm.completeNode;
   let inputNode = jsterm.inputNode;
 
-  popup._panel.removeEventListener("popuphidden", arguments.callee, false);
+  popup._panel.removeEventListener("popuphidden", autocompletePopupHidden, false);
 
   ok(!popup.isOpen, "popup is not open");
 
@@ -126,8 +88,8 @@ function autocompletePopupHidden()
 
   ok(!completeNode.value, "completeNode is empty");
 
-  popup._panel.addEventListener("popupshown", function() {
-    popup._panel.removeEventListener("popupshown", arguments.callee, false);
+  popup._panel.addEventListener("popupshown", function onShown() {
+    popup._panel.removeEventListener("popupshown", onShown, false);
 
     ok(popup.isOpen, "popup is open");
 
@@ -142,8 +104,8 @@ function autocompletePopupHidden()
     is(popup.selectedItem.label, "item0", "item0 is selected");
     is(completeNode.value, prefix + "item0", "completeNode.value holds item0");
 
-    popup._panel.addEventListener("popuphidden", function() {
-      popup._panel.removeEventListener("popuphidden", arguments.callee, false);
+    popup._panel.addEventListener("popuphidden", function onHidden() {
+      popup._panel.removeEventListener("popuphidden", onHidden, false);
 
       ok(!popup.isOpen, "popup is not open after VK_ESCAPE");
 
@@ -173,8 +135,8 @@ function testReturnKey()
   let completeNode = jsterm.completeNode;
   let inputNode = jsterm.inputNode;
 
-  popup._panel.addEventListener("popupshown", function() {
-    popup._panel.removeEventListener("popupshown", arguments.callee, false);
+  popup._panel.addEventListener("popupshown", function onShown() {
+    popup._panel.removeEventListener("popupshown", onShown, false);
 
     ok(popup.isOpen, "popup is open");
 
@@ -195,8 +157,8 @@ function testReturnKey()
     is(popup.selectedItem.label, "item1", "item1 is selected");
     is(completeNode.value, prefix + "item1", "completeNode.value holds item1");
 
-    popup._panel.addEventListener("popuphidden", function() {
-      popup._panel.removeEventListener("popuphidden", arguments.callee, false);
+    popup._panel.addEventListener("popuphidden", function onHidden() {
+      popup._panel.removeEventListener("popuphidden", onHidden, false);
 
       ok(!popup.isOpen, "popup is not open after VK_RETURN");
 

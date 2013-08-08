@@ -402,8 +402,8 @@ function shutdownManager() {
       thr.processNextEvent(false);
   }
 
-  // Force the XPIProvider provider to reload since it defines some constants on
-  // load that need to change during tests
+  // Force the XPIProvider provider to reload to better
+  // simulate real-world usage.
   let scope = Components.utils.import("resource://gre/modules/XPIProvider.jsm");
   AddonManagerPrivate.unregisterProvider(scope.XPIProvider);
   Components.utils.unload("resource://gre/modules/XPIProvider.jsm");
@@ -453,6 +453,8 @@ function isItemInAddonsList(aType, aDir, aId) {
   xpiPath.append(aId + ".xpi");
   for (var i = 0; i < gAddonsList[aType].length; i++) {
     let file = gAddonsList[aType][i];
+    if (!file.exists())
+      do_throw("Non-existant path found in extensions.ini: " + file.path)
     if (file.isDirectory() && file.equals(path))
       return true;
     if (file.isFile() && file.equals(xpiPath))
@@ -662,6 +664,67 @@ function setExtensionModifiedTime(aExt, aTime) {
       setExtensionModifiedTime(entries.nextFile, aTime);
     entries.close();
   }
+}
+
+/**
+ * Manually installs an XPI file into an install location by either copying the
+ * XPI there or extracting it depending on whether unpacking is being tested
+ * or not.
+ *
+ * @param aXPIFile
+ *        The XPI file to install.
+ * @param aInstallLocation
+ *        The install location (an nsIFile) to install into.
+ * @param aID
+ *        The ID to install as.
+ */
+function manuallyInstall(aXPIFile, aInstallLocation, aID) {
+  if (TEST_UNPACKED) {
+    let dir = aInstallLocation.clone();
+    dir.append(aID);
+    dir.create(AM_Ci.nsIFile.DIRECTORY_TYPE, 0755);
+    let zip = AM_Cc["@mozilla.org/libjar/zip-reader;1"].
+              createInstance(AM_Ci.nsIZipReader);
+    zip.open(aXPIFile);
+    let entries = zip.findEntries(null);
+    while (entries.hasMore()) {
+      let entry = entries.getNext();
+      let target = dir.clone();
+      entry.split("/").forEach(function(aPart) {
+        target.append(aPart);
+      });
+      zip.extract(entry, target);
+    }
+    zip.close();
+
+    return dir;
+  }
+  else {
+    let target = aInstallLocation.clone();
+    target.append(aID + ".xpi");
+    aXPIFile.copyTo(target.parent, target.leafName);
+    return target;
+  }
+}
+
+/**
+ * Manually uninstalls an add-on by removing its files from the install
+ * location.
+ *
+ * @param aInstallLocation
+ *        The nsIFile of the install location to remove from.
+ * @param aID
+ *        The ID of the add-on to remove.
+ */
+function manuallyUninstall(aInstallLocation, aID) {
+  let file = getFileForAddon(aInstallLocation, aID);
+
+  // In reality because the app is restarted a flush isn't necessary for XPIs
+  // removed outside the app, but for testing we must flush manually.
+  if (file.isFile())
+    Services.obs.notifyObservers(file, "flush-cache-entry", null);
+
+  file.remove(true);
 }
 
 /**
@@ -1127,6 +1190,7 @@ Services.prefs.setBoolPref("extensions.showMismatchUI", false);
 
 // Point update checks to the local machine for fast failures
 Services.prefs.setCharPref("extensions.update.url", "http://127.0.0.1/updateURL");
+Services.prefs.setCharPref("extensions.update.background.url", "http://127.0.0.1/updateBackgroundURL");
 Services.prefs.setCharPref("extensions.blocklist.url", "http://127.0.0.1/blocklistURL");
 
 // By default ignore bundled add-ons

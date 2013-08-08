@@ -1,39 +1,7 @@
 /* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Android code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2009-2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Sriram Ramasubramanian <sriram@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.gecko;
 
@@ -68,7 +36,6 @@ public class Tabs implements GeckoEventListener {
         GeckoAppShell.registerGeckoEventListener("Tab:Added", this);
         GeckoAppShell.registerGeckoEventListener("Tab:Close", this);
         GeckoAppShell.registerGeckoEventListener("Tab:Select", this);
-        GeckoAppShell.registerGeckoEventListener("Tab:ScreenshotData", this);
         GeckoAppShell.registerGeckoEventListener("Session:RestoreBegin", this);
         GeckoAppShell.registerGeckoEventListener("Session:RestoreEnd", this);
     }
@@ -82,24 +49,25 @@ public class Tabs implements GeckoEventListener {
         if (tabs.containsKey(id))
            return tabs.get(id);
 
-        String url = params.getString("uri");
+        // null strings return "null" (http://code.google.com/p/android/issues/detail?id=13830)
+        String url = params.isNull("uri") ? null : params.getString("uri");
         Boolean external = params.getBoolean("external");
         int parentId = params.getInt("parentId");
         String title = params.getString("title");
 
-        Tab tab = new Tab(id, url, external, parentId, title);
+        final Tab tab = new Tab(id, url, external, parentId, title);
         tabs.put(id, tab);
         order.add(tab);
 
         if (!mRestoringSession) {
             GeckoApp.mAppContext.mMainHandler.post(new Runnable() {
                 public void run() {
-                    GeckoApp.mBrowserToolbar.updateTabCountAndAnimate(getCount());
+                    notifyListeners(tab, TabEvents.ADDED);
                 }
             });
         }
 
-        Log.i(LOGTAG, "Added a tab with id: " + id + ", url: " + url);
+        Log.i(LOGTAG, "Added a tab with id: " + id);
         return tab;
     }
 
@@ -122,32 +90,24 @@ public class Tabs implements GeckoEventListener {
         if (tab == null)
             return null;
 
-        if (tab.getURL().equals("about:home"))
-            GeckoApp.mAppContext.showAboutHome();
-        else
-            GeckoApp.mAppContext.hideAboutHome();
-
+        selectedTab = tab;
         GeckoApp.mAppContext.mMainHandler.post(new Runnable() { 
             public void run() {
-                GeckoApp.mAutoCompletePopup.hide();
-                // Do we need to do this check?
+                if (GeckoApp.mAppContext.mFormAssistPopup != null)
+                    GeckoApp.mAppContext.mFormAssistPopup.hide();
                 if (isSelectedTab(tab)) {
-                    GeckoApp.mBrowserToolbar.setTitle(tab.getDisplayTitle());
-                    GeckoApp.mBrowserToolbar.setFavicon(tab.getFavicon());
-                    GeckoApp.mBrowserToolbar.setSecurityMode(tab.getSecurityMode());
-                    GeckoApp.mBrowserToolbar.setProgressVisibility(tab.isLoading());
-                    GeckoApp.mDoorHangerPopup.updatePopup();
-                    GeckoApp.mBrowserToolbar.setShadowVisibility(!(tab.getURL().startsWith("about:")));
+                    String url = tab.getURL();
+                    notifyListeners(tab, TabEvents.SELECTED);
 
                     if (oldTab != null)
-                        GeckoApp.mAppContext.hidePlugins(oldTab, true);
+                        notifyListeners(oldTab, TabEvents.UNSELECTED);
                 }
             }
         });
 
         // Pass a message to Gecko to update tab state in BrowserApp
-        GeckoAppShell.sendEventToGecko(new GeckoEvent("Tab:Selected", String.valueOf(tab.getId())));
-        return selectedTab = tab;
+        GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Tab:Selected", String.valueOf(tab.getId())));
+        return tab;
     }
 
     public int getIndexOf(Tab tab) {
@@ -188,7 +148,7 @@ public class Tabs implements GeckoEventListener {
     }
 
     /** Close tab and then select nextTab */
-    public void closeTab(Tab tab, Tab nextTab) {
+    public void closeTab(final Tab tab, Tab nextTab) {
         if (tab == null || nextTab == null)
             return;
 
@@ -196,20 +156,16 @@ public class Tabs implements GeckoEventListener {
 
         int tabId = tab.getId();
         removeTab(tabId);
-        tab.removeAllDoorHangers();
 
-        final Tab closedTab = tab;
         GeckoApp.mAppContext.mMainHandler.post(new Runnable() { 
             public void run() {
-                GeckoApp.mAppContext.onTabsChanged(closedTab);
-                GeckoApp.mBrowserToolbar.updateTabCountAndAnimate(Tabs.getInstance().getCount());
-                GeckoApp.mDoorHangerPopup.updatePopup();
-                GeckoApp.mAppContext.hidePlugins(closedTab, true);
+                notifyListeners(tab, TabEvents.CLOSED);
+                tab.onDestroy();
             }
         });
 
         // Pass a message to Gecko to update tab state in BrowserApp
-        GeckoAppShell.sendEventToGecko(new GeckoEvent("Tab:Closed", String.valueOf(tabId)));
+        GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Tab:Closed", String.valueOf(tabId)));
     }
 
     /** Return the tab that will be selected by default after this one is closed */
@@ -282,26 +238,21 @@ public class Tabs implements GeckoEventListener {
                 if (message.getBoolean("selected"))
                     selectTab(tab.getId());
                 if (message.getBoolean("delayLoad"))
-                    tab.setHasLoaded(false);
+                    tab.setState(Tab.STATE_DELAYED);
+                if (message.getBoolean("desktopMode"))
+                    tab.setDesktopMode(true);
             } else if (event.equals("Tab:Close")) {
                 Tab tab = getTab(message.getInt("tabID"));
                 closeTab(tab);
             } else if (event.equals("Tab:Select")) {
                 selectTab(message.getInt("tabID"));
-            } else if (event.equals("Tab:ScreenshotData")) {
-                Tab tab = getTab(message.getInt("tabID"));
-                String data = message.getString("data");
-                if (data.length() < 22)
-                    return;
-                byte[] compressed = GeckoAppShell.decodeBase64(data.substring(22), GeckoAppShell.BASE64_DEFAULT);
-                GeckoApp.mAppContext.processThumbnail(tab, null, compressed);
             } else if (event.equals("Session:RestoreBegin")) {
                 mRestoringSession = true;
             } else if (event.equals("Session:RestoreEnd")) {
                 mRestoringSession = false;
                 GeckoApp.mAppContext.mMainHandler.post(new Runnable() {
                     public void run() {
-                        GeckoApp.mBrowserToolbar.updateTabCount(getCount());
+                        notifyListeners(null, TabEvents.RESTORED);
                     }
                 });
             }
@@ -316,9 +267,61 @@ public class Tabs implements GeckoEventListener {
             final Tab tab = iterator.next();
             GeckoAppShell.getHandler().post(new Runnable() {
                 public void run() {
-                    GeckoApp.mAppContext.getAndProcessThumbnailForTab(tab, false);
+                    GeckoApp.mAppContext.getAndProcessThumbnailForTab(tab);
                 }
             });
         }
     }
+
+    public interface OnTabsChangedListener {
+        public void onTabChanged(Tab tab, TabEvents msg, Object data);
+    }
+    
+    private static ArrayList<OnTabsChangedListener> mTabsChangedListeners;
+
+    public static void registerOnTabsChangedListener(OnTabsChangedListener listener) {
+        if (mTabsChangedListeners == null)
+            mTabsChangedListeners = new ArrayList<OnTabsChangedListener>();
+        
+        mTabsChangedListeners.add(listener);
+    }
+
+    public static void unregisterOnTabsChangedListener(OnTabsChangedListener listener) {
+        if (mTabsChangedListeners == null)
+            return;
+        
+        mTabsChangedListeners.remove(listener);
+    }
+
+    public enum TabEvents {
+        CLOSED,
+        START,
+        LOADED,
+        LOAD_ERROR,
+        STOP,
+        FAVICON,
+        THUMBNAIL,
+        TITLE,
+        SELECTED,
+        UNSELECTED,
+        ADDED,
+        RESTORED,
+        LOCATION_CHANGE,
+        MENU_UPDATED
+    }
+
+    public void notifyListeners(Tab tab, TabEvents msg) {
+        notifyListeners(tab, msg, "");
+    }
+
+    public void notifyListeners(Tab tab, TabEvents msg, Object data) {
+        if (mTabsChangedListeners == null)
+            return;
+
+        Iterator<OnTabsChangedListener> items = mTabsChangedListeners.iterator();
+        while (items.hasNext()) {
+            items.next().onTabChanged(tab, msg, data);
+        }
+    }
+
 }

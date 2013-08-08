@@ -1,44 +1,7 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Chris Waterson <waterson@netscape.com>
- *   Peter Annema <disttsc@bart.nl>
- *   Mike Shaver <shaver@mozilla.org>
- *   Ben Goodger <ben@netscape.com>
- *   Mark Hammond <mhammond@skippinet.com.au>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
 
@@ -67,7 +30,6 @@
 #include "nsIURI.h"
 #include "nsIXULTemplateBuilder.h"
 #include "nsIBoxObject.h"
-#include "nsIXBLService.h"
 #include "nsLayoutCID.h"
 #include "nsAttrAndChildArray.h"
 #include "nsGkAtoms.h"
@@ -187,14 +149,14 @@ public:
 
  */
 
-class nsXULPrototypeNode
+class nsXULPrototypeNode : public nsISupports
 {
 public:
     enum Type { eType_Element, eType_Script, eType_Text, eType_PI };
 
     Type                     mType;
 
-    nsAutoRefCnt             mRefCnt;
+    NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
     virtual ~nsXULPrototypeNode() {}
     virtual nsresult Serialize(nsIObjectOutputStream* aStream,
@@ -210,17 +172,6 @@ public:
     virtual PRUint32 ClassSize() = 0;
 #endif
 
-    void AddRef() {
-        ++mRefCnt;
-        NS_LOG_ADDREF(this, mRefCnt, ClassName(), ClassSize());
-    }
-    void Release()
-    {
-        --mRefCnt;
-        NS_LOG_RELEASE(this, mRefCnt, ClassName());
-        if (mRefCnt == 0)
-            delete this;
-    }
     /**
      * The prototype document must call ReleaseSubtree when it is going
      * away.  This makes the parents through the tree stop owning their
@@ -231,7 +182,7 @@ public:
      */
     virtual void ReleaseSubtree() { }
 
-    NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(nsXULPrototypeNode)
+    NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(nsXULPrototypeNode)
 
 protected:
     nsXULPrototypeNode(Type aType)
@@ -248,8 +199,7 @@ public:
           mHasIdAttribute(false),
           mHasClassAttribute(false),
           mHasStyleAttribute(false),
-          mHoldsScriptObject(false),
-          mScriptTypeID(nsIProgrammingLanguage::UNKNOWN)
+          mHoldsScriptObject(false)
     {
     }
 
@@ -297,11 +247,6 @@ public:
     bool                     mHasStyleAttribute:1;
     bool                     mHoldsScriptObject:1;
 
-    // The language ID can not be set on a per-node basis, but is tracked
-    // so that the language ID from the originating root can be used
-    // (eg, when a node from an overlay ends up in our document, that node
-    // must use its original script language, not our document's default.
-    PRUint16                 mScriptTypeID;
 };
 
 class nsXULDocument;
@@ -309,7 +254,7 @@ class nsXULDocument;
 class nsXULPrototypeScript : public nsXULPrototypeNode
 {
 public:
-    nsXULPrototypeScript(PRUint32 aLangID, PRUint32 aLineNo, PRUint32 version);
+    nsXULPrototypeScript(PRUint32 aLineNo, PRUint32 version);
     virtual ~nsXULPrototypeScript();
 
 #ifdef NS_BUILD_REFCNT_LOGGING
@@ -338,23 +283,18 @@ public:
 
     void Set(nsScriptObjectHolder<JSScript>& aHolder)
     {
-        NS_ASSERTION(mScriptObject.mLangID == aHolder.getScriptTypeID(),
-                     "Wrong language, this will leak the previous object.");
-
-        mScriptObject.mLangID = aHolder.getScriptTypeID();
         Set(aHolder.get());
     }
     void Set(JSScript* aObject);
 
     struct ScriptObjectHolder
     {
-        ScriptObjectHolder(PRUint32 aLangID) : mLangID(aLangID),
-                                               mObject(nsnull)
+        ScriptObjectHolder() : mObject(nsnull)
         {
         }
-        PRUint32 mLangID;
         JSScript* mObject;
     };
+
     nsCOMPtr<nsIURI>         mSrcURI;
     PRUint32                 mLineNo;
     bool                     mSrcLoading;
@@ -449,20 +389,6 @@ public:
     }
 
 public:
-    static nsIXBLService* GetXBLService() {
-        if (!gXBLService)
-            CallGetService("@mozilla.org/xbl;1", &gXBLService);
-        return gXBLService;
-    }
-    static void ReleaseGlobals() {
-        NS_IF_RELEASE(gXBLService);
-    }
-
-protected:
-    // pseudo-constants
-    static nsIXBLService*       gXBLService;
-
-public:
     nsXULElement(already_AddRefed<nsINodeInfo> aNodeInfo);
 
     static nsresult
@@ -482,7 +408,7 @@ public:
                                 nsIContent* aBindingParent,
                                 bool aCompileEventHandlers);
     virtual void UnbindFromTree(bool aDeep, bool aNullParent);
-    virtual nsresult RemoveChildAt(PRUint32 aIndex, bool aNotify);
+    virtual void RemoveChildAt(PRUint32 aIndex, bool aNotify);
     virtual bool GetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
                            nsAString& aResult) const;
     virtual bool HasAttr(PRInt32 aNameSpaceID, nsIAtom* aName) const;
@@ -570,6 +496,8 @@ public:
     virtual nsAttrInfo GetAttrInfo(PRInt32 aNamespaceID, nsIAtom* aName) const;
 
     virtual nsXPCClassInfo* GetClassInfo();
+
+    virtual nsIDOMNode* AsDOMNode() { return this; }
 protected:
     // XXX This can be removed when nsNodeUtils::CloneAndAdopt doesn't need
     //     access to mPrototype anymore.
@@ -626,9 +554,10 @@ protected:
     }
 
     virtual nsresult BeforeSetAttr(PRInt32 aNamespaceID, nsIAtom* aName,
-                                   const nsAString* aValue, bool aNotify);
+                                   const nsAttrValueOrString* aValue,
+                                   bool aNotify);
     virtual nsresult AfterSetAttr(PRInt32 aNamespaceID, nsIAtom* aName,
-                                  const nsAString* aValue, bool aNotify);
+                                  const nsAttrValue* aValue, bool aNotify);
 
     virtual void UpdateEditableState(bool aNotify);
 
@@ -656,7 +585,7 @@ protected:
 
     // attribute setters for widget
     nsresult HideWindowChrome(bool aShouldHide);
-    void SetChromeMargins(const nsAString* aValue);
+    void SetChromeMargins(const nsAttrValue* aValue);
     void ResetChromeMargins();
     void SetTitlebarColor(nscolor aColor, bool aActive);
 

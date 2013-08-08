@@ -1,40 +1,8 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set sw=2 ts=8 et tw=80 : */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla IPC.
- *
- * The Initial Developer of the Original Code is
- *   Ben Turner <bent.mozilla@gmail.com>.
- * Portions created by the Initial Developer are Copyright (C) 2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef __IPC_GLUE_IPCMESSAGEUTILS_H__
 #define __IPC_GLUE_IPCMESSAGEUTILS_H__
@@ -42,6 +10,7 @@
 #include "chrome/common/ipc_message_utils.h"
 
 #include "mozilla/Util.h"
+#include "mozilla/gfx/2D.h"
 
 #include "prtypes.h"
 #include "nsID.h"
@@ -52,6 +21,7 @@
 #include "gfxColor.h"
 #include "gfxMatrix.h"
 #include "gfxPattern.h"
+#include "gfxPoint.h"
 #include "nsRect.h"
 #include "nsRegion.h"
 #include "gfxASurface.h"
@@ -98,17 +68,33 @@ namespace IPC {
 
 /**
  * Generic enum serializer.
- * E is the enum type.
- * lowBound is the lowest allowed value of the enum.
- * highBound is the value higher than highest allowed value of the enum.
- *  In other words, it's the lowest unallowed value.
+ *
+ * This is a generic serializer for any enum type used in IPDL.
+ * Programmers can define ParamTraits<E> for enum type E by deriving
+ * EnumSerializer<E, smallestLegal, highGuard>.
+ *
+ * The serializer would check value againts a range specified by
+ * smallestLegal and highGuard.  Only values from smallestLegal to
+ * highGuard are valid, include smallestLegal but highGuard.
+ *
+ * For example, following is definition of serializer for enum type FOO.
+ * \code
+ * enum FOO { FOO_FIRST, FOO_SECOND, FOO_LAST, NUM_FOO };
+ *
+ * template <>
+ * struct ParamTraits<FOO>:
+ *     public EnumSerializer<FOO, FOO_FIRST, NUM_FOO> {};
+ * \endcode
+ * FOO_FIRST, FOO_SECOND, and FOO_LAST are valid value.
+ *
+ * \sa https://developer.mozilla.org/en/IPDL/Type_Serialization
  */
-template <typename E, E lowBound, E highBound>
+template <typename E, E smallestLegal, E highBound>
 struct EnumSerializer {
   typedef E paramType;
 
   static bool IsLegalValue(const paramType &aValue) {
-    return lowBound <= aValue && aValue < highBound;
+    return smallestLegal <= aValue && aValue < highBound;
   }
 
   static void Write(Message* aMsg, const paramType& aValue) {
@@ -442,6 +428,27 @@ struct ParamTraits<gfxMatrix>
 };
 
 template<>
+struct ParamTraits<gfxSize>
+{
+  typedef gfxSize paramType;
+
+  static void Write(Message* aMsg, const paramType& aParam)
+  {
+    WriteParam(aMsg, aParam.width);
+    WriteParam(aMsg, aParam.height);
+  }
+
+  static bool Read(const Message* aMsg, void** aIter, paramType* aResult)
+  {
+    if (ReadParam(aMsg, aIter, &aResult->width) &&
+        ReadParam(aMsg, aIter, &aResult->height))
+      return true;
+
+    return false;
+  }
+};
+
+template<>
 struct ParamTraits<gfx3DMatrix>
 {
   typedef gfx3DMatrix paramType;
@@ -731,6 +738,46 @@ struct ParamTraits<nsIntSize>
   static bool Read(const Message* msg, void** iter, paramType* result)
   {
     return (ReadParam(msg, iter, &result->width) &&
+            ReadParam(msg, iter, &result->height));
+  }
+};
+
+template<>
+struct ParamTraits<mozilla::gfx::Size>
+{
+  typedef mozilla::gfx::Size paramType;
+  
+  static void Write(Message* msg, const paramType& param)
+  {
+    WriteParam(msg, param.width);
+    WriteParam(msg, param.height); 
+  }
+
+  static bool Read(const Message* msg, void** iter, paramType* result)
+  {
+    return (ReadParam(msg, iter, &result->width) &&
+            ReadParam(msg, iter, &result->height));
+  }
+};
+
+template<>
+struct ParamTraits<mozilla::gfx::Rect>
+{
+  typedef mozilla::gfx::Rect paramType;
+
+  static void Write(Message* msg, const paramType& param)
+  {
+    WriteParam(msg, param.x);
+    WriteParam(msg, param.y);
+    WriteParam(msg, param.width);
+    WriteParam(msg, param.height);
+  }
+
+  static bool Read(const Message* msg, void** iter, paramType* result)
+  {
+    return (ReadParam(msg, iter, &result->x) &&
+            ReadParam(msg, iter, &result->y) &&
+            ReadParam(msg, iter, &result->width) &&
             ReadParam(msg, iter, &result->height));
   }
 };

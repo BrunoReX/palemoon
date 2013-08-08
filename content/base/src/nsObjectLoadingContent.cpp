@@ -1,41 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 // vim:set et cin sw=2 sts=2:
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla <object> loading code.
- *
- * The Initial Developer of the Original Code is
- * Christian Biesinger <cbiesinger@web.de>.
- * Portions created by the Initial Developer are Copyright (C) 2005
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Justin Dolske <dolske@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * A base class implementing nsIObjectLoadingContent for use by
@@ -56,6 +23,7 @@
 #include "nsEventStates.h"
 #include "nsIObjectFrame.h"
 #include "nsIPluginDocument.h"
+#include "nsIPermissionManager.h"
 #include "nsPluginHost.h"
 #include "nsIPresShell.h"
 #include "nsIPrivateDOMEvent.h"
@@ -69,10 +37,12 @@
 #include "nsIScriptChannel.h"
 #include "nsIBlocklistService.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
+#include "nsIAppShell.h"
 
 #include "nsPluginError.h"
 
 // Util headers
+#include "prenv.h"
 #include "prlog.h"
 
 #include "nsAutoPtr.h"
@@ -98,6 +68,12 @@
 #include "nsChannelPolicy.h"
 #include "mozilla/dom/Element.h"
 #include "sampler.h"
+#include "nsObjectFrame.h"
+#include "nsDOMClassInfo.h"
+
+#include "nsWidgetsCID.h"
+#include "nsContentCID.h"
+static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
 
 #ifdef PR_LOGGING
 static PRLogModuleInfo* gObjectLog = PR_NewLogModule("objlc");
@@ -108,20 +84,23 @@ static PRLogModuleInfo* gObjectLog = PR_NewLogModule("objlc");
 
 #include "mozilla/Preferences.h"
 
+static bool gClickToPlayPlugins = false;
+
+static void
+InitPrefCache()
+{
+  static bool initializedPrefCache = false;
+  if (!initializedPrefCache) {
+    mozilla::Preferences::AddBoolVarCache(&gClickToPlayPlugins, "plugins.click_to_play");
+  }
+  initializedPrefCache = true;
+}
+
 class nsAsyncInstantiateEvent : public nsRunnable {
 public:
-  // This stores both the content and the frame so that Instantiate calls can be
-  // avoided if the frame changed in the meantime.
   nsObjectLoadingContent *mContent;
-  nsWeakFrame             mFrame;
-  nsCString               mContentType;
-  nsCOMPtr<nsIURI>        mURI;
-
-  nsAsyncInstantiateEvent(nsObjectLoadingContent* aContent,
-                          nsIFrame* aFrame,
-                          const nsCString& aType,
-                          nsIURI* aURI)
-    : mContent(aContent), mFrame(aFrame), mContentType(aType), mURI(aURI)
+  nsAsyncInstantiateEvent(nsObjectLoadingContent* aContent)
+  : mContent(aContent)
   {
     static_cast<nsIObjectLoadingContent *>(mContent)->AddRef();
   }
@@ -137,44 +116,42 @@ public:
 NS_IMETHODIMP
 nsAsyncInstantiateEvent::Run()
 {
-  // Check if we've been "revoked"
-  if (mContent->mPendingInstantiateEvent != this)
+  // do nothing if we've been revoked
+  if (mContent->mPendingInstantiateEvent != this) {
     return NS_OK;
+  }
   mContent->mPendingInstantiateEvent = nsnull;
 
-  // Make sure that we still have the right frame (NOTE: we don't need to check
-  // the type here - GetExistingFrame() only returns object frames, and that
-  // means we're a plugin)
-  // Also make sure that we still refer to the same data.
-  nsIObjectFrame* frame = mContent->
-    GetExistingFrame(nsObjectLoadingContent::eFlushContent);
+  return mContent->SyncStartPluginInstance();
+}
 
-  nsIFrame* objectFrame = nsnull;
-  if (frame) {
-    objectFrame = do_QueryFrame(frame);
+// Checks to see if the content for a plugin instance has a parent.
+// The plugin instance is stopped if there is no parent.
+class InDocCheckEvent : public nsRunnable {
+public:
+  nsCOMPtr<nsIContent> mContent;
+
+  InDocCheckEvent(nsIContent* aContent)
+  : mContent(aContent)
+  {
   }
 
-  if (objectFrame &&
-      mFrame.GetFrame() == objectFrame &&
-      mContent->mURI == mURI &&
-      mContent->mContentType.Equals(mContentType)) {
-    if (LOG_ENABLED()) {
-      nsCAutoString spec;
-      if (mURI) {
-        mURI->GetSpec(spec);
-      }
-      LOG(("OBJLC [%p]: Handling Instantiate event: Type=<%s> URI=%p<%s>\n",
-           mContent, mContentType.get(), mURI.get(), spec.get()));
-    }
-
-    nsresult rv = mContent->Instantiate(frame, mContentType, mURI);
-    if (NS_FAILED(rv)) {
-      mContent->Fallback(true);
-    }
-  } else {
-    LOG(("OBJLC [%p]: Discarding event, data changed\n", mContent));
+  ~InDocCheckEvent()
+  {
   }
 
+  NS_IMETHOD Run();
+};
+
+NS_IMETHODIMP
+InDocCheckEvent::Run()
+{
+  if (!mContent->IsInDoc()) {
+    nsCOMPtr<nsIObjectLoadingContent> olc = do_QueryInterface(mContent);
+    if (olc) {
+      olc->StopPluginInstance();
+    }
+  }
   return NS_OK;
 }
 
@@ -336,6 +313,74 @@ nsPluginCrashedEvent::Run()
   return NS_OK;
 }
 
+class nsStopPluginRunnable : public nsRunnable, public nsITimerCallback
+{
+public:
+  NS_DECL_ISUPPORTS_INHERITED
+
+  nsStopPluginRunnable(nsPluginInstanceOwner* aInstanceOwner,
+                       nsObjectLoadingContent* aContent)
+    : mInstanceOwner(aInstanceOwner)
+    , mContent(aContent)
+  {
+    NS_ASSERTION(aInstanceOwner, "need an owner");
+    NS_ASSERTION(aContent, "need a nsObjectLoadingContent");
+  }
+
+  // nsRunnable
+  NS_IMETHOD Run();
+
+  // nsITimerCallback
+  NS_IMETHOD Notify(nsITimer *timer);
+
+private:
+  nsCOMPtr<nsITimer> mTimer;
+  nsRefPtr<nsPluginInstanceOwner> mInstanceOwner;
+  nsCOMPtr<nsIObjectLoadingContent> mContent;
+};
+
+NS_IMPL_ISUPPORTS_INHERITED1(nsStopPluginRunnable, nsRunnable, nsITimerCallback)
+
+NS_IMETHODIMP
+nsStopPluginRunnable::Notify(nsITimer *aTimer)
+{
+  return Run();
+}
+
+NS_IMETHODIMP
+nsStopPluginRunnable::Run()
+{
+  // InitWithCallback calls Release before AddRef so we need to hold a
+  // strong ref on 'this' since we fall through to this scope if it fails.
+  nsCOMPtr<nsITimerCallback> kungFuDeathGrip = this;
+  nsCOMPtr<nsIAppShell> appShell = do_GetService(kAppShellCID);
+  if (appShell) {
+    PRUint32 currentLevel = 0;
+    appShell->GetEventloopNestingLevel(&currentLevel);
+    if (currentLevel > mInstanceOwner->GetLastEventloopNestingLevel()) {
+      if (!mTimer)
+        mTimer = do_CreateInstance("@mozilla.org/timer;1");
+      if (mTimer) {
+        // Fire 100ms timer to try to tear down this plugin as quickly as
+        // possible once the nesting level comes back down.
+        nsresult rv = mTimer->InitWithCallback(this, 100, nsITimer::TYPE_ONE_SHOT);
+        if (NS_SUCCEEDED(rv)) {
+          return rv;
+        }
+      }
+      NS_ERROR("Failed to setup a timer to stop the plugin later (at a safe "
+               "time). Stopping the plugin now, this might crash.");
+    }
+  }
+
+  mTimer = nsnull;
+
+  static_cast<nsObjectLoadingContent*>(mContent.get())->
+    DoStopPlugin(mInstanceOwner, false, true);
+
+  return NS_OK;
+}
+
 class AutoNotifier {
   public:
     AutoNotifier(nsObjectLoadingContent* aContent, bool aNotify) :
@@ -425,16 +470,56 @@ IsSupportedImage(const nsCString& aMimeType)
   return NS_SUCCEEDED(rv) && supported;
 }
 
-static bool
-IsSupportedPlugin(const nsCString& aMIMEType, bool aShouldPlay)
+nsresult nsObjectLoadingContent::IsPluginEnabledForType(const nsCString& aMIMEType)
 {
   nsCOMPtr<nsIPluginHost> pluginHostCOM(do_GetService(MOZ_PLUGIN_HOST_CONTRACTID));
   nsPluginHost *pluginHost = static_cast<nsPluginHost*>(pluginHostCOM.get());
   if (!pluginHost) {
-    return false;
+    return NS_ERROR_FAILURE;
   }
-  nsresult rv = pluginHost->IsPluginEnabledForType(aMIMEType.get(), aShouldPlay);
-  return NS_SUCCEEDED(rv);
+
+  nsresult rv = pluginHost->IsPluginEnabledForType(aMIMEType.get());
+
+  // Check to see if the plugin is disabled before deciding if it
+  // should be in the "click to play" state, since we only want to
+  // display "click to play" UI for enabled plugins.
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  if (!mShouldPlay) {
+    nsCOMPtr<nsIContent> thisContent = do_QueryInterface(static_cast<nsIObjectLoadingContent*>(this));
+    MOZ_ASSERT(thisContent);
+    nsIDocument* ownerDoc = thisContent->OwnerDoc();
+
+    nsCOMPtr<nsIDOMWindow> window = ownerDoc->GetWindow();
+    if (!window) {
+      return NS_ERROR_FAILURE;
+    }
+    nsCOMPtr<nsIDOMWindow> topWindow;
+    rv = window->GetTop(getter_AddRefs(topWindow));
+    NS_ENSURE_SUCCESS(rv, rv);
+    nsCOMPtr<nsIDOMDocument> topDocument;
+    rv = topWindow->GetDocument(getter_AddRefs(topDocument));
+    NS_ENSURE_SUCCESS(rv, rv);
+    nsCOMPtr<nsIDocument> topDoc = do_QueryInterface(topDocument);
+    nsIURI* topUri = topDoc->GetDocumentURI();
+
+    nsCOMPtr<nsIPermissionManager> permissionManager = do_GetService(NS_PERMISSIONMANAGER_CONTRACTID, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+    PRUint32 permission;
+    rv = permissionManager->TestPermission(topUri,
+                                           "plugins",
+                                           &permission);
+    NS_ENSURE_SUCCESS(rv, rv);
+    if (permission == nsIPermissionManager::ALLOW_ACTION) {
+      mShouldPlay = true;
+    } else {
+      return NS_ERROR_PLUGIN_CLICKTOPLAY;
+    }
+  }
+
+  return NS_OK;
 }
 
 static void
@@ -458,9 +543,12 @@ GetExtensionFromURI(nsIURI* uri, nsCString& ext)
  * Checks whether a plugin exists and is enabled for the extension
  * in the given URI. The MIME type is returned in the mimeType out parameter.
  */
-static bool
-IsPluginEnabledByExtension(nsIURI* uri, nsCString& mimeType, bool aShouldPlay)
+bool nsObjectLoadingContent::IsPluginEnabledByExtension(nsIURI* uri, nsCString& mimeType)
 {
+  if (!mShouldPlay) {
+    return false;
+  }
+
   nsCAutoString ext;
   GetExtensionFromURI(uri, ext);
 
@@ -475,12 +563,31 @@ IsPluginEnabledByExtension(nsIURI* uri, nsCString& mimeType, bool aShouldPlay)
   }
 
   const char* typeFromExt;
-  if (NS_SUCCEEDED(pluginHost->IsPluginEnabledForExtension(ext.get(), typeFromExt,
-                                                           aShouldPlay))) {
+  if (NS_SUCCEEDED(pluginHost->IsPluginEnabledForExtension(ext.get(), typeFromExt))) {
     mimeType = typeFromExt;
     return true;
   }
   return false;
+}
+
+nsresult
+nsObjectLoadingContent::BindToTree(nsIDocument* aDocument, nsIContent* /*aParent*/,
+                                   nsIContent* /*aBindingParent*/,
+                                   bool /*aCompileEventHandlers*/)
+{
+  if (aDocument) {
+    return aDocument->AddPlugin(this);
+  }
+  return NS_OK;
+}
+
+void
+nsObjectLoadingContent::UnbindFromTree(bool /*aDeep*/, bool /*aNullParent*/)
+{
+  nsCOMPtr<nsIContent> thisContent = do_QueryInterface(static_cast<nsIObjectLoadingContent*>(this));
+  MOZ_ASSERT(thisContent);
+  nsIDocument* ownerDoc = thisContent->OwnerDoc();
+  ownerDoc->RemovePlugin(this);
 }
 
 nsObjectLoadingContent::nsObjectLoadingContent()
@@ -491,10 +598,15 @@ nsObjectLoadingContent::nsObjectLoadingContent()
   , mUserDisabled(false)
   , mSuppressed(false)
   , mNetworkCreated(true)
-  // If plugins.click_to_play is false, plugins should always play
-  , mShouldPlay(!mozilla::Preferences::GetBool("plugins.click_to_play", false))
+  , mIsStopping(false)
+  , mSrcStreamLoading(false)
   , mFallbackReason(ePluginOtherState)
 {
+  InitPrefCache();
+  // If plugins.click_to_play is false, plugins should always play
+  mShouldPlay = !gClickToPlayPlugins;
+  // If plugins.click_to_play is true, track the activated state of plugins.
+  mActivated = !gClickToPlayPlugins;
 }
 
 nsObjectLoadingContent::~nsObjectLoadingContent()
@@ -505,12 +617,136 @@ nsObjectLoadingContent::~nsObjectLoadingContent()
   }
 }
 
+nsresult
+nsObjectLoadingContent::InstantiatePluginInstance(const char* aMimeType, nsIURI* aURI)
+{
+  if (!mShouldPlay) {
+    return NS_ERROR_PLUGIN_CLICKTOPLAY;
+  }
+
+  // Don't do anything if we already have an active instance.
+  if (mInstanceOwner) {
+    return NS_OK;
+  }
+
+  // Don't allow re-entry into initialization code.
+  if (mInstantiating) {
+    return NS_OK;
+  }
+  mInstantiating = true;
+  AutoSetInstantiatingToFalse autoInstantiating(this);
+
+  // Instantiating an instance can result in script execution, which
+  // can destroy this DOM object. Don't allow that for the scope
+  // of this method.
+  nsCOMPtr<nsIObjectLoadingContent> kungFuDeathGrip = this;
+  nsCOMPtr<nsIContent> thisContent = do_QueryInterface(static_cast<nsIImageLoadingContent*>(this));
+
+  nsCOMPtr<nsIURI> baseURI;
+  if (!aURI) {
+    // We need some URI. If we have nothing else, use the base URI.
+    // XXX(biesi): The code used to do this. Not sure why this is correct...
+    GetObjectBaseURI(thisContent, getter_AddRefs(baseURI));
+    aURI = baseURI;
+  }
+
+  // Flush layout so that the plugin is initialized with the latest information.
+  nsIDocument* doc = thisContent->GetCurrentDoc();
+  if (!doc) {
+    return NS_ERROR_FAILURE;
+  }
+  if (!doc->IsActive()) {
+    NS_ERROR("Shouldn't be calling InstantiatePluginInstance in an inactive document");
+    return NS_ERROR_FAILURE;
+  }
+  doc->FlushPendingNotifications(Flush_Layout);
+
+  nsresult rv = NS_ERROR_FAILURE;
+  nsCOMPtr<nsIPluginHost> pluginHostCOM(do_GetService(MOZ_PLUGIN_HOST_CONTRACTID, &rv));
+  nsPluginHost* pluginHost = static_cast<nsPluginHost*>(pluginHostCOM.get());
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  // If you add early return(s), be sure to balance this call to
+  // appShell->SuspendNative() with additional call(s) to
+  // appShell->ReturnNative().
+  nsCOMPtr<nsIAppShell> appShell = do_GetService(kAppShellCID);
+  if (appShell) {
+    appShell->SuspendNative();
+  }
+
+  nsCOMPtr<nsIPluginDocument> pDoc(do_QueryInterface(doc));
+  bool fullPageMode = false;
+  if (pDoc) {
+    pDoc->GetWillHandleInstantiation(&fullPageMode);
+  }
+
+  if (fullPageMode) {
+    nsCOMPtr<nsIStreamListener> stream;
+    rv = pluginHost->InstantiateFullPagePluginInstance(aMimeType, aURI, this,
+                                                       getter_AddRefs(mInstanceOwner), getter_AddRefs(stream));
+    if (NS_SUCCEEDED(rv)) {
+      pDoc->SetStreamListener(stream);
+    }
+  } else {
+    rv = pluginHost->InstantiateEmbeddedPluginInstance(aMimeType, aURI, this,
+                                                       getter_AddRefs(mInstanceOwner));
+  }
+
+  if (appShell) {
+    appShell->ResumeNative();
+  }
+
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  // Set up scripting interfaces.
+  NotifyContentObjectWrapper();
+
+  nsRefPtr<nsNPAPIPluginInstance> pluginInstance;
+  GetPluginInstance(getter_AddRefs(pluginInstance));
+  if (pluginInstance) {
+    nsCOMPtr<nsIPluginTag> pluginTag;
+    pluginHost->GetPluginTagForInstance(pluginInstance, getter_AddRefs(pluginTag));
+    
+    nsCOMPtr<nsIBlocklistService> blocklist =
+    do_GetService("@mozilla.org/extensions/blocklist;1");
+    if (blocklist) {
+      PRUint32 blockState = nsIBlocklistService::STATE_NOT_BLOCKED;
+      blocklist->GetPluginBlocklistState(pluginTag, EmptyString(),
+                                         EmptyString(), &blockState);
+      if (blockState == nsIBlocklistService::STATE_OUTDATED)
+        FirePluginError(thisContent, ePluginOutdated);
+    }
+  }
+
+  mActivated = true;
+  return NS_OK;
+}
+
+void
+nsObjectLoadingContent::NotifyOwnerDocumentActivityChanged()
+{
+  if (!mInstanceOwner) {
+    return;
+  }
+
+  nsCOMPtr<nsIContent> thisContent = do_QueryInterface(static_cast<nsIImageLoadingContent*>(this));
+  nsIDocument* ownerDoc = thisContent->OwnerDoc();
+  if (!ownerDoc->IsActive()) {
+    StopPluginInstance();
+  }
+}
+
 // nsIRequestObserver
 NS_IMETHODIMP
 nsObjectLoadingContent::OnStartRequest(nsIRequest *aRequest,
                                        nsISupports *aContext)
 {
   SAMPLE_LABEL("nsObjectLoadingContent", "OnStartRequest");
+
   if (aRequest != mChannel || !aRequest) {
     // This is a bit of an edge case - happens when a new load starts before the
     // previous one got here
@@ -542,25 +778,23 @@ nsObjectLoadingContent::OnStartRequest(nsIRequest *aRequest,
     chan->SetContentType(channelType);
   }
 
-  // We want to use the channel type unless one of the following is
-  // true:
+  // We want to use the channel type unless one of the following is true:
   //
   // 1) The channel type is application/octet-stream and we have a
   //    type hint and the type hint is not a document type.
   // 2) Our type hint is a type that we support with a plugin.
-
-  if ((channelType.EqualsASCII(APPLICATION_OCTET_STREAM) && 
+  if (((channelType.EqualsASCII(APPLICATION_OCTET_STREAM) ||
+        channelType.EqualsASCII(BINARY_OCTET_STREAM)) && 
        !mContentType.IsEmpty() &&
        GetTypeOfContent(mContentType) != eType_Document) ||
-      // Need to check IsSupportedPlugin() in addition to GetTypeOfContent()
+      // Need to check IsPluginEnabledForType() in addition to GetTypeOfContent()
       // because otherwise the default plug-in's catch-all behavior would
       // confuse things.
-      (IsSupportedPlugin(mContentType, mShouldPlay) && 
+      (NS_SUCCEEDED(IsPluginEnabledForType(mContentType)) && 
        GetTypeOfContent(mContentType) == eType_Plugin)) {
     // Set the type we'll use for dispatch on the channel.  Otherwise we could
     // end up trying to dispatch to a nsFrameLoader, which will complain that
     // it couldn't find a way to handle application/octet-stream
-
     nsCAutoString typeHint, dummy;
     NS_ParseContentType(mContentType, typeHint, dummy);
     if (!typeHint.IsEmpty()) {
@@ -572,10 +806,14 @@ nsObjectLoadingContent::OnStartRequest(nsIRequest *aRequest,
 
   nsCOMPtr<nsIURI> uri;
   chan->GetURI(getter_AddRefs(uri));
+  if (!uri) {
+    return NS_ERROR_FAILURE;
+  }
 
-  if (mContentType.EqualsASCII(APPLICATION_OCTET_STREAM)) {
+  if (mContentType.EqualsASCII(APPLICATION_OCTET_STREAM) ||
+      mContentType.EqualsASCII(BINARY_OCTET_STREAM)) {
     nsCAutoString extType;
-    if (IsPluginEnabledByExtension(uri, extType, mShouldPlay)) {
+    if (IsPluginEnabledByExtension(uri, extType)) {
       mContentType = extType;
       chan->SetContentType(extType);
     }
@@ -693,43 +931,23 @@ nsObjectLoadingContent::OnStartRequest(nsIRequest *aRequest,
                                   getter_AddRefs(mFinalListener));
       break;
     }
-    case eType_Plugin:
-      mInstantiating = true;
+    case eType_Plugin: {
       if (mType != newType) {
-        // This can go away once plugin loading moves to content (bug 90268)
         mType = newType;
         notifier.Notify();
       }
-      nsIObjectFrame* frame;
-      frame = GetExistingFrame(eFlushLayout);
-      if (!frame) {
-        // Do nothing in this case: This is probably due to a display:none
-        // frame. If we ever get a frame, HasNewFrame will do the right thing.
-        // Abort the load though, we have no use for the data.
-        mInstantiating = false;
-        return NS_BINDING_ABORTED;
+      nsCOMPtr<nsIPluginHost> pluginHostCOM(do_GetService(MOZ_PLUGIN_HOST_CONTRACTID));
+      nsPluginHost *pluginHost = static_cast<nsPluginHost*>(pluginHostCOM.get());
+      if (!pluginHost) {
+        return NS_ERROR_NOT_AVAILABLE;
       }
-
-      {
-        nsIFrame *nsiframe = do_QueryFrame(frame);
-
-        nsWeakFrame weakFrame(nsiframe);
-
-        rv = frame->Instantiate(chan, getter_AddRefs(mFinalListener));
-
-        mInstantiating = false;
-
-        if (!weakFrame.IsAlive()) {
-          // The frame was destroyed while instantiating. Abort the load.
-          return NS_BINDING_ABORTED;
-        }
-      }
-
+      pluginHost->NewEmbeddedPluginStreamListener(uri, this, nsnull,
+                                                  getter_AddRefs(mFinalListener));
       break;
+    }
     case eType_Loading:
       NS_NOTREACHED("Should not have a loading type here!");
     case eType_Null:
-      LOG(("OBJLC [%p]: Unsupported type, falling back\n", this));
       // Need to fallback here (instead of using the case below), so that we can
       // set mFallbackReason without it being overwritten. This is also why we
       // return early.
@@ -747,33 +965,28 @@ nsObjectLoadingContent::OnStartRequest(nsIRequest *aRequest,
 
   if (mFinalListener) {
     mType = newType;
+
+    mSrcStreamLoading = true;
     rv = mFinalListener->OnStartRequest(aRequest, aContext);
-    if (NS_FAILED(rv)) {
-      LOG(("OBJLC [%p]: mFinalListener->OnStartRequest failed (%08x), falling back\n",
-           this, rv));
-#ifdef XP_MACOSX
-      // Shockwave on Mac is special and returns an error here even when it
-      // handles the content
-      if (mContentType.EqualsLiteral("application/x-director")) {
-        LOG(("OBJLC [%p]: (ignoring)\n", this));
-        rv = NS_OK; // otherwise, the AutoFallback will make us fall back
+    mSrcStreamLoading = false;
+
+    if (NS_SUCCEEDED(rv)) {
+      // Plugins need to set up for NPRuntime.
+      if (mType == eType_Plugin) {
+        NotifyContentObjectWrapper();
+      }
+    } else {
+      // Plugins don't fall back if there is an error here.
+      if (mType == eType_Plugin) {
+        rv = NS_OK; // this is necessary to avoid auto-fallback
         return NS_BINDING_ABORTED;
       }
-#endif
       Fallback(false);
-    } else if (mType == eType_Plugin) {
-      nsIObjectFrame* frame = GetExistingFrame(eFlushContent);
-      if (frame) {
-        // We have to notify the wrapper here instead of right after
-        // Instantiate because the plugin only gets instantiated by
-        // OnStartRequest, not by Instantiate.
-        frame->TryNotifyContentObjectWrapper();
-      }
     }
+
     return rv;
   }
 
-  LOG(("OBJLC [%p]: Found no listener, falling back\n", this));
   Fallback(false);
   return NS_BINDING_ABORTED;
 }
@@ -860,149 +1073,35 @@ nsObjectLoadingContent::GetDisplayedType(PRUint32* aType)
   return NS_OK;
 }
 
-
-NS_IMETHODIMP
-nsObjectLoadingContent::EnsureInstantiation(nsNPAPIPluginInstance** aInstance)
-{
-  // Must set our out parameter to null as we have various early returns with
-  // an NS_OK result.
-  *aInstance = nsnull;
-
-  if (mType != eType_Plugin) {
-    return NS_OK;
-  }
-
-  nsIObjectFrame* frame = GetExistingFrame(eFlushContent);
-  if (frame) {
-    // If we have a frame, we may have pending instantiate events; revoke
-    // them.
-    if (mPendingInstantiateEvent) {
-      LOG(("OBJLC [%p]: Revoking pending instantiate event\n", this));
-      mPendingInstantiateEvent = nsnull;
-    }
-  } else {
-    // mInstantiating is true if we're in LoadObject; we shouldn't
-    // recreate frames in that case, we'd confuse that function.
-    if (mInstantiating) {
-      return NS_OK;
-    }
-
-    // Trigger frame construction
-    mInstantiating = true;
-
-    nsCOMPtr<nsIContent> thisContent = 
-      do_QueryInterface(static_cast<nsIImageLoadingContent*>(this));
-    NS_ASSERTION(thisContent, "must be a content");
-
-    nsIDocument* doc = thisContent->GetCurrentDoc();
-    if (!doc) {
-      // Nothing we can do while plugin loading is done in layout...
-      mInstantiating = false;
-      return NS_OK;
-    }
-
-    doc->FlushPendingNotifications(Flush_Frames);
-
-    mInstantiating = false;
-
-    frame = GetExistingFrame(eFlushContent);
-    if (!frame) {
-      return NS_OK;
-    }
-  }
-
-  nsIFrame *nsiframe = do_QueryFrame(frame);
-
-  if (nsiframe->GetStateBits() & NS_FRAME_FIRST_REFLOW) {
-    // A frame for this plugin element already exists now, but it has
-    // not been reflowed yet. Force a reflow now so that we don't end
-    // up initializing a plugin before knowing its size. Also re-fetch
-    // the frame, as flushing can cause the frame to be deleted.
-    frame = GetExistingFrame(eFlushLayout);
-
-    if (!frame) {
-      return NS_OK;
-    }
-
-    nsiframe = do_QueryFrame(frame);
-  }
-
-  nsWeakFrame weakFrame(nsiframe);
-
-  // We may have a plugin instance already; if so, do nothing
-  nsresult rv = frame->GetPluginInstance(aInstance);
-  if (!*aInstance && weakFrame.IsAlive()) {
-    rv = Instantiate(frame, mContentType, mURI);
-    if (NS_SUCCEEDED(rv) && weakFrame.IsAlive()) {
-      rv = frame->GetPluginInstance(aInstance);
-    } else {
-      Fallback(true);
-    }
-  }
-  return rv;
-}
-
 NS_IMETHODIMP
 nsObjectLoadingContent::HasNewFrame(nsIObjectFrame* aFrame)
 {
-  LOG(("OBJLC [%p]: Got frame %p (mInstantiating=%i)\n", this, aFrame,
-       mInstantiating));
-
-  nsCOMPtr<nsIContent> thisContent = 
-    do_QueryInterface(static_cast<nsIImageLoadingContent*>(this));
-  NS_ASSERTION(thisContent, "must be a content");
-  nsIDocument* doc = thisContent->OwnerDoc();
-  if (doc->IsStaticDocument() || doc->IsBeingUsedAsImage()) {
+  // Not having an instance yet is OK, but try to start one now that
+  // we have a frame.
+  if (!mInstanceOwner) {
+    AsyncStartPluginInstance();
     return NS_OK;
   }
 
-  // "revoke" any existing instantiate event as it likely has out of
-  // date data (frame pointer etc).
-  mPendingInstantiateEvent = nsnull;
+  // Disconnect any existing frame
+  DisconnectFrame();
 
-  nsRefPtr<nsNPAPIPluginInstance> instance;
-  aFrame->GetPluginInstance(getter_AddRefs(instance));
+  // Set up relationship between instance owner and frame.
+  nsObjectFrame *objFrame = static_cast<nsObjectFrame*>(aFrame);
+  mInstanceOwner->SetFrame(objFrame);
 
-  if (instance) {
-    // The frame already has a plugin instance, that means the plugin
-    // has already been instantiated.
+  // Set up new frame to draw.
+  objFrame->FixupWindow(objFrame->GetContentRectRelativeToSelf().Size());
+  objFrame->Invalidate(objFrame->GetContentRectRelativeToSelf());
 
-    return NS_OK;
-  }
+  return NS_OK;
+}
 
-  if (!mInstantiating && mType == eType_Plugin) {
-    // Asynchronously call Instantiate
-    // This can go away once plugin loading moves to content
-    // This must be done asynchronously to ensure that the frame is correctly
-    // initialized (has a view etc)
-
-    // When in a plugin document, the document will take care of calling
-    // instantiate
-    nsCOMPtr<nsIPluginDocument> pDoc (do_QueryInterface(GetOurDocument()));
-    if (pDoc) {
-      bool willHandleInstantiation;
-      pDoc->GetWillHandleInstantiation(&willHandleInstantiation);
-      if (willHandleInstantiation) {
-        return NS_OK;
-      }
-    }
-
-    nsIFrame* frame = do_QueryFrame(aFrame);
-    nsCOMPtr<nsIRunnable> event =
-      new nsAsyncInstantiateEvent(this, frame, mContentType, mURI);
-    if (!event) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-
-    LOG(("                 dispatching event\n"));
-    nsresult rv = NS_DispatchToCurrentThread(event);
-    if (NS_FAILED(rv)) {
-      NS_ERROR("failed to dispatch nsAsyncInstantiateEvent");
-    } else {
-      // Remember this event.  This is a weak reference that will be cleared
-      // when the event runs.
-      mPendingInstantiateEvent = event;
-    }
+NS_IMETHODIMP
+nsObjectLoadingContent::DisconnectFrame()
+{
+  if (mInstanceOwner) {
+    mInstanceOwner->SetFrame(nsnull);
   }
   return NS_OK;
 }
@@ -1012,12 +1111,11 @@ nsObjectLoadingContent::GetPluginInstance(nsNPAPIPluginInstance** aInstance)
 {
   *aInstance = nsnull;
 
-  nsIObjectFrame* objFrame = GetExistingFrame(eDontFlush);
-  if (!objFrame) {
+  if (!mInstanceOwner) {
     return NS_OK;
   }
 
-  return objFrame->GetPluginInstance(aInstance);
+  return mInstanceOwner->GetInstance(aInstance);
 }
 
 NS_IMETHODIMP
@@ -1094,9 +1192,16 @@ nsObjectLoadingContent::ObjectState() const
         case ePluginCrashed:
           state |= NS_EVENT_STATE_HANDLER_CRASHED;
           break;
-        case ePluginUnsupported:
-          state |= NS_EVENT_STATE_TYPE_UNSUPPORTED;
+        case ePluginUnsupported: {
+          // Check to see if plugins are blocked on this platform.
+          char* pluginsBlocked = PR_GetEnv("MOZ_PLUGINS_BLOCKED");
+          if (pluginsBlocked && pluginsBlocked[0] == '1') {
+            state |= NS_EVENT_STATE_TYPE_UNSUPPORTED_PLATFORM;
+          } else {
+            state |= NS_EVENT_STATE_TYPE_UNSUPPORTED;
+          }
           break;
+        }
         case ePluginOutdated:
         case ePluginOtherState:
           // Do nothing, but avoid a compile warning
@@ -1118,8 +1223,6 @@ nsObjectLoadingContent::LoadObject(const nsAString& aURI,
 {
   LOG(("OBJLC [%p]: Loading object: URI string=<%s> notify=%i type=<%s> forceload=%i\n",
        this, NS_ConvertUTF16toUTF8(aURI).get(), aNotify, aTypeHint.get(), aForceLoad));
-
-  NS_ASSERTION(!mInstantiating, "LoadObject was reentered?");
 
   // Avoid StringToURI in order to use the codebase attribute as base URI
   nsCOMPtr<nsIContent> thisContent = 
@@ -1165,32 +1268,26 @@ nsObjectLoadingContent::LoadObject(nsIURI* aURI,
                                    const nsCString& aTypeHint,
                                    bool aForceLoad)
 {
-  LOG(("OBJLC [%p]: Loading object: URI=<%p> notify=%i type=<%s> forceload=%i\n",
-       this, aURI, aNotify, aTypeHint.get(), aForceLoad));
-
-  if (mURI && aURI && !aForceLoad) {
-    bool equal;
-    nsresult rv = mURI->Equals(aURI, &equal);
-    if (NS_SUCCEEDED(rv) && equal) {
-      // URI didn't change, do nothing
-      return NS_OK;
+  // Only do a URI equality check for things that aren't stopped plugins.
+  // This is because we still need to load again if the plugin has been stopped.
+  if (mType == eType_Document || mType == eType_Image || mInstanceOwner) {
+    if (mURI && aURI) {
+      bool equal;
+      nsresult rv = mURI->Equals(aURI, &equal);
+      if (NS_SUCCEEDED(rv) && equal && !aForceLoad) {
+        // URI didn't change, do nothing
+        return NS_OK;
+      }
+      StopPluginInstance();
     }
   }
 
   // Need to revoke any potentially pending instantiate events
   if (mType == eType_Plugin && mPendingInstantiateEvent) {
-    LOG(("OBJLC [%p]: Revoking pending instantiate event\n", this));
     mPendingInstantiateEvent = nsnull;
   }
 
   AutoNotifier notifier(this, aNotify);
-
-  // AutoSetInstantiatingToFalse is instantiated after AutoNotifier, so that if
-  // the AutoNotifier triggers frame construction, events can be posted as
-  // appropriate.
-  NS_ASSERTION(!mInstantiating, "LoadObject was reentered?");
-  mInstantiating = true;
-  AutoSetInstantiatingToFalse autoset(this);
 
   mUserDisabled = mSuppressed = false;
 
@@ -1275,8 +1372,8 @@ nsObjectLoadingContent::LoadObject(nsIURI* aURI,
 
   nsCAutoString overrideType;
   if ((caps & eOverrideServerType) &&
-      ((!aTypeHint.IsEmpty() && IsSupportedPlugin(aTypeHint, mShouldPlay)) ||
-       (aURI && IsPluginEnabledByExtension(aURI, overrideType, mShouldPlay)))) {
+      ((!aTypeHint.IsEmpty() && NS_SUCCEEDED(IsPluginEnabledForType(aTypeHint))) ||
+       (aURI && IsPluginEnabledByExtension(aURI, overrideType)))) {
     ObjectType newType;
     if (overrideType.IsEmpty()) {
       newType = GetTypeOfContent(aTypeHint);
@@ -1319,7 +1416,7 @@ nsObjectLoadingContent::LoadObject(nsIURI* aURI,
         }
         break;
       case eType_Plugin:
-        rv = TryInstantiate(mContentType, mURI);
+        rv = AsyncStartPluginInstance();
         break;
       case eType_Document:
         if (aURI) {
@@ -1354,7 +1451,6 @@ nsObjectLoadingContent::LoadObject(nsIURI* aURI,
 
   if (hasID && !isSupportedClassID) {
     // We have a class ID and it's unsupported.  Fallback in that case.
-    LOG(("OBJLC [%p]: invalid classid\n", this));
     rv = NS_ERROR_NOT_AVAILABLE;
     return NS_OK;
   }
@@ -1364,7 +1460,6 @@ nsObjectLoadingContent::LoadObject(nsIURI* aURI,
        GetTypeOfContent(aTypeHint) == eType_Plugin)) {
     // No URI, but we have a type. The plugin will handle the load.
     // Or: supported class id, plugin will handle the load.
-    LOG(("OBJLC [%p]: (classid) Changing type from %u to eType_Plugin\n", this, mType));
     mType = eType_Plugin;
 
     // At this point, the stored content type
@@ -1388,13 +1483,14 @@ nsObjectLoadingContent::LoadObject(nsIURI* aURI,
       }
     }
 
-    rv = TryInstantiate(mContentType, mURI);
-    return NS_OK;
+    // rv is references by a stack-based object, need to assign here
+    rv = AsyncStartPluginInstance();
+
+    return rv;
   }
 
   if (!aURI) {
     // No URI and if we have got this far no enabled plugin supports the type
-    LOG(("OBJLC [%p]: no URI\n", this));
     rv = NS_ERROR_NOT_AVAILABLE;
 
     // We should only notify the UI if there is at least a type to go on for
@@ -1408,16 +1504,13 @@ nsObjectLoadingContent::LoadObject(nsIURI* aURI,
 
   // E.g. mms://
   if (!CanHandleURI(aURI)) {
-    LOG(("OBJLC [%p]: can't handle URI\n", this));
     if (aTypeHint.IsEmpty()) {
       rv = NS_ERROR_NOT_AVAILABLE;
       return NS_OK;
     }
 
-    if (IsSupportedPlugin(aTypeHint, mShouldPlay)) {
+    if (NS_SUCCEEDED(IsPluginEnabledForType(aTypeHint))) {
       mType = eType_Plugin;
-
-      rv = TryInstantiate(aTypeHint, aURI);
     } else {
       rv = NS_ERROR_NOT_AVAILABLE;
       // No plugin to load, notify of the failure.
@@ -1494,8 +1587,6 @@ nsObjectLoadingContent::GetCapabilities() const
 void
 nsObjectLoadingContent::Fallback(bool aNotify)
 {
-  LOG(("OBJLC [%p]: Falling back (Notify=%i)\n", this, aNotify));
-
   AutoNotifier notifier(this, aNotify);
 
   UnloadContent();
@@ -1504,7 +1595,6 @@ nsObjectLoadingContent::Fallback(bool aNotify)
 void
 nsObjectLoadingContent::RemovedFromDocument()
 {
-  LOG(("OBJLC [%p]: Removed from doc\n", this));
   if (mFrameLoader) {
     // XXX This is very temporary and must go away
     mFrameLoader->Destroy();
@@ -1513,6 +1603,19 @@ nsObjectLoadingContent::RemovedFromDocument()
     // Clear the current URI, so that LoadObject doesn't think that we
     // have already loaded the content.
     mURI = nsnull;
+  }
+
+  // When a plugin instance node is removed from the document we'll
+  // let the plugin continue to run at least until we get back to
+  // the event loop. If we get back to the event loop and the node
+  // has still not been added back to the document then we stop
+  // the plugin.
+  nsCOMPtr<nsIContent> thisContent = do_QueryInterface(static_cast<nsIImageLoadingContent*>(this));
+  nsCOMPtr<nsIRunnable> event = new InDocCheckEvent(thisContent);
+
+  nsCOMPtr<nsIAppShell> appShell = do_GetService(kAppShellCID);
+  if (appShell) {
+    appShell->RunInStableState(event);
   }
 }
 
@@ -1716,7 +1819,7 @@ nsObjectLoadingContent::GetTypeOfContent(const nsCString& aMIMEType)
     return eType_Document;
   }
 
-  if ((caps & eSupportPlugins) && IsSupportedPlugin(aMIMEType, mShouldPlay)) {
+  if ((caps & eSupportPlugins) && NS_SUCCEEDED(IsPluginEnabledForType(aMIMEType))) {
     return eType_Plugin;
   }
 
@@ -1727,16 +1830,10 @@ nsresult
 nsObjectLoadingContent::TypeForClassID(const nsAString& aClassID,
                                        nsACString& aType)
 {
-  nsCOMPtr<nsIPluginHost> pluginHostCOM(do_GetService(MOZ_PLUGIN_HOST_CONTRACTID));
-  nsPluginHost *pluginHost = static_cast<nsPluginHost*>(pluginHostCOM.get());
-  if (!pluginHost) {
-    return NS_ERROR_NOT_AVAILABLE;
-  }
-
   if (StringBeginsWith(aClassID, NS_LITERAL_STRING("java:"))) {
     // Supported if we have a java plugin
     aType.AssignLiteral("application/x-java-vm");
-    nsresult rv = pluginHost->IsPluginEnabledForType("application/x-java-vm");
+    nsresult rv = IsPluginEnabledForType(NS_LITERAL_CSTRING("application/x-java-vm"));
     return NS_SUCCEEDED(rv) ? NS_OK : NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -1744,11 +1841,11 @@ nsObjectLoadingContent::TypeForClassID(const nsAString& aClassID,
   if (StringBeginsWith(aClassID, NS_LITERAL_STRING("clsid:"), nsCaseInsensitiveStringComparator())) {
     // Check if we have a plugin for that
 
-    if (NS_SUCCEEDED(pluginHost->IsPluginEnabledForType("application/x-oleobject"))) {
+    if (NS_SUCCEEDED(IsPluginEnabledForType(NS_LITERAL_CSTRING("application/x-oleobject")))) {
       aType.AssignLiteral("application/x-oleobject");
       return NS_OK;
     }
-    if (NS_SUCCEEDED(pluginHost->IsPluginEnabledForType("application/oleobject"))) {
+    if (NS_SUCCEEDED(IsPluginEnabledForType(NS_LITERAL_CSTRING("application/oleobject")))) {
       aType.AssignLiteral("application/oleobject");
       return NS_OK;
     }
@@ -1778,37 +1875,13 @@ nsObjectLoadingContent::GetObjectBaseURI(nsIContent* thisContent, nsIURI** aURI)
   }
 }
 
-nsIObjectFrame*
-nsObjectLoadingContent::GetExistingFrame(FlushType aFlushType)
+nsObjectFrame*
+nsObjectLoadingContent::GetExistingFrame()
 {
-  nsCOMPtr<nsIContent> thisContent = 
-    do_QueryInterface(static_cast<nsIImageLoadingContent*>(this));
-  NS_ASSERTION(thisContent, "must be a content");
-
-  nsIFrame* frame;
-  do {
-    frame = thisContent->GetPrimaryFrame();
-    if (!frame) {
-      return nsnull;
-    }
-
-    if (aFlushType == eDontFlush) {
-      break;
-    }
-    
-    // OK, let's flush out and try again.  Note that we want to reget
-    // the document, etc, since flushing might run script.
-    nsIDocument* doc = thisContent->GetCurrentDoc();
-    NS_ASSERTION(doc, "Frame but no document?");
-    mozFlushType flushType =
-      aFlushType == eFlushLayout ? Flush_Layout : Flush_ContentAndNotify;
-    doc->FlushPendingNotifications(flushType);
-
-    aFlushType = eDontFlush;
-  } while (1);
-
+  nsCOMPtr<nsIContent> thisContent = do_QueryInterface(static_cast<nsIImageLoadingContent*>(this));
+  nsIFrame* frame = thisContent->GetPrimaryFrame();
   nsIObjectFrame* objFrame = do_QueryFrame(frame);
-  return objFrame;
+  return static_cast<nsObjectFrame*>(objFrame);
 }
 
 void
@@ -1828,106 +1901,7 @@ nsObjectLoadingContent::HandleBeingBlockedByContentPolicy(nsresult aStatus,
   }
 }
 
-nsresult
-nsObjectLoadingContent::TryInstantiate(const nsACString& aMIMEType,
-                                       nsIURI* aURI)
-{
-  nsIObjectFrame* frame = GetExistingFrame(eFlushContent);
-  if (!frame) {
-    LOG(("OBJLC [%p]: No frame yet\n", this));
-    return NS_OK; // Not a failure to have no frame
-  }
-
-  nsRefPtr<nsNPAPIPluginInstance> instance;
-  frame->GetPluginInstance(getter_AddRefs(instance));
-
-  if (!instance) {
-    // The frame has no plugin instance yet. If the frame hasn't been
-    // reflowed yet, do nothing as once the reflow happens we'll end up
-    // instantiating the plugin with the correct size n' all (which
-    // isn't known until we've done the first reflow). But if the
-    // frame does have a plugin instance already, be sure to
-    // re-instantiate the plugin as its source or whatnot might have
-    // chanced since it was instantiated.
-    nsIFrame* iframe = do_QueryFrame(frame);
-    if (iframe->GetStateBits() & NS_FRAME_FIRST_REFLOW) {
-      LOG(("OBJLC [%p]: Frame hasn't been reflowed yet\n", this));
-      return NS_OK; // Not a failure to have no frame
-    }
-  }
-
-  return Instantiate(frame, aMIMEType, aURI);
-}
-
-nsresult
-nsObjectLoadingContent::Instantiate(nsIObjectFrame* aFrame,
-                                    const nsACString& aMIMEType,
-                                    nsIURI* aURI)
-{
-  NS_ASSERTION(aFrame, "Must have a frame here");
-
-  // We're instantiating now, invalidate any pending async instantiate
-  // calls.
-  mPendingInstantiateEvent = nsnull;
-
-  // Mark that we're instantiating now so that we don't end up
-  // re-entering instantiation code.
-  bool oldInstantiatingValue = mInstantiating;
-  mInstantiating = true;
-
-  nsCString typeToUse(aMIMEType);
-  if (typeToUse.IsEmpty() && aURI) {
-    IsPluginEnabledByExtension(aURI, typeToUse, mShouldPlay);
-  }
-
-  nsCOMPtr<nsIContent> thisContent = 
-    do_QueryInterface(static_cast<nsIImageLoadingContent*>(this));
-  NS_ASSERTION(thisContent, "must be a content");
-  
-  nsCOMPtr<nsIURI> baseURI;
-  if (!aURI) {
-    // We need some URI. If we have nothing else, use the base URI.
-    // XXX(biesi): The code used to do this. Not sure why this is correct...
-    GetObjectBaseURI(thisContent, getter_AddRefs(baseURI));
-    aURI = baseURI;
-  }
-
-  nsIFrame *nsiframe = do_QueryFrame(aFrame);
-  nsWeakFrame weakFrame(nsiframe);
-
-  // We'll always have a type or a URI by the time we get here
-  NS_ASSERTION(aURI || !typeToUse.IsEmpty(), "Need a URI or a type");
-  LOG(("OBJLC [%p]: Calling [%p]->Instantiate(<%s>, %p)\n", this, aFrame,
-       typeToUse.get(), aURI));
-  nsresult rv = aFrame->Instantiate(typeToUse.get(), aURI);
-
-  mInstantiating = oldInstantiatingValue;
-
-  nsRefPtr<nsNPAPIPluginInstance> pluginInstance;
-  if (weakFrame.IsAlive()) {
-    aFrame->GetPluginInstance(getter_AddRefs(pluginInstance));
-  }
-  if (pluginInstance) {
-    nsCOMPtr<nsIPluginTag> pluginTag;
-    nsCOMPtr<nsIPluginHost> host(do_GetService(MOZ_PLUGIN_HOST_CONTRACTID));
-    static_cast<nsPluginHost*>(host.get())->
-      GetPluginTagForInstance(pluginInstance, getter_AddRefs(pluginTag));
-
-    nsCOMPtr<nsIBlocklistService> blocklist =
-      do_GetService("@mozilla.org/extensions/blocklist;1");
-    if (blocklist) {
-      PRUint32 blockState = nsIBlocklistService::STATE_NOT_BLOCKED;
-      blocklist->GetPluginBlocklistState(pluginTag, EmptyString(),
-                                         EmptyString(), &blockState);
-      if (blockState == nsIBlocklistService::STATE_OUTDATED)
-        FirePluginError(thisContent, ePluginOutdated);
-    }
-  }
-
-  return rv;
-}
-
-/* static */ PluginSupportState
+PluginSupportState
 nsObjectLoadingContent::GetPluginSupportState(nsIContent* aContent,
                                               const nsCString& aContentType)
 {
@@ -1957,20 +1931,20 @@ nsObjectLoadingContent::GetPluginSupportState(nsIContent* aContent,
     }
   }
 
-  return hasAlternateContent ? ePluginOtherState :
-    GetPluginDisabledState(aContentType);
+  PluginSupportState pluginDisabledState = GetPluginDisabledState(aContentType);
+  if (pluginDisabledState == ePluginClickToPlay) {
+    return ePluginClickToPlay;
+  } else if (hasAlternateContent) {
+    return ePluginOtherState;
+  } else {
+    return pluginDisabledState;
+  }
 }
 
-/* static */ PluginSupportState
+PluginSupportState
 nsObjectLoadingContent::GetPluginDisabledState(const nsCString& aContentType)
 {
-  nsCOMPtr<nsIPluginHost> pluginHostCOM(do_GetService(MOZ_PLUGIN_HOST_CONTRACTID));
-  nsPluginHost *pluginHost = static_cast<nsPluginHost*>(pluginHostCOM.get());
-  if (!pluginHost) {
-    return ePluginUnsupported;
-  }
-
-  nsresult rv = pluginHost->IsPluginEnabledForType(aContentType.get());
+  nsresult rv = IsPluginEnabledForType(aContentType);
   if (rv == NS_ERROR_PLUGIN_DISABLED)
     return ePluginDisabled;
   if (rv == NS_ERROR_PLUGIN_CLICKTOPLAY)
@@ -1990,10 +1964,7 @@ nsObjectLoadingContent::CreateStaticClone(nsObjectLoadingContent* aDest) const
   if (thisObj->mPrintFrame.IsAlive()) {
     aDest->mPrintFrame = thisObj->mPrintFrame;
   } else {
-    nsIObjectFrame* frame =
-      const_cast<nsObjectLoadingContent*>(this)->GetExistingFrame(eDontFlush);
-    nsIFrame* f = do_QueryFrame(frame);
-    aDest->mPrintFrame = f;
+    aDest->mPrintFrame = const_cast<nsObjectLoadingContent*>(this)->GetExistingFrame();
   }
 
   if (mFrameLoader) {
@@ -2046,6 +2017,196 @@ nsObjectLoadingContent::PluginCrashed(nsIPluginTag* aPluginTag,
 }
 
 NS_IMETHODIMP
+nsObjectLoadingContent::SyncStartPluginInstance()
+{
+  NS_ASSERTION(nsContentUtils::IsSafeToRunScript(),
+               "Must be able to run script in order to instantiate a plugin instance!");
+
+  // Don't even attempt to start an instance unless the content is in
+  // the document.
+  nsCOMPtr<nsIContent> thisContent =
+    do_QueryInterface(static_cast<nsIImageLoadingContent*>(this));
+  if (!thisContent->IsInDoc()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsCOMPtr<nsIURI> kungFuURIGrip(mURI);
+  nsCString contentType(mContentType);
+  return InstantiatePluginInstance(contentType.get(), mURI.get());
+}
+
+NS_IMETHODIMP
+nsObjectLoadingContent::AsyncStartPluginInstance()
+{
+  // OK to have an instance already.
+  if (mInstanceOwner) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIContent> thisContent = do_QueryInterface(static_cast<nsIImageLoadingContent*>(this));
+  nsIDocument* doc = thisContent->OwnerDoc();
+  if (doc->IsStaticDocument() || doc->IsBeingUsedAsImage()) {
+    return NS_OK;
+  }
+
+  // We always start plugins on a runnable.
+  // We don't want a script blocker on the stack during instantiation.
+  nsCOMPtr<nsIRunnable> event = new nsAsyncInstantiateEvent(this);
+  if (!event) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+  nsresult rv = NS_DispatchToCurrentThread(event);
+  if (NS_SUCCEEDED(rv)) {
+    // Remember this event.  This is a weak reference that will be cleared
+    // when the event runs.
+    mPendingInstantiateEvent = event;
+  }
+
+  return rv;
+}
+
+NS_IMETHODIMP
+nsObjectLoadingContent::GetSrcURI(nsIURI** aURI)
+{
+  NS_IF_ADDREF(*aURI = mURI);
+  return NS_OK;
+}
+
+static bool
+DoDelayedStop(nsPluginInstanceOwner* aInstanceOwner,
+              nsObjectLoadingContent* aContent,
+              bool aDelayedStop)
+{
+#if (MOZ_PLATFORM_MAEMO==5)
+  // Don't delay stop on Maemo/Hildon (bug 530739).
+  if (aDelayedStop && aInstanceOwner->MatchPluginName("Shockwave Flash"))
+    return false;
+#endif
+  
+  // Don't delay stopping QuickTime (bug 425157), Flip4Mac (bug 426524),
+  // XStandard (bug 430219), CMISS Zinc (bug 429604).
+  if (aDelayedStop
+#if !(defined XP_WIN || defined MOZ_X11)
+      && !aInstanceOwner->MatchPluginName("QuickTime")
+      && !aInstanceOwner->MatchPluginName("Flip4Mac")
+      && !aInstanceOwner->MatchPluginName("XStandard plugin")
+      && !aInstanceOwner->MatchPluginName("CMISS Zinc Plugin")
+#endif
+      ) {
+    nsCOMPtr<nsIRunnable> evt =
+      new nsStopPluginRunnable(aInstanceOwner, aContent);
+    NS_DispatchToCurrentThread(evt);
+    return true;
+  }
+  return false;
+}
+
+void
+nsObjectLoadingContent::DoStopPlugin(nsPluginInstanceOwner* aInstanceOwner,
+                                     bool aDelayedStop,
+                                     bool aForcedReentry)
+{
+  // DoStopPlugin can process events and there may be pending InDocCheckEvent
+  // events which can drop in underneath us and destroy the instance we are
+  // about to destroy unless we prevent that with the mIsStopping flag.
+  // (aForcedReentry is only true from the callback of an earlier delayed stop)
+  if (mIsStopping && !aForcedReentry) {
+    return;
+  }
+  mIsStopping = true;
+
+  nsRefPtr<nsPluginInstanceOwner> kungFuDeathGrip(aInstanceOwner);
+  nsRefPtr<nsNPAPIPluginInstance> inst;
+  aInstanceOwner->GetInstance(getter_AddRefs(inst));
+  if (inst) {
+    if (DoDelayedStop(aInstanceOwner, this, aDelayedStop)) {
+      return;
+    }
+
+#if defined(XP_MACOSX)
+    aInstanceOwner->HidePluginWindow();
+#endif
+
+    nsCOMPtr<nsIPluginHost> pluginHost = do_GetService(MOZ_PLUGIN_HOST_CONTRACTID);
+    NS_ASSERTION(pluginHost, "Without a pluginHost, how can we have an instance to destroy?");
+    static_cast<nsPluginHost*>(pluginHost.get())->StopPluginInstance(inst);
+  }
+  
+  aInstanceOwner->Destroy();
+  mIsStopping = false;
+}
+
+NS_IMETHODIMP
+nsObjectLoadingContent::StopPluginInstance()
+{
+  if (!mInstanceOwner) {
+    return NS_OK;
+  }
+
+  DisconnectFrame();
+
+  bool delayedStop = false;
+#ifdef XP_WIN
+  // Force delayed stop for Real plugin only; see bug 420886, 426852.
+  nsRefPtr<nsNPAPIPluginInstance> inst;
+  mInstanceOwner->GetInstance(getter_AddRefs(inst));
+  if (inst) {
+    const char* mime = nsnull;
+    if (NS_SUCCEEDED(inst->GetMIMEType(&mime)) && mime) {
+      if (strcmp(mime, "audio/x-pn-realaudio-plugin") == 0) {
+        delayedStop = true;
+      }      
+    }
+  }
+#endif
+
+  DoStopPlugin(mInstanceOwner, delayedStop);
+
+  mInstanceOwner = nsnull;
+
+  return NS_OK;
+}
+
+void
+nsObjectLoadingContent::NotifyContentObjectWrapper()
+{
+  nsCOMPtr<nsIContent> thisContent = do_QueryInterface(static_cast<nsIImageLoadingContent*>(this));
+
+  nsCOMPtr<nsIDocument> doc = thisContent->GetDocument();
+  if (!doc)
+    return;
+  
+  nsIScriptGlobalObject *sgo = doc->GetScopeObject();
+  if (!sgo)
+    return;
+  
+  nsIScriptContext *scx = sgo->GetContext();
+  if (!scx)
+    return;
+  
+  JSContext *cx = scx->GetNativeContext();
+  
+  nsCOMPtr<nsIXPConnectWrappedNative> wrapper;
+  nsContentUtils::XPConnect()->
+  GetWrappedNativeOfNativeObject(cx, sgo->GetGlobalJSObject(), thisContent,
+                                 NS_GET_IID(nsISupports),
+                                 getter_AddRefs(wrapper));
+  
+  if (!wrapper) {
+    // Nothing to do here if there's no wrapper for mContent. The proto
+    // chain will be fixed appropriately when the wrapper is created.
+    return;
+  }
+  
+  JSObject *obj = nsnull;
+  nsresult rv = wrapper->GetJSObject(&obj);
+  if (NS_FAILED(rv))
+    return;
+  
+  nsHTMLPluginObjElementSH::SetupProtoChain(wrapper, cx, obj);
+}
+
+NS_IMETHODIMP
 nsObjectLoadingContent::PlayPlugin()
 {
   if (!nsContentUtils::IsCallerChrome())
@@ -2053,4 +2214,11 @@ nsObjectLoadingContent::PlayPlugin()
 
   mShouldPlay = true;
   return LoadObject(mURI, true, mContentType, true);
+}
+
+NS_IMETHODIMP
+nsObjectLoadingContent::GetActivated(bool* aActivated)
+{
+  *aActivated = mActivated;
+  return NS_OK;
 }

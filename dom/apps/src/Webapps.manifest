@@ -1,0 +1,4 @@
+# Webapps.js
+component {fff440b3-fae2-45c1-bf03-3b5a2e432270} Webapps.js
+contract @mozilla.org/webapps;1 {fff440b3-fae2-45c1-bf03-3b5a2e432270}
+category JavaScript-navigator-property mozApps @mozilla.org/webapps;1

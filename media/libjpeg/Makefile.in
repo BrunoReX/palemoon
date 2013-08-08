@@ -1,40 +1,7 @@
 #
-# ***** BEGIN LICENSE BLOCK *****
-# Version: MPL 1.1/GPL 2.0/LGPL 2.1
-#
-# The contents of this file are subject to the Mozilla Public License Version
-# 1.1 (the "License"); you may not use this file except in compliance with
-# the License. You may obtain a copy of the License at
-# http://www.mozilla.org/MPL/
-#
-# Software distributed under the License is distributed on an "AS IS" basis,
-# WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
-# for the specific language governing rights and limitations under the
-# License.
-#
-# The Original Code is mozilla.org code.
-#
-# The Initial Developer of the Original Code is
-# Mozilla Corporation
-# Portions created by the Initial Developer are Copyright (C) 2010
-# the Initial Developer. All Rights Reserved.
-#
-# Contributor(s):
-#  Justin Lebar <justin.lebar@gmail.com>
-#
-# Alternatively, the contents of this file may be used under the terms of
-# either the GNU General Public License Version 2 or later (the "GPL"), or
-# the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
-# in which case the provisions of the GPL or the LGPL are applicable instead
-# of those above. If you wish to allow use of your version of this file only
-# under the terms of either the GPL or the LGPL, and not to allow others to
-# use your version of this file under the terms of the MPL, indicate your
-# decision by deleting the provisions above and replace them with the notice
-# and other provisions required by the GPL or the LGPL. If you do not delete
-# the provisions above, a recipient may use your version of this file under
-# the terms of any one of the MPL, the GPL or the LGPL.
-#
-# ***** END LICENSE BLOCK *****
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DEPTH		= ../..
 topsrcdir	= @top_srcdir@
@@ -48,10 +15,8 @@ MODULE		= jpeg
 LIBRARY_NAME	= mozjpeg
 
 ifeq ($(OS_ARCH),WINNT)
-LIBRARY_NAME	= jpeg32$(VERSION_NUMBER)
+VISIBILITY_FLAGS	=
 endif
-
-GRE_MODULE	= 1
 
 CSRCS		= \
 		jcomapi.c \
@@ -103,6 +68,7 @@ CSRCS		+= \
 		jcphuff.c \
 		jcprepct.c \
 		jcsample.c \
+		jctrans.c \
 		$(NULL)
 
 AS=$(LIBJPEG_TURBO_AS)
@@ -115,14 +81,20 @@ ifeq ($(AS),yasm)
 endif
 
 # No SIMD support?
-ifeq (,$(LIBJPEG_TURBO_X86_ASM)$(LIBJPEG_TURBO_X64_ASM))
+ifeq (,$(LIBJPEG_TURBO_X86_ASM)$(LIBJPEG_TURBO_X64_ASM)$(LIBJPEG_TURBO_ARM_ASM))
   CSRCS += jsimd_none.c
+endif
+
+ifeq (1,$(LIBJPEG_TURBO_ARM_ASM))
+  CSRCS += simd/jsimd_arm.c
+  SSRCS += simd/jsimd_arm_neon.S
 endif
 
 ifeq (1,$(LIBJPEG_TURBO_X64_ASM))
   CSRCS   += simd/jsimd_x86_64.c
   ASFILES += \
 	simd/jccolss2-64.asm \
+	simd/jcgrass2-64.asm \
 	simd/jcqnts2f-64.asm \
 	simd/jcqnts2i-64.asm \
 	simd/jcsamss2-64.asm \
@@ -144,6 +116,8 @@ ifeq (1,$(LIBJPEG_TURBO_X86_ASM))
   ASFILES += \
 	simd/jccolmmx.asm \
 	simd/jccolss2.asm \
+	simd/jcgrammx.asm \
+	simd/jcgrass2.asm \
 	simd/jcqnt3dn.asm \
 	simd/jcqntmmx.asm \
 	simd/jcqnts2f.asm \
@@ -176,14 +150,14 @@ ifeq (1,$(LIBJPEG_TURBO_X86_ASM))
 	$(NULL)
 endif
 
-EXPORTS		= \
-		jconfig.h \
-		jerror.h \
-		jinclude.h \
-		jmorecfg.h \
-		jpegint.h \
-		jpeglib.h \
-		$(NULL)
+EXPORTS	= \
+	jconfig.h \
+	jerror.h \
+	jinclude.h \
+	jmorecfg.h \
+	jpegint.h \
+	jpeglib.h \
+	$(NULL)
 
 # need static lib for some of the libimg componentry to link properly
 FORCE_STATIC_LIB = 1

@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 /* Toolbar Button */
 
 #feedback-menu-button {
@@ -35,7 +39,9 @@
 }
 
 .tail-up {
- -moz-border-image: url(chrome://testpilot-os/skin/notification-tail-up.png) 26 56 22 18 / 26px 56px 22px 18px round stretch;
+ border-width: 26px 56px 22px 18px;
+ border-style: solid;
+ -moz-border-image: url(chrome://testpilot-os/skin/notification-tail-up.png) 26 56 22 18 fill round stretch;
 }
 
 /* tail-down uses the old styling; it doesn't look as good as the new styling,
@@ -44,7 +50,9 @@
    installed Test Pilot from AMO, they should get the new styling, similar
    to .tail-up! */
 .tail-down {
- -moz-border-image: url(chrome://testpilot/skin/notification-tail-down.png) 26 50 22 18 / 26px 50px 22px 18px repeat;
+ border-width: 26px 50px 22px 18px;
+ border-style: solid;
+ -moz-border-image: url(chrome://testpilot/skin/notification-tail-down.png) 26 50 22 18 fill repeat;
  color: white;
 }
 
@@ -177,7 +185,7 @@ image.study-result {
     color: white;
     font-weight: bold;
     padding: 2px;
-    -moz-border-radius: 100%;
+    border-radius: 100%;
     margin-right: 25px;
     margin-bottom: 13px;
 }

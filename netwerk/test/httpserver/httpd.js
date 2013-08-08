@@ -1,44 +1,8 @@
 /* -*- Mode: JavaScript; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:set ts=2 sw=2 sts=2 et: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is the httpd.js server.
- *
- * The Initial Developer of the Original Code is
- * Mozilla Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2006
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Darin Fisher (v1, netwerk/test/TestServ.js)
- *   Christian Biesinger (v2, netwerk/test/unit/head_http_server.js)
- *   Jeff Walden <jwalden+code@mit.edu> (v3, netwerk/test/httpserver/httpd.js)
- *   Robert Sayre <sayrer@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * An implementation of an HTTP server both as a loadable script and as an XPCOM
@@ -613,6 +577,14 @@ nsHttpServer.prototype =
   registerPathHandler: function(path, handler)
   {
     this._handler.registerPathHandler(path, handler);
+  },
+
+  //
+  // see nsIHttpServer.registerPrefixHandler
+  //
+  registerPrefixHandler: function(prefix, handler)
+  {
+    this._handler.registerPrefixHandler(prefix, handler);
   },
 
   //
@@ -1637,16 +1609,20 @@ RequestReader.prototype =
     // clients and servers SHOULD accept any amount of SP or HT characters
     // between fields, even though only a single SP is required (section 19.3)
     var request = line.split(/[ \t]+/);
-    if (!request || request.length != 3)
+    if (!request || request.length != 3) {
+      dumpn("*** No request in line");
       throw HTTP_400;
+    }
 
     metadata._method = request[0];
 
     // get the HTTP version
     var ver = request[2];
     var match = ver.match(/^HTTP\/(\d+\.\d+)$/);
-    if (!match)
+    if (!match) {
+      dumpn("*** No HTTP version in line");
       throw HTTP_400;
+    }
 
     // determine HTTP version
     try
@@ -1670,8 +1646,10 @@ RequestReader.prototype =
     if (fullPath.charAt(0) != "/")
     {
       // No absolute paths in the request line in HTTP prior to 1.1
-      if (!metadata._httpVersion.atLeast(nsHttpVersion.HTTP_1_1))
+      if (!metadata._httpVersion.atLeast(nsHttpVersion.HTTP_1_1)) {
+        dumpn("*** Metadata version too low");
         throw HTTP_400;
+      }
 
       try
       {
@@ -1688,8 +1666,10 @@ RequestReader.prototype =
             port = 80;
           else if (scheme === "https")
             port = 443;
-          else
+          else {
+            dumpn("*** Unknown scheme: " + scheme);
             throw HTTP_400;
+          }
         }
       }
       catch (e)
@@ -1697,11 +1677,14 @@ RequestReader.prototype =
         // If the host is not a valid host on the server, the response MUST be a
         // 400 (Bad Request) error message (section 5.2).  Alternately, the URI
         // is malformed.
+        dumpn("*** Threw when dealing with URI: " + e);
         throw HTTP_400;
       }
 
-      if (!serverIdentity.has(scheme, host, port) || fullPath.charAt(0) != "/")
+      if (!serverIdentity.has(scheme, host, port) || fullPath.charAt(0) != "/") {
+        dumpn("*** serverIdentity unknown or path does not start with '/'");
         throw HTTP_400;
+      }
     }
 
     var splitter = fullPath.indexOf("?");
@@ -1745,6 +1728,8 @@ RequestReader.prototype =
     var line = {};
     while (true)
     {
+      dumpn("*** Last name: '" + lastName + "'");
+      dumpn("*** Last val: '" + lastVal + "'");
       NS_ASSERT(!((lastVal === undefined) ^ (lastName === undefined)),
                 lastName === undefined ?
                   "lastVal without lastName?  lastVal: '" + lastVal + "'" :
@@ -1759,6 +1744,7 @@ RequestReader.prototype =
       }
 
       var lineText = line.value;
+      dumpn("*** Line text: '" + lineText + "'");
       var firstChar = lineText.charAt(0);
 
       // blank line means end of headers
@@ -1773,7 +1759,7 @@ RequestReader.prototype =
           }
           catch (e)
           {
-            dumpn("*** e == " + e);
+            dumpn("*** setHeader threw on last header, e == " + e);
             throw HTTP_400;
           }
         }
@@ -1792,6 +1778,7 @@ RequestReader.prototype =
         if (!lastName)
         {
           // we don't have a header to continue!
+          dumpn("No header to continue");
           throw HTTP_400;
         }
 
@@ -1810,7 +1797,7 @@ RequestReader.prototype =
           }
           catch (e)
           {
-            dumpn("*** e == " + e);
+            dumpn("*** setHeader threw on a header, e == " + e);
             throw HTTP_400;
           }
         }
@@ -1819,6 +1806,7 @@ RequestReader.prototype =
         if (colon < 1)
         {
           // no colon or missing header field-name
+          dumpn("*** No colon in header");
           throw HTTP_400;
         }
 
@@ -1916,6 +1904,12 @@ LineData.prototype =
     if (length < 0)
     {
       this._start = data.length;
+      // But if our data ends in a CR, we have to back up one, because
+      // the first byte in the next packet might be an LF and if we
+      // start looking at data.length we won't find it.
+      if (data[data.length - 1] == CR) {
+        --this._start;
+      }
       return false;
     }
 
@@ -2208,7 +2202,16 @@ function ServerHandler(server)
    * @see ServerHandler.prototype._defaultPaths
    */
   this._overridePaths = {};
-  
+
+  /**
+   * Custom request handlers for the path prefixes on the server in which this
+   * resides.  Path-handler pairs are stored as property-value pairs in this
+   * property.
+   *
+   * @see ServerHandler.prototype._defaultPaths
+   */
+  this._overridePrefixes = {};
+
   /**
    * Custom request handlers for the error handlers in the server in which this
    * resides.  Path-handler pairs are stored as property-value pairs in this
@@ -2273,7 +2276,23 @@ ServerHandler.prototype =
         }
         else
         {
-          this._handleDefault(request, response);
+          var longestPrefix = "";
+          for (let prefix in this._overridePrefixes) {
+            if (prefix.length > longestPrefix.length &&
+                path.substr(0, prefix.length) == prefix)
+            {
+              longestPrefix = prefix;
+            }
+          }
+          if (longestPrefix.length > 0)
+          {
+            dumpn("calling prefix override for " + longestPrefix);
+            this._overridePrefixes[longestPrefix](request, response);
+          }
+          else
+          {
+            this._handleDefault(request, response);
+          }
         }
       }
       catch (e)
@@ -2376,6 +2395,18 @@ ServerHandler.prototype =
       throw Cr.NS_ERROR_INVALID_ARG;
 
     this._handlerToField(handler, this._overridePaths, path);
+  },
+
+  //
+  // see nsIHttpServer.registerPrefixHandler
+  //
+  registerPrefixHandler: function(path, handler)
+  {
+    // XXX true path validation!
+    if (path.charAt(0) != "/" || path.charAt(path.length - 1) != "/")
+      throw Cr.NS_ERROR_INVALID_ARG;
+
+    this._handlerToField(handler, this._overridePrefixes, path);
   },
 
   //
@@ -2517,8 +2548,10 @@ ServerHandler.prototype =
         this._getTypeFromFile(file) !== SJS_TYPE)
     {
       var rangeMatch = metadata.getHeader("Range").match(/^bytes=(\d+)?-(\d+)?$/);
-      if (!rangeMatch)
+      if (!rangeMatch) {
+        dumpn("*** Range header bogosity: '" + metadata.getHeader("Range") + "'");
         throw HTTP_400;
+      }
 
       if (rangeMatch[1] !== undefined)
         start = parseInt(rangeMatch[1], 10);
@@ -2526,8 +2559,10 @@ ServerHandler.prototype =
       if (rangeMatch[2] !== undefined)
         end = parseInt(rangeMatch[2], 10);
 
-      if (start === undefined && end === undefined)
+      if (start === undefined && end === undefined) {
+        dumpn("*** More Range header bogosity: '" + metadata.getHeader("Range") + "'");
         throw HTTP_400;
+      }
 
       // No start given, so the end is really the count of bytes from the
       // end of the file.
@@ -2942,6 +2977,7 @@ ServerHandler.prototype =
     }
     catch (e)
     {
+      dumpn("*** toInternalPath threw " + e);
       throw HTTP_400; // malformed path
     }
 
@@ -4632,8 +4668,10 @@ const headerUtils =
    */
   normalizeFieldName: function(fieldName)
   {
-    if (fieldName == "")
+    if (fieldName == "") {
+      dumpn("*** Empty fieldName");
       throw Cr.NS_ERROR_INVALID_ARG;
+    }
 
     for (var i = 0, sz = fieldName.length; i < sz; i++)
     {
@@ -4684,9 +4722,12 @@ const headerUtils =
     val = val.replace(/^ +/, "").replace(/ +$/, "");
 
     // that should have taken care of all CTLs, so val should contain no CTLs
+    dumpn("*** Normalized value: '" + val + "'");
     for (var i = 0, len = val.length; i < len; i++)
-      if (isCTL(val.charCodeAt(i)))
+      if (isCTL(val.charCodeAt(i))) {
+        dump("*** Char " + i + " has charcode " + val.charCodeAt(i));
         throw Cr.NS_ERROR_INVALID_ARG;
+      }
 
     // XXX disallows quoted-pair where CHAR is a CTL -- will not invalidly
     //     normalize, however, so this can be construed as a tightening of the

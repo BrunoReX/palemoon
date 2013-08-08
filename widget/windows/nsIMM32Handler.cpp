@@ -1,57 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:set ts=2 sts=2 sw=2 et cin: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Masayuki Nakano <masayuki@d-toybox.com>
- *
- * Original nsWindow.cpp Contributor(s):
- *   Dean Tessman <dean_tessman@hotmail.com>
- *   Ere Maijala <ere@atp.fi>
- *   Mark Hammond <markh@activestate.com>
- *   Michael Lowe <michael.lowe@bigfoot.com>
- *   Peter Bajusz <hyp-x@inf.bme.hu>
- *   Pierre Phaneuf <pp@ludusdesign.com>
- *   Robert O'Callahan <roc+moz@cs.cmu.edu>
- *   Roy Yokoyama <yokoyama@netscape.com>
- *   Makoto Kato  <m_kato@ga2.so-net.ne.jp>
- *   Masayuki Nakano <masayuki@d-toybox.com>
- *   Dainis Jonitis <Dainis_Jonitis@swh-t.lv>
- *   Christian Biesinger <cbiesinger@web.de>
- *   Mats Palmgren <mats.palmgren@bredband.net>
- *   Ningjie Chen <chenn@email.uc.edu>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifdef MOZ_LOGGING
 #define FORCE_PR_LOG /* Allow logging in the release build */
@@ -61,6 +12,7 @@
 #include "nsIMM32Handler.h"
 #include "nsWindow.h"
 #include "WinUtils.h"
+#include "KeyboardLayout.h"
 
 using namespace mozilla::widget;
 
@@ -605,10 +557,32 @@ nsIMM32Handler::OnIMEEndComposition(nsWindow* aWindow)
     return ShouldDrawCompositionStringOurselves();
   }
 
-  // IME on Korean NT somehow send WM_IME_ENDCOMPOSITION
-  // first when we hit space in composition mode
-  // we need to clear out the current composition string
-  // in that case.
+  // Korean IME posts WM_IME_ENDCOMPOSITION first when we hit space during
+  // composition. Then, we should ignore the message and commit the composition
+  // string at following WM_IME_COMPOSITION.
+  MSG compositionMsg;
+  if (::PeekMessageW(&compositionMsg, aWindow->GetWindowHandle(),
+                     WM_IME_STARTCOMPOSITION, WM_IME_COMPOSITION,
+                     PM_NOREMOVE) &&
+      compositionMsg.message == WM_IME_COMPOSITION &&
+      IS_COMMITTING_LPARAM(compositionMsg.lParam)) {
+    PR_LOG(gIMM32Log, PR_LOG_ALWAYS,
+      ("IMM32: OnIMEEndComposition, WM_IME_ENDCOMPOSITION is followed by "
+       "WM_IME_COMPOSITION, ignoring the message..."));
+    return ShouldDrawCompositionStringOurselves();
+  }
+
+  // Otherwise, e.g., ChangJie doesn't post WM_IME_COMPOSITION before
+  // WM_IME_ENDCOMPOSITION when composition string becomes empty.
+  // Then, we should dispatch a compositionupdate event, a text event and
+  // a compositionend event.
+  // XXX Shouldn't we dispatch the text event with actual or latest composition
+  //     string?
+  PR_LOG(gIMM32Log, PR_LOG_ALWAYS,
+    ("IMM32: OnIMEEndComposition, mCompositionString=\"%s\"%s",
+     NS_ConvertUTF16toUTF8(mCompositionString).get(),
+     mCompositionString.IsEmpty() ? "" : ", but canceling it..."));
+
   mCompositionString.Truncate();
 
   nsIMEContext IMEContext(aWindow->GetWindowHandle());
@@ -742,7 +716,11 @@ nsIMM32Handler::OnIMENotify(nsWindow* aWindow,
 
   // add hacky code here
   nsModifierKeyState modKeyState(false, false, true);
-  aWindow->DispatchKeyEvent(NS_KEY_PRESS, 0, nsnull, 192, nsnull, modKeyState);
+  mozilla::widget::NativeKey nativeKey; // Dummy is okay for this usage.
+  nsKeyEvent keyEvent(true, NS_KEY_PRESS, aWindow);
+  keyEvent.keyCode = 192;
+  aWindow->InitKeyEvent(keyEvent, nativeKey, modKeyState);
+  aWindow->DispatchKeyEvent(keyEvent, nsnull);
   sIsStatusChanged = sIsStatusChanged || (wParam == IMN_SETOPENSTATUS);
   PR_LOG(gIMM32Log, PR_LOG_ALWAYS,
     ("IMM32: OnIMENotify, sIsStatusChanged=%s\n",
@@ -1104,24 +1082,6 @@ nsIMM32Handler::HandleComposition(nsWindow* aWindow,
     }
   }
 
-  if (!IS_COMMITTING_LPARAM(lParam) && !IS_COMPOSING_LPARAM(lParam)) {
-    PR_LOG(gIMM32Log, PR_LOG_ALWAYS,
-      ("IMM32: HandleComposition, Handle 0 length TextEvent\n"));
-
-    // XXX This block should be wrong. If composition string is not change,
-    // we should do nothing.
-
-    if (!mIsComposing) {
-      HandleStartComposition(aWindow, aIMEContext);
-    }
-
-    mCompositionString.Truncate();
-    DispatchTextEvent(aWindow, aIMEContext, false);
-
-    return ShouldDrawCompositionStringOurselves();
-  }
-
-
   bool startCompositionMessageHasBeenSent = mIsComposing;
 
   //
@@ -1160,6 +1120,32 @@ nsIMM32Handler::HandleComposition(nsWindow* aWindow,
     ("IMM32: HandleComposition, GCS_COMPSTR\n"));
 
   GetCompositionString(aIMEContext, GCS_COMPSTR);
+
+  if (!IS_COMPOSING_LPARAM(lParam)) {
+    PR_LOG(gIMM32Log, PR_LOG_ALWAYS,
+      ("IMM32: HandleComposition, lParam doesn't indicate composing, "
+       "mCompositionString=\"%s\", mLastDispatchedCompositionString=\"%s\"",
+       NS_ConvertUTF16toUTF8(mCompositionString).get(),
+       NS_ConvertUTF16toUTF8(mLastDispatchedCompositionString).get()));
+
+    // If composition string isn't changed, we can trust the lParam.
+    // So, we need to do nothing.
+    if (mLastDispatchedCompositionString == mCompositionString) {
+      return ShouldDrawCompositionStringOurselves();
+    }
+
+    // IME may send WM_IME_COMPOSITION without composing lParam values
+    // when composition string becomes empty (e.g., using Backspace key).
+    // If composition string is empty, we should dispatch a text event with
+    // empty string.
+    if (mCompositionString.IsEmpty()) {
+      DispatchTextEvent(aWindow, aIMEContext, false);
+      return ShouldDrawCompositionStringOurselves();
+    }
+
+    // Otherwise, we cannot trust the lParam value.  We might need to
+    // dispatch text event with the latest composition string information.
+  }
 
   // See https://bugzilla.mozilla.org/show_bug.cgi?id=296339
   if (mCompositionString.IsEmpty() && !startCompositionMessageHasBeenSent) {
@@ -1711,10 +1697,7 @@ nsIMM32Handler::DispatchTextEvent(nsWindow* aWindow,
 
   event.theText = mCompositionString.get();
   nsModifierKeyState modKeyState;
-  event.isShift = modKeyState.mIsShiftDown;
-  event.isControl = modKeyState.mIsControlDown;
-  event.isMeta = false;
-  event.isAlt = modKeyState.mIsAltDown;
+  modKeyState.InitInputEvent(event);
 
   aWindow->DispatchWindowEvent(&event);
 

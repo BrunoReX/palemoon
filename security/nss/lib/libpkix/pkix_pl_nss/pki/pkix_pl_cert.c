@@ -1669,13 +1669,13 @@ PKIX_PL_Cert_GetVersion(
         void *plContext)
 {
         CERTCertificate *nssCert = NULL;
-        PKIX_UInt32 myVersion = 1;
+        PKIX_UInt32 myVersion = 0;  /* v1 */
 
         PKIX_ENTER(CERT, "PKIX_PL_Cert_GetVersion");
         PKIX_NULLCHECK_THREE(cert, cert->nssCert, pVersion);
 
         nssCert = cert->nssCert;
-        if (nssCert->version.data) {
+        if (nssCert->version.len != 0) {
                 myVersion = *(nssCert->version.data);
         }
 
@@ -2430,14 +2430,14 @@ PKIX_PL_Cert_GetExtendedKeyUsage(
                                 PKIX_DECREF(pkixOID);
                         }
 
+                        PKIX_CHECK(PKIX_List_SetImmutable
+                                    (oidsList, plContext),
+                                    PKIX_LISTSETIMMUTABLEFAILED);
+
                         /* save a cached copy in case it is asked for again */
                         cert->extKeyUsages = oidsList;
                         oidsList = NULL;
                 }
-
-                PKIX_CHECK(PKIX_List_SetImmutable
-                            (cert->extKeyUsages, plContext),
-                            PKIX_LISTSETIMMUTABLEFAILED);
 
                 PKIX_OBJECT_UNLOCK(cert);
         }
@@ -2889,6 +2889,9 @@ PKIX_PL_Cert_VerifySignature(
         status = CERT_VerifySignedDataWithPublicKey(tbsCert, nssPubKey, wincx);
 
         if (status != SECSuccess) {
+                if (PORT_GetError() != SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED) {
+                        PORT_SetError(SEC_ERROR_BAD_SIGNATURE);
+                }
                 PKIX_ERROR(PKIX_SIGNATUREDIDNOTVERIFYWITHTHEPUBLICKEY);
         }
 

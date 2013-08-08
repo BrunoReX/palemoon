@@ -1,41 +1,13 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is common code between maintenanceservice and updater
- *
- * The Initial Developer of the Original Code is
- * Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Brian R. Bondy <netzen@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <windows.h>
+
+// Needed for CreateToolhelp32Snapshot
+#include <tlhelp32.h>
+#ifndef ONLY_SERVICE_LAUNCHING
+
 #include <stdio.h>
 #include "shlobj.h"
 #include "updatehelper.h"
@@ -43,8 +15,6 @@
 
 // Needed for PathAppendW
 #include <shlwapi.h>
-// Needed for CreateToolhelp32Snapshot
-#include <tlhelp32.h>
 #pragma comment(lib, "shlwapi.lib") 
 
 WCHAR* MakeCommandLine(int argc, WCHAR **argv);
@@ -214,17 +184,13 @@ LaunchWinPostProcess(const WCHAR *installationDir,
  * Starts the upgrade process for update of the service if it is
  * already installed.
  *
- * @param  argc The argc value normally sent to updater.exe
- * @param  argv The argv value normally sent to updater.exe
+ * @param  installDir the installation directory where
+ *         maintenanceservice_installer.exe is located.
  * @return TRUE if successful
  */
 BOOL
-StartServiceUpdate(int argc, LPWSTR *argv)
+StartServiceUpdate(LPCWSTR installDir)
 {
-  if (argc < 2) {
-    return FALSE;
-  }
-
   // Get a handle to the local computer SCM database
   SC_HANDLE manager = OpenSCManager(NULL, NULL, 
                                     SC_MANAGER_ALL_ACCESS);
@@ -252,7 +218,7 @@ StartServiceUpdate(int argc, LPWSTR *argv)
   PROCESS_INFORMATION pi = {0};
 
   WCHAR maintserviceInstallerPath[MAX_PATH + 1];
-  wcscpy(maintserviceInstallerPath, argv[2]);
+  wcscpy(maintserviceInstallerPath, installDir);
   PathAppendSafe(maintserviceInstallerPath, 
                  L"maintenanceservice_installer.exe");
   WCHAR cmdLine[64];
@@ -261,13 +227,15 @@ StartServiceUpdate(int argc, LPWSTR *argv)
                                                 cmdLine, 
                                                 NULL, NULL, FALSE, 
                                                 0, 
-                                                NULL, argv[2], &si, &pi);
+                                                NULL, installDir, &si, &pi);
   if (svcUpdateProcessStarted) {
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
   }
   return svcUpdateProcessStarted;
 }
+
+#endif 
 
 /**
  * Executes a maintenance service command
@@ -326,6 +294,8 @@ StartServiceCommand(int argc, LPCWSTR* argv)
   CloseServiceHandle(serviceManager);
   return lastError;
 }
+
+#ifndef ONLY_SERVICE_LAUNCHING
 
 /**
  * Launch a service initiated action for a software update with the 
@@ -435,6 +405,8 @@ WriteStatusFailure(LPCWSTR updateDirPath, int errorCode)
   CloseHandle(statusFile);
   return ok && wrote == toWrite;
 }
+
+#endif
 
 /**
  * Waits for a service to enter a stopped state.
@@ -568,6 +540,8 @@ WaitForServiceStop(LPCWSTR serviceName, DWORD maxWaitSeconds)
   return lastServiceState;
 }
 
+#ifndef ONLY_SERVICE_LAUNCHING
+
 /**
  * Determines if there is at least one process running for the specified
  * application. A match will be found across any session for any user.
@@ -650,5 +624,27 @@ DoesFallbackKeyExist()
   }
 
   RegCloseKey(testOnlyFallbackKey);
+  return TRUE;
+}
+
+#endif
+
+/**
+ * Determines if the file system for the specified file handle is local
+ * @param file path to check the filesystem type for, must be at most MAX_PATH
+ * @param isLocal out parameter which will hold TRUE if the drive is local
+ * @return TRUE if the call succeeded
+*/
+BOOL
+IsLocalFile(LPCWSTR file, BOOL &isLocal)
+{
+  WCHAR rootPath[MAX_PATH + 1];
+  if (wcslen(file) > MAX_PATH) {
+    return FALSE;
+  }
+
+  wcscpy(rootPath, file);
+  PathStripToRootW(rootPath);
+  isLocal = GetDriveTypeW(rootPath) == DRIVE_FIXED;
   return TRUE;
 }

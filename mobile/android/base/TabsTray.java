@@ -1,188 +1,193 @@
 /* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Android code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Sriram Ramasubramanian <sriram@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.gecko;
 
 import java.util.ArrayList;
 
-import android.app.Activity;
 import android.content.Context;
 import android.graphics.drawable.Drawable;
-import android.os.Bundle;
-import android.os.Build;
+import android.graphics.PointF;
+import android.text.TextUtils;
 import android.util.AttributeSet;
-import android.util.DisplayMetrics;
+import android.view.GestureDetector;
+import android.view.GestureDetector.SimpleOnGestureListener;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AbsListView.RecyclerListener;
 import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
-import android.widget.RelativeLayout;
 import android.widget.TextView;
 
-public class TabsTray extends Activity implements GeckoApp.OnTabsChangedListener {
+import org.mozilla.gecko.gfx.PointUtils;
+import org.mozilla.gecko.PropertyAnimator.Property;
 
-    private static int sPreferredHeight;
-    private static int sMaxHeight;
-    private static int sListItemHeight;
+public class TabsTray extends LinearLayout 
+                      implements TabsPanel.PanelView,
+                                 Tabs.OnTabsChangedListener {
+    private static final String LOGTAG = "GeckoTabsTray";
+
+    private Context mContext;
+
     private static ListView mList;
     private TabsAdapter mTabsAdapter;
     private boolean mWaitingForClose;
 
-    @Override
-    public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
+    private GestureDetector mGestureDetector;
+    private TabSwipeGestureListener mListener;
+    // Minimum velocity swipe that will close a tab, in inches/sec
+    private static final int SWIPE_CLOSE_VELOCITY = 5;
+    // Time to animate non-flicked tabs of screen, in milliseconds
+    private static final int MAX_ANIMATION_TIME = 250;
+    // Extra weight given to detecting vertical swipes over horizontal ones
+    private static final float SWIPE_VERTICAL_WEIGHT = 1.5f;
+    private static enum DragDirection {
+        UNKNOWN,
+        HORIZONTAL,
+        VERTICAL
+    }
 
-        setContentView(R.layout.tabs_tray);
+    private static final String ABOUT_HOME = "about:home";
 
-        if (Build.VERSION.SDK_INT >= 11) {
-            GeckoActionBar.hide(this);
-        }
+    public TabsTray(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        mContext = context;
 
-        mWaitingForClose = false;
+        LayoutInflater.from(context).inflate(R.layout.tabs_tray, this);
 
         mList = (ListView) findViewById(R.id.list);
+        mList.setItemsCanFocus(true);
+        mListener = new TabSwipeGestureListener(mList);
+        mGestureDetector = new GestureDetector(context, mListener);
 
-        LinearLayout addTab = (LinearLayout) findViewById(R.id.add_tab);
-        addTab.setOnClickListener(new Button.OnClickListener() {
-            public void onClick(View v) {
-                GeckoApp.mAppContext.addTab();
-                finishActivity();
+        mList.setOnTouchListener(new View.OnTouchListener() {
+            public  boolean onTouch(View v, MotionEvent event) {
+                boolean result = mGestureDetector.onTouchEvent(event);
+
+                // if this is an touch end event, we need to reset the state
+                // of the gesture listener
+                switch (event.getAction() & MotionEvent.ACTION_MASK) {
+                    case MotionEvent.ACTION_UP:
+                      mListener.onTouchEnd(event);
+                }
+
+                // the simple gesture detector doesn't actually call our methods for every touch event
+                // if we're horizontally scrolling we should always return true to prevent scrolling the list
+                if (mListener.getDirection() == DragDirection.HORIZONTAL)
+                    result = true;
+
+                return result;
             }
         });
-        
-        LinearLayout container = (LinearLayout) findViewById(R.id.container);
-        container.setOnClickListener(new Button.OnClickListener() {
-            public void onClick(View v) {
-                finishActivity();
+
+        mList.setRecyclerListener(new RecyclerListener() {
+            @Override
+            public void onMovedToScrapHeap(View view) {
+                TabRow row = (TabRow) view.getTag();
+                row.thumbnail.setImageDrawable(null);
             }
         });
+    }
 
-        DisplayMetrics metrics = new DisplayMetrics();
-        getWindowManager().getDefaultDisplay().getMetrics(metrics);
-        sPreferredHeight = (int) (0.67 * metrics.heightPixels);
-        sListItemHeight = (int) (100 * metrics.density); 
-        sMaxHeight = (int) (sPreferredHeight + (0.33 * sListItemHeight));
+    @Override
+    public ViewGroup getLayout() {
+        return this;
+    }
 
-        GeckoApp.registerOnTabsChangedListener(this);
+    @Override
+    public void show() {
+        mWaitingForClose = false;
+
+        Tabs.registerOnTabsChangedListener(this);
         Tabs.getInstance().refreshThumbnails();
-        onTabsChanged(null);
+        onTabChanged(null, null, null);
     }
 
     @Override
-    public void onDestroy() {
-        super.onDestroy();
-        GeckoApp.unregisterOnTabsChangedListener(this);
+    public void hide() {
+        Tabs.unregisterOnTabsChangedListener(this);
+        GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Tab:Screenshot:Cancel",""));
+        mTabsAdapter.clear();
+        mTabsAdapter.notifyDataSetChanged();
     }
 
-    @Override
-    public void onWindowFocusChanged(boolean hasFocus) {
-        // This function is called after the initial list is populated
-        // Scrolling to the selected tab can happen here
-        if (hasFocus) {
-            int position = mTabsAdapter.getPositionForTab(Tabs.getInstance().getSelectedTab());
-            if (position == -1)
-                return;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.FROYO) {
-                mList.smoothScrollToPosition(position);
-            } else {
-                /* To Do: Find a way to scroll with Eclair's APIs */
-            }
-        }
-    } 
-   
-    public void onTabsChanged(Tab tab) {
-        if (Tabs.getInstance().getCount() == 1)
-            finishActivity();
-
+    public void onTabChanged(Tab tab, Tabs.TabEvents msg, Object data) {
         if (mTabsAdapter == null) {
-            mTabsAdapter = new TabsAdapter(this, Tabs.getInstance().getTabsInOrder());
+            mTabsAdapter = new TabsAdapter(mContext, Tabs.getInstance().getTabsInOrder());
             mList.setAdapter(mTabsAdapter);
+
+            int selected = mTabsAdapter.getPositionForTab(Tabs.getInstance().getSelectedTab());
+            if (selected == -1)
+                return;
+
+            mList.setSelection(selected);
             return;
         }
-        
+
+        int index = Tabs.getInstance().getIndexOf(tab);
+        if (msg == Tabs.TabEvents.ADDED) {
+            if (index == -1) // If the tab has already been removed, do nothing.
+                return;
+            if (index > mTabsAdapter.getCount())
+                index = mTabsAdapter.getCount();
+            mTabsAdapter.addTab(index, tab);
+            mTabsAdapter.notifyDataSetChanged();
+            return;
+        }
+
         int position = mTabsAdapter.getPositionForTab(tab);
         if (position == -1)
             return;
 
-        if (Tabs.getInstance().getIndexOf(tab) == -1) {
+        if (index == -1) {
             mWaitingForClose = false;
-            mTabsAdapter = new TabsAdapter(this, Tabs.getInstance().getTabsInOrder());
-            mList.setAdapter(mTabsAdapter);
+            mTabsAdapter.removeTab(tab);
+            mTabsAdapter.notifyDataSetChanged();
         } else {
             View view = mList.getChildAt(position - mList.getFirstVisiblePosition());
-            mTabsAdapter.assignValues(view, tab);
+            if (view == null)
+                return;
+
+            TabRow row = (TabRow) view.getTag();
+            mTabsAdapter.assignValues(row, tab);
         }
     }
 
-    void finishActivity() {
-        finish();
-        overridePendingTransition(0, R.anim.shrink_fade_out);
-        GeckoAppShell.sendEventToGecko(new GeckoEvent("Tab:Screenshot:Cancel",""));
+    void autoHideTabs() {
+        GeckoApp.mAppContext.autoHideTabs();
     }
 
-    // Tabs List Container holds the ListView and the New Tab button
-    public static class TabsListContainer extends LinearLayout {
-        public TabsListContainer(Context context, AttributeSet attrs) {
-            super(context, attrs);
-        }
+    // ViewHolder for a row in the list
+    private class TabRow {
+        int id;
+        TextView title;
+        ImageView thumbnail;
+        ImageButton close;
+        LinearLayout info;
 
-        @Override
-        protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
-            super.onSizeChanged(width, height, oldWidth, oldHeight);
-
-            if ((height > sPreferredHeight) && (height != sMaxHeight)) {
-                setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-                                                              sPreferredHeight));
-
-                // If the list ends perfectly on an item, increase the height of the container 
-                if (mList.getHeight() % sListItemHeight == 0)
-                    setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-                                                                  sMaxHeight));
-            }
+        public TabRow(View view) {
+            info = (LinearLayout) view;
+            title = (TextView) view.findViewById(R.id.title);
+            thumbnail = (ImageView) view.findViewById(R.id.thumbnail);
+            close = (ImageButton) view.findViewById(R.id.close);
         }
     }
 
-    // Adapter to bind tabs into a list 
+    // Adapter to bind tabs into a list
     private class TabsAdapter extends BaseAdapter {
+        private Context mContext;
+        private ArrayList<Tab> mTabs;
+        private LayoutInflater mInflater;
+        private Button.OnClickListener mOnCloseClickListener;
+
         public TabsAdapter(Context context, ArrayList<Tab> tabs) {
             mContext = context;
             mInflater = LayoutInflater.from(mContext);
@@ -194,33 +199,23 @@ public class TabsTray extends Activity implements GeckoApp.OnTabsChangedListener
             for (int i = 0; i < tabs.size(); i++) {
                 mTabs.add(tabs.get(i));
             }
-            
-            mOnInfoClickListener = new View.OnClickListener() {
-                public void onClick(View v) {
-                    Tabs.getInstance().selectTab(Integer.parseInt((String) v.getTag()));
-                    finishActivity();
-                }
-            };
 
             mOnCloseClickListener = new Button.OnClickListener() {
                 public void onClick(View v) {
-                    if (mWaitingForClose)
-                        return;
-
-                    mWaitingForClose = true;
-
-                    String tabId = v.getTag().toString();
-                    Tabs tabs = Tabs.getInstance();
-                    Tab tab = tabs.getTab(Integer.parseInt(tabId));
-                    tabs.closeTab(tab);
+                    TabRow tab = (TabRow) v.getTag();
+                    animateTo(tab.info, tab.info.getWidth(), MAX_ANIMATION_TIME);
                 }
             };
         }
 
-        public int getCount() {
-            return mTabs.size();
+        public void clear() {
+            mTabs = null;
         }
-    
+
+        public int getCount() {
+            return (mTabs == null ? 0 : mTabs.size());
+        }
+
         public Tab getItem(int position) {
             return mTabs.get(position);
         }
@@ -236,59 +231,214 @@ public class TabsTray extends Activity implements GeckoApp.OnTabsChangedListener
             return mTabs.indexOf(tab);
         }
 
-        public void assignValues(View view, Tab tab) {
-            if (view == null || tab == null)
+        public void addTab(int index, Tab tab) {
+            mTabs.add(index, tab);
+        }
+
+        public void removeTab(Tab tab) {
+            mTabs.remove(tab);
+        }
+
+        public void assignValues(TabRow row, Tab tab) {
+            if (row == null || tab == null)
                 return;
 
-            ImageView thumbnail = (ImageView) view.findViewById(R.id.thumbnail);
+            row.id = tab.getId();
 
             Drawable thumbnailImage = tab.getThumbnail();
             if (thumbnailImage != null)
-                thumbnail.setImageDrawable(thumbnailImage);
+                row.thumbnail.setImageDrawable(thumbnailImage);
+            else if (TextUtils.equals(tab.getURL(), ABOUT_HOME))
+                row.thumbnail.setImageResource(R.drawable.abouthome_thumbnail);
             else
-                thumbnail.setImageResource(R.drawable.tab_thumbnail_default);
+                row.thumbnail.setImageResource(R.drawable.tab_thumbnail_default);
 
             if (Tabs.getInstance().isSelectedTab(tab))
-                ((ImageView) view.findViewById(R.id.selected_indicator)).setVisibility(View.VISIBLE);
+                row.info.setBackgroundResource(R.drawable.tabs_tray_active_selector);
+            else
+                row.info.setBackgroundResource(R.drawable.tabs_tray_default_selector);
 
-            TextView title = (TextView) view.findViewById(R.id.title);
-            title.setText(tab.getDisplayTitle());
+            // this may be a recycled view that was animated off screen
+            // reset the scroll state here
+            row.info.scrollTo(0,0);
+
+            row.title.setText(tab.getDisplayTitle());
+
+            row.close.setTag(row);
+            row.close.setVisibility(mTabs.size() > 1 ? View.VISIBLE : View.INVISIBLE);
         }
 
         public View getView(int position, View convertView, ViewGroup parent) {
-            convertView = mInflater.inflate(R.layout.tabs_row, null);
+            TabRow row;
+
+            if (convertView == null) {
+                convertView = mInflater.inflate(R.layout.tabs_row, null);
+
+                row = new TabRow(convertView);
+                row.close.setOnClickListener(mOnCloseClickListener);
+
+                convertView.setTag(row);
+            } else {
+                row = (TabRow) convertView.getTag();
+            }
 
             Tab tab = mTabs.get(position);
-
-            RelativeLayout info = (RelativeLayout) convertView.findViewById(R.id.info);
-            info.setTag(String.valueOf(tab.getId()));
-            info.setOnClickListener(mOnInfoClickListener);
-
-            assignValues(convertView, tab);
-            
-            ImageButton close = (ImageButton) convertView.findViewById(R.id.close);
-            if (mTabs.size() > 1) {
-                close.setTag(String.valueOf(tab.getId()));
-                close.setOnClickListener(mOnCloseClickListener);
-            } else {
-                close.setVisibility(View.GONE);
-            }
+            assignValues(row, tab);
 
             return convertView;
         }
+    }
 
-        @Override
-        public void notifyDataSetChanged() {
+    private void animateTo(final View view, int x, int duration) {
+        PropertyAnimator pa = new PropertyAnimator(duration);
+        pa.attach(view, Property.SLIDE_LEFT, x);
+        if (x != 0 && !mWaitingForClose) {
+            mWaitingForClose = true;
+
+            TabRow tab = (TabRow)view.getTag();
+            final int tabId = tab.id;
+
+            pa.setPropertyAnimationListener(new PropertyAnimator.PropertyAnimationListener() {
+                public void onPropertyAnimationStart() { }
+                public void onPropertyAnimationEnd() {
+                    Tabs tabs = Tabs.getInstance();
+                    Tab tab = tabs.getTab(tabId);
+                    tabs.closeTab(tab);
+                }
+            });
+        } else if (x != 0 && mWaitingForClose) {
+          // if this asked us to close, but we were already doing it just bail out
+          return;
+        }
+        pa.start();
+    }
+
+    private class TabSwipeGestureListener extends SimpleOnGestureListener {
+        private View mList = null;
+        private View mView = null;
+        private PointF start = null;
+        private DragDirection dir = DragDirection.UNKNOWN;
+
+        public TabSwipeGestureListener(View v) {
+            mList = v;
+        }
+
+        public DragDirection getDirection() {
+            return dir;
         }
 
         @Override
-        public void notifyDataSetInvalidated() {
+        public boolean onDown(MotionEvent e) {
+            mView = findViewAt((int)e.getX(), (int)e.getY());
+            if (mView == null)
+                return false;
+
+            mView.setPressed(true);
+            start = new PointF(e.getX(), e.getY());
+            return false;
         }
+
+        public boolean onTouchEnd(MotionEvent e) {
+            if (mView != null) {
+
+                // if the user was dragging horizontally, check to see if we should close the tab
+                if (dir == DragDirection.HORIZONTAL) {
+                    int finalPos = 0;
+                    // if the swipe started on the left and ended in the right 25% of the tray
+                    // or vice versa, close the tab
+                    if ((start.x > mList.getWidth() / 2 && e.getX() < mList.getWidth() * 0.25 )) {
+                        finalPos = -1 * mView.getWidth();
+                    } else if (start.x < mList.getWidth() / 2 && e.getX() > mList.getWidth() * 0.75) {
+                        finalPos = mView.getWidth();
+                    }
     
-        private Context mContext;
-        private ArrayList<Tab> mTabs;
-        private LayoutInflater mInflater;
-        private View.OnClickListener mOnInfoClickListener;
-        private Button.OnClickListener mOnCloseClickListener;
+                    animateTo(mView, finalPos, MAX_ANIMATION_TIME);
+                } else if (mView != null && dir == DragDirection.UNKNOWN) {
+                    // the user didn't attempt to scroll the view, so select the row
+                    TabRow tab = (TabRow)mView.getTag();
+                    int tabId = tab.id;
+                    Tabs.getInstance().selectTab(tabId);
+                    autoHideTabs();
+                }
+            }
+
+            mView = null;
+            start = null;
+            dir = DragDirection.UNKNOWN;
+            return false;
+        }
+
+        @Override
+        public boolean onScroll(MotionEvent event1, MotionEvent event2, float distanceX, float distanceY) {
+            if (mView == null)
+                return false;
+
+            // if there is only one tab left, we want to recognize the scroll and
+            // stop any click/selection events, but not scroll/close the view
+            if (Tabs.getInstance().getCount() == 1) {
+                mView.setPressed(false);
+                mView = null;
+                return false;
+            }
+
+            if (dir == DragDirection.UNKNOWN) {
+                // check if this scroll is more horizontal than vertical. Weight vertical drags a little higher
+                // by using a multiplier
+                if (Math.abs(distanceX) > Math.abs(distanceY) * SWIPE_VERTICAL_WEIGHT) {
+                    dir = DragDirection.HORIZONTAL;
+                } else {
+                    dir = DragDirection.VERTICAL;
+                }
+                mView.setPressed(false);
+            }
+
+            if (dir == DragDirection.HORIZONTAL) {
+                mView.scrollBy((int) distanceX, 0);
+                return true;
+            }
+
+            return false;
+        }
+
+        @Override
+        public boolean onFling(MotionEvent event1, MotionEvent event2, float velocityX, float velocityY) {
+            if (mView == null || Tabs.getInstance().getCount() == 1)
+                return false;
+
+            // velocityX is in pixels/sec. divide by pixels/inch to compare it with swipe velocity
+            // also make sure that the swipe is in a mostly horizontal direction
+            if (Math.abs(velocityX) > Math.abs(velocityY * SWIPE_VERTICAL_WEIGHT) &&
+                Math.abs(velocityX)/GeckoAppShell.getDpi() > SWIPE_CLOSE_VELOCITY) {
+                // is this is a swipe, we want to continue the row moving at the swipe velocity
+                float d = (velocityX > 0 ? 1 : -1) * mView.getWidth();
+                // convert the velocity (px/sec) to ms by taking the distance
+                // multiply by 1000 to convert seconds to milliseconds
+                animateTo(mView, (int)d, (int)((d + mView.getScrollX())*1000/velocityX));
+            }
+
+            return false; 
+        }
+
+        private View findViewAt(int x, int y) {
+            if (mList == null)
+                return null;
+
+            ListView list = (ListView)mList;
+            x += list.getScrollX();
+            y += list.getScrollY();
+
+            final int count = list.getChildCount();
+            for (int i = count - 1; i >= 0; i--) {
+                View child = list.getChildAt(i);
+                if (child.getVisibility() == View.VISIBLE) {
+                    if ((x >= child.getLeft()) && (x < child.getRight())
+                            && (y >= child.getTop()) && (y < child.getBottom())) {
+                        return child;
+                    }
+                }
+            }
+            return null;
+        }
     }
 }
+

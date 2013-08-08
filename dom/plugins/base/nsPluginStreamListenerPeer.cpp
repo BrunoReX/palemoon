@@ -1,42 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Sean Echevarria <sean@beatnik.com>
- *   Håkan Waara <hwaara@chello.se>
- *   Josh Aas <josh@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsPluginStreamListenerPeer.h"
 #include "nsIStreamConverterService.h"
@@ -334,7 +299,7 @@ nsPluginStreamListenerPeer::~nsPluginStreamListenerPeer()
 #endif
 
   if (mPStreamListener) {
-    mPStreamListener->SetStreamListenerPeer(this);
+    mPStreamListener->SetStreamListenerPeer(nsnull);
   }
 
   // close FD of mFileCacheOutputStream if it's still open
@@ -351,7 +316,7 @@ nsPluginStreamListenerPeer::~nsPluginStreamListenerPeer()
 // Called as a result of GetURL and PostURL
 nsresult nsPluginStreamListenerPeer::Initialize(nsIURI *aURL,
                                                 nsNPAPIPluginInstance *aInstance,
-                                                nsIPluginStreamListener* aListener)
+                                                nsNPAPIPluginStreamListener* aListener)
 {
 #ifdef PLUGIN_LOGGING
   nsCAutoString urlSpec;
@@ -367,7 +332,7 @@ nsresult nsPluginStreamListenerPeer::Initialize(nsIURI *aURL,
   
   mPluginInstance = aInstance;
 
-  mPStreamListener = static_cast<nsNPAPIPluginStreamListener*>(aListener);
+  mPStreamListener = aListener;
   mPStreamListener->SetStreamListenerPeer(this);
 
   mPendingRequests = 1;
@@ -379,14 +344,9 @@ nsresult nsPluginStreamListenerPeer::Initialize(nsIURI *aURL,
   return NS_OK;
 }
 
-/* Called by NewEmbeddedPluginStream() - if this is called, we weren't
- * able to load the plugin, so we need to load it later once we figure
- * out the mimetype.  In order to load it later, we need the plugin
- * instance owner.
- */
 nsresult nsPluginStreamListenerPeer::InitializeEmbedded(nsIURI *aURL,
                                                         nsNPAPIPluginInstance* aInstance,
-                                                        nsIPluginInstanceOwner *aOwner)
+                                                        nsObjectLoadingContent *aContent)
 {
 #ifdef PLUGIN_LOGGING
   nsCAutoString urlSpec;
@@ -397,14 +357,19 @@ nsresult nsPluginStreamListenerPeer::InitializeEmbedded(nsIURI *aURL,
   
   PR_LogFlush();
 #endif
-  
+
+  // We have to have one or the other.
+  if (!aInstance && !aContent) {
+    return NS_ERROR_FAILURE;
+  }
+
   mURL = aURL;
   
   if (aInstance) {
     NS_ASSERTION(mPluginInstance == nsnull, "nsPluginStreamListenerPeer::InitializeEmbedded mPluginInstance != nsnull");
     mPluginInstance = aInstance;
   } else {
-    mOwner = aOwner;
+    mContent = aContent;
   }
   
   mPendingRequests = 1;
@@ -577,17 +542,6 @@ nsPluginStreamListenerPeer::OnStartRequest(nsIRequest *request,
     }
   }
   
-  // do a little sanity check to make sure our frame isn't gone
-  // by getting the tag type and checking for an error, we can determine if
-  // the frame is gone
-  if (mOwner) {
-    nsCOMPtr<nsIPluginTagInfo> pti = do_QueryInterface(mOwner);
-    NS_ENSURE_TRUE(pti, NS_ERROR_FAILURE);
-    nsPluginTagType tagType;
-    if (NS_FAILED(pti->GetTagType(&tagType)))
-      return NS_ERROR_FAILURE;  // something happened to our object frame, so bail!
-  }
-  
   // Get the notification callbacks from the channel and save it as
   // week ref we'll use it in nsPluginStreamInfo::RequestRead() when
   // we'll create channel for byte range request.
@@ -642,37 +596,21 @@ nsPluginStreamListenerPeer::OnStartRequest(nsIRequest *request,
   
   PR_LogFlush();
 #endif
-  
-  NPWindow* window = nsnull;
-  
-  // if we don't have an nsNPAPIPluginInstance (mPluginInstance), it means
-  // we weren't able to load a plugin previously because we
-  // didn't have the mimetype.  Now that we do (aContentType),
-  // we'll try again with SetUpPluginInstance()
-  // which is called by InstantiateEmbeddedPlugin()
-  // NOTE: we don't want to try again if we didn't get the MIME type this time
-  
-  if (!mPluginInstance && mOwner && !aContentType.IsEmpty()) {
-    nsRefPtr<nsNPAPIPluginInstance> pluginInstRefPtr;
-    mOwner->GetInstance(getter_AddRefs(pluginInstRefPtr));
-    mPluginInstance = pluginInstRefPtr.get();
 
-    mOwner->GetWindow(window);
-    if (!mPluginInstance && window) {
-      nsRefPtr<nsPluginHost> pluginHost = dont_AddRef(nsPluginHost::GetInst());
-      rv = pluginHost->SetUpPluginInstance(aContentType.get(), aURL, mOwner);
-      if (NS_SUCCEEDED(rv)) {
-        mOwner->GetInstance(getter_AddRefs(pluginInstRefPtr));
-        mPluginInstance = pluginInstRefPtr.get();
-        if (mPluginInstance) {
-          mOwner->CreateWidget();
-          // If we've got a native window, the let the plugin know about it.
-          mOwner->SetWindow();
-        }
+  // If we don't have an instance yet it means we weren't able to load
+  // a plugin previously because we didn't have the mimetype. Try again
+  // if we have a mime type now.
+  if (!mPluginInstance && mContent && !aContentType.IsEmpty()) {
+    nsObjectLoadingContent *olc = static_cast<nsObjectLoadingContent*>(mContent.get());
+    rv = olc->InstantiatePluginInstance(aContentType.get(), aURL.get());
+    if (NS_SUCCEEDED(rv)) {
+      rv = olc->GetPluginInstance(getter_AddRefs(mPluginInstance));
+      if (NS_FAILED(rv)) {
+        return rv;
       }
     }
   }
-  
+
   // Set up the stream listener...
   rv = SetUpStreamListener(request, aURL);
   if (NS_FAILED(rv)) return rv;
@@ -869,7 +807,7 @@ nsresult nsPluginStreamListenerPeer::ServeStreamAsFile(nsIRequest *request,
       window->window = widget->GetNativeData(NS_NATIVE_PLUGIN_PORT);
     }
 #endif
-    owner->SetWindow();
+    owner->CallSetWindow();
   }
   
   mSeekable = false;
@@ -1152,7 +1090,7 @@ nsresult nsPluginStreamListenerPeer::SetUpStreamListener(nsIRequest *request,
       return NS_ERROR_FAILURE;
     }
 
-    nsCOMPtr<nsIPluginStreamListener> streamListener;
+    nsRefPtr<nsNPAPIPluginStreamListener> streamListener;
     rv = mPluginInstance->NewStreamListener(nsnull, nsnull,
                                             getter_AddRefs(streamListener));
     if (NS_FAILED(rv) || !streamListener) {
@@ -1202,7 +1140,7 @@ nsresult nsPluginStreamListenerPeer::SetUpStreamListener(nsIRequest *request,
       }
 
       // Assemble everything and pass to listener.
-      nsPrintfCString status(100, "HTTP%s %lu %s", ver.get(), statusNum,
+      nsPrintfCString status("HTTP%s %lu %s", ver.get(), statusNum,
                              statusText.get());
       static_cast<nsIHTTPHeaderListener*>(mPStreamListener)->StatusLine(status.get());
     }
@@ -1361,6 +1299,9 @@ public:
     , mNewChannel(newChannel)
   {
   }
+
+  ChannelRedirectProxyCallback() {}
+  virtual ~ChannelRedirectProxyCallback() {}
 
   NS_DECL_ISUPPORTS
 

@@ -1,41 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Daniel Glazman <glazman@netscape.com>
- *   Mats Palmgren <matspal@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
 #include "nsPlaintextEditor.h"
@@ -88,7 +54,6 @@ using namespace mozilla;
 
 nsPlaintextEditor::nsPlaintextEditor()
 : nsEditor()
-, mIgnoreSpuriousDragEvent(false)
 , mRules(nsnull)
 , mWrapToWindow(false)
 , mWrapColumn(0)
@@ -229,97 +194,109 @@ nsPlaintextEditor::EndEditorInit()
   return res;
 }
 
-NS_IMETHODIMP 
-nsPlaintextEditor::SetDocumentCharacterSet(const nsACString & characterSet) 
-{ 
-  nsresult result; 
+NS_IMETHODIMP
+nsPlaintextEditor::SetDocumentCharacterSet(const nsACString& characterSet)
+{
+  nsresult rv = nsEditor::SetDocumentCharacterSet(characterSet);
+  NS_ENSURE_SUCCESS(rv, rv);
 
-  result = nsEditor::SetDocumentCharacterSet(characterSet); 
+  // Update META charset element.
+  nsCOMPtr<nsIDOMDocument> domdoc = GetDOMDocument();
+  NS_ENSURE_TRUE(domdoc, NS_ERROR_NOT_INITIALIZED);
 
-  // update META charset tag 
-  if (NS_SUCCEEDED(result)) { 
-    nsCOMPtr<nsIDOMDocument>domdoc; 
-    result = GetDocument(getter_AddRefs(domdoc)); 
-    if (NS_SUCCEEDED(result) && domdoc) { 
-      nsCOMPtr<nsIDOMNodeList>metaList; 
-      nsCOMPtr<nsIDOMElement>metaElement; 
-      bool newMetaCharset = true; 
+  if (UpdateMetaCharset(domdoc, characterSet)) {
+    return NS_OK;
+  }
 
-      // get a list of META tags 
-      result = domdoc->GetElementsByTagName(NS_LITERAL_STRING("meta"), getter_AddRefs(metaList)); 
-      if (NS_SUCCEEDED(result) && metaList) { 
-        PRUint32 listLength = 0; 
-        (void) metaList->GetLength(&listLength); 
+  nsCOMPtr<nsIDOMNodeList> headList;
+  rv = domdoc->GetElementsByTagName(NS_LITERAL_STRING("head"), getter_AddRefs(headList));
+  NS_ENSURE_SUCCESS(rv, rv);
+  NS_ENSURE_TRUE(headList, NS_OK);
 
-        nsCOMPtr<nsIDOMNode>metaNode; 
-        for (PRUint32 i = 0; i < listLength; i++) { 
-          metaList->Item(i, getter_AddRefs(metaNode)); 
-          if (!metaNode) continue; 
-          metaElement = do_QueryInterface(metaNode); 
-          if (!metaElement) continue; 
+  nsCOMPtr<nsIDOMNode> headNode;
+  headList->Item(0, getter_AddRefs(headNode));
+  NS_ENSURE_TRUE(headNode, NS_OK);
 
-          nsAutoString currentValue; 
-          if (NS_FAILED(metaElement->GetAttribute(NS_LITERAL_STRING("http-equiv"), currentValue))) continue; 
+  // Create a new meta charset tag
+  nsCOMPtr<nsIDOMNode> resultNode;
+  rv = CreateNode(NS_LITERAL_STRING("meta"), headNode, 0, getter_AddRefs(resultNode));
+  NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
+  NS_ENSURE_TRUE(resultNode, NS_OK);
 
-          if (FindInReadable(NS_LITERAL_STRING("content-type"),
-                             currentValue,
-                             nsCaseInsensitiveStringComparator())) { 
-            NS_NAMED_LITERAL_STRING(content, "content");
-            if (NS_FAILED(metaElement->GetAttribute(content, currentValue))) continue; 
+  // Set attributes to the created element
+  if (characterSet.IsEmpty()) {
+    return NS_OK;
+  }
 
-            NS_NAMED_LITERAL_STRING(charsetEquals, "charset=");
-            nsAString::const_iterator originalStart, start, end;
-            originalStart = currentValue.BeginReading(start);
-            currentValue.EndReading(end);
-            if (FindInReadable(charsetEquals, start, end,
-                               nsCaseInsensitiveStringComparator())) {
+  nsCOMPtr<dom::Element> metaElement = do_QueryInterface(resultNode);
+  if (!metaElement) {
+    return NS_OK;
+  }
 
-              // set attribute to <original prefix> charset=text/html
-              result = nsEditor::SetAttribute(metaElement, content,
-                                              Substring(originalStart, start) +
-                                              charsetEquals + NS_ConvertASCIItoUTF16(characterSet)); 
-              if (NS_SUCCEEDED(result)) 
-                newMetaCharset = false; 
-              break; 
-            } 
-          } 
-        } 
-      } 
+  // not undoable, undo should undo CreateNode
+  metaElement->SetAttr(kNameSpaceID_None, nsGkAtoms::httpEquiv,
+                       NS_LITERAL_STRING("Content-Type"), true);
+  metaElement->SetAttr(kNameSpaceID_None, nsGkAtoms::content,
+                       NS_LITERAL_STRING("text/html;charset=") +
+                         NS_ConvertASCIItoUTF16(characterSet),
+                       true);
+  return NS_OK;
+}
 
-      if (newMetaCharset) { 
-        nsCOMPtr<nsIDOMNodeList>headList; 
-        result = domdoc->GetElementsByTagName(NS_LITERAL_STRING("head"),getter_AddRefs(headList)); 
-        if (NS_SUCCEEDED(result) && headList) { 
-          nsCOMPtr<nsIDOMNode>headNode; 
-          headList->Item(0, getter_AddRefs(headNode)); 
-          if (headNode) { 
-            nsCOMPtr<nsIDOMNode>resultNode; 
-            // Create a new meta charset tag 
-            result = CreateNode(NS_LITERAL_STRING("meta"), headNode, 0, getter_AddRefs(resultNode)); 
-            NS_ENSURE_SUCCESS(result, NS_ERROR_FAILURE); 
+bool
+nsPlaintextEditor::UpdateMetaCharset(nsIDOMDocument* aDocument,
+                                     const nsACString& aCharacterSet)
+{
+  MOZ_ASSERT(aDocument);
+  // get a list of META tags
+  nsCOMPtr<nsIDOMNodeList> metaList;
+  nsresult rv = aDocument->GetElementsByTagName(NS_LITERAL_STRING("meta"),
+                                                getter_AddRefs(metaList));
+  NS_ENSURE_SUCCESS(rv, false);
+  NS_ENSURE_TRUE(metaList, false);
 
-            // Set attributes to the created element 
-            if (resultNode && !characterSet.IsEmpty()) { 
-              metaElement = do_QueryInterface(resultNode); 
-              if (metaElement) { 
-                // not undoable, undo should undo CreateNode 
-                result = metaElement->SetAttribute(NS_LITERAL_STRING("http-equiv"), NS_LITERAL_STRING("Content-Type")); 
-                if (NS_SUCCEEDED(result)) { 
-                  // not undoable, undo should undo CreateNode 
-                  result = metaElement->SetAttribute(NS_LITERAL_STRING("content"),
-                                                     NS_LITERAL_STRING("text/html;charset=") + NS_ConvertASCIItoUTF16(characterSet)); 
-                } 
-              } 
-            } 
-          } 
-        } 
-      } 
-    } 
-  } 
+  PRUint32 listLength = 0;
+  metaList->GetLength(&listLength);
 
-  return result; 
-} 
+  for (PRUint32 i = 0; i < listLength; ++i) {
+    nsCOMPtr<nsIContent> metaNode = metaList->GetNodeAt(i);
+    MOZ_ASSERT(metaNode);
 
+    if (!metaNode->IsElement()) {
+      continue;
+    }
+
+    nsAutoString currentValue;
+    metaNode->GetAttr(kNameSpaceID_None, nsGkAtoms::httpEquiv, currentValue);
+
+    if (!FindInReadable(NS_LITERAL_STRING("content-type"),
+                        currentValue,
+                        nsCaseInsensitiveStringComparator())) {
+      continue;
+    }
+
+    metaNode->GetAttr(kNameSpaceID_None, nsGkAtoms::content, currentValue);
+
+    NS_NAMED_LITERAL_STRING(charsetEquals, "charset=");
+    nsAString::const_iterator originalStart, start, end;
+    originalStart = currentValue.BeginReading(start);
+    currentValue.EndReading(end);
+    if (!FindInReadable(charsetEquals, start, end,
+                        nsCaseInsensitiveStringComparator())) {
+      continue;
+    }
+
+    // set attribute to <original prefix> charset=text/html
+    nsCOMPtr<nsIDOMElement> metaElement = do_QueryInterface(metaNode);
+    MOZ_ASSERT(metaElement);
+    rv = nsEditor::SetAttribute(metaElement, NS_LITERAL_STRING("content"),
+                                Substring(originalStart, start) +
+                                  charsetEquals +
+                                  NS_ConvertASCIItoUTF16(aCharacterSet));
+    return NS_SUCCEEDED(rv);
+  }
+  return false;
+}
 
 NS_IMETHODIMP nsPlaintextEditor::InitRules()
 {
@@ -334,9 +311,8 @@ nsPlaintextEditor::GetIsDocumentEditable(bool *aIsDocumentEditable)
 {
   NS_ENSURE_ARG_POINTER(aIsDocumentEditable);
 
-  nsCOMPtr<nsIDOMDocument> doc;
-  GetDocument(getter_AddRefs(doc));
-  *aIsDocumentEditable = doc ? IsModifiable() : false;
+  nsCOMPtr<nsIDOMDocument> doc = GetDOMDocument();
+  *aIsDocumentEditable = doc && IsModifiable();
 
   return NS_OK;
 }
@@ -380,8 +356,8 @@ nsPlaintextEditor::HandleKeyPressEvent(nsIDOMKeyEvent* aKeyEvent)
         return NS_OK; // let it be used for focus switching
       }
 
-      if (nativeKeyEvent->isShift || nativeKeyEvent->isControl ||
-          nativeKeyEvent->isAlt || nativeKeyEvent->isMeta) {
+      if (nativeKeyEvent->IsShift() || nativeKeyEvent->IsControl() ||
+          nativeKeyEvent->IsAlt() || nativeKeyEvent->IsMeta()) {
         return NS_OK;
       }
 
@@ -391,8 +367,8 @@ nsPlaintextEditor::HandleKeyPressEvent(nsIDOMKeyEvent* aKeyEvent)
     }
     case nsIDOMKeyEvent::DOM_VK_RETURN:
     case nsIDOMKeyEvent::DOM_VK_ENTER:
-      if (IsSingleLineEditor() || nativeKeyEvent->isControl ||
-          nativeKeyEvent->isAlt || nativeKeyEvent->isMeta) {
+      if (IsSingleLineEditor() || nativeKeyEvent->IsControl() ||
+          nativeKeyEvent->IsAlt() || nativeKeyEvent->IsMeta()) {
         return NS_OK;
       }
       aKeyEvent->PreventDefault();
@@ -401,8 +377,8 @@ nsPlaintextEditor::HandleKeyPressEvent(nsIDOMKeyEvent* aKeyEvent)
 
   // NOTE: On some keyboard layout, some characters are inputted with Control
   // key or Alt key, but at that time, widget sets FALSE to these keys.
-  if (nativeKeyEvent->charCode == 0 || nativeKeyEvent->isControl ||
-      nativeKeyEvent->isAlt || nativeKeyEvent->isMeta) {
+  if (nativeKeyEvent->charCode == 0 || nativeKeyEvent->IsControl() ||
+      nativeKeyEvent->IsAlt() || nativeKeyEvent->IsMeta()) {
     // we don't PreventDefault() here or keybindings like control-x won't work
     return NS_OK;
   }
@@ -417,28 +393,29 @@ nsPlaintextEditor::HandleKeyPressEvent(nsIDOMKeyEvent* aKeyEvent)
    to TypedText() to determine what action to take, but without passing
    an event.
    */
-NS_IMETHODIMP nsPlaintextEditor::TypedText(const nsAString& aString,
-                                      PRInt32 aAction)
+NS_IMETHODIMP
+nsPlaintextEditor::TypedText(const nsAString& aString, ETypingAction aAction)
 {
   nsAutoPlaceHolderBatch batch(this, nsGkAtoms::TypingTxnName);
 
-  switch (aAction)
-  {
+  switch (aAction) {
     case eTypedText:
-      {
-        return InsertText(aString);
-      }
+      return InsertText(aString);
     case eTypedBreak:
-      {
-        return InsertLineBreak();
-      } 
-  } 
-  return NS_ERROR_FAILURE; 
+      return InsertLineBreak();
+    default:
+      // eTypedBR is only for HTML
+      return NS_ERROR_FAILURE;
+  }
 }
 
-NS_IMETHODIMP nsPlaintextEditor::CreateBRImpl(nsCOMPtr<nsIDOMNode> *aInOutParent, PRInt32 *aInOutOffset, nsCOMPtr<nsIDOMNode> *outBRNode, EDirection aSelect)
+nsresult
+nsPlaintextEditor::CreateBRImpl(nsCOMPtr<nsIDOMNode>* aInOutParent,
+                                PRInt32* aInOutOffset,
+                                nsCOMPtr<nsIDOMNode>* outBRNode,
+                                EDirection aSelect)
 {
-  NS_ENSURE_SUCCESS(aInOutParent && *aInOutParent && aInOutOffset && outBRNode, NS_ERROR_NULL_POINTER);
+  NS_ENSURE_TRUE(aInOutParent && *aInOutParent && aInOutOffset && outBRNode, NS_ERROR_NULL_POINTER);
   *outBRNode = nsnull;
   nsresult res;
   
@@ -522,7 +499,8 @@ NS_IMETHODIMP nsPlaintextEditor::CreateBR(nsIDOMNode *aNode, PRInt32 aOffset, ns
   return CreateBRImpl(address_of(parent), &offset, outBRNode, aSelect);
 }
 
-NS_IMETHODIMP nsPlaintextEditor::InsertBR(nsCOMPtr<nsIDOMNode> *outBRNode)
+nsresult
+nsPlaintextEditor::InsertBR(nsCOMPtr<nsIDOMNode>* outBRNode)
 {
   NS_ENSURE_TRUE(outBRNode, NS_ERROR_NULL_POINTER);
   *outBRNode = nsnull;
@@ -533,14 +511,12 @@ NS_IMETHODIMP nsPlaintextEditor::InsertBR(nsCOMPtr<nsIDOMNode> *outBRNode)
   nsCOMPtr<nsISelection> selection;
   nsresult res = GetSelection(getter_AddRefs(selection));
   NS_ENSURE_SUCCESS(res, res);
-  bool bCollapsed;
-  res = selection->GetIsCollapsed(&bCollapsed);
-  NS_ENSURE_SUCCESS(res, res);
-  if (!bCollapsed)
-  {
-    res = DeleteSelection(nsIEditor::eNone);
+
+  if (!selection->Collapsed()) {
+    res = DeleteSelection(nsIEditor::eNone, nsIEditor::eStrip);
     NS_ENSURE_SUCCESS(res, res);
   }
+
   nsCOMPtr<nsIDOMNode> selNode;
   PRInt32 selOffset;
   res = GetStartNodeAndOffset(selection, getter_AddRefs(selNode), &selOffset);
@@ -649,11 +625,9 @@ nsresult
 nsPlaintextEditor::ExtendSelectionForDelete(nsISelection *aSelection,
                                             nsIEditor::EDirection *aAction)
 {
-  nsresult result;
+  nsresult result = NS_OK;
 
-  bool bCollapsed;
-  result = aSelection->GetIsCollapsed(&bCollapsed);
-  NS_ENSURE_SUCCESS(result, result);
+  bool bCollapsed = aSelection->Collapsed();
 
   if (*aAction == eNextWord || *aAction == ePreviousWord
       || (*aAction == eNext && bCollapsed)
@@ -724,8 +698,12 @@ nsPlaintextEditor::ExtendSelectionForDelete(nsISelection *aSelection,
   return result;
 }
 
-NS_IMETHODIMP nsPlaintextEditor::DeleteSelection(nsIEditor::EDirection aAction)
+nsresult
+nsPlaintextEditor::DeleteSelection(EDirection aAction,
+                                   EStripWrappers aStripWrappers)
 {
+  MOZ_ASSERT(aStripWrappers == eStrip || aStripWrappers == eNoStrip);
+
   if (!mRules) { return NS_ERROR_NOT_INITIALIZED; }
 
   // Protect the edit rules object from dying
@@ -733,16 +711,14 @@ NS_IMETHODIMP nsPlaintextEditor::DeleteSelection(nsIEditor::EDirection aAction)
 
   nsresult result;
 
-  FireTrustedInputEvent trusted(this, aAction != eNone);
+  HandlingTrustedAction trusted(this, aAction != eNone);
 
   // delete placeholder txns merge.
   nsAutoPlaceHolderBatch batch(this, nsGkAtoms::DeleteTxnName);
   nsAutoRules beginRulesSniffing(this, kOpDeleteSelection, aAction);
 
   // pre-process
-  nsCOMPtr<nsISelection> selection;
-  result = GetSelection(getter_AddRefs(selection));
-  NS_ENSURE_SUCCESS(result, result);
+  nsRefPtr<nsTypedSelection> selection = GetTypedSelection();
   NS_ENSURE_TRUE(selection, NS_ERROR_NULL_POINTER);
 
   // If there is an existing selection when an extended delete is requested,
@@ -750,10 +726,7 @@ NS_IMETHODIMP nsPlaintextEditor::DeleteSelection(nsIEditor::EDirection aAction)
   //  selection to the  start and then create a new selection.
   //  Platforms that use "selection-style" caret positioning just delete the
   //  existing selection without extending it.
-  bool bCollapsed;
-  result  = selection->GetIsCollapsed(&bCollapsed);
-  NS_ENSURE_SUCCESS(result, result);
-  if (!bCollapsed &&
+  if (!selection->Collapsed() &&
       (aAction == eNextWord || aAction == ePreviousWord ||
        aAction == eToBeginningOfLine || aAction == eToEndOfLine))
   {
@@ -768,14 +741,15 @@ NS_IMETHODIMP nsPlaintextEditor::DeleteSelection(nsIEditor::EDirection aAction)
     }
   }
 
-  nsTextRulesInfo ruleInfo(nsTextEditRules::kDeleteSelection);
+  nsTextRulesInfo ruleInfo(kOpDeleteSelection);
   ruleInfo.collapsedAction = aAction;
+  ruleInfo.stripWrappers = aStripWrappers;
   bool cancel, handled;
   result = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   NS_ENSURE_SUCCESS(result, result);
   if (!cancel && !handled)
   {
-    result = DeleteSelectionImpl(aAction);
+    result = DeleteSelectionImpl(aAction, aStripWrappers);
   }
   if (!cancel)
   {
@@ -793,33 +767,29 @@ NS_IMETHODIMP nsPlaintextEditor::InsertText(const nsAString &aStringToInsert)
   // Protect the edit rules object from dying
   nsCOMPtr<nsIEditRules> kungFuDeathGrip(mRules);
 
-  PRInt32 theAction = nsTextEditRules::kInsertText;
-  PRInt32 opID = kOpInsertText;
+  OperationID opID = kOpInsertText;
   if (mInIMEMode) 
   {
-    theAction = nsTextEditRules::kInsertTextIME;
     opID = kOpInsertIMEText;
   }
   nsAutoPlaceHolderBatch batch(this, nsnull); 
   nsAutoRules beginRulesSniffing(this, opID, nsIEditor::eNext);
 
   // pre-process
-  nsCOMPtr<nsISelection> selection;
-  nsresult result = GetSelection(getter_AddRefs(selection));
-  NS_ENSURE_SUCCESS(result, result);
+  nsRefPtr<nsTypedSelection> selection = GetTypedSelection();
   NS_ENSURE_TRUE(selection, NS_ERROR_NULL_POINTER);
   nsAutoString resultString;
   // XXX can we trust instring to outlive ruleInfo,
   // XXX and ruleInfo not to refer to instring in its dtor?
   //nsAutoString instring(aStringToInsert);
-  nsTextRulesInfo ruleInfo(theAction);
+  nsTextRulesInfo ruleInfo(opID);
   ruleInfo.inString = &aStringToInsert;
   ruleInfo.outString = &resultString;
   ruleInfo.maxLength = mMaxTextLength;
 
   bool cancel, handled;
-  result = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
-  NS_ENSURE_SUCCESS(result, result);
+  nsresult res = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
+  NS_ENSURE_SUCCESS(res, res);
   if (!cancel && !handled)
   {
     // we rely on rules code for now - no default implementation
@@ -827,9 +797,9 @@ NS_IMETHODIMP nsPlaintextEditor::InsertText(const nsAString &aStringToInsert)
   if (!cancel)
   {
     // post-process 
-    result = mRules->DidDoAction(selection, &ruleInfo, result);
+    res = mRules->DidDoAction(selection, &ruleInfo, res);
   }
-  return result;
+  return res;
 }
 
 NS_IMETHODIMP nsPlaintextEditor::InsertLineBreak()
@@ -843,10 +813,7 @@ NS_IMETHODIMP nsPlaintextEditor::InsertLineBreak()
   nsAutoRules beginRulesSniffing(this, kOpInsertBreak, nsIEditor::eNext);
 
   // pre-process
-  nsCOMPtr<nsISelection> selection;
-  nsresult res;
-  res = GetSelection(getter_AddRefs(selection));
-  NS_ENSURE_SUCCESS(res, res);
+  nsRefPtr<nsTypedSelection> selection = GetTypedSelection();
   NS_ENSURE_TRUE(selection, NS_ERROR_NULL_POINTER);
 
   // Batching the selection and moving nodes out from under the caret causes
@@ -855,10 +822,10 @@ NS_IMETHODIMP nsPlaintextEditor::InsertLineBreak()
   NS_ENSURE_TRUE(shell, NS_ERROR_NOT_INITIALIZED);
   shell->MaybeInvalidateCaretPosition();
 
-  nsTextRulesInfo ruleInfo(nsTextEditRules::kInsertBreak);
+  nsTextRulesInfo ruleInfo(kOpInsertBreak);
   ruleInfo.maxLength = mMaxTextLength;
   bool cancel, handled;
-  res = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
+  nsresult res = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   NS_ENSURE_SUCCESS(res, res);
   if (!cancel && !handled)
   {
@@ -869,14 +836,13 @@ NS_IMETHODIMP nsPlaintextEditor::InsertLineBreak()
     NS_ENSURE_SUCCESS(res, res);
 
     // don't put text in places that can't have it
-    if (!IsTextNode(selNode) && !CanContainTag(selNode, NS_LITERAL_STRING("#text")))
+    if (!IsTextNode(selNode) && !CanContainTag(selNode, nsGkAtoms::textTagName)) {
       return NS_ERROR_FAILURE;
+    }
 
     // we need to get the doc
-    nsCOMPtr<nsIDOMDocument> doc;
-    res = GetDocument(getter_AddRefs(doc));
-    NS_ENSURE_SUCCESS(res, res);
-    NS_ENSURE_TRUE(doc, NS_ERROR_NULL_POINTER);
+    nsCOMPtr<nsIDOMDocument> doc = GetDOMDocument();
+    NS_ENSURE_TRUE(doc, NS_ERROR_NOT_INITIALIZED);
 
     // don't spaz my selection in subtransactions
     nsAutoTxnsConserveSelection dontSpazMySelection(this);
@@ -903,8 +869,7 @@ NS_IMETHODIMP nsPlaintextEditor::InsertLineBreak()
           // We want the caret to stick to whatever is past the break.  This is
           // because the break is on the same line we were on, but the next content
           // will be on the following line.
-          nsCOMPtr<nsISelectionPrivate> selPriv(do_QueryInterface(selection));
-          selPriv->SetInterlinePosition(true);
+          selection->SetInterlinePosition(true);
         }
       }
     }
@@ -940,10 +905,7 @@ nsresult
 nsPlaintextEditor::UpdateIMEComposition(const nsAString& aCompositionString,
                                         nsIPrivateTextRangeList* aTextRangeList)
 {
-  if (!aTextRangeList && !aCompositionString.IsEmpty()) {
-    NS_ERROR("aTextRangeList is null but the composition string is not null");
-    return NS_ERROR_NULL_POINTER;
-  }
+  NS_ABORT_IF_FALSE(aTextRangeList, "aTextRangeList must not be NULL");
 
   nsCOMPtr<nsIPresShell> ps = GetPresShell();
   NS_ENSURE_TRUE(ps, NS_ERROR_NOT_INITIALIZED);
@@ -954,28 +916,15 @@ nsPlaintextEditor::UpdateIMEComposition(const nsAString& aCompositionString,
 
   nsRefPtr<nsCaret> caretP = ps->GetCaret();
 
-  // We should return caret position if it is possible. Because this event
-  // dispatcher always expects to be returned the correct caret position.
-  // But in following cases, we don't need to process the composition string,
-  // so, we only need to return the caret position.
+  // Update information of clauses in the new composition string.
+  // This will be refered by followed methods.
+  mIMETextRangeList = aTextRangeList;
 
-  // aCompositionString.IsEmpty() && !mIMETextNode:
-  //   Workaround for Windows IME bug 23558: We get every IME event twice.
-  //   For escape keypress, this causes an empty string to be passed
-  //   twice, which freaks out the editor.
+  // We set mIsIMEComposing properly.
+  SetIsIMEComposing();
 
-  // aCompositionString.IsEmpty() && !aTextRangeList:
-  //   Some Chinese IMEs for Linux are always composition string and text range
-  //   list are empty when listing the Chinese characters. In this case,
-  //   we don't need to process composition string too. See bug 271815.
-
-  bool notifyEditorObservers = false;
-  if (!aCompositionString.IsEmpty() || (mIMETextNode && aTextRangeList)) {
-    mIMETextRangeList = aTextRangeList;
-
+  {
     nsAutoPlaceHolderBatch batch(this, nsGkAtoms::IMETxnName);
-
-    SetIsIMEComposing(); // We set mIsIMEComposing properly.
 
     rv = InsertText(aCompositionString);
 
@@ -984,24 +933,24 @@ nsPlaintextEditor::UpdateIMEComposition(const nsAString& aCompositionString,
     if (caretP) {
       caretP->SetCaretDOMSelection(selection);
     }
-
-    // second part of 23558 fix:
-    if (aCompositionString.IsEmpty()) {
-      mIMETextNode = nsnull;
-    }
-
-    // If still composing, we should fire input event via observer.
-    // Note that if committed, we don't need to notify it since it will be
-    // notified at followed compositionend event.
-    // NOTE: We must notify after the auto batch will be gone.
-    notifyEditorObservers = mIsIMEComposing;
   }
 
-  if (notifyEditorObservers) {
+  // If still composing, we should fire input event via observer.
+  // Note that if committed, we don't need to notify it since it will be
+  // notified at followed compositionend event.
+  // NOTE: We must notify after the auto batch will be gone.
+  if (mIsIMEComposing) {
     NotifyEditorObservers();
   }
 
   return rv;
+}
+
+already_AddRefed<nsIContent>
+nsPlaintextEditor::GetInputEventTargetContent()
+{
+  nsCOMPtr<nsIContent> target = do_QueryInterface(mEventTarget);
+  return target.forget();
 }
 
 NS_IMETHODIMP
@@ -1203,7 +1152,7 @@ nsPlaintextEditor::Undo(PRUint32 aCount)
   // Protect the edit rules object from dying
   nsCOMPtr<nsIEditRules> kungFuDeathGrip(mRules);
 
-  FireTrustedInputEvent trusted(this);
+  HandlingTrustedAction trusted(this);
 
   nsAutoUpdateViewBatch beginViewBatching(this);
 
@@ -1211,9 +1160,8 @@ nsPlaintextEditor::Undo(PRUint32 aCount)
 
   nsAutoRules beginRulesSniffing(this, kOpUndo, nsIEditor::eNone);
 
-  nsTextRulesInfo ruleInfo(nsTextEditRules::kUndo);
-  nsCOMPtr<nsISelection> selection;
-  GetSelection(getter_AddRefs(selection));
+  nsTextRulesInfo ruleInfo(kOpUndo);
+  nsRefPtr<nsTypedSelection> selection = GetTypedSelection();
   bool cancel, handled;
   nsresult result = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   
@@ -1233,7 +1181,7 @@ nsPlaintextEditor::Redo(PRUint32 aCount)
   // Protect the edit rules object from dying
   nsCOMPtr<nsIEditRules> kungFuDeathGrip(mRules);
 
-  FireTrustedInputEvent trusted(this);
+  HandlingTrustedAction trusted(this);
 
   nsAutoUpdateViewBatch beginViewBatching(this);
 
@@ -1241,9 +1189,8 @@ nsPlaintextEditor::Redo(PRUint32 aCount)
 
   nsAutoRules beginRulesSniffing(this, kOpRedo, nsIEditor::eNone);
 
-  nsTextRulesInfo ruleInfo(nsTextEditRules::kRedo);
-  nsCOMPtr<nsISelection> selection;
-  GetSelection(getter_AddRefs(selection));
+  nsTextRulesInfo ruleInfo(kOpRedo);
+  nsRefPtr<nsTypedSelection> selection = GetTypedSelection();
   bool cancel, handled;
   nsresult result = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   
@@ -1264,9 +1211,7 @@ nsPlaintextEditor::CanCutOrCopy()
   if (NS_FAILED(GetSelection(getter_AddRefs(selection))))
     return false;
 
-  bool isCollapsed;
-  selection->GetIsCollapsed(&isCollapsed);
-  return !isCollapsed;
+  return !selection->Collapsed();
 }
 
 bool
@@ -1292,10 +1237,10 @@ nsPlaintextEditor::FireClipboardEvent(PRInt32 aType)
 
 NS_IMETHODIMP nsPlaintextEditor::Cut()
 {
-  FireTrustedInputEvent trusted(this);
+  HandlingTrustedAction trusted(this);
 
   if (FireClipboardEvent(NS_CUT))
-    return DeleteSelection(eNone);
+    return DeleteSelection(eNone, eStrip);
   return NS_OK;
 }
 
@@ -1333,16 +1278,15 @@ nsPlaintextEditor::GetAndInitDocEncoder(const nsAString& aFormatType,
   nsCOMPtr<nsIDocumentEncoder> docEncoder (do_CreateInstance(formatType.get(), &rv));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsIDocument> doc = do_QueryReferent(mDocWeak);
-  nsCOMPtr<nsIDOMDocument> domDoc = do_QueryInterface(doc);
+  nsCOMPtr<nsIDOMDocument> domDoc = do_QueryReferent(mDocWeak);
   NS_ASSERTION(domDoc, "Need a document");
 
   rv = docEncoder->Init(domDoc, aFormatType, aFlags);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (!aCharset.IsEmpty()
-    && !(aCharset.EqualsLiteral("null")))
+  if (!aCharset.IsEmpty() && !aCharset.EqualsLiteral("null")) {
     docEncoder->SetCharset(aCharset);
+  }
 
   PRInt32 wc;
   (void) GetWrapWidth(&wc);
@@ -1356,25 +1300,26 @@ nsPlaintextEditor::GetAndInitDocEncoder(const nsAString& aFormatType,
   {
     nsCOMPtr<nsISelection> selection;
     rv = GetSelection(getter_AddRefs(selection));
-    if (NS_SUCCEEDED(rv) && selection)
-      rv = docEncoder->SetSelection(selection);
     NS_ENSURE_SUCCESS(rv, rv);
+    if (selection) {
+      rv = docEncoder->SetSelection(selection);
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
   }
   // ... or if the root element is not a body,
   // in which case we set the selection to encompass the root.
   else
   {
-    nsCOMPtr<nsIDOMElement> rootElement = do_QueryInterface(GetRoot());
+    dom::Element* rootElement = GetRoot();
     NS_ENSURE_TRUE(rootElement, NS_ERROR_FAILURE);
-    if (!nsTextEditUtils::IsBody(rootElement))
-    {
-      rv = docEncoder->SetContainerNode(rootElement);
+    if (!rootElement->IsHTML(nsGkAtoms::body)) {
+      rv = docEncoder->SetNativeContainerNode(rootElement);
       NS_ENSURE_SUCCESS(rv, rv);
     }
   }
 
-  NS_ADDREF(*encoder = docEncoder);
-  return rv;
+  docEncoder.forget(encoder);
+  return NS_OK;
 }
 
 
@@ -1387,7 +1332,7 @@ nsPlaintextEditor::OutputToString(const nsAString& aFormatType,
   nsCOMPtr<nsIEditRules> kungFuDeathGrip(mRules);
 
   nsString resultString;
-  nsTextRulesInfo ruleInfo(nsTextEditRules::kOutputText);
+  nsTextRulesInfo ruleInfo(kOpOutputText);
   ruleInfo.outString = &resultString;
   // XXX Struct should store a nsAReadable*
   nsAutoString str(aFormatType);
@@ -1519,16 +1464,14 @@ nsPlaintextEditor::InsertAsQuotation(const nsAString& aQuotedText,
     quotedStuff.Append(PRUnichar('\n'));
 
   // get selection
-  nsCOMPtr<nsISelection> selection;
-  rv = GetSelection(getter_AddRefs(selection));
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsRefPtr<nsTypedSelection> selection = GetTypedSelection();
   NS_ENSURE_TRUE(selection, NS_ERROR_NULL_POINTER);
 
   nsAutoEditBatch beginBatching(this);
   nsAutoRules beginRulesSniffing(this, kOpInsertText, nsIEditor::eNext);
 
   // give rules a chance to handle or cancel
-  nsTextRulesInfo ruleInfo(nsTextEditRules::kInsertElement);
+  nsTextRulesInfo ruleInfo(kOpInsertElement);
   bool cancel, handled;
   rv = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -1573,8 +1516,7 @@ nsPlaintextEditor::SharedOutputString(PRUint32 aFlags,
   NS_ENSURE_SUCCESS(rv, rv);
   NS_ENSURE_TRUE(selection, NS_ERROR_NOT_INITIALIZED);
 
-  rv = selection->GetIsCollapsed(aIsCollapsed);
-  NS_ENSURE_SUCCESS(rv, rv);
+  *aIsCollapsed = selection->Collapsed();
 
   if (!*aIsCollapsed)
     aFlags |= nsIDocumentEncoder::OutputSelectionOnly;
@@ -1654,7 +1596,8 @@ nsPlaintextEditor::GetEmbeddedObjects(nsISupportsArray** aNodeList)
 /** All editor operations which alter the doc should be prefaced
  *  with a call to StartOperation, naming the action and direction */
 NS_IMETHODIMP
-nsPlaintextEditor::StartOperation(PRInt32 opID, nsIEditor::EDirection aDirection)
+nsPlaintextEditor::StartOperation(OperationID opID,
+                                  nsIEditor::EDirection aDirection)
 {
   // Protect the edit rules object from dying
   nsCOMPtr<nsIEditRules> kungFuDeathGrip(mRules);

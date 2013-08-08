@@ -1,39 +1,7 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Corporation code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2007
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Stuart Parmenter <stuart@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gfxTypes.h"
 #include "gfxPattern.h"
@@ -132,6 +100,10 @@ gfxPattern::SetMatrix(const gfxMatrix& matrix)
     cairo_pattern_set_matrix(mPattern, &mat);
   } else {
     mTransform = ToMatrix(matrix);
+    // Cairo-pattern matrices specify the conversion from DrawTarget to pattern
+    // space. Azure pattern matrices specify the conversion from pattern to
+    // DrawTarget space.
+    mTransform.Invert();
   }
 }
 
@@ -148,8 +120,13 @@ gfxPattern::GetMatrix() const
 }
 
 Pattern*
-gfxPattern::GetPattern(mozilla::gfx::DrawTarget *aTarget)
+gfxPattern::GetPattern(DrawTarget *aTarget, Matrix *aPatternTransform)
 {
+  if (mGfxPattern) {
+    mGfxPattern->~Pattern();
+    mGfxPattern = nsnull;
+  }
+
   if (!mPattern) {
     mGfxPattern = new (mSurfacePattern.addr())
       SurfacePattern(mSourceSurface, EXTEND_CLAMP, mTransform);
@@ -159,6 +136,14 @@ gfxPattern::GetPattern(mozilla::gfx::DrawTarget *aTarget)
   GraphicsExtend extend = (GraphicsExtend)cairo_pattern_get_extend(mPattern);
 
   switch (cairo_pattern_get_type(mPattern)) {
+  case CAIRO_PATTERN_TYPE_SOLID:
+    {
+      double r, g, b, a;
+      cairo_pattern_get_rgba(mPattern, &r, &g, &b, &a);
+
+      new (mColorPattern.addr()) ColorPattern(Color(r, g, b, a));
+      return mColorPattern.addr();
+    }
   case CAIRO_PATTERN_TYPE_SURFACE:
     {
       GraphicsFilter filter = (GraphicsFilter)cairo_pattern_get_filter(mPattern);
@@ -171,13 +156,17 @@ gfxPattern::GetPattern(mozilla::gfx::DrawTarget *aTarget)
 
       if (!mSourceSurface) {
         nsRefPtr<gfxASurface> gfxSurf = gfxASurface::Wrap(surf);
+        // The underlying surface here will be kept around by the gfxPattern.
+        // This function is intended to be used right away.
         mSourceSurface =
           gfxPlatform::GetPlatform()->GetSourceSurfaceForSurface(aTarget, gfxSurf);
       }
 
       if (mSourceSurface) {
         Matrix newMat = ToMatrix(matrix);
-        newMat.Invert();
+
+        AdjustTransformForPattern(newMat, aTarget->GetTransform(), aPatternTransform);
+
         double x, y;
         cairo_surface_get_device_offset(surf, &x, &y);
         newMat.Translate(-x, -y);
@@ -216,7 +205,8 @@ gfxPattern::GetPattern(mozilla::gfx::DrawTarget *aTarget)
         gfxMatrix matrix(*reinterpret_cast<gfxMatrix*>(&mat));
 
         Matrix newMat = ToMatrix(matrix);
-        newMat.Invert();
+
+        AdjustTransformForPattern(newMat, aTarget->GetTransform(), aPatternTransform);
 
         mGfxPattern = new (mLinearGradientPattern.addr())
           LinearGradientPattern(Point(x1, y1), Point(x2, y2), mStops, newMat);
@@ -252,7 +242,8 @@ gfxPattern::GetPattern(mozilla::gfx::DrawTarget *aTarget)
         gfxMatrix matrix(*reinterpret_cast<gfxMatrix*>(&mat));
 
         Matrix newMat = ToMatrix(matrix);
-        newMat.Invert();
+
+        AdjustTransformForPattern(newMat, aTarget->GetTransform(), aPatternTransform);
 
         double x1, y1, x2, y2, r1, r2;
         cairo_pattern_get_radial_circles(mPattern, &x1, &y1, &r1, &x2, &y2, &r2);
@@ -263,6 +254,9 @@ gfxPattern::GetPattern(mozilla::gfx::DrawTarget *aTarget)
       }
       break;
     }
+  default:
+    /* Reassure the compiler we are handling all the enum values.  */
+    break;
   }
 
   new (mColorPattern.addr()) ColorPattern(Color(0, 0, 0, 0));
@@ -322,9 +316,9 @@ gfxPattern::IsOpaque()
           return true;
         }
       }
+    default:
+      return false;
     }
-
-    return false;
   }
 
   if (mSourceSurface->GetFormat() == FORMAT_B8G8R8X8) {
@@ -411,4 +405,20 @@ gfxPattern::CairoStatus()
     // An Azure pattern as this point is never in error status.
     return CAIRO_STATUS_SUCCESS;
   }
+}
+
+void
+gfxPattern::AdjustTransformForPattern(Matrix &aPatternTransform,
+                                      const Matrix &aCurrentTransform,
+                                      const Matrix *aOriginalTransform)
+{
+  aPatternTransform.Invert();
+  if (!aOriginalTransform) {
+    return;
+  }
+
+  Matrix mat = aCurrentTransform;
+  mat.Invert();
+
+  aPatternTransform = aPatternTransform * *aOriginalTransform * mat;
 }

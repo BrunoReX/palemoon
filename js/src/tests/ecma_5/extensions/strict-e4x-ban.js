@@ -1,3 +1,4 @@
+// |reftest| skip-if(!xulRuntime.shell)
 /*
  * Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/licenses/publicdomain/
@@ -34,7 +35,7 @@ assertEq(testLenientAndStrict("var x = <x><p>42</p></x>; x..p",
          true);
 
 if (typeof this.options == "function") {
-    this.options('xml');
+    this.options('moar_xml');
 
     assertEq(testLenientAndStrict("var cdata = <![CDATA[bar]]>",
                                   parsesSuccessfully,
@@ -46,7 +47,7 @@ if (typeof this.options == "function") {
                                   parseRaisesException(SyntaxError)),
              true);
 
-    this.options('xml');
+    this.options('moar_xml');
 }
 
 reportCompare(true, true);

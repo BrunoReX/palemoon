@@ -1,41 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Original Author: Daniel Glazman <glazman@netscape.com>
- *   Ms2ger <ms2ger@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef nsHTMLCSSUtils_h__
 #define nsHTMLCSSUtils_h__
@@ -106,9 +72,20 @@ public:
     * @return               a boolean saying if the tag/attribute has a css equiv
     * @param aNode          [IN] a DOM node
     * @param aProperty      [IN] an atom containing a HTML tag name
-    * @param aAttribute     [IN] a string containing the name of a HTML attribute carried by the element above
+    * @param aAttribute     [IN] a string containing the name of a HTML
+    *                            attribute carried by the element above
+    * @param aValue         [IN] an optional string containing the attribute's
+    *                            HTML value -- this matters for <font size>,
+    *                            since size=7 has no CSS equivalent.  Make sure
+    *                            you pass the HTML value (e.g. "4"), not the
+    *                            CSS value (e.g. "large").
     */
-  bool        IsCSSEditableProperty(nsIDOMNode * aNode, nsIAtom * aProperty, const nsAString * aAttribute);
+  bool IsCSSEditableProperty(nsIContent* aNode, nsIAtom* aProperty,
+                             const nsAString* aAttribute,
+                             const nsAString* aValue = nsnull);
+  bool IsCSSEditableProperty(nsIDOMNode* aNode, nsIAtom* aProperty,
+                             const nsAString* aAttribute,
+                             const nsAString* aValue = nsnull);
 
   /** adds/remove a CSS declaration to the STYLE atrribute carried by a given element
     *
@@ -183,13 +160,6 @@ public:
     */
   void        GetDefaultLengthUnit(nsAString & aLengthUnit);
 
-  /** asnwers true if the element aElement carries an ID or a class
-    *
-    * @param aElement       [IN] a DOM element
-    * @param aReturn        [OUT] the boolean answer
-    */
-  nsresult    HasClassOrID(nsIDOMElement * aElement, bool & aReturn);
-
   /** returns the list of values for the CSS equivalences to
     * the passed HTML style for the passed node
     *
@@ -200,7 +170,7 @@ public:
     * @param aStyleType     [IN] SPECIFIED_STYLE_TYPE to query the specified style values
                                  COMPUTED_STYLE_TYPE  to query the computed style values
     */
-  nsresult    GetCSSEquivalentToHTMLInlineStyleSet(nsIDOMNode * aNode,
+  nsresult    GetCSSEquivalentToHTMLInlineStyleSet(nsINode* aNode,
                                                    nsIAtom * aHTMLProperty,
                                                    const nsAString * aAttribute,
                                                    nsAString & aValueString,
@@ -215,8 +185,16 @@ public:
     * @param aIsSet         [OUT] a boolean being true if the css properties are set
     * @param aValueString   [IN/OUT] the attribute value (in) the list of css values (out)
     * @param aStyleType     [IN] SPECIFIED_STYLE_TYPE to query the specified style values
-                                 COMPUTED_STYLE_TYPE  to query the computed style values
+    *                            COMPUTED_STYLE_TYPE  to query the computed style values
+    *
+    * The nsIContent variant returns aIsSet instead of using an out parameter.
     */
+  bool IsCSSEquivalentToHTMLInlineStyleSet(nsIContent* aContent,
+                                           nsIAtom* aProperty,
+                                           const nsAString* aAttribute,
+                                           const nsAString& aValue,
+                                           PRUint8 aStyleType);
+
   nsresult    IsCSSEquivalentToHTMLInlineStyleSet(nsIDOMNode * aNode,
                                                   nsIAtom * aHTMLProperty,
                                                   const nsAString * aAttribute,
@@ -234,7 +212,15 @@ public:
     * @param aCount         [OUT] the number of CSS properties set by the call
     * @param aSuppressTransaction [IN] a boolean indicating, when true,
     *                                  that no transaction should be recorded
+    *
+    * aCount is returned by the dom::Element variant instead of being an out
+    * parameter.
     */
+  PRInt32     SetCSSEquivalentToHTMLStyle(mozilla::dom::Element* aElement,
+                                          nsIAtom* aProperty,
+                                          const nsAString* aAttribute,
+                                          const nsAString* aValue,
+                                          bool aSuppressTransaction);
   nsresult    SetCSSEquivalentToHTMLStyle(nsIDOMNode * aNode,
                                           nsIAtom * aHTMLProperty,
                                           const nsAString * aAttribute,
@@ -289,6 +275,8 @@ public:
     * @param aFirstNode           [IN] a DOM node
     * @param aSecondNode          [IN] a DOM node
     */
+  bool ElementsSameStyle(mozilla::dom::Element* aFirstNode,
+                         mozilla::dom::Element* aSecondNode);
   bool ElementsSameStyle(nsIDOMNode *aFirstNode, nsIDOMNode *aSecondNode);
 
   /** get the specified inline styles (style attribute) for an element
@@ -306,7 +294,8 @@ public:
     * @param aNode           [IN] a node
     * @param aElement        [OUT] the deepest element node containing aNode (possibly aNode itself)
     */
-  nsresult GetElementContainerOrSelf(nsIDOMNode * aNode, nsIDOMElement ** aElement);
+  mozilla::dom::Element* GetElementContainerOrSelf(nsINode* aNode);
+  already_AddRefed<nsIDOMElement> GetElementContainerOrSelf(nsIDOMNode* aNode);
 
   /**
    * Gets the default Window for a given node.
@@ -314,7 +303,8 @@ public:
    * @param aNode    the node we want the default Window for
    * @param aWindow  [OUT] the default Window
    */
-  nsresult        GetDefaultViewCSS(nsIDOMNode* aNode, nsIDOMWindow** aWindow);
+  nsresult GetDefaultViewCSS(nsINode* aNode, nsIDOMWindow** aWindow);
+  nsresult GetDefaultViewCSS(nsIDOMNode* aNode, nsIDOMWindow** aWindow);
 
 
 private:
@@ -357,12 +347,12 @@ private:
     *                                 is made for GetCSSEquivalentToHTMLInlineStyleSet or
     *                                 RemoveCSSEquivalentToHTMLInlineStyleSet
     */
-  void      GenerateCSSDeclarationsFromHTMLStyle(nsIDOMNode * aNode,
-                                                 nsIAtom * aHTMLProperty,
-                                                 const nsAString *aAttribute,
-                                                 const nsAString *aValue,
-                                                 nsTArray<nsIAtom*> & aPropertyArray,
-                                                 nsTArray<nsString> & aValueArray,
+  void      GenerateCSSDeclarationsFromHTMLStyle(mozilla::dom::Element* aNode,
+                                                 nsIAtom* aHTMLProperty,
+                                                 const nsAString* aAttribute,
+                                                 const nsAString* aValue,
+                                                 nsTArray<nsIAtom*>& aPropertyArray,
+                                                 nsTArray<nsString>& aValueArray,
                                                  bool aGetOrRemoveRequest);
 
   /** creates a Transaction for setting or removing a css property
@@ -388,10 +378,12 @@ private:
    * @param aStyleType          [IN] SPECIFIED_STYLE_TYPE to query the specified style values
    *                                 COMPUTED_STYLE_TYPE  to query the computed style values
    */
-  nsresult    GetCSSInlinePropertyBase(nsIDOMNode * aNode, nsIAtom * aProperty,
-                                       nsAString & aValue,
-                                       nsIDOMWindow* aWindow,
-                                       PRUint8 aStyleType);
+  nsresult GetCSSInlinePropertyBase(nsINode* aNode, nsIAtom* aProperty,
+                                    nsAString& aValue, nsIDOMWindow* aWindow,
+                                    PRUint8 aStyleType);
+  nsresult GetCSSInlinePropertyBase(nsIDOMNode* aNode, nsIAtom* aProperty,
+                                    nsAString& aValue, nsIDOMWindow* aWindow,
+                                    PRUint8 aStyleType);
 
 
 private:

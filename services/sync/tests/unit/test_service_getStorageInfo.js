@@ -1,8 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+Cu.import("resource://services-common/rest.js");
 Cu.import("resource://services-sync/service.js");
-Cu.import("resource://services-sync/rest.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/util.js");
 
@@ -11,9 +11,9 @@ let collections = {steam:  65.11328,
                    diesel: 2.25488281};
 
 function run_test() {
-  Service.username = "johndoe";
-  Service.password = "ilovejane";
-  Service.clusterURL = "http://localhost:8080/";
+  setBasicCredentials("johndoe", "ilovejane");
+  Service.serverURL = TEST_SERVER_URL;
+  Service.clusterURL = TEST_CLUSTER_URL;
 
   Log4Moz.repository.getLogger("Sync.Service").level = Log4Moz.Level.Trace;
   Log4Moz.repository.getLogger("Sync.StorageRequest").level = Log4Moz.Level.Trace;
@@ -31,8 +31,9 @@ add_test(function test_success() {
     do_check_true(Utils.deepEquals(info, collections));
 
     // Ensure that the request is sent off with the right bits.
-    do_check_true(basic_auth_matches(handler.request, Service.username,
-                                     Service.password));
+    do_check_true(basic_auth_matches(handler.request,
+                                     Identity.username,
+                                     Identity.basicPassword));
     let expectedUA = Services.appinfo.name + "/" + Services.appinfo.version +
                      " FxSync/" + WEAVE_VERSION + "." +
                      Services.appinfo.appBuildID + ".desktop";

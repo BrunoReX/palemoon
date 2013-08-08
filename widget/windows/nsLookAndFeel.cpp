@@ -1,43 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Michael Lowe <michael.lowe@bigfoot.com>
- *   Jens Bannmann <jens.b@web.de>
- *   Ryan Jones <sciguyryan@gmail.com>
- *   Ehsan Akhgari <ehsan.akhgari@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsLookAndFeel.h"
 #include <windows.h>
@@ -46,10 +10,11 @@
 #include "nsStyleConsts.h"
 #include "nsUXThemeData.h"
 #include "nsUXThemeConstants.h"
+#include "gfxFont.h"
+#include "WinUtils.h"
 
-typedef UINT (CALLBACK *SHAppBarMessagePtr)(DWORD, PAPPBARDATA);
-SHAppBarMessagePtr gSHAppBarMessage = NULL;
-static HINSTANCE gShell32DLLInst = NULL;
+using namespace mozilla::widget;
+using mozilla::LookAndFeel;
 
 static nsresult GetColorFromTheme(nsUXThemeClass cls,
                            PRInt32 aPart,
@@ -58,7 +23,7 @@ static nsresult GetColorFromTheme(nsUXThemeClass cls,
                            nscolor &aColor)
 {
   COLORREF color;
-  HRESULT hr = nsUXThemeData::GetThemeColor(cls, aPart, aState, aPropId, &color);
+  HRESULT hr = GetThemeColor(nsUXThemeData::GetTheme(cls), aPart, aState, aPropId, &color);
   if (hr == S_OK)
   {
     aColor = COLOREF_2_NSRGB(color);
@@ -75,22 +40,10 @@ static PRInt32 GetSystemParam(long flag, PRInt32 def)
 
 nsLookAndFeel::nsLookAndFeel() : nsXPLookAndFeel()
 {
-  gShell32DLLInst = LoadLibraryW(L"Shell32.dll");
-  if (gShell32DLLInst)
-  {
-      gSHAppBarMessage = (SHAppBarMessagePtr) GetProcAddress(gShell32DLLInst,
-                                                             "SHAppBarMessage");
-  }
 }
 
 nsLookAndFeel::~nsLookAndFeel()
 {
-   if (gShell32DLLInst)
-   {
-       FreeLibrary(gShell32DLLInst);
-       gShell32DLLInst = NULL;
-       gSHAppBarMessage = NULL;
-   }
 }
 
 nsresult
@@ -199,7 +152,8 @@ nsLookAndFeel::NativeGetColor(ColorID aID, nscolor &aColor)
       idx = COLOR_HIGHLIGHT;
       break;
     case eColorID__moz_menubarhovertext:
-      if (!nsUXThemeData::sIsVistaOrLater || !nsUXThemeData::isAppThemed())
+      if (WinUtils::GetWindowsVersion() < WinUtils::VISTA_VERSION ||
+          !IsAppThemed())
       {
         idx = nsUXThemeData::sFlatMenus ?
                 COLOR_HIGHLIGHTTEXT :
@@ -208,7 +162,8 @@ nsLookAndFeel::NativeGetColor(ColorID aID, nscolor &aColor)
       }
       // Fall through
     case eColorID__moz_menuhovertext:
-      if (nsUXThemeData::IsAppThemed() && nsUXThemeData::sIsVistaOrLater)
+      if (WinUtils::GetWindowsVersion() >= WinUtils::VISTA_VERSION &&
+          IsAppThemed())
       {
         res = ::GetColorFromTheme(eUXMenu,
                                   MENU_POPUPITEM, MPI_HOT, TMT_TEXTCOLOR, aColor);
@@ -284,7 +239,8 @@ nsLookAndFeel::NativeGetColor(ColorID aID, nscolor &aColor)
       idx = COLOR_3DFACE;
       break;
     case eColorID__moz_win_mediatext:
-      if (nsUXThemeData::IsAppThemed() && nsUXThemeData::sIsVistaOrLater) {
+      if (WinUtils::GetWindowsVersion() >= WinUtils::VISTA_VERSION &&
+          IsAppThemed()) {
         res = ::GetColorFromTheme(eUXMediaToolbar,
                                   TP_BUTTON, TS_NORMAL, TMT_TEXTCOLOR, aColor);
         if (NS_SUCCEEDED(res))
@@ -294,7 +250,8 @@ nsLookAndFeel::NativeGetColor(ColorID aID, nscolor &aColor)
       idx = COLOR_WINDOWTEXT;
       break;
     case eColorID__moz_win_communicationstext:
-      if (nsUXThemeData::IsAppThemed() && nsUXThemeData::sIsVistaOrLater)
+      if (WinUtils::GetWindowsVersion() >= WinUtils::VISTA_VERSION &&
+          IsAppThemed())
       {
         res = ::GetColorFromTheme(eUXCommunicationsToolbar,
                                   TP_BUTTON, TS_NORMAL, TMT_TEXTCOLOR, aColor);
@@ -405,7 +362,7 @@ nsLookAndFeel::GetIntImpl(IntID aID, PRInt32 &aResult)
         aResult = 3;
         break;
     case eIntID_WindowsClassic:
-        aResult = !nsUXThemeData::IsAppThemed();
+        aResult = !IsAppThemed();
         break;
     case eIntID_TouchEnabled:
         aResult = 0;
@@ -433,7 +390,6 @@ nsLookAndFeel::GetIntImpl(IntID aID, PRInt32 &aResult)
         break;
     case eIntID_AlertNotificationOrigin:
         aResult = 0;
-        if (gSHAppBarMessage)
         {
           // Get task bar window handle
           HWND shellWindow = FindWindowW(L"Shell_TrayWnd", NULL);
@@ -444,7 +400,7 @@ nsLookAndFeel::GetIntImpl(IntID aID, PRInt32 &aResult)
             APPBARDATA appBarData;
             appBarData.hWnd = shellWindow;
             appBarData.cbSize = sizeof(appBarData);
-            if (gSHAppBarMessage(ABM_GETTASKBARPOS, &appBarData))
+            if (SHAppBarMessage(ABM_GETTASKBARPOS, &appBarData))
             {
               // Set alert origin as a bit field - see LookAndFeel.h
               // 0 represents bottom right, sliding vertically.
@@ -514,16 +470,148 @@ nsLookAndFeel::GetFloatImpl(FloatID aID, float &aResult)
   return res;
 }
 
+static bool
+GetSysFontInfo(HDC aHDC, LookAndFeel::FontID anID,
+               nsString &aFontName,
+               gfxFontStyle &aFontStyle)
+{
+  LOGFONTW* ptrLogFont = NULL;
+  LOGFONTW logFont;
+  NONCLIENTMETRICSW ncm;
+  HGDIOBJ hGDI;
+  PRUnichar name[LF_FACESIZE];
+
+  // Depending on which stock font we want, there are three different
+  // places we might have to look it up.
+  switch (anID) {
+  case LookAndFeel::eFont_Icon:
+    if (!::SystemParametersInfoW(SPI_GETICONTITLELOGFONT,
+                                 sizeof(logFont), (PVOID)&logFont, 0))
+      return false;
+
+    ptrLogFont = &logFont;
+    break;
+
+  case LookAndFeel::eFont_Menu:
+  case LookAndFeel::eFont_MessageBox:
+  case LookAndFeel::eFont_SmallCaption:
+  case LookAndFeel::eFont_StatusBar:
+  case LookAndFeel::eFont_Tooltips:
+    ncm.cbSize = sizeof(NONCLIENTMETRICSW);
+    if (!::SystemParametersInfoW(SPI_GETNONCLIENTMETRICS,
+                                 sizeof(ncm), (PVOID)&ncm, 0))
+      return false;
+
+    switch (anID) {
+    case LookAndFeel::eFont_Menu:
+      ptrLogFont = &ncm.lfMenuFont;
+      break;
+    case LookAndFeel::eFont_MessageBox:
+      ptrLogFont = &ncm.lfMessageFont;
+      break;
+    case LookAndFeel::eFont_SmallCaption:
+      ptrLogFont = &ncm.lfSmCaptionFont;
+      break;
+    case LookAndFeel::eFont_StatusBar:
+    case LookAndFeel::eFont_Tooltips:
+      ptrLogFont = &ncm.lfStatusFont;
+      break;
+    }
+    break;
+
+  case LookAndFeel::eFont_Widget:
+  case LookAndFeel::eFont_Window:      // css3
+  case LookAndFeel::eFont_Document:
+  case LookAndFeel::eFont_Workspace:
+  case LookAndFeel::eFont_Desktop:
+  case LookAndFeel::eFont_Info:
+  case LookAndFeel::eFont_Dialog:
+  case LookAndFeel::eFont_Button:
+  case LookAndFeel::eFont_PullDownMenu:
+  case LookAndFeel::eFont_List:
+  case LookAndFeel::eFont_Field:
+  case LookAndFeel::eFont_Caption:
+    hGDI = ::GetStockObject(DEFAULT_GUI_FONT);
+    if (!hGDI)
+      return false;
+
+    if (::GetObjectW(hGDI, sizeof(logFont), &logFont) <= 0)
+      return false;
+
+    ptrLogFont = &logFont;
+    break;
+  }
+
+  // FIXME?: mPixelScale is currently hardcoded to 1.
+  float mPixelScale = 1.0f;
+
+  // The lfHeight is in pixels, and it needs to be adjusted for the
+  // device it will be displayed on.
+  // Screens and Printers will differ in DPI
+  //
+  // So this accounts for the difference in the DeviceContexts
+  // The mPixelScale will be a "1" for the screen and could be
+  // any value when going to a printer, for example mPixleScale is
+  // 6.25 when going to a 600dpi printer.
+  // round, but take into account whether it is negative
+  float pixelHeight = -ptrLogFont->lfHeight;
+  if (pixelHeight < 0) {
+    HFONT hFont = ::CreateFontIndirectW(ptrLogFont);
+    if (!hFont)
+      return false;
+    HGDIOBJ hObject = ::SelectObject(aHDC, hFont);
+    TEXTMETRIC tm;
+    ::GetTextMetrics(aHDC, &tm);
+    ::SelectObject(aHDC, hObject);
+    ::DeleteObject(hFont);
+    pixelHeight = tm.tmAscent;
+  }
+  pixelHeight *= mPixelScale;
+
+  // we have problem on Simplified Chinese system because the system
+  // report the default font size is 8 points. but if we use 8, the text
+  // display very ugly. force it to be at 9 points (12 pixels) on that
+  // system (cp936), but leave other sizes alone.
+  if (pixelHeight < 12 && ::GetACP() == 936)
+    pixelHeight = 12;
+
+  aFontStyle.size = pixelHeight;
+
+  // FIXME: What about oblique?
+  aFontStyle.style =
+    (ptrLogFont->lfItalic) ? NS_FONT_STYLE_ITALIC : NS_FONT_STYLE_NORMAL;
+
+  // FIXME: Other weights?
+  aFontStyle.weight =
+    (ptrLogFont->lfWeight == FW_BOLD ?
+        NS_FONT_WEIGHT_BOLD : NS_FONT_WEIGHT_NORMAL);
+
+  // FIXME: Set aFontStyle->stretch correctly!
+  aFontStyle.stretch = NS_FONT_STRETCH_NORMAL;
+
+  aFontStyle.systemFont = true;
+
+  name[0] = 0;
+  memcpy(name, ptrLogFont->lfFaceName, LF_FACESIZE*sizeof(PRUnichar));
+  aFontName = name;
+
+  return true;
+}
+
+bool
+nsLookAndFeel::GetFontImpl(FontID anID, nsString &aFontName,
+                           gfxFontStyle &aFontStyle)
+{
+  HDC tdc = GetDC(NULL);
+  bool status = GetSysFontInfo(tdc, anID, aFontName, aFontStyle);
+  ReleaseDC(NULL, tdc);
+  return status;
+}
+
 /* virtual */
 PRUnichar
 nsLookAndFeel::GetPasswordCharacterImpl()
 {
 #define UNICODE_BLACK_CIRCLE_CHAR 0x25cf
-  static PRUnichar passwordCharacter = 0;
-  if (!passwordCharacter) {
-    passwordCharacter = '*';
-    if (nsUXThemeData::sIsXPOrLater)
-      passwordCharacter = UNICODE_BLACK_CIRCLE_CHAR;
-  }
-  return passwordCharacter;
+  return UNICODE_BLACK_CIRCLE_CHAR;
 }

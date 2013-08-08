@@ -1,39 +1,7 @@
 /* -*- Mode: C; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is the Mozilla Text to HTML converter code.
- *
- * The Initial Developer of the Original Code is
- * Ben Bucksch <http://www.bucksch.org>.
- * Portions created by the Initial Developer are Copyright (C) 1999, 2000
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozTXTToHTMLConv.h"
 #include "nsIServiceManager.h"
@@ -324,34 +292,39 @@ mozTXTToHTMLConv::FindURLEnd(const PRUnichar * aInString, PRInt32 aInStringLengt
       end = PRUint32(i);
       return end > pos;
     }
-    else
-      return false;
+    return false;
   }
   case freetext:
   case abbreviated:
   {
     PRUint32 i = pos + 1;
     bool isEmail = aInString[pos] == (PRUnichar)'@';
-    bool haveOpeningBracket = false;
+    bool seenOpeningParenthesis = false; // there is a '(' earlier in the URL
+    bool seenOpeningSquareBracket = false; // there is a '[' earlier in the URL
     for (; PRInt32(i) < aInStringLength; i++)
     {
       // These chars mark the end of the URL
       if (aInString[i] == '>' || aInString[i] == '<' ||
           aInString[i] == '"' || aInString[i] == '`' ||
-          aInString[i] == '}' || aInString[i] == ']' ||
-          aInString[i] == '{' || aInString[i] == '[' ||
+          aInString[i] == '}' || aInString[i] == '{' ||
           aInString[i] == '|' ||
-          (aInString[i] == ')' && !haveOpeningBracket) ||
-          IsSpace(aInString[i])    )
+          (aInString[i] == ')' && !seenOpeningParenthesis) ||
+          (aInString[i] == ']' && !seenOpeningSquareBracket) ||
+          // Allow IPv6 adresses like http://[1080::8:800:200C:417A]/foo.
+          (aInString[i] == '[' && i > 2 &&
+           (aInString[i - 1] != '/' || aInString[i - 2] != '/')) ||
+          IsSpace(aInString[i]))
           break;
       // Disallow non-ascii-characters for email.
       // Currently correct, but revisit later after standards changed.
       if (isEmail && (
             aInString[i] == '(' || aInString[i] == '\'' ||
-            !nsCRT::IsAscii(aInString[i])       ))
+            !nsCRT::IsAscii(aInString[i])))
           break;
       if (aInString[i] == '(')
-        haveOpeningBracket = true;
+        seenOpeningParenthesis = true;
+      if (aInString[i] == '[')
+        seenOpeningSquareBracket = true;
     }
     // These chars are allowed in the middle of the URL, but not at end.
     // Technically they are, but are used in normal text after the URL.
@@ -366,8 +339,7 @@ mozTXTToHTMLConv::FindURLEnd(const PRUnichar * aInString, PRInt32 aInStringLengt
       end = i;
       return true;
     }
-    else
-      return false;
+    return false;
   }
   default:
     return false;
@@ -743,7 +715,7 @@ mozTXTToHTMLConv::SmilyHit(const PRUnichar * aInString, PRInt32 aLength, bool co
   if ( !aInString || !tagTXT || !imageName )
       return false;
 
-  PRInt32  tagLen = nsCRT::strlen(tagTXT);
+  PRInt32 tagLen = strlen(tagTXT);
  
   PRUint32 delim = (col0 ? 0 : 1) + tagLen;
 
@@ -804,7 +776,7 @@ mozTXTToHTMLConv::GlyphHit(const PRUnichar * aInString, PRInt32 aInLength, bool 
   // temporary variable used to store the glyph html text
   nsAutoString outputHTML;
   bool bTestSmilie;
-  bool bArg;
+  bool bArg = false;
   int i;
 
   // refactor some of this mess to avoid code duplication and speed execution a bit
@@ -1055,7 +1027,7 @@ mozTXTToHTMLConv::CiteLevelTXT(const PRUnichar *line,
 				    PRUint32& logLineStart)
 {
   PRInt32 result = 0;
-  PRInt32 lineLength = nsCRT::strlen(line);
+  PRInt32 lineLength = NS_strlen(line);
 
   bool moreCites = true;
   while (moreCites)
@@ -1094,7 +1066,7 @@ mozTXTToHTMLConv::CiteLevelTXT(const PRUnichar *line,
       // Placed here for performance increase
       const PRUnichar * indexString = &line[logLineStart];
            // here, |logLineStart < lineLength| is always true
-      PRUint32 minlength = MinInt(6,nsCRT::strlen(indexString));
+      PRUint32 minlength = MinInt(6, NS_strlen(indexString));
       if (Substring(indexString,
                     indexString+minlength).Equals(Substring(NS_LITERAL_STRING(">From "), 0, minlength),
                                                   nsCaseInsensitiveStringComparator()))
@@ -1369,7 +1341,7 @@ mozTXTToHTMLConv::ScanTXT(const PRUnichar *text, PRUint32 whattodo,
 
   // FIX ME!!!
   nsString outString;
-  PRInt32 inLength = nsCRT::strlen(text);
+  PRInt32 inLength = NS_strlen(text);
   // by setting a large capacity up front, we save time
   // when appending characters to the output string because we don't
   // need to reallocate and re-copy the characters already in the out String.

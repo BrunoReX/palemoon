@@ -1,40 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1999
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Boris Zbarsky <bzbarsky@mit.edu>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* rules in a CSS stylesheet other than style rules (e.g., @import rules) */
 
@@ -58,6 +25,7 @@
 #include "nsICSSRuleList.h"
 #include "nsIDocument.h"
 #include "nsPresContext.h"
+#include "nsRuleNode.h"
 
 #include "nsContentUtils.h"
 #include "nsStyleConsts.h"
@@ -117,6 +85,13 @@ Rule::GetParentStyleSheet(nsIDOMCSSStyleSheet** aSheet)
   return NS_OK;
 }
 
+size_t
+Rule::SizeOfCOMArrayElementIncludingThis(css::Rule* aElement,
+                                         nsMallocSizeOfFun aMallocSizeOf,
+                                         void* aData)
+{
+  return aElement->SizeOfIncludingThis(aMallocSizeOf);
+}
 
 // -------------------------------
 // Style Rule List for group rules
@@ -322,7 +297,15 @@ CharsetRule::GetParentRule(nsIDOMCSSRule** aParentRule)
   return Rule::GetParentRule(aParentRule);
 }
 
+/* virtual */ size_t
+CharsetRule::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  return aMallocSizeOf(this);
 
+  // Measurement of the following members may be added later if DMD finds it is
+  // worthwhile:
+  // - mEncoding
+}
 
 // -------------------------------------------
 // ImportRule
@@ -488,6 +471,20 @@ ImportRule::GetStyleSheet(nsIDOMCSSStyleSheet * *aStyleSheet)
 
   NS_IF_ADDREF(*aStyleSheet = mChildSheet);
   return NS_OK;
+}
+
+/* virtual */ size_t
+ImportRule::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  return aMallocSizeOf(this);
+
+  // Measurement of the following members may be added later if DMD finds it is
+  // worthwhile:
+  // - mURLSpec
+  //
+  // The following members are not measured:
+  // - mMedia, because it is measured via nsCSSStyleSheet::mMedia
+  // - mChildSheet, because it is measured via nsCSSStyleSheetInner::mSheets
 }
 
 } // namespace css
@@ -695,6 +692,17 @@ GroupRule::DeleteRule(PRUint32 aIndex)
   return mSheet->DeleteRuleFromGroup(this, aIndex);
 }
 
+/* virtual */ size_t
+GroupRule::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  return mRules.SizeOfExcludingThis(Rule::SizeOfCOMArrayElementIncludingThis,
+                                    aMallocSizeOf);
+
+  // Measurement of the following members may be added later if DMD finds it is
+  // worthwhile:
+  // - mRuleCollection
+}
+
 
 // -------------------------------------------
 // nsICSSMediaRule
@@ -864,6 +872,19 @@ MediaRule::UseForPresentation(nsPresContext* aPresContext,
     return mMedia->Matches(aPresContext, &aKey);
   }
   return true;
+}
+
+/* virtual */ size_t
+MediaRule::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = aMallocSizeOf(this);
+  n += GroupRule::SizeOfExcludingThis(aMallocSizeOf);
+
+  // Measurement of the following members may be added later if DMD finds it is
+  // worthwhile:
+  // - mMedia
+
+  return n;
 }
 
 } // namespace css
@@ -1075,6 +1096,19 @@ DocumentRule::URL::~URL()
   NS_CSS_DELETE_LIST_MEMBER(DocumentRule::URL, this, next);
 }
 
+/* virtual */ size_t
+DocumentRule::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = aMallocSizeOf(this);
+  n += GroupRule::SizeOfExcludingThis(aMallocSizeOf);
+
+  // Measurement of the following members may be added later if DMD finds it is
+  // worthwhile:
+  // - mURLs
+
+  return n;
+}
+
 } // namespace css
 } // namespace mozilla
 
@@ -1198,6 +1232,18 @@ NameSpaceRule::GetParentRule(nsIDOMCSSRule** aParentRule)
 {
   return Rule::GetParentRule(aParentRule);
 }
+
+/* virtual */ size_t
+NameSpaceRule::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  return aMallocSizeOf(this);
+
+  // Measurement of the following members may be added later if DMD finds it is
+  // worthwhile:
+  // - mPrefix
+  // - mURLSpec
+}
+
 
 } // namespace css
 } // namespace mozilla
@@ -1371,7 +1417,7 @@ nsCSSFontFaceStyleDecl::GetPropertyValue(nsCSSFontDesc aFontDescID,
     return NS_OK;
 
   case eCSSFontDesc_FontFeatureSettings:
-    val.AppendToString(eCSSProperty_font_feature_settings, aResult);
+    nsStyleUtil::AppendFontFeatureSettings(val, aResult);
     return NS_OK;
 
   case eCSSFontDesc_FontLanguageOverride:
@@ -1660,6 +1706,17 @@ nsCSSFontFaceRule::GetDesc(nsCSSFontDesc aDescID, nsCSSValue & aValue)
   aValue = mDecl.*nsCSSFontFaceStyleDecl::Fields[aDescID];
 }
 
+/* virtual */ size_t
+nsCSSFontFaceRule::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  return aMallocSizeOf(this);
+
+  // Measurement of the following members may be added later if DMD finds it is
+  // worthwhile:
+  // - mDecl
+}
+
+
 // -------------------------------------------
 // nsCSSKeyframeStyleDeclaration
 //
@@ -1886,6 +1943,19 @@ nsCSSKeyframeRule::ChangeDeclaration(css::Declaration* aDeclaration)
   }
 }
 
+/* virtual */ size_t
+nsCSSKeyframeRule::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  return aMallocSizeOf(this);
+
+  // Measurement of the following members may be added later if DMD finds it is
+  // worthwhile:
+  // - mKeys
+  // - mDeclaration
+  // - mDOMDeclaration
+}
+
+
 // -------------------------------------------
 // nsCSSKeyframesRule
 //
@@ -2082,4 +2152,18 @@ nsCSSKeyframesRule::UseForPresentation(nsPresContext* aPresContext,
   NS_ABORT_IF_FALSE(false, "should not be called");
   return false;
 }
+
+/* virtual */ size_t
+nsCSSKeyframesRule::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = aMallocSizeOf(this);
+  n += GroupRule::SizeOfExcludingThis(aMallocSizeOf);
+
+  // Measurement of the following members may be added later if DMD finds it is
+  // worthwhile:
+  // - mName
+
+  return n;
+}
+
 

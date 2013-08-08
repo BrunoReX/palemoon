@@ -3,26 +3,32 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-var builder = new MozBlobBuilder();
 var manager = null;
 var bufferCache = [];
 var utils = SpecialPowers.getDOMWindowUtils(window);
 
-function getBuffer(size)
-{
-  let buffer = new ArrayBuffer(size);
-  is(buffer.byteLength, size, "Correct byte length");
-  return buffer;
+if (!SpecialPowers.isMainProcess()) {
+  window.runTest = function() {
+    todo(false, "Test disabled in child processes, for now");
+    finishTest();
+  }
 }
 
-function getRandomBuffer(size)
+function getView(size)
 {
-  let buffer = getBuffer(size);
+  let buffer = new ArrayBuffer(size);
   let view = new Uint8Array(buffer);
+  is(buffer.byteLength, size, "Correct byte length");
+  return view;
+}
+
+function getRandomView(size)
+{
+  let view = getView(size);
   for (let i = 0; i < size; i++) {
     view[i] = parseInt(Math.random() * 255)
   }
-  return buffer;
+  return view;
 }
 
 function compareBuffers(buffer1, buffer2)
@@ -40,36 +46,34 @@ function compareBuffers(buffer1, buffer2)
   return true;
 }
 
-function getBlob(type, buffer)
+function getBlob(type, view)
 {
-  builder.append(buffer);
-  return builder.getBlob(type);
+  return utils.getBlob([view], {type: type});
 }
 
-function getFile(name, type, buffer)
+function getFile(name, type, view)
 {
-  builder.append(buffer);
-  return builder.getFile(name, type);
+  return utils.getFile(name, [view], {type: type});
 }
 
 function getRandomBlob(size)
 {
-  return getBlob("binary/random", getRandomBuffer(size));
+  return getBlob("binary/random", getRandomView(size));
 }
 
 function getRandomFile(name, size)
 {
-  return getFile(name, "binary/random", getRandomBuffer(size));
+  return getFile(name, "binary/random", getRandomView(size));
 }
 
 function getNullBlob(size)
 {
-  return getBlob("binary/null", getBuffer(size));
+  return getBlob("binary/null", getView(size));
 }
 
 function getNullFile(name, size)
 {
-  return getFile(name, "binary/null", getBuffer(size));
+  return getFile(name, "binary/null", getView(size));
 }
 
 function verifyBuffers(buffer1, buffer2)
@@ -206,6 +210,11 @@ function getUsageSync()
 function scheduleGC()
 {
   SpecialPowers.exactGC(window, continueToNextStep);
+}
+
+function getFileId(file)
+{
+  return utils.getFileId(file);
 }
 
 function hasFileInfo(name, id)

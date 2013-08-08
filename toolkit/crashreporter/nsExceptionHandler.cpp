@@ -1,41 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Breakpad integration
- *
- * The Initial Developer of the Original Code is
- * Ted Mielczarek <ted.mielczarek@gmail.com>
- * Portions created by the Initial Developer are Copyright (C) 2006
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  Josh Aas <josh@mozilla.com>
- *  Justin Dolske <dolske@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/CrashReporterChild.h"
 #include "mozilla/Services.h"
@@ -57,6 +23,9 @@
 #include "client/windows/handler/exception_handler.h"
 #include <DbgHelp.h>
 #include <string.h>
+#include "nsDirectoryServiceUtils.h"
+
+#include "nsWindowsDllInterceptor.h"
 #elif defined(XP_MACOSX)
 #include "client/mac/crash_generation/client_info.h"
 #include "client/mac/crash_generation/crash_generation_server.h"
@@ -72,7 +41,6 @@
 #include <unistd.h>
 #include "mac_utils.h"
 #elif defined(XP_LINUX)
-#include "nsDirectoryServiceUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsIINIParser.h"
 #include "common/linux/linux_libc_support.h"
@@ -93,6 +61,11 @@
 #else
 #error "Not yet implemented for this platform"
 #endif // defined(XP_WIN32)
+
+#ifdef MOZ_CRASHREPORTER_INJECTOR
+#include "InjectCrashReporter.h"
+using mozilla::InjectCrashRunnable;
+#endif
 
 #include <stdlib.h>
 #include <time.h>
@@ -178,6 +151,7 @@ static const XP_CHAR extraFileExtension[] = {'.', 'e', 'x', 't',
 
 static google_breakpad::ExceptionHandler* gExceptionHandler = nsnull;
 
+static XP_CHAR* pendingDirectory;
 static XP_CHAR* crashReporterPath;
 
 // if this is false, we don't launch the crash reporter
@@ -222,12 +196,17 @@ static const char kAvailablePhysicalMemoryParameter[] = "AvailablePhysicalMemory
 static const int kAvailablePhysicalMemoryParameterLen =
   sizeof(kAvailablePhysicalMemoryParameter)-1;
 
+static const char kIsGarbageCollectingParameter[] = "IsGarbageCollecting=";
+static const int kIsGarbageCollectingParameterLen =
+  sizeof(kIsGarbageCollectingParameter)-1;
+
 // this holds additional data sent via the API
 static Mutex* crashReporterAPILock;
 static Mutex* notesFieldLock;
 static AnnotationTable* crashReporterAPIData_Hash;
 static nsCString* crashReporterAPIData = nsnull;
 static nsCString* notesField = nsnull;
+static bool isGarbageCollecting;
 
 // OOP crash reporting
 static CrashGenerationServer* crashServer; // chrome process has this
@@ -247,8 +226,46 @@ static const int kMagicChildCrashReportFd = 4;
 
 // |dumpMapLock| must protect all access to |pidToMinidump|.
 static Mutex* dumpMapLock;
-typedef nsInterfaceHashtable<nsUint32HashKey, nsILocalFile> ChildMinidumpMap;
+struct ChildProcessData : public nsUint32HashKey
+{
+  ChildProcessData(KeyTypePointer aKey)
+    : nsUint32HashKey(aKey)
+    , sequence(0)
+#ifdef MOZ_CRASHREPORTER_INJECTOR
+    , callback(NULL)
+#endif
+  { }
+
+  nsCOMPtr<nsILocalFile> minidump;
+  // Each crashing process is assigned an increasing sequence number to
+  // indicate which process crashed first.
+  PRUint32 sequence;
+#ifdef MOZ_CRASHREPORTER_INJECTOR
+  InjectorCrashCallback* callback;
+#endif
+};
+
+typedef nsTHashtable<ChildProcessData> ChildMinidumpMap;
 static ChildMinidumpMap* pidToMinidump;
+static PRUint32 crashSequence;
+static bool OOPInitialized();
+
+#ifdef MOZ_CRASHREPORTER_INJECTOR
+static nsIThread* sInjectorThread;
+typedef nsDataHashtable<nsUint32HashKey, InjectorCrashCallback*> InjectorPIDMap;
+static InjectorPIDMap* pidToInjectorCallback;
+
+class ReportInjectedCrash : public nsRunnable
+{
+public:
+  ReportInjectedCrash(PRUint32 pid) : mPID(pid) { }
+
+  NS_IMETHOD Run();
+
+private:
+  PRUint32 mPID;
+};
+#endif // MOZ_CRASHREPORTER_INJECTOR
 
 // Crashreporter annotations that we don't send along in subprocess
 // reports
@@ -263,6 +280,31 @@ static const char* kSubprocessBlacklist[] = {
 // they queue up here.
 class DelayedNote;
 nsTArray<nsAutoPtr<DelayedNote> >* gDelayedAnnotations;
+
+#if defined(XP_WIN)
+// the following are used to prevent other DLLs reverting the last chance
+// exception handler to the windows default. Any attempt to change the 
+// unhandled exception filter or to reset it is ignored and our crash
+// reporter is loaded instead (in case it became unloaded somehow)
+typedef LPTOP_LEVEL_EXCEPTION_FILTER (WINAPI *SetUnhandledExceptionFilter_func)
+  (LPTOP_LEVEL_EXCEPTION_FILTER lpTopLevelExceptionFilter);
+static SetUnhandledExceptionFilter_func stub_SetUnhandledExceptionFilter = 0;
+static WindowsDllInterceptor gKernel32Intercept;
+static bool gBlockUnhandledExceptionFilter = true;
+
+static LPTOP_LEVEL_EXCEPTION_FILTER WINAPI
+patched_SetUnhandledExceptionFilter (LPTOP_LEVEL_EXCEPTION_FILTER lpTopLevelExceptionFilter)
+{
+  if (!gBlockUnhandledExceptionFilter ||
+      lpTopLevelExceptionFilter == google_breakpad::ExceptionHandler::HandleException) {
+    // don't intercept
+    return stub_SetUnhandledExceptionFilter(lpTopLevelExceptionFilter);
+  }
+
+  // intercept attempts to change the filter
+  return NULL;
+}
+#endif
 
 #ifdef XP_MACOSX
 static cpu_type_t pref_cpu_types[2] = {
@@ -463,6 +505,12 @@ bool MinidumpCallback(const XP_CHAR* dump_path,
                   &nBytes, NULL);
         WriteFile(hFile, "\n", 1, &nBytes, NULL);
       }
+      if (isGarbageCollecting) {
+        WriteFile(hFile, kIsGarbageCollectingParameter, kIsGarbageCollectingParameterLen,
+                  &nBytes, NULL);
+        WriteFile(hFile, isGarbageCollecting ? "1" : "0", 1, &nBytes, NULL);
+        WriteFile(hFile, "\n", 1, &nBytes, NULL);
+      }
 
       // Try to get some information about memory.
       MEMORYSTATUSEX statex;
@@ -538,6 +586,11 @@ bool MinidumpCallback(const XP_CHAR* dump_path,
                         kTimeSinceLastCrashParameterLen);
         ignored = sys_write(fd, timeSinceLastCrashString,
                         timeSinceLastCrashStringLen);
+        ignored = sys_write(fd, "\n", 1);
+      }
+      if (isGarbageCollecting) {
+        ignored = sys_write(fd, kIsGarbageCollectingParameter, kIsGarbageCollectingParameterLen);
+        ignored = sys_write(fd, isGarbageCollecting ? "1" : "0", 1);
         ignored = sys_write(fd, "\n", 1);
       }
       if (oomAllocationSizeBufferLen) {
@@ -670,8 +723,7 @@ nsresult SetExceptionHandler(nsILocalFile* aXREDirectory,
     new nsDataHashtable<nsCStringHashKey,nsCString>();
   NS_ENSURE_TRUE(crashReporterAPIData_Hash, NS_ERROR_OUT_OF_MEMORY);
 
-  rv = crashReporterAPIData_Hash->Init();
-  NS_ENSURE_SUCCESS(rv, rv);
+  crashReporterAPIData_Hash->Init();
 
   notesField = new nsCString();
   NS_ENSURE_TRUE(notesField, NS_ERROR_OUT_OF_MEMORY);
@@ -691,13 +743,13 @@ nsresult SetExceptionHandler(nsILocalFile* aXREDirectory,
 
 #ifdef XP_WIN32
   nsString crashReporterPath_temp;
-  exePath->GetPath(crashReporterPath_temp);
 
+  exePath->GetPath(crashReporterPath_temp);
   crashReporterPath = ToNewUnicode(crashReporterPath_temp);
 #elif !defined(__ANDROID__)
   nsCString crashReporterPath_temp;
-  exePath->GetNativePath(crashReporterPath_temp);
 
+  exePath->GetNativePath(crashReporterPath_temp);
   crashReporterPath = ToNewCString(crashReporterPath_temp);
 #else
   // On Android, we launch using the application package name
@@ -770,7 +822,6 @@ nsresult SetExceptionHandler(nsILocalFile* aXREDirectory,
 #ifdef XP_WIN32
   MINIDUMP_TYPE minidump_type = MiniDumpNormal;
 
-#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   // Try to determine what version of dbghelp.dll we're using.
   // MinidumpWithFullMemoryInfo is only available in 6.1.x or newer.
 
@@ -793,7 +844,6 @@ nsresult SetExceptionHandler(nsILocalFile* aXREDirectory,
       }
     }
   }
-#endif // MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 #endif // XP_WIN32
 
   // now set the exception handler
@@ -809,7 +859,7 @@ nsresult SetExceptionHandler(nsILocalFile* aXREDirectory,
 #if defined(XP_WIN32)
                      google_breakpad::ExceptionHandler::HANDLER_ALL,
                      minidump_type,
-                     NULL,
+                     (const wchar_t*) NULL,
                      NULL);
 #else
                      true
@@ -824,6 +874,17 @@ nsresult SetExceptionHandler(nsILocalFile* aXREDirectory,
 
 #ifdef XP_WIN
   gExceptionHandler->set_handle_debug_exceptions(true);
+  
+  // protect the crash reporter from being unloaded
+  gKernel32Intercept.Init("kernel32.dll");
+  bool ok = gKernel32Intercept.AddHook("SetUnhandledExceptionFilter",
+          reinterpret_cast<intptr_t>(patched_SetUnhandledExceptionFilter),
+          (void**) &stub_SetUnhandledExceptionFilter);
+
+#ifdef DEBUG
+  if (!ok)
+    printf_stderr ("SetUnhandledExceptionFilter hook failed; crash reporter is vulnerable.\n");
+#endif
 #endif
 
   // store application start time
@@ -1084,6 +1145,11 @@ static void OOPDeinit();
 
 nsresult UnsetExceptionHandler()
 {
+#ifdef XP_WIN
+  // allow SetUnhandledExceptionFilter
+  gBlockUnhandledExceptionFilter = false;
+#endif
+
   delete gExceptionHandler;
 
   // do this here in the unlikely case that we succeeded in allocating
@@ -1102,6 +1168,11 @@ nsresult UnsetExceptionHandler()
 
   delete notesField;
   notesField = nsnull;
+
+  if (pendingDirectory) {
+    NS_Free(pendingDirectory);
+    pendingDirectory = nsnull;
+  }
 
   if (crashReporterPath) {
     NS_Free(crashReporterPath);
@@ -1246,13 +1317,22 @@ nsresult AnnotateCrashReport(const nsACString& key, const nsACString& data)
 
   MutexAutoLock lock(*crashReporterAPILock);
 
-  rv = crashReporterAPIData_Hash->Put(key, escapedData);
-  NS_ENSURE_SUCCESS(rv, rv);
+  crashReporterAPIData_Hash->Put(key, escapedData);
 
   // now rebuild the file contents
   crashReporterAPIData->Truncate(0);
   crashReporterAPIData_Hash->EnumerateRead(EnumerateEntries,
                                            crashReporterAPIData);
+
+  return NS_OK;
+}
+
+nsresult SetGarbageCollecting(bool collecting)
+{
+  if (!GetEnabled())
+    return NS_ERROR_NOT_INITIALIZED;
+
+  isGarbageCollecting = collecting;
 
   return NS_OK;
 }
@@ -1584,7 +1664,7 @@ static nsresult PrefSubmitReports(bool* aSubmitReports, bool writePref)
                               *aSubmitReports ?  NS_LITERAL_CSTRING("1") :
                                                  NS_LITERAL_CSTRING("0"));
     NS_ENSURE_SUCCESS(rv, rv);
-    rv = iniWriter->WriteFile(NULL);
+    rv = iniWriter->WriteFile(NULL, 0);
     return rv;
   }
   
@@ -1632,23 +1712,27 @@ nsresult SetSubmitReports(bool aSubmitReports)
 }
 
 // The "pending" dir is Crash Reports/pending, from which minidumps
-// can be submitted
+// can be submitted. Because this method may be called off the main thread,
+// we store the pending directory as a path.
 static bool
 GetPendingDir(nsILocalFile** dir)
 {
-  nsCOMPtr<nsIProperties> dirSvc =
-    do_GetService(NS_DIRECTORY_SERVICE_CONTRACTID);
-  if (!dirSvc)
+  MOZ_ASSERT(OOPInitialized());
+  if (!pendingDirectory) {
     return false;
-  nsCOMPtr<nsILocalFile> pendingDir;
-  if (NS_FAILED(dirSvc->Get("UAppData",
-                            NS_GET_IID(nsILocalFile),
-                            getter_AddRefs(pendingDir))) ||
-      NS_FAILED(pendingDir->Append(NS_LITERAL_STRING("Crash Reports"))) ||
-      NS_FAILED(pendingDir->Append(NS_LITERAL_STRING("pending"))))
+  }
+
+  nsCOMPtr<nsILocalFile> pending = do_CreateInstance(NS_LOCAL_FILE_CONTRACTID);
+  if (!pending) {
+    NS_WARNING("Can't set up pending directory during shutdown.");
     return false;
-  *dir = NULL;
-  pendingDir.swap(*dir);
+  }
+#ifdef XP_WIN
+  pending->InitWithPath(nsDependentString(pendingDirectory));
+#else
+  pending->InitWithNativePath(nsDependentCString(pendingDirectory));
+#endif
+  pending.swap(*dir);
   return true;
 }
 
@@ -1917,8 +2001,23 @@ OnChildProcessDumpRequested(void* aContext,
       aClientInfo->pid();
 #endif
 
-    MutexAutoLock lock(*dumpMapLock);
-    pidToMinidump->Put(pid, minidump);
+#ifdef MOZ_CRASHREPORTER_INJECTOR
+    bool runCallback;
+#endif
+    {
+      MutexAutoLock lock(*dumpMapLock);
+      ChildProcessData* pd = pidToMinidump->PutEntry(pid);
+      MOZ_ASSERT(!pd->minidump);
+      pd->minidump = minidump;
+      pd->sequence = ++crashSequence;
+#ifdef MOZ_CRASHREPORTER_INJECTOR
+      runCallback = NULL != pd->callback;
+#endif
+    }
+#ifdef MOZ_CRASHREPORTER_INJECTOR
+    if (runCallback)
+      NS_DispatchToMainThread(new ReportInjectedCrash(pid));
+#endif
   }
 }
 
@@ -1928,11 +2027,14 @@ OOPInitialized()
   return pidToMinidump != NULL;
 }
 
-static void
+void
 OOPInit()
 {
-  NS_ABORT_IF_FALSE(!OOPInitialized(),
-                    "OOP crash reporter initialized more than once!");
+  if (OOPInitialized())
+    return;
+
+  MOZ_ASSERT(NS_IsMainThread());
+
   NS_ABORT_IF_FALSE(gExceptionHandler != NULL,
                     "attempt to initialize OOP crash reporter before in-process crashreporter!");
 
@@ -1991,6 +2093,26 @@ OOPInit()
   pidToMinidump->Init();
 
   dumpMapLock = new Mutex("CrashReporter::dumpMapLock");
+
+  nsCOMPtr<nsIFile> pendingDir;
+  nsresult rv = NS_GetSpecialDirectory("UAppData", getter_AddRefs(pendingDir));
+  if (NS_FAILED(rv)) {
+    NS_WARNING("Couldn't get the user appdata directory, crash dumps will go in an unusual location");
+  }
+  else {
+    pendingDir->Append(NS_LITERAL_STRING("Crash Reports"));
+    pendingDir->Append(NS_LITERAL_STRING("pending"));
+
+#ifdef XP_WIN
+    nsString path;
+    pendingDir->GetPath(path);
+    pendingDirectory = ToNewUnicode(path);
+#else
+    nsCString path;
+    pendingDir->GetNativePath(path);
+    pendingDirectory = ToNewCString(path);
+#endif
+  }
 }
 
 static void
@@ -2000,6 +2122,13 @@ OOPDeinit()
     NS_WARNING("OOPDeinit() without successful OOPInit()");
     return;
   }
+
+#ifdef MOZ_CRASHREPORTER_INJECTOR
+  if (sInjectorThread) {
+    sInjectorThread->Shutdown();
+    NS_RELEASE(sInjectorThread);
+  }
+#endif
 
   delete crashServer;
   crashServer = NULL;
@@ -2024,12 +2153,72 @@ GetChildNotificationPipe()
   if (!GetEnabled())
     return kNullNotifyPipe;
 
-  if (!OOPInitialized())
-    OOPInit();
+  MOZ_ASSERT(OOPInitialized());
 
   return childCrashNotifyPipe;
 }
 #endif
+
+#ifdef MOZ_CRASHREPORTER_INJECTOR
+void
+InjectCrashReporterIntoProcess(DWORD processID, InjectorCrashCallback* cb)
+{
+  if (!GetEnabled())
+    return;
+
+  if (!OOPInitialized())
+    OOPInit();
+
+  if (!sInjectorThread) {
+    if (NS_FAILED(NS_NewThread(&sInjectorThread)))
+      return;
+  }
+
+  {
+    MutexAutoLock lock(*dumpMapLock);
+    ChildProcessData* pd = pidToMinidump->PutEntry(processID);
+    MOZ_ASSERT(!pd->minidump && !pd->callback);
+    pd->callback = cb;
+  }
+
+  nsCOMPtr<nsIRunnable> r = new InjectCrashRunnable(processID);
+  sInjectorThread->Dispatch(r, nsIEventTarget::DISPATCH_NORMAL);
+}
+
+NS_IMETHODIMP
+ReportInjectedCrash::Run()
+{
+  // Crash reporting may have been disabled after this method was dispatched
+  if (!OOPInitialized())
+    return NS_OK;
+
+  InjectorCrashCallback* cb;
+  {
+    MutexAutoLock lock(*dumpMapLock);
+    ChildProcessData* pd = pidToMinidump->GetEntry(mPID);
+    if (!pd || !pd->callback)
+      return NS_OK;
+
+    MOZ_ASSERT(pd->minidump);
+
+    cb = pd->callback;
+  }
+
+  cb->OnCrash(mPID);
+  return NS_OK;
+}
+
+void
+UnregisterInjectorCallback(DWORD processID)
+{
+  if (!OOPInitialized())
+    return;
+
+  MutexAutoLock lock(*dumpMapLock);
+  pidToMinidump->RemoveEntry(processID);
+}
+
+#endif // MOZ_CRASHREPORTER_INJECTOR
 
 #if defined(XP_WIN)
 // Child-side API
@@ -2072,8 +2261,7 @@ CreateNotificationPipeForChild(int* childCrashFd, int* childCrashRemapFd)
     return true;
   }
 
-  if (!OOPInitialized())
-    OOPInit();
+  MOZ_ASSERT(OOPInitialized());
 
   *childCrashFd = clientSocketFd;
   *childCrashRemapFd = kMagicChildCrashReportFd;
@@ -2133,22 +2321,25 @@ SetRemoteExceptionHandler(const nsACString& crashPipe)
 
 
 bool
-TakeMinidumpForChild(PRUint32 childPid, nsILocalFile** dump)
+TakeMinidumpForChild(PRUint32 childPid, nsILocalFile** dump, PRUint32* aSequence)
 {
   if (!GetEnabled())
     return false;
 
   MutexAutoLock lock(*dumpMapLock);
 
-  nsCOMPtr<nsILocalFile> d;
-  bool found = pidToMinidump->Get(childPid, getter_AddRefs(d));
-  if (found)
-    pidToMinidump->Remove(childPid);
+  ChildProcessData* pd = pidToMinidump->GetEntry(childPid);
+  if (!pd)
+    return false;
 
-  *dump = NULL;
-  d.swap(*dump);
+  NS_IF_ADDREF(*dump = pd->minidump);
+  if (aSequence) {
+    *aSequence = pd->sequence;
+  }
+  
+  pidToMinidump->RemoveEntry(childPid);
 
-  return found;
+  return !!*dump;
 }
 
 //-----------------------------------------------------------------------------

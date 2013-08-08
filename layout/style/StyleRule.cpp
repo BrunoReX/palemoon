@@ -1,42 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   David Hyatt <hyatt@netscape.com>
- *   Daniel Glazman <glazman@netscape.com>
- *   L. David Baron <dbaron@dbaron.org>, Mozilla Corporation
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * representation of CSS style rules (selectors+declaration), CSS
@@ -125,6 +90,22 @@ nsAtomList::Clone(bool aDeep) const
   return result;
 }
 
+size_t
+nsAtomList::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = 0;
+  const nsAtomList* a = this;
+  while (a) {
+    n += aMallocSizeOf(a);
+
+    // The following members aren't measured:
+    // - a->mAtom, because it may be shared
+
+    a = a->mNext;
+  }
+  return n;
+}
+
 nsAtomList::~nsAtomList(void)
 {
   MOZ_COUNT_DTOR(nsAtomList);
@@ -202,6 +183,32 @@ nsPseudoClassList::Clone(bool aDeep) const
                              (false));
 
   return result;
+}
+
+size_t
+nsPseudoClassList::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = 0;
+  const nsPseudoClassList* p = this;
+  while (p) {
+    n += aMallocSizeOf(p);
+    if (!p->u.mMemory) {
+      // do nothing
+
+    } else if (nsCSSPseudoClasses::HasStringArg(p->mType)) {
+      n += aMallocSizeOf(p->u.mString);
+
+    } else if (nsCSSPseudoClasses::HasNthPairArg(p->mType)) {
+      n += aMallocSizeOf(p->u.mNumbers);
+
+    } else {
+      NS_ASSERTION(nsCSSPseudoClasses::HasSelectorListArg(p->mType),
+                   "unexpected pseudo-class");
+      n += p->u.mSelectors->SizeOfIncludingThis(aMallocSizeOf);
+    }
+    p = p->mNext;
+  }
+  return n;
 }
 
 nsPseudoClassList::~nsPseudoClassList(void)
@@ -302,8 +309,8 @@ nsCSSSelector::nsCSSSelector(void)
     mPseudoType(nsCSSPseudoElements::ePseudo_NotPseudoElement)
 {
   MOZ_COUNT_CTOR(nsCSSSelector);
-  // Make sure mPseudoType can hold all nsCSSPseudoElements::Type values
-  PR_STATIC_ASSERT(nsCSSPseudoElements::ePseudo_MAX < PR_INT16_MAX);
+  MOZ_STATIC_ASSERT(nsCSSPseudoElements::ePseudo_MAX < PR_INT16_MAX,
+                    "nsCSSPseudoElements::Type values overflow mPseudoType");
 }
 
 nsCSSSelector*
@@ -810,6 +817,34 @@ nsCSSSelector::CanBeNamespaced(bool aIsNegated) const
          (!mIDList && !mClassList && !mPseudoClassList && !mAttrList);
 }
 
+size_t
+nsCSSSelector::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = 0;
+  const nsCSSSelector* s = this;
+  while (s) {
+    n += aMallocSizeOf(s);
+
+    #define MEASURE(x)   n += x ? x->SizeOfIncludingThis(aMallocSizeOf) : 0;
+
+    MEASURE(s->mIDList);
+    MEASURE(s->mClassList);
+    MEASURE(s->mPseudoClassList);
+    MEASURE(s->mNegations);
+
+    // Measurement of the following members may be added later if DMD finds it is
+    // worthwhile:
+    // - s->mAttrList
+    //
+    // The following members aren't measured:
+    // - s->mLowercaseTag, because it's an atom and therefore shared
+    // - s->mCasedTag, because it's an atom and therefore shared
+
+    s = s->mNext;
+  }
+  return n;
+}
+
 // -- nsCSSSelectorList -------------------------------
 
 nsCSSSelectorList::nsCSSSelectorList(void)
@@ -870,6 +905,19 @@ nsCSSSelectorList::Clone(bool aDeep) const
                              (false));
   }
   return result;
+}
+
+size_t
+nsCSSSelectorList::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = 0;
+  const nsCSSSelectorList* s = this;
+  while (s) {
+    n += aMallocSizeOf(s);
+    n += s->mSelectors ? s->mSelectors->SizeOfIncludingThis(aMallocSizeOf) : 0;
+    s = s->mNext;
+  }
+  return n;
 }
 
 // -- ImportantRule ----------------------------------
@@ -1421,6 +1469,22 @@ StyleRule::SetSelectorText(const nsAString& aSelectorText)
   // XXX then need to re-compute the cascade
   // XXX and dirty sheet
 }
+
+/* virtual */ size_t
+StyleRule::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = aMallocSizeOf(this);
+  n += mSelector ? mSelector->SizeOfIncludingThis(aMallocSizeOf) : 0;
+  n += mDeclaration ? mDeclaration->SizeOfIncludingThis(aMallocSizeOf) : 0;
+
+  // Measurement of the following members may be added later if DMD finds it is
+  // worthwhile:
+  // - mImportantRule;
+  // - mDOMRule;
+
+  return n;
+}
+
 
 } // namespace css
 } // namespace mozilla

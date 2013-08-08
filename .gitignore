@@ -18,6 +18,7 @@ ID
 /configure
 /config.cache
 /config.log
+/.clang_complete
 
 # Empty marker file that's generated when we check out NSS
 security/manager/.nss.checkout
@@ -41,7 +42,9 @@ parser/html/java/htmlparser/
 parser/html/java/javaparser/
 
 # Ignore the files and directory that Eclipse IDE creates
-/.project
-/.cproject
-/.settings/
+.project
+.cproject
+.settings/
 
+# Python stuff installed at build-time
+*.egg-info/

@@ -1,40 +1,7 @@
 #
-# ***** BEGIN LICENSE BLOCK *****
-# Version: MPL 1.1/GPL 2.0/LGPL 2.1
-#
-# The contents of this file are subject to the Mozilla Public License Version
-# 1.1 (the "License"); you may not use this file except in compliance with
-# the License. You may obtain a copy of the License at
-# http://www.mozilla.org/MPL/
-#
-# Software distributed under the License is distributed on an "AS IS" basis,
-# WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
-# for the specific language governing rights and limitations under the
-# License.
-#
-# The Original Code is mozilla.org code.
-#
-# The Initial Developer of the Original Code is
-# Netscape Communications Corporation.
-# Portions created by the Initial Developer are Copyright (C) 1998
-# the Initial Developer. All Rights Reserved.
-#
-# Contributor(s):
-#   Benjamin Smedberg <benjamin@smedbergs.us>
-#
-# Alternatively, the contents of this file may be used under the terms of
-# either of the GNU General Public License Version 2 or later (the "GPL"),
-# or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
-# in which case the provisions of the GPL or the LGPL are applicable instead
-# of those above. If you wish to allow use of your version of this file only
-# under the terms of either the GPL or the LGPL, and not to allow others to
-# use your version of this file under the terms of the MPL, indicate your
-# decision by deleting the provisions above and replace them with the notice
-# and other provisions required by the GPL or the LGPL. If you do not delete
-# the provisions above, a recipient may use your version of this file under
-# the terms of any one of the MPL, the GPL or the LGPL.
-#
-# ***** END LICENSE BLOCK *****
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 #
 # config.mk
@@ -46,7 +13,7 @@
 
 # Define an include-at-most-once flag
 ifdef INCLUDED_CONFIG_MK
-$(error Don't include config.mk twice!)
+$(error Do not include config.mk twice!)
 endif
 INCLUDED_CONFIG_MK = 1
 
@@ -82,6 +49,7 @@ check-variable = $(if $(filter-out 0 1,$(words $($(x))z)),$(error Spaces are not
 $(foreach x,$(CHECK_VARS),$(check-variable))
 
 core_abspath = $(if $(findstring :,$(1)),$(1),$(if $(filter /%,$(1)),$(1),$(CURDIR)/$(1)))
+core_realpath = $(if $(realpath $(1)),$(realpath $(1)),$(call core_abspath,$(1)))
 
 nullstr :=
 space :=$(nullstr) # EOL
@@ -163,24 +131,37 @@ PYTHON_PATH = %pythonpath main
 endif
 
 # determine debug-related options
+_DEBUG_ASFLAGS :=
 _DEBUG_CFLAGS :=
 _DEBUG_LDFLAGS :=
 
 ifdef MOZ_DEBUG
-  _DEBUG_CFLAGS += $(MOZ_DEBUG_ENABLE_DEFS) $(MOZ_DEBUG_FLAGS)
-  _DEBUG_LDFLAGS += $(MOZ_DEBUG_LDFLAGS)
+  _DEBUG_CFLAGS += $(MOZ_DEBUG_ENABLE_DEFS)
   XULPPFLAGS += $(MOZ_DEBUG_ENABLE_DEFS)
 else
   _DEBUG_CFLAGS += $(MOZ_DEBUG_DISABLE_DEFS)
   XULPPFLAGS += $(MOZ_DEBUG_DISABLE_DEFS)
-  ifdef MOZ_DEBUG_SYMBOLS
-    _DEBUG_CFLAGS += $(MOZ_DEBUG_FLAGS)
-    _DEBUG_LDFLAGS += $(MOZ_DEBUG_LDFLAGS)
+endif
+
+ifneq (,$(MOZ_DEBUG)$(MOZ_DEBUG_SYMBOLS))
+  ifeq ($(AS),yasm)
+    ifeq ($(OS_ARCH)_$(GNU_CC),WINNT_)
+      _DEBUG_ASFLAGS += -g cv8
+    else
+      ifneq ($(OS_ARCH),Darwin)
+        _DEBUG_ASFLAGS += -g dwarf2
+      endif
+    endif
+  else
+    _DEBUG_ASFLAGS += $(MOZ_DEBUG_FLAGS)
   endif
+  _DEBUG_CFLAGS += $(MOZ_DEBUG_FLAGS)
+  _DEBUG_LDFLAGS += $(MOZ_DEBUG_LDFLAGS)
 endif
 
 MOZALLOC_LIB = $(call EXPAND_LIBNAME_PATH,mozalloc,$(DIST)/lib)
 
+ASFLAGS += $(_DEBUG_ASFLAGS)
 OS_CFLAGS += $(_DEBUG_CFLAGS)
 OS_CXXFLAGS += $(_DEBUG_CFLAGS)
 OS_LDFLAGS += $(_DEBUG_LDFLAGS)
@@ -198,29 +179,13 @@ else # ! MOZ_DEBUG
 # Used for generating an optimized build with debugging symbols.
 # Used in the Windows nightlies to generate symbols for crash reporting.
 ifdef MOZ_DEBUG_SYMBOLS
-ifeq ($(AS),yasm)
-ASFLAGS += -g cv8
-else
-ASFLAGS += -Zi
-endif
-OS_CXXFLAGS += -Zi -UDEBUG -DNDEBUG
-OS_CFLAGS += -Zi -UDEBUG -DNDEBUG
+OS_CXXFLAGS += -UDEBUG -DNDEBUG
+OS_CFLAGS += -UDEBUG -DNDEBUG
 ifdef HAVE_64BIT_OS
 OS_LDFLAGS += -DEBUG -OPT:REF,ICF
 else
 OS_LDFLAGS += -DEBUG -OPT:REF
 endif
-endif
-
-ifdef MOZ_QUANTIFY
-# -FIXED:NO is needed for Quantify to work, but it increases the size
-# of executables, so only use it if building for Quantify.
-WIN32_EXE_LDFLAGS += -FIXED:NO
-
-# We need -OPT:NOICF to prevent identical methods from being merged together.
-# Otherwise, Quantify doesn't know which method was actually called when it's
-# showing you the profile.
-OS_LDFLAGS += -OPT:NOICF
 endif
 
 #
@@ -248,7 +213,9 @@ endif
 
 endif # WINNT && !GNU_CC
 
-ifndef MOZ_GLUE_PROGRAM_LDFLAGS
+ifdef MOZ_GLUE_PROGRAM_LDFLAGS
+DEFINES += -DMOZ_GLUE_IN_PROGRAM
+else
 MOZ_GLUE_PROGRAM_LDFLAGS=$(MOZ_GLUE_LDFLAGS)
 endif
 
@@ -373,13 +340,16 @@ MAKE_JARS_FLAGS += --both-manifests
 endif
 
 TAR_CREATE_FLAGS = -cvhf
+TAR_CREATE_FLAGS_QUIET = -chf
 
 ifeq ($(OS_ARCH),BSD_OS)
 TAR_CREATE_FLAGS = -cvLf
+TAR_CREATE_FLAGS_QUIET = -cLf
 endif
 
 ifeq ($(OS_ARCH),OS2)
 TAR_CREATE_FLAGS = -cvf
+TAR_CREATE_FLAGS_QUIET = -cf
 endif
 
 #
@@ -392,13 +362,6 @@ MY_RULES	:= $(DEPTH)/config/myrules.mk
 # Default command macros; can be overridden in <arch>.mk.
 #
 CCC = $(CXX)
-PURIFY = purify $(PURIFYOPTIONS)
-QUANTIFY = quantify $(QUANTIFYOPTIONS)
-ifdef CROSS_COMPILE
-XPIDL_COMPILE = $(LIBXUL_DIST)/host/bin/host_xpidl$(HOST_BIN_SUFFIX)
-else
-XPIDL_COMPILE = $(LIBXUL_DIST)/bin/xpidl$(BIN_SUFFIX)
-endif
 XPIDL_LINK = $(PYTHON) $(LIBXUL_DIST)/sdk/bin/xpt.py link
 
 # Java macros
@@ -655,12 +618,6 @@ endif
 -include $(MY_CONFIG)
 
 ######################################################################
-# Now test variables that might have been set or overridden by $(MY_CONFIG).
-
-DEFINES		+= -DOSTYPE=\"$(OS_CONFIG)\"
-DEFINES		+= -DOSARCH=$(OS_ARCH)
-
-######################################################################
 
 GARBAGE		+= $(DEPENDENCIES) $(MKDEPENDENCIES) $(MKDEPENDENCIES).bak core $(wildcard core.[0-9]*) $(wildcard *.err) $(wildcard *.pure) $(wildcard *_pure_*.o) Templates.DB
 
@@ -713,10 +670,12 @@ endif # WINNT/OS2
 AB_CD = $(MOZ_UI_LOCALE)
 
 ifndef L10NBASEDIR
-L10NBASEDIR = $(error L10NBASEDIR not defined by configure)
+  L10NBASEDIR = $(error L10NBASEDIR not defined by configure)
+else
+  IS_LANGUAGE_REPACK = 1
 endif
 
-EXPAND_LOCALE_SRCDIR = $(if $(filter en-US,$(AB_CD)),$(topsrcdir)/$(1)/en-US,$(L10NBASEDIR)/$(AB_CD)/$(subst /locales,,$(1)))
+EXPAND_LOCALE_SRCDIR = $(if $(filter en-US,$(AB_CD)),$(topsrcdir)/$(1)/en-US,$(call core_realpath,$(L10NBASEDIR))/$(AB_CD)/$(subst /locales,,$(1)))
 
 ifdef relativesrcdir
 LOCALE_SRCDIR = $(call EXPAND_LOCALE_SRCDIR,$(relativesrcdir))
@@ -772,17 +731,26 @@ OPTIMIZE_JARS_CMD = $(PYTHON) $(call core_abspath,$(topsrcdir)/config/optimizeja
 
 CREATE_PRECOMPLETE_CMD = $(PYTHON) $(call core_abspath,$(topsrcdir)/config/createprecomplete.py)
 
-EXPAND_LIBS = $(PYTHON) -I$(DEPTH)/config $(topsrcdir)/config/expandlibs.py
+EXPAND_LIBS_DEPS = $(PYTHON) $(topsrcdir)/config/pythonpath.py -I$(DEPTH)/config $(topsrcdir)/config/expandlibs_deps.py
 EXPAND_LIBS_EXEC = $(PYTHON) $(topsrcdir)/config/pythonpath.py -I$(DEPTH)/config $(topsrcdir)/config/expandlibs_exec.py
 EXPAND_LIBS_GEN = $(PYTHON) $(topsrcdir)/config/pythonpath.py -I$(DEPTH)/config $(topsrcdir)/config/expandlibs_gen.py
 EXPAND_AR = $(EXPAND_LIBS_EXEC) --extract -- $(AR)
 EXPAND_CC = $(EXPAND_LIBS_EXEC) --uselist -- $(CC)
 EXPAND_CCC = $(EXPAND_LIBS_EXEC) --uselist -- $(CCC)
-EXPAND_LD = $(EXPAND_LIBS_EXEC) --uselist $(if $(REORDER),--reorder $(REORDER))-- $(LD)
-EXPAND_MKSHLIB = $(EXPAND_LIBS_EXEC) --uselist $(if $(REORDER),--reorder $(REORDER))-- $(MKSHLIB)
+EXPAND_LD = $(EXPAND_LIBS_EXEC) --uselist -- $(LD)
+EXPAND_MKSHLIB_ARGS = --uselist
+ifdef SYMBOL_ORDER
+EXPAND_MKSHLIB_ARGS += --symbol-order $(SYMBOL_ORDER)
+endif
+EXPAND_MKSHLIB = $(EXPAND_LIBS_EXEC) $(EXPAND_MKSHLIB_ARGS) -- $(MKSHLIB)
 
 ifdef STDCXX_COMPAT
+ifneq ($(OS_ARCH),Darwin)
 CHECK_STDCXX = objdump -p $(1) | grep -e 'GLIBCXX_3\.4\.\(9\|[1-9][0-9]\)' > /dev/null && echo "TEST-UNEXPECTED-FAIL | | We don't want these libstdc++ symbols to be used:" && objdump -T $(1) | grep -e 'GLIBCXX_3\.4\.\(9\|[1-9][0-9]\)' && exit 1 || exit 0
+endif
+
+EXTRA_LIBS += $(call EXPAND_LIBNAME_PATH,stdc++compat,$(DEPTH)/build/unix/stdc++compat)
+HOST_EXTRA_LIBS += $(call EXPAND_LIBNAME_PATH,host_stdc++compat,$(DEPTH)/build/unix/stdc++compat)
 endif
 
 # autoconf.mk sets OBJ_SUFFIX to an error to avoid use before including
@@ -801,4 +769,27 @@ ifdef GNU_CC
 OBJ_SUFFIX := i_o
 endif
 endif
+endif
+
+# EXPAND_LIBNAME - $(call EXPAND_LIBNAME,foo)
+# expands to $(LIB_PREFIX)foo.$(LIB_SUFFIX) or -lfoo, depending on linker
+# arguments syntax. Should only be used for system libraries
+
+# EXPAND_LIBNAME_PATH - $(call EXPAND_LIBNAME_PATH,foo,dir)
+# expands to dir/$(LIB_PREFIX)foo.$(LIB_SUFFIX)
+
+# EXPAND_MOZLIBNAME - $(call EXPAND_MOZLIBNAME,foo)
+# expands to $(DIST)/lib/$(LIB_PREFIX)foo.$(LIB_SUFFIX)
+
+ifdef GNU_CC
+EXPAND_LIBNAME = $(addprefix -l,$(1))
+else
+EXPAND_LIBNAME = $(foreach lib,$(1),$(LIB_PREFIX)$(lib).$(LIB_SUFFIX))
+endif
+EXPAND_LIBNAME_PATH = $(foreach lib,$(1),$(2)/$(LIB_PREFIX)$(lib).$(LIB_SUFFIX))
+EXPAND_MOZLIBNAME = $(foreach lib,$(1),$(DIST)/lib/$(LIB_PREFIX)$(lib).$(LIB_SUFFIX))
+
+# Include internal ply only if needed
+ifndef MOZ_SYSTEM_PLY
+PLY_INCLUDE = -I$(topsrcdir)/other-licenses/ply
 endif

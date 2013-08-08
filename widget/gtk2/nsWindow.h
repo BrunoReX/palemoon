@@ -1,41 +1,9 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* vim:expandtab:shiftwidth=4:tabstop=4:
  */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is Christopher Blizzard
- * <blizzard@mozilla.org>.  Portions created by the Initial Developer
- * are Copyright (C) 2001 the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Masayuki Nakano <masayuki@d-toybox.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef __nsWindow_h__
 #define __nsWindow_h__
@@ -63,7 +31,7 @@
 #endif /* MOZ_X11 */
 
 #ifdef ACCESSIBILITY
-#include "nsAccessible.h"
+#include "mozilla/a11y/Accessible.h"
 #endif
 
 #include "nsGtkIMModule.h"
@@ -95,6 +63,7 @@ extern PRLogModuleInfo *gWidgetDrawLog;
 
 #endif /* MOZ_LOGGING */
 
+class nsDragService;
 #if defined(MOZ_X11) && defined(MOZ_HAVE_SHAREDMEMORYSYSV)
 #  define MOZ_HAVE_SHMIMAGE
 
@@ -114,8 +83,6 @@ public:
     void CommonCreate(nsIWidget *aParent, bool aListenForResizes);
     
     // event handling code
-    void InitKeyEvent(nsKeyEvent &aEvent, GdkEventKey *aGdkEvent);
-
     void DispatchActivateEvent(void);
     void DispatchDeactivateEvent(void);
     void DispatchResizeEvent(nsIntRect &aRect, nsEventStatus &aStatus);
@@ -173,9 +140,7 @@ public:
     NS_IMETHOD         SetCursor(nsCursor aCursor);
     NS_IMETHOD         SetCursor(imgIContainer* aCursor,
                                  PRUint32 aHotspotX, PRUint32 aHotspotY);
-    NS_IMETHOD         Invalidate(const nsIntRect &aRect,
-                                  bool             aIsSynchronous);
-    NS_IMETHOD         Update();
+    NS_IMETHOD         Invalidate(const nsIntRect &aRect);
     virtual void*      GetNativeData(PRUint32 aDataType);
     NS_IMETHOD         SetTitle(const nsAString& aTitle);
     NS_IMETHOD         SetIcon(const nsAString& aIconSpec);
@@ -192,6 +157,12 @@ public:
 
     NS_IMETHOD         MakeFullScreen(bool aFullScreen);
     NS_IMETHOD         HideWindowChrome(bool aShouldHide);
+
+    /**
+     * GetLastUserInputTime returns a timestamp for the most recent user input
+     * event.  This is intended for pointer grab requests (including drags).
+     */
+    static guint32     GetLastUserInputTime();
 
     // utility method, -1 if no change should be made, otherwise returns a
     // value that can be passed to gdk_window_set_decorations
@@ -234,22 +205,6 @@ public:
                                                GdkEventVisibility *aEvent);
     void               OnWindowStateEvent(GtkWidget *aWidget,
                                           GdkEventWindowState *aEvent);
-    gboolean           OnDragMotionEvent(GtkWidget       *aWidget,
-                                         GdkDragContext  *aDragContext,
-                                         gint             aX,
-                                         gint             aY,
-                                         guint            aTime,
-                                         gpointer         aData);
-    void               OnDragLeaveEvent(GtkWidget *      aWidget,
-                                        GdkDragContext   *aDragContext,
-                                        guint            aTime,
-                                        gpointer         aData);
-    gboolean           OnDragDropEvent(GtkWidget        *aWidget,
-                                       GdkDragContext   *aDragContext,
-                                       gint             aX,
-                                       gint             aY,
-                                       guint            aTime,
-                                       gpointer         aData);
     void               OnDragDataReceivedEvent(GtkWidget       *aWidget,
                                                GdkDragContext  *aDragContext,
                                                gint             aX,
@@ -258,27 +213,27 @@ public:
                                                guint            aInfo,
                                                guint            aTime,
                                                gpointer         aData);
-    void               OnDragLeave(void);
-    void               OnDragEnter(nscoord aX, nscoord aY);
 
-    virtual void       NativeResize(PRInt32 aWidth,
+private:
+    void               NativeResize(PRInt32 aWidth,
                                     PRInt32 aHeight,
                                     bool    aRepaint);
 
-    virtual void       NativeResize(PRInt32 aX,
+    void               NativeResize(PRInt32 aX,
                                     PRInt32 aY,
                                     PRInt32 aWidth,
                                     PRInt32 aHeight,
                                     bool    aRepaint);
 
-    virtual void       NativeShow  (bool    aAction);
+    void               NativeShow  (bool    aAction);
     void               SetHasMappedToplevel(bool aState);
     nsIntSize          GetSafeWindowSize(nsIntSize aSize);
 
     void               EnsureGrabs  (void);
-    void               GrabPointer  (void);
+    void               GrabPointer  (guint32 aTime);
     void               ReleaseGrabs (void);
 
+public:
     enum PluginType {
         PluginType_NONE = 0,   /* do not have any plugin */
         PluginType_XEMBED,     /* the plugin support xembed */
@@ -293,25 +248,27 @@ public:
 
     void               ThemeChanged(void);
 
-    void CheckNeedDragLeaveEnter(nsWindow* aInnerMostWidget,
-                                 nsIDragService* aDragService,
-                                 GdkDragContext *aDragContext,
-                                 nscoord aX, nscoord aY);
-
 #ifdef MOZ_X11
     Window             mOldFocusWindow;
 #endif /* MOZ_X11 */
 
     static guint32     sLastButtonPressTime;
-    static guint32     sLastButtonReleaseTime;
 
     NS_IMETHOD         BeginResizeDrag(nsGUIEvent* aEvent, PRInt32 aHorizontal, PRInt32 aVertical);
     NS_IMETHOD         BeginMoveDrag(nsMouseEvent* aEvent);
 
     MozContainer*      GetMozContainer() { return mContainer; }
+    // GetMozContainerWidget returns the MozContainer even for undestroyed
+    // descendant windows
+    GtkWidget*         GetMozContainerWidget();
     GdkWindow*         GetGdkWindow() { return mGdkWindow; }
     bool               IsDestroyed() { return mIsDestroyed; }
 
+    void               DispatchDragEvent(PRUint32 aMsg,
+                                         const nsIntPoint& aRefPoint,
+                                         guint aTime);
+    static void        UpdateDragStatus (GdkDragContext *aDragContext,
+                                         nsIDragService *aDragService);
     // If this dispatched the keydown event actually, this returns TRUE,
     // otherwise, FALSE.
     bool               DispatchKeyDownEvent(GdkEventKey *aEvent,
@@ -342,6 +299,13 @@ public:
     gfxASurface       *GetThebesSurface(cairo_t *cr);
 #endif
     NS_IMETHOD         ReparentNativeWidget(nsIWidget* aNewParent);
+
+    virtual nsresult SynthesizeNativeMouseEvent(nsIntPoint aPoint,
+                                                PRUint32 aNativeMessage,
+                                                PRUint32 aModifierFlags);
+
+    virtual nsresult SynthesizeNativeMouseMove(nsIntPoint aPoint)
+    { return SynthesizeNativeMouseEvent(aPoint, GDK_MOTION_NOTIFY, 0); }
 
 protected:
     // Helper for SetParent and ReparentNativeWidget.
@@ -374,7 +338,6 @@ protected:
 private:
     void               DestroyChildWindows();
     void               GetToplevelWidget(GtkWidget **aWidget);
-    GtkWidget         *GetMozContainerWidget();
     nsWindow          *GetContainerWindow();
     void               SetUrgencyHint(GtkWidget *top_window, bool state);
     void              *SetupPluginPort(void);
@@ -412,7 +375,7 @@ private:
     nsRefPtr<gfxASurface> mThebesSurface;
 
 #ifdef ACCESSIBILITY
-    nsRefPtr<nsAccessible> mRootAccessible;
+    nsRefPtr<Accessible> mRootAccessible;
 
     /**
      * Request to create the accessible for this window if it is top level.
@@ -423,7 +386,7 @@ private:
      * Generate the NS_GETACCESSIBLE event to get accessible for this window
      * and return it.
      */
-    nsAccessible       *DispatchAccessibleEvent();
+    Accessible       *DispatchAccessibleEvent();
 
     /**
      * Dispatch accessible event for the top level window accessible.
@@ -474,25 +437,15 @@ private:
     gchar*       mTransparencyBitmap;
  
     // all of our DND stuff
-    // this is the last window that had a drag event happen on it.
-    static nsWindow    *sLastDragMotionWindow;
     void   InitDragEvent         (nsDragEvent &aEvent);
-    void   UpdateDragStatus      (GdkDragContext *aDragContext,
-                                  nsIDragService *aDragService);
 
-    nsCOMPtr<nsITimer> mDragLeaveTimer;
     float              mLastMotionPressure;
 
     // Remember the last sizemode so that we can restore it when
     // leaving fullscreen
     nsSizeMode         mLastSizeMode;
 
-    static bool        sIsDraggingOutOf;
-    // drag in progress
     static bool DragInProgress(void);
-
-    void         FireDragLeaveTimer       (void);
-    static void  DragLeaveTimerCallback  (nsITimer *aTimer, void *aClosure);
 
     void DispatchMissedButtonReleases(GdkEventCrossing *aGdkEvent);
 

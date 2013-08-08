@@ -7,10 +7,10 @@
 
 #include <vector>
 #include <dlfcn.h>
-/* Until RefPtr.h stops using JS_Assert */
-#undef DEBUG
+#include <signal.h>
 #include "mozilla/RefPtr.h"
 #include "Zip.h"
+#include "Elfxx.h"
 
 /**
  * dlfcn.h replacement functions
@@ -30,6 +30,20 @@ extern "C" {
   } Dl_info;
 #endif
   int __wrap_dladdr(void *addr, Dl_info *info);
+
+  sighandler_t __wrap_signal(int signum, sighandler_t handler);
+  int __wrap_sigaction(int signum, const struct sigaction *act,
+                       struct sigaction *oldact);
+
+  struct dl_phdr_info {
+    Elf::Addr dlpi_addr;
+    const char *dlpi_name;
+    const Elf::Phdr *dlpi_phdr;
+    Elf::Half dlpi_phnum;
+  };
+
+  typedef int (*dl_phdr_cb)(struct dl_phdr_info *, size_t, void *);
+  int __wrap_dl_iterate_phdr(dl_phdr_cb callback, void *data);
 }
 
 /**
@@ -98,7 +112,7 @@ public:
   {
     bool ret = false;
     if (directRefCnt) {
-      // ASSERT(directRefCnt >= mozilla::RefCounted<LibHandle>::refCount())
+      MOZ_ASSERT(directRefCnt <= mozilla::RefCounted<LibHandle>::refCount());
       if (--directRefCnt)
         ret = true;
       mozilla::RefCounted<LibHandle>::Release();
@@ -121,6 +135,7 @@ protected:
    */
   friend class ElfLoader;
   friend class CustomElf;
+  friend class SEGVHandler;
   virtual bool IsSystemElf() const { return false; }
 
 private:
@@ -176,9 +191,56 @@ private:
 };
 
 /**
+ * The ElfLoader registers its own SIGSEGV handler to handle segmentation
+ * faults within the address space of the loaded libraries. It however
+ * allows a handler to be set for faults in other places, and redispatches
+ * to the handler set through signal() or sigaction(). We assume no system
+ * library loaded with system dlopen is going to call signal or sigaction
+ * for SIGSEGV.
+ */
+class SEGVHandler
+{
+protected:
+  SEGVHandler();
+  ~SEGVHandler();
+
+private:
+  friend sighandler_t __wrap_signal(int signum, sighandler_t handler);
+  friend int __wrap_sigaction(int signum, const struct sigaction *act,
+                              struct sigaction *oldact);
+
+  /**
+   * SIGSEGV handler registered with __wrap_signal or __wrap_sigaction.
+   */
+  struct sigaction action;
+  
+  /**
+   * ElfLoader SIGSEGV handler.
+   */
+  static void handler(int signum, siginfo_t *info, void *context);
+
+  /**
+   * Size of the alternative stack. The printf family requires more than 8KB
+   * of stack, and our signal handler may print a few things.
+   */
+  static const size_t stackSize = 12 * 1024;
+
+  /**
+   * Alternative stack information used before initialization.
+   */
+  stack_t oldStack;
+
+  /**
+   * Pointer to an alternative stack for signals. Only set if oldStack is
+   * not set or not big enough.
+   */
+  MappedPtr stackPtr;
+};
+
+/**
  * Elf Loader class in charge of loading and bookkeeping libraries.
  */
-class ElfLoader
+class ElfLoader: public SEGVHandler
 {
 public:
   /**
@@ -233,6 +295,13 @@ private:
 
 protected:
   friend class CustomElf;
+  /**
+   * Show some stats about Mappables in CustomElfs. The when argument is to
+   * be used by the caller to give an identifier of the when the stats call
+   * is made.
+   */
+  static void stats(const char *when);
+
   /* Definition of static destructors as to be used for C++ ABI compatibility */
   typedef void (*Destructor)(void *object);
 
@@ -298,6 +367,8 @@ private:
   /* Keep track of Zips used for library loading */
   ZipCollection zips;
 
+  /* Forward declaration, see further below */
+  class r_debug;
 public:
   /* Loaded object descriptor for the debugger interface below*/
   struct link_map {
@@ -307,6 +378,9 @@ public:
     const char *l_name;
     /* Address of the PT_DYNAMIC segment. */
     const void *l_ld;
+
+  private:
+    friend class ElfLoader::r_debug;
     /* Double linked list of loaded objects. */
     link_map *l_next, *l_prev;
   };
@@ -322,6 +396,45 @@ private:
 
     /* Make the debugger aware of the unloading of an object */
     void Remove(link_map *map);
+
+    /* Iterates over all link_maps */
+    class iterator
+    {
+    public:
+      const link_map *operator ->() const
+      {
+        return item;
+      }
+
+      const link_map &operator ++()
+      {
+        item = item->l_next;
+        return *item;
+      }
+
+      bool operator<(const iterator &other) const
+      {
+        if (other.item == NULL)
+          return item ? true : false;
+        MOZ_NOT_REACHED("r_debug::iterator::operator< called with something else than r_debug::end()");
+      }
+    protected:
+      friend class r_debug;
+      iterator(const link_map *item): item(item) { }
+
+    private:
+      const link_map *item;
+    };
+
+    iterator begin() const
+    {
+      return iterator(r_map);
+    }
+
+    iterator end() const
+    {
+      return iterator(NULL);
+    }
 
   private:
     /* Version number of the protocol. */
@@ -343,6 +456,7 @@ private:
       RT_DELETE      /* Beginning to remove an object */
     } r_state;
   };
+  friend int __wrap_dl_iterate_phdr(dl_phdr_cb callback, void *data);
   r_debug *dbg;
 
   /**

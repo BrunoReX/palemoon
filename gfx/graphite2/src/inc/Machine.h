@@ -36,11 +36,20 @@ of the License or (at your option) any later version.
 #include "inc/Main.h"
 
 #if defined(__GNUC__)
+#if defined(__clang__)
+#define     HOT
+#if defined(__x86_64)
+#define     REGPARM(n)      __attribute__((regparm(n)))
+#else
+#define     REGPARM(n)
+#endif
+#else
 #define     HOT             __attribute__((hot))
 #if defined(__x86_64)
 #define     REGPARM(n)      __attribute__((hot, regparm(n)))
 #else
 #define     REGPARM(n)
+#endif
 #endif
 #else
 #define     HOT
@@ -154,7 +163,12 @@ private:
 inline Machine::Machine(SlotMap & map) throw()
 : _map(map), _status(finished)
 {
-	memset(_stack, 0, STACK_GUARD);
+	// Initialise stack guard +1 entries as the stack pointer points to the
+	//  current top of stack, hence the first push will never write entry 0.
+	// Initialising the guard space like this is unnecessary and is only
+	//  done to keep valgrind happy during fuzz testing.  Hopefully loop
+	//  unrolling will flatten this.
+	for (size_t n = STACK_GUARD + 1; n; --n)  _stack[n-1] = 0;
 }
 
 inline SlotMap& Machine::slotMap() const throw()
@@ -174,7 +188,6 @@ inline void Machine::check_final_stack(const int32 * const sp)
     if      (sp <  base)    _status = stack_underflow;       // This should be impossible now.
     else if (sp >= limit)   _status = stack_overflow;        // So should this.
     else if (sp != base)    _status = stack_not_empty;
-    else                    _status = finished;
 }
 
 } // namespace vm

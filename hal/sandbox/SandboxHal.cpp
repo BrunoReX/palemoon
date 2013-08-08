@@ -1,41 +1,8 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set sw=2 ts=8 et ft=cpp : */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at:
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Code.
- *
- * The Initial Developer of the Original Code is
- *   The Mozilla Foundation
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Chris Jones <jones.chris.g@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Hal.h"
 #include "mozilla/dom/ContentChild.h"
@@ -45,6 +12,7 @@
 #include "mozilla/dom/TabChild.h"
 #include "mozilla/dom/battery/Types.h"
 #include "mozilla/dom/network/Types.h"
+#include "mozilla/dom/ScreenOrientation.h"
 #include "mozilla/Observer.h"
 #include "mozilla/unused.h"
 #include "WindowIdentifier.h"
@@ -67,11 +35,11 @@ Hal()
 }
 
 void
-Vibrate(const nsTArray<uint32>& pattern, const WindowIdentifier &id)
+Vibrate(const nsTArray<uint32_t>& pattern, const WindowIdentifier &id)
 {
   HAL_LOG(("Vibrate: Sending to parent process."));
 
-  AutoInfallibleTArray<uint32, 8> p(pattern);
+  AutoInfallibleTArray<uint32_t, 8> p(pattern);
 
   WindowIdentifier newID(id);
   newID.AppendProcessID();
@@ -124,6 +92,38 @@ GetCurrentNetworkInformation(NetworkInformation* aNetworkInfo)
   Hal()->SendGetCurrentNetworkInformation(aNetworkInfo);
 }
 
+void
+EnableScreenConfigurationNotifications()
+{
+  Hal()->SendEnableScreenConfigurationNotifications();
+}
+
+void
+DisableScreenConfigurationNotifications()
+{
+  Hal()->SendDisableScreenConfigurationNotifications();
+}
+
+void
+GetCurrentScreenConfiguration(ScreenConfiguration* aScreenConfiguration)
+{
+  Hal()->SendGetCurrentScreenConfiguration(aScreenConfiguration);
+}
+
+bool
+LockScreenOrientation(const dom::ScreenOrientation& aOrientation)
+{
+  bool allowed;
+  Hal()->SendLockScreenOrientation(aOrientation, &allowed);
+  return allowed;
+}
+
+void
+UnlockScreenOrientation()
+{
+  Hal()->SendUnlockScreenOrientation();
+}
+
 bool
 GetScreenEnabled()
 {
@@ -136,6 +136,20 @@ void
 SetScreenEnabled(bool enabled)
 {
   Hal()->SendSetScreenEnabled(enabled);
+}
+
+bool
+GetCpuSleepAllowed()
+{
+  bool allowed = true;
+  Hal()->SendGetCpuSleepAllowed(&allowed);
+  return allowed;
+}
+
+void
+SetCpuSleepAllowed(bool allowed)
+{
+  Hal()->SendSetCpuSleepAllowed(allowed);
 }
 
 double
@@ -152,14 +166,112 @@ SetScreenBrightness(double brightness)
   Hal()->SendSetScreenBrightness(brightness);
 }
 
+bool
+SetLight(hal::LightType light, const hal::LightConfiguration& aConfig)
+{
+  bool status;
+  Hal()->SendSetLight(light, aConfig, &status);
+  return status;
+}
+
+bool
+GetLight(hal::LightType light, hal::LightConfiguration* aConfig)
+{
+  bool status;
+  Hal()->SendGetLight(light, aConfig, &status);
+  return status;
+}
+
+void 
+AdjustSystemClock(int32_t aDeltaMilliseconds)
+{
+  Hal()->SendAdjustSystemClock(aDeltaMilliseconds);
+}
+
+void
+SetTimezone(const nsCString& aTimezoneSpec)
+{
+  Hal()->SendSetTimezone(nsCString(aTimezoneSpec));
+} 
+
+void
+Reboot()
+{
+  Hal()->SendReboot();
+}
+
+void
+PowerOff()
+{
+  Hal()->SendPowerOff();
+}
+
+void
+EnableSensorNotifications(SensorType aSensor) {
+  Hal()->SendEnableSensorNotifications(aSensor);
+}
+
+void
+DisableSensorNotifications(SensorType aSensor) {
+  Hal()->SendDisableSensorNotifications(aSensor);
+}
+
+void
+EnableWakeLockNotifications()
+{
+  Hal()->SendEnableWakeLockNotifications();
+}
+
+void
+DisableWakeLockNotifications()
+{
+  Hal()->SendDisableWakeLockNotifications();
+}
+
+void
+ModifyWakeLock(const nsAString &aTopic, WakeLockControl aLockAdjust, WakeLockControl aHiddenAdjust)
+{
+  Hal()->SendModifyWakeLock(nsString(aTopic), aLockAdjust, aHiddenAdjust);
+}
+
+void
+GetWakeLockInfo(const nsAString &aTopic, WakeLockInformation *aWakeLockInfo)
+{
+  Hal()->SendGetWakeLockInfo(nsString(aTopic), aWakeLockInfo);
+}
+
+void
+EnableSwitchNotifications(SwitchDevice aDevice)
+{
+  Hal()->SendEnableSwitchNotifications(aDevice);
+}
+
+void
+DisableSwitchNotifications(SwitchDevice aDevice)
+{
+  Hal()->SendDisableSwitchNotifications(aDevice);
+}
+
+SwitchState
+GetCurrentSwitchState(SwitchDevice aDevice)
+{
+  SwitchState state;
+  Hal()->SendGetCurrentSwitchState(aDevice, &state);
+  return state;
+}
+
 class HalParent : public PHalParent
                 , public BatteryObserver
                 , public NetworkObserver
+                , public ISensorObserver
+                , public WakeLockObserver
+                , public ScreenConfigurationObserver
+                , public SwitchObserver
 {
 public:
   NS_OVERRIDE virtual bool
   RecvVibrate(const InfallibleTArray<unsigned int>& pattern,
-              const InfallibleTArray<uint64> &id,
+              const InfallibleTArray<uint64_t> &id,
               PBrowserParent *browserParent)
   {
     // Check whether browserParent is active.  We should have already
@@ -185,7 +297,7 @@ public:
   }
 
   NS_OVERRIDE virtual bool
-  RecvCancelVibrate(const InfallibleTArray<uint64> &id,
+  RecvCancelVibrate(const InfallibleTArray<uint64_t> &id,
                     PBrowserParent *browserParent)
   {
     TabParent *tabParent = static_cast<TabParent*>(browserParent);
@@ -241,6 +353,42 @@ public:
   }
 
   NS_OVERRIDE virtual bool
+  RecvEnableScreenConfigurationNotifications() {
+    hal::RegisterScreenConfigurationObserver(this);
+    return true;
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvDisableScreenConfigurationNotifications() {
+    hal::UnregisterScreenConfigurationObserver(this);
+    return true;
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvGetCurrentScreenConfiguration(ScreenConfiguration* aScreenConfiguration) {
+    hal::GetCurrentScreenConfiguration(aScreenConfiguration);
+    return true;
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvLockScreenOrientation(const dom::ScreenOrientation& aOrientation, bool* aAllowed)
+  {
+    *aAllowed = hal::LockScreenOrientation(aOrientation);
+    return true;
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvUnlockScreenOrientation()
+  {
+    hal::UnlockScreenOrientation();
+    return true;
+  }
+
+  void Notify(const ScreenConfiguration& aScreenConfiguration) {
+    unused << SendNotifyScreenConfigurationChange(aScreenConfiguration);
+  }
+
+  NS_OVERRIDE virtual bool
   RecvGetScreenEnabled(bool *enabled)
   {
     *enabled = hal::GetScreenEnabled();
@@ -251,6 +399,20 @@ public:
   RecvSetScreenEnabled(const bool &enabled)
   {
     hal::SetScreenEnabled(enabled);
+    return true;
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvGetCpuSleepAllowed(bool *allowed)
+  {
+    *allowed = hal::GetCpuSleepAllowed();
+    return true;
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvSetCpuSleepAllowed(const bool &allowed)
+  {
+    hal::SetCpuSleepAllowed(allowed);
     return true;
   }
 
@@ -267,6 +429,125 @@ public:
     hal::SetScreenBrightness(brightness);
     return true;
   }
+
+  NS_OVERRIDE virtual bool
+  RecvSetLight(const LightType& aLight,  const hal::LightConfiguration& aConfig, bool *status)
+  {
+    *status = hal::SetLight(aLight, aConfig);
+    return true;
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvGetLight(const LightType& aLight, LightConfiguration* aConfig, bool* status)
+  {
+    *status = hal::GetLight(aLight, aConfig);
+    return true;
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvAdjustSystemClock(const int32_t &aDeltaMilliseconds)
+  {
+    hal::AdjustSystemClock(aDeltaMilliseconds);
+    return true;
+  }
+
+  NS_OVERRIDE virtual bool 
+  RecvSetTimezone(const nsCString& aTimezoneSpec)
+  {
+    hal::SetTimezone(aTimezoneSpec);
+    return true;  
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvReboot()
+  {
+    hal::Reboot();
+    return true;
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvPowerOff()
+  {
+    hal::PowerOff();
+    return true;
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvEnableSensorNotifications(const SensorType &aSensor) {
+    hal::RegisterSensorObserver(aSensor, this);
+    return true;
+  }
+   
+  NS_OVERRIDE virtual bool
+  RecvDisableSensorNotifications(const SensorType &aSensor) {
+    hal::UnregisterSensorObserver(aSensor, this);
+    return true;
+  }
+  
+  void Notify(const SensorData& aSensorData) {
+    unused << SendNotifySensorChange(aSensorData);
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvModifyWakeLock(const nsString &aTopic,
+                     const WakeLockControl &aLockAdjust,
+                     const WakeLockControl &aHiddenAdjust)
+  {
+    hal::ModifyWakeLock(aTopic, aLockAdjust, aHiddenAdjust);
+    return true;
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvEnableWakeLockNotifications()
+  {
+    hal::RegisterWakeLockObserver(this);
+    return true;
+  }
+   
+  NS_OVERRIDE virtual bool
+  RecvDisableWakeLockNotifications()
+  {
+    hal::UnregisterWakeLockObserver(this);
+    return true;
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvGetWakeLockInfo(const nsString &aTopic, WakeLockInformation *aWakeLockInfo)
+  {
+    hal::GetWakeLockInfo(aTopic, aWakeLockInfo);
+    return true;
+  }
+  
+  void Notify(const WakeLockInformation& aWakeLockInfo)
+  {
+    unused << SendNotifyWakeLockChange(aWakeLockInfo);
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvEnableSwitchNotifications(const SwitchDevice& aDevice) 
+  {
+    hal::RegisterSwitchObserver(aDevice, this);
+    return true;
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvDisableSwitchNotifications(const SwitchDevice& aDevice) 
+  {
+    hal::UnregisterSwitchObserver(aDevice, this);
+    return true;
+  }
+
+  void Notify(const SwitchEvent& aSwitchEvent)
+  {
+    unused << SendNotifySwitchChange(aSwitchEvent);
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvGetCurrentSwitchState(const SwitchDevice& aDevice, hal::SwitchState *aState)
+  {
+    *aState = hal::GetCurrentSwitchState(aDevice);
+    return true;
+  }
 };
 
 class HalChild : public PHalChild {
@@ -278,11 +559,39 @@ public:
   }
 
   NS_OVERRIDE virtual bool
+  RecvNotifySensorChange(const hal::SensorData &aSensorData);
+
+  NS_OVERRIDE virtual bool
   RecvNotifyNetworkChange(const NetworkInformation& aNetworkInfo) {
     hal::NotifyNetworkChange(aNetworkInfo);
     return true;
   }
+
+  NS_OVERRIDE virtual bool
+  RecvNotifyWakeLockChange(const WakeLockInformation& aWakeLockInfo) {
+    hal::NotifyWakeLockChange(aWakeLockInfo);
+    return true;
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvNotifyScreenConfigurationChange(const ScreenConfiguration& aScreenConfiguration) {
+    hal::NotifyScreenConfigurationChange(aScreenConfiguration);
+    return true;
+  }
+
+  NS_OVERRIDE virtual bool
+  RecvNotifySwitchChange(const mozilla::hal::SwitchEvent& aEvent) {
+    hal::NotifySwitchChange(aEvent);
+    return true;
+  }
 };
+
+bool
+HalChild::RecvNotifySensorChange(const hal::SensorData &aSensorData) {
+  hal::NotifySensorChange(aSensorData);
+  
+  return true;
+}
 
 PHalChild* CreateHalChild() {
   return new HalChild();

@@ -1,41 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   L. David Baron <dbaron@dbaron.org>, Mozilla Corporation
- *   Ehsan Akhgari <ehsan.akhgari@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* a presentation of a document, part 1 */
 
@@ -67,7 +33,6 @@
 #include "nsIWeakReferenceUtils.h"
 #include "nsCSSRendering.h"
 #include "prprf.h"
-#include "nsContentPolicyUtils.h"
 #include "nsIDOMDocument.h"
 #include "nsAutoPtr.h"
 #include "nsEventStateManager.h"
@@ -197,7 +162,7 @@ IsVisualCharset(const nsCString& aCharset)
 
 
 static PLDHashOperator
-destroy_loads(const void * aKey, nsRefPtr<nsImageLoader>& aData, void* closure)
+destroy_loads(nsIFrame* aKey, nsRefPtr<nsImageLoader>& aData, void* closure)
 {
   aData->Destroy();
   return PL_DHASH_NEXT;
@@ -210,29 +175,10 @@ destroy_loads(const void * aKey, nsRefPtr<nsImageLoader>& aData, void* closure)
 
 nsPresContext::nsPresContext(nsIDocument* aDocument, nsPresContextType aType)
   : mType(aType), mDocument(aDocument), mMinFontSize(0),
-    mTextZoom(1.0), mFullZoom(1.0), mPageSize(-1, -1), mPPScale(1.0f),
+    mTextZoom(1.0), mFullZoom(1.0), mLastFontInflationScreenWidth(-1.0),
+    mPageSize(-1, -1), mPPScale(1.0f),
     mViewportStyleOverflow(NS_STYLE_OVERFLOW_AUTO, NS_STYLE_OVERFLOW_AUTO),
-    mImageAnimationModePref(imgIContainer::kNormalAnimMode),
-    // Font sizes default to zero; they will be set in GetFontPreferences
-    mDefaultVariableFont("serif", NS_FONT_STYLE_NORMAL, NS_FONT_VARIANT_NORMAL,
-                         NS_FONT_WEIGHT_NORMAL, NS_FONT_STRETCH_NORMAL, 0, 0),
-    mDefaultFixedFont("monospace", NS_FONT_STYLE_NORMAL,
-                      NS_FONT_VARIANT_NORMAL, NS_FONT_WEIGHT_NORMAL,
-                      NS_FONT_STRETCH_NORMAL, 0, 0),
-    mDefaultSerifFont("serif", NS_FONT_STYLE_NORMAL, NS_FONT_VARIANT_NORMAL,
-                      NS_FONT_WEIGHT_NORMAL, NS_FONT_STRETCH_NORMAL, 0, 0),
-    mDefaultSansSerifFont("sans-serif", NS_FONT_STYLE_NORMAL,
-                          NS_FONT_VARIANT_NORMAL, NS_FONT_WEIGHT_NORMAL,
-                          NS_FONT_STRETCH_NORMAL, 0, 0),
-    mDefaultMonospaceFont("monospace", NS_FONT_STYLE_NORMAL,
-                          NS_FONT_VARIANT_NORMAL, NS_FONT_WEIGHT_NORMAL,
-                          NS_FONT_STRETCH_NORMAL, 0, 0),
-    mDefaultCursiveFont("cursive", NS_FONT_STYLE_NORMAL,
-                        NS_FONT_VARIANT_NORMAL, NS_FONT_WEIGHT_NORMAL,
-                        NS_FONT_STRETCH_NORMAL, 0, 0),
-    mDefaultFantasyFont("fantasy", NS_FONT_STYLE_NORMAL,
-                        NS_FONT_VARIANT_NORMAL, NS_FONT_WEIGHT_NORMAL,
-                        NS_FONT_STRETCH_NORMAL, 0, 0)
+    mImageAnimationModePref(imgIContainer::kNormalAnimMode)
 {
   // NOTE! nsPresContext::operator new() zeroes out all members, so don't
   // bother initializing members to 0.
@@ -365,12 +311,13 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(nsPresContext)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsPresContext)
 
 static PLDHashOperator
-TraverseImageLoader(const void * aKey, nsRefPtr<nsImageLoader>& aData,
+TraverseImageLoader(nsIFrame* aKey, nsRefPtr<nsImageLoader>& aData,
                     void* aClosure)
 {
   nsCycleCollectionTraversalCallback *cb =
     static_cast<nsCycleCollectionTraversalCallback*>(aClosure);
 
+  NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(*cb, "mImageLoaders[i] item");
   cb->NoteXPCOMChild(aData);
 
   return PL_DHASH_NEXT;
@@ -384,6 +331,18 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsPresContext)
 
   for (PRUint32 i = 0; i < IMAGE_LOAD_TYPE_COUNT; ++i)
     tmp->mImageLoaders[i].Enumerate(TraverseImageLoader, &cb);
+
+  // We own only the items in mDOMMediaQueryLists that have listeners;
+  // this reference is managed by their AddListener and RemoveListener
+  // methods.
+  for (PRCList *l = PR_LIST_HEAD(&tmp->mDOMMediaQueryLists);
+       l != &tmp->mDOMMediaQueryLists; l = PR_NEXT_LINK(l)) {
+    nsDOMMediaQueryList *mql = static_cast<nsDOMMediaQueryList*>(l);
+    if (mql->HasListeners()) {
+      NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mDOMMediaQueryLists item");
+      cb.NoteXPCOMChild(mql);
+    }
+  }
 
   // NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mTheme); // a service
   // NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mLangService); // a service
@@ -400,6 +359,17 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsPresContext)
     tmp->mEventManager->SetPresContext(nsnull);
 
     NS_RELEASE(tmp->mEventManager);
+  }
+
+  // We own only the items in mDOMMediaQueryLists that have listeners;
+  // this reference is managed by their AddListener and RemoveListener
+  // methods.
+  for (PRCList *l = PR_LIST_HEAD(&tmp->mDOMMediaQueryLists);
+       l != &tmp->mDOMMediaQueryLists; ) {
+    PRCList *next = PR_NEXT_LINK(l);
+    nsDOMMediaQueryList *mql = static_cast<nsDOMMediaQueryList*>(l);
+    mql->RemoveAllListeners();
+    l = next;
   }
 
   // NS_RELEASE(tmp->mLanguage); // an atom
@@ -443,9 +413,51 @@ static bool sLookAndFeelChanged;
 // one prescontext.
 static bool sThemeChanged;
 
-void
-nsPresContext::GetFontPreferences()
+const nsPresContext::LangGroupFontPrefs*
+nsPresContext::GetFontPrefsForLang(nsIAtom *aLanguage) const
 {
+  // Get language group for aLanguage:
+
+  nsresult rv;
+  nsIAtom *langGroupAtom = nsnull;
+  if (!aLanguage) {
+    aLanguage = mLanguage;
+  }
+  if (aLanguage && mLangService) {
+    langGroupAtom = mLangService->GetLanguageGroup(aLanguage, &rv);
+  }
+  if (NS_FAILED(rv) || !langGroupAtom) {
+    langGroupAtom = nsGkAtoms::x_western; // Assume x-western is safe...
+  }
+
+  // Look for cached prefs for this lang group.
+  // Most documents will only use one (or very few) language groups. Rather
+  // than have the overhead of a hash lookup, we simply look along what will
+  // typically be a very short (usually of length 1) linked list. There are 31
+  // language groups, so in the worst case scenario we'll need to traverse 31
+  // link items.
+
+  LangGroupFontPrefs *prefs =
+    const_cast<LangGroupFontPrefs*>(&mLangGroupFontPrefs);
+  if (prefs->mLangGroup) { // if initialized
+    DebugOnly<PRUint32> count = 0;
+    for (;;) {
+      NS_ASSERTION(++count < 35, "Lang group count exceeded!!!");
+      if (prefs->mLangGroup == langGroupAtom) {
+        return prefs;
+      }
+      if (!prefs->mNext) {
+        break;
+      }
+      prefs = prefs->mNext;
+    }
+
+    // nothing cached, so go on and fetch the prefs for this lang group:
+    prefs = prefs->mNext = new LangGroupFontPrefs;
+  }
+
+  prefs->mLangGroup = langGroupAtom;
+
   /* Fetch the font prefs to be used -- see bug 61883 for details.
      Not all prefs are needed upfront. Some are fallback prefs intended
      for the GFX font sub-system...
@@ -454,7 +466,7 @@ nsPresContext::GetFontPreferences()
   font.size.unit = px | pt    XXX could be folded in the size... bug 90440
 
   2) attributes for generic fonts --------------------------------------
-  font.default = serif | sans-serif - fallback generic font
+  font.default.[langGroup] = serif | sans-serif - fallback generic font
   font.name.[generic].[langGroup] = current user' selected font on the pref dialog
   font.name-list.[generic].[langGroup] = fontname1, fontname2, ... [factory pre-built list]
   font.size.[generic].[langGroup] = integer - settable by the user
@@ -462,24 +474,11 @@ nsPresContext::GetFontPreferences()
   font.minimum-size.[langGroup] = integer - settable by the user
   */
 
-  mDefaultVariableFont.size = CSSPixelsToAppUnits(16);
-  mDefaultFixedFont.size = CSSPixelsToAppUnits(13);
-
-  // the font prefs are based on langGroup, not actual language
   nsCAutoString langGroup;
-  if (mLanguage && mLangService) {
-    nsresult rv;
-    nsIAtom *group = mLangService->GetLanguageGroup(mLanguage, &rv);
-    if (NS_SUCCEEDED(rv) && group) {
-      group->ToUTF8String(langGroup);
-    }
-    else {
-      langGroup.AssignLiteral("x-western"); // Assume x-western is safe...
-    }
-  }
-  else {
-    langGroup.AssignLiteral("x-western"); // Assume x-western is safe...
-  }
+  langGroupAtom->ToUTF8String(langGroup);
+
+  prefs->mDefaultVariableFont.size = CSSPixelsToAppUnits(16);
+  prefs->mDefaultFixedFont.size = CSSPixelsToAppUnits(13);
 
   nsCAutoString pref;
 
@@ -498,6 +497,8 @@ nsPresContext::GetFontPreferences()
       unit = eUnit_pt;
     }
     else {
+      // XXX should really send this warning to the user (Error Console?).
+      // And just default to unit = eUnit_px?
       NS_WARNING("unexpected font-size unit -- expected: 'px' or 'pt'");
       unit = eUnit_unknown;
     }
@@ -505,29 +506,33 @@ nsPresContext::GetFontPreferences()
 
   // get font.minimum-size.[langGroup]
 
-  pref.Assign("font.minimum-size.");
-  pref.Append(langGroup);
+  MAKE_FONT_PREF_KEY(pref, "font.minimum-size.", langGroup);
 
   PRInt32 size = Preferences::GetInt(pref.get());
   if (unit == eUnit_px) {
-    mMinimumFontSizePref = CSSPixelsToAppUnits(size);
+    prefs->mMinimumFontSize = CSSPixelsToAppUnits(size);
   }
   else if (unit == eUnit_pt) {
-    mMinimumFontSizePref = CSSPointsToAppUnits(size);
+    prefs->mMinimumFontSize = CSSPointsToAppUnits(size);
   }
 
   nsFont* fontTypes[] = {
-    &mDefaultVariableFont,
-    &mDefaultFixedFont,
-    &mDefaultSerifFont,
-    &mDefaultSansSerifFont,
-    &mDefaultMonospaceFont,
-    &mDefaultCursiveFont,
-    &mDefaultFantasyFont
+    &prefs->mDefaultVariableFont,
+    &prefs->mDefaultFixedFont,
+    &prefs->mDefaultSerifFont,
+    &prefs->mDefaultSansSerifFont,
+    &prefs->mDefaultMonospaceFont,
+    &prefs->mDefaultCursiveFont,
+    &prefs->mDefaultFantasyFont
   };
-  PR_STATIC_ASSERT(NS_ARRAY_LENGTH(fontTypes) == eDefaultFont_COUNT);
+  MOZ_STATIC_ASSERT(NS_ARRAY_LENGTH(fontTypes) == eDefaultFont_COUNT,
+                    "FontTypes array count is not correct");
 
-  // get attributes specific to each generic font
+  // Get attributes specific to each generic font. We do not get the user's
+  // generic-font-name-to-specific-family-name preferences because its the
+  // generic name that should be fed into the cascade. It is up to the GFX
+  // code to look up the font prefs to convert generic names to specific
+  // family names as necessary.
   nsCAutoString generic_dot_langGroup;
   for (PRUint32 eType = 0; eType < ArrayLength(fontTypes); ++eType) {
     generic_dot_langGroup.Assign(kGenericFont[eType]);
@@ -538,17 +543,17 @@ nsPresContext::GetFontPreferences()
     // set the default variable font (the other fonts are seen as 'generic' fonts
     // in GFX and will be queried there when hunting for alternative fonts)
     if (eType == eDefaultFont_Variable) {
-      MAKE_FONT_PREF_KEY(pref, "font.name", generic_dot_langGroup);
+      MAKE_FONT_PREF_KEY(pref, "font.name.variable.", langGroup);
 
       nsAdoptingString value = Preferences::GetString(pref.get());
       if (!value.IsEmpty()) {
-        font->name.Assign(value);
+        prefs->mDefaultVariableFont.name.Assign(value);
       }
       else {
         MAKE_FONT_PREF_KEY(pref, "font.default.", langGroup);
         value = Preferences::GetString(pref.get());
         if (!value.IsEmpty()) {
-          mDefaultVariableFont.name.Assign(value);
+          prefs->mDefaultVariableFont.name.Assign(value);
         }
       } 
     }
@@ -558,12 +563,12 @@ nsPresContext::GetFontPreferences()
         // to have the same default font-size as "-moz-fixed" (this tentative
         // size may be overwritten with the specific value for "monospace" when
         // "font.size.monospace.[langGroup]" is read -- see below)
-        font->size = mDefaultFixedFont.size;
+        prefs->mDefaultMonospaceFont.size = prefs->mDefaultFixedFont.size;
       }
       else if (eType != eDefaultFont_Fixed) {
         // all the other generic fonts are initialized with the size of the
         // variable font, but their specific size can supersede later -- see below
-        font->size = mDefaultVariableFont.size;
+        font->size = prefs->mDefaultVariableFont.size;
       }
     }
 
@@ -600,6 +605,8 @@ nsPresContext::GetFontPreferences()
            font->sizeAdjust);
 #endif
   }
+
+  return prefs;
 }
 
 void
@@ -740,7 +747,7 @@ nsPresContext::GetUserPreferences()
 
   mPrefScrollbarSide = Preferences::GetInt("layout.scrollbar.side");
 
-  GetFontPreferences();
+  ResetCachedFontPrefs();
 
   // * image animation
   const nsAdoptingCString& animatePref =
@@ -913,9 +920,9 @@ nsPresContext::Init(nsDeviceContext* aDeviceContext)
     mDeviceContext->FlushFontCache();
   mCurAppUnitsPerDevPixel = AppUnitsPerDevPixel();
 
-  for (PRUint32 i = 0; i < IMAGE_LOAD_TYPE_COUNT; ++i)
-    if (!mImageLoaders[i].Init())
-      return NS_ERROR_OUT_OF_MEMORY;
+  for (PRUint32 i = 0; i < IMAGE_LOAD_TYPE_COUNT; ++i) {
+    mImageLoaders[i].Init();
+  }
 
   mEventManager = new nsEventStateManager();
   NS_ADDREF(mEventManager);
@@ -1081,6 +1088,12 @@ nsPresContext::SetShell(nsIPresShell* aShell)
       mAnimationManager->Disconnect();
       mAnimationManager = nsnull;
     }
+
+    if (IsRoot()) {
+      // Have to cancel our plugin geometry timer, because the
+      // callback for that depends on a non-null presshell.
+      static_cast<nsRootPresContext*>(this)->CancelUpdatePluginGeometryTimer();
+    }
   }
 }
 
@@ -1117,7 +1130,7 @@ nsPresContext::UpdateCharSet(const nsCString& aCharSet)
       NS_RELEASE(mLanguage);
       NS_IF_ADDREF(mLanguage = mLangService->GetLocaleLanguage()); 
     }
-    GetFontPreferences();
+    ResetCachedFontPrefs();
   }
 #ifdef IBMBIDI
   //ahmed
@@ -1154,10 +1167,10 @@ nsPresContext::Observe(nsISupports* aSubject,
   return NS_ERROR_FAILURE;
 }
 
-static nsPresContext*
-GetParentPresContext(nsPresContext* aPresContext)
+nsPresContext*
+nsPresContext::GetParentPresContext()
 {
-  nsIPresShell* shell = aPresContext->GetPresShell();
+  nsIPresShell* shell = GetPresShell();
   if (shell) {
     nsIFrame* rootFrame = shell->FrameManager()->GetRootFrame();
     if (rootFrame) {
@@ -1169,13 +1182,27 @@ GetParentPresContext(nsPresContext* aPresContext)
   return nsnull;
 }
 
+nsPresContext*
+nsPresContext::GetToplevelContentDocumentPresContext()
+{
+  if (IsChrome())
+    return nsnull;
+  nsPresContext* pc = this;
+  for (;;) {
+    nsPresContext* parent = pc->GetParentPresContext();
+    if (!parent || parent->IsChrome())
+      return pc;
+    pc = parent;
+  }
+}
+
 // We may want to replace this with something faster, maybe caching the root prescontext
 nsRootPresContext*
 nsPresContext::GetRootPresContext()
 {
   nsPresContext* pc = this;
   for (;;) {
-    nsPresContext* parent = GetParentPresContext(pc);
+    nsPresContext* parent = pc->GetParentPresContext();
     if (!parent)
       break;
     pc = parent;
@@ -1208,7 +1235,7 @@ static void SetImgAnimModeOnImgReq(imgIRequest* aImgReq, PRUint16 aMode)
 
  // Enumeration call back for HashTable
 static PLDHashOperator
-set_animation_mode(const void * aKey, nsRefPtr<nsImageLoader>& aData, void* closure)
+set_animation_mode(nsIFrame* aKey, nsRefPtr<nsImageLoader>& aData, void* closure)
 {
   for (nsImageLoader *loader = aData; loader;
        loader = loader->GetNextLoader()) {
@@ -1299,32 +1326,34 @@ nsPresContext::SetImageAnimationModeExternal(PRUint16 aMode)
 }
 
 const nsFont*
-nsPresContext::GetDefaultFont(PRUint8 aFontID) const
+nsPresContext::GetDefaultFont(PRUint8 aFontID, nsIAtom *aLanguage) const
 {
+  const LangGroupFontPrefs *prefs = GetFontPrefsForLang(aLanguage);
+
   const nsFont *font;
   switch (aFontID) {
     // Special (our default variable width font and fixed width font)
     case kPresContext_DefaultVariableFont_ID:
-      font = &mDefaultVariableFont;
+      font = &prefs->mDefaultVariableFont;
       break;
     case kPresContext_DefaultFixedFont_ID:
-      font = &mDefaultFixedFont;
+      font = &prefs->mDefaultFixedFont;
       break;
     // CSS
     case kGenericFont_serif:
-      font = &mDefaultSerifFont;
+      font = &prefs->mDefaultSerifFont;
       break;
     case kGenericFont_sans_serif:
-      font = &mDefaultSansSerifFont;
+      font = &prefs->mDefaultSansSerifFont;
       break;
     case kGenericFont_monospace:
-      font = &mDefaultMonospaceFont;
+      font = &prefs->mDefaultMonospaceFont;
       break;
     case kGenericFont_cursive:
-      font = &mDefaultCursiveFont;
+      font = &prefs->mDefaultCursiveFont;
       break;
     case kGenericFont_fantasy: 
-      font = &mDefaultFantasyFont;
+      font = &prefs->mDefaultFantasyFont;
       break;
     default:
       font = nsnull;
@@ -1362,6 +1391,31 @@ nsPresContext::SetFullZoom(float aZoom)
   mSupressResizeReflow = false;
 
   mCurAppUnitsPerDevPixel = AppUnitsPerDevPixel();
+}
+
+float
+nsPresContext::ScreenWidthInchesForFontInflation(bool* aChanged)
+{
+  if (aChanged) {
+    *aChanged = false;
+  }
+
+  nsDeviceContext *dx = DeviceContext();
+  nsRect clientRect;
+  dx->GetClientRect(clientRect); // FIXME: GetClientRect looks expensive
+  float deviceWidthInches =
+    float(clientRect.width) / float(dx->AppUnitsPerPhysicalInch());
+
+  if (mLastFontInflationScreenWidth == -1.0) {
+    mLastFontInflationScreenWidth = deviceWidthInches;
+  }
+
+  if (deviceWidthInches != mLastFontInflationScreenWidth && aChanged) {
+    *aChanged = true;
+    mLastFontInflationScreenWidth = deviceWidthInches;
+  }
+
+  return deviceWidthInches;
 }
 
 void
@@ -1414,8 +1468,6 @@ nsPresContext::SetupBorderImageLoaders(nsIFrame* aFrame,
   }
 
   PRUint32 actions = nsImageLoader::ACTION_REDRAW_ON_LOAD;
-  if (aStyleBorder->ImageBorderDiffers())
-    actions |= nsImageLoader::ACTION_REFLOW_ON_LOAD;
   nsRefPtr<nsImageLoader> loader =
     nsImageLoader::Create(aFrame, borderImage, actions, nsnull);
   SetImageLoaders(aFrame, BORDER_IMAGE, loader);
@@ -1690,6 +1742,7 @@ nsPresContext::MediaFeatureValuesChanged(bool aCallerWillRebuildStyleData)
 
       for (PRUint32 i = 0, i_end = notifyList.Length(); i != i_end; ++i) {
         if (pusher.RePush(et)) {
+          nsAutoMicroTask mt;
           nsDOMMediaQueryList::HandleChangeData &d = notifyList[i];
           d.listener->HandleChange(d.mql);
         }
@@ -1766,8 +1819,10 @@ nsPresContext::EnsureVisible()
       cv->GetPresContext(getter_AddRefs(currentPresContext));
       if (currentPresContext == this) {
         // OK, this is us.  We want to call Show() on the content viewer.
-        cv->Show();
-        return true;
+        nsresult result = cv->Show();
+        if (NS_SUCCEEDED(result)) {
+          return true;
+        }
       }
     }
   }
@@ -2096,7 +2151,7 @@ nsPresContext::NotifyInvalidation(const nsRect& aRect, PRUint32 aFlags)
     return;
 
   nsPresContext* pc;
-  for (pc = this; pc; pc = GetParentPresContext(pc)) {
+  for (pc = this; pc; pc = pc->GetParentPresContext()) {
     if (pc->mFireAfterPaintEvents)
       break;
     pc->mFireAfterPaintEvents = true;
@@ -2312,6 +2367,16 @@ nsPresContext::CheckForInterrupt(nsIFrame* aFrame)
   return mHasPendingInterrupt;
 }
 
+size_t
+nsPresContext::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  return mPropertyTable.SizeOfExcludingThis(aMallocSizeOf);
+         mLangGroupFontPrefs.SizeOfExcludingThis(aMallocSizeOf);
+
+  // Measurement of other members may be added later if DMD finds it is
+  // worthwhile.
+}
+
 bool
 nsPresContext::IsRootContentDocument()
 {
@@ -2356,6 +2421,7 @@ nsRootPresContext::~nsRootPresContext()
   NS_ASSERTION(mRegisteredPlugins.Count() == 0,
                "All plugins should have been unregistered");
   CancelDidPaintTimer();
+  CancelUpdatePluginGeometryTimer();
 }
 
 void
@@ -2596,6 +2662,9 @@ nsRootPresContext::UpdatePluginGeometry()
   if (!mNeedsToUpdatePluginGeometry)
     return;
   mNeedsToUpdatePluginGeometry = false;
+  // Cancel out mUpdatePluginGeometryTimer so it doesn't do a random
+  // update when we don't actually want one.
+  CancelUpdatePluginGeometryTimer();
 
   nsIFrame* f = mUpdatePluginGeometryForFrame;
   if (f) {
@@ -2617,33 +2686,10 @@ nsRootPresContext::UpdatePluginGeometry()
   DidApplyPluginGeometryUpdates();
 }
 
-void
-nsRootPresContext::SynchronousPluginGeometryUpdate()
+static void
+UpdatePluginGeometryCallback(nsITimer *aTimer, void *aClosure)
 {
-  if (!mNeedsToUpdatePluginGeometry) {
-    // Nothing to do
-    return;
-  }
-
-  // Force synchronous paint
-  nsIPresShell* shell = GetPresShell();
-  if (!shell)
-    return;
-  nsIFrame* rootFrame = shell->GetRootFrame();
-  if (!rootFrame)
-    return;
-  nsCOMPtr<nsIWidget> widget = rootFrame->GetNearestWidget();
-  if (!widget)
-    return;
-  // Force synchronous paint of a single pixel, just to force plugin
-  // updates to be flushed. Doing plugin updates during paint is the best
-  // way to ensure that plugin updates are in sync with our content.
-  widget->Invalidate(nsIntRect(0,0,1,1), true);
-
-  // Update plugin geometry just in case that invalidate didn't work
-  // (e.g. if none of the widget is visible, it might not have processed
-  // a paint event). Normally this won't need to do anything.
-  UpdatePluginGeometry();
+  static_cast<nsRootPresContext*>(aClosure)->UpdatePluginGeometry();
 }
 
 void
@@ -2653,15 +2699,23 @@ nsRootPresContext::RequestUpdatePluginGeometry(nsIFrame* aFrame)
     return;
 
   if (!mNeedsToUpdatePluginGeometry) {
+    // We'll update the plugin geometry during the next paint in this
+    // presContext (either from nsPresShell::WillPaint or from
+    // nsPresShell::DidPaint, depending on the platform) or on the next
+    // layout flush, whichever comes first.  But we may not have anyone
+    // flush layout, and paints might get optimized away if the old
+    // plugin geometry covers the whole canvas, so set a backup timer to
+    // do this too.  We want to make sure this won't fire before our
+    // normal paint notifications, if those would update the geometry,
+    // so set it for double the refresh driver interval.
+    mUpdatePluginGeometryTimer = do_CreateInstance("@mozilla.org/timer;1");
+    if (mUpdatePluginGeometryTimer) {
+      mUpdatePluginGeometryTimer->
+        InitWithFuncCallback(UpdatePluginGeometryCallback, this,
+                             nsRefreshDriver::DefaultInterval() * 2,
+                             nsITimer::TYPE_ONE_SHOT);
+    }
     mNeedsToUpdatePluginGeometry = true;
-
-    // Dispatch a Gecko event to ensure plugin geometry gets updated
-    // XXX this really should be done through the refresh driver, once
-    // all painting happens in the refresh driver
-    nsCOMPtr<nsIRunnable> event =
-      NS_NewRunnableMethod(this, &nsRootPresContext::SynchronousPluginGeometryUpdate);
-    NS_DispatchToMainThread(event);
-
     mUpdatePluginGeometryForFrame = aFrame;
     mUpdatePluginGeometryForFrame->PresContext()->
       SetContainsUpdatePluginGeometryFrame(true);
@@ -2752,3 +2806,20 @@ nsRootPresContext::FlushWillPaintObservers()
     observers[i]->Run();
   }
 }
+
+size_t
+nsRootPresContext::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  return nsPresContext::SizeOfExcludingThis(aMallocSizeOf);
+
+  // Measurement of the following members may be added later if DMD finds it is
+  // worthwhile:
+  // - mNotifyDidPaintTimer
+  // - mRegisteredPlugins
+  // - mWillPaintObservers
+  // - mWillPaintFallbackEvent
+  //
+  // The following member are not measured:
+  // - mUpdatePluginGeometryForFrame, because it is non-owning
+}
+

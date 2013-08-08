@@ -1,45 +1,11 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is the Netscape security libraries.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2000
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsCRLManager.h"
 #include "nsCRLInfo.h"
 
 #include "nsCOMPtr.h"
-#include "nsIDateTimeFormat.h"
-#include "nsDateTimeFormatCID.h"
 #include "nsComponentManagerUtils.h"
 #include "nsReadableUtils.h"
 #include "nsNSSComponent.h"
@@ -259,18 +225,16 @@ done:
       bool toBeRescheduled = false;
       if(NS_SUCCEEDED(ComputeNextAutoUpdateTime(crlData, timingTypePref, dayCnt, &updateTime))){
         updateTimeStr.AssignWithConversion(updateTime);
-        nsMemory::Free(updateTime);
         pref->SetCharPref(updateTimePrefStr.get(),updateTimeStr.get());
         //Now, check if this update time is already in the past. This would
         //imply we have downloaded the same crl, or there is something wrong
         //with the next update date. We will not reschedule this crl in this
         //session anymore - or else, we land into a loop. It would anyway be
         //imported once the browser is restarted.
-        PRTime nextTime;
-        PR_ParseTimeString(updateTimeStr.get(),true, &nextTime);
-        if(LL_CMP(nextTime, > , PR_Now())){
+        if(LL_CMP(updateTime, > , PR_Now())){
           toBeRescheduled = true;
         }
+        nsMemory::Free(updateTime);
       }
       
       //Update the url to download from, next time
@@ -419,6 +383,7 @@ nsCRLManager::ComputeNextAutoUpdateTime(nsICRLInfo *info,
 {
   if (!info)
     return NS_ERROR_FAILURE;
+  NS_ENSURE_ARG_POINTER(nextAutoUpdate);
 
   PRTime microsecInDayCnt;
   PRTime now = PR_Now();
@@ -474,15 +439,10 @@ nsCRLManager::ComputeNextAutoUpdateTime(nsICRLInfo *info,
     }
   }
 
-  nsAutoString nextAutoUpdateDate;
-  PRExplodedTime explodedTime;
-  nsCOMPtr<nsIDateTimeFormat> dateFormatter = do_CreateInstance(NS_DATETIMEFORMAT_CONTRACTID, &rv);
-  if (NS_FAILED(rv))
-    return rv;
-  PR_ExplodeTime(tempTime, PR_GMTParameters, &explodedTime);
-  dateFormatter->FormatPRExplodedTime(nsnull, kDateFormatShort, kTimeFormatSeconds,
-                                      &explodedTime, nextAutoUpdateDate);
-  *nextAutoUpdate = ToNewUnicode(nextAutoUpdateDate);
+  // Return value as string; no pref type for Int64/PRTime
+  char *tempTimeStr = PR_smprintf("%lli", tempTime);
+  *nextAutoUpdate = ToNewUnicode(nsDependentCString(tempTimeStr));
+  PR_smprintf_free(tempTimeStr);
 
   return NS_OK;
 }

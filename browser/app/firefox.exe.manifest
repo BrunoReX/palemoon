@@ -6,7 +6,7 @@
         name="Pale Moon"
         type="win32"
 />
-<description>Firefox</description>
+<description>Pale Moon</description>
 <dependency>
         <dependentAssembly>
                 <assemblyIdentity

@@ -1,49 +1,16 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:set ts=2 sw=2 sts=2 et cindent: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla code.
- *
- * The Initial Developer of the Original Code is the Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  Matthew Gregan <kinetik@flim.org>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "nsError.h"
-#include "nsBuiltinDecoderStateMachine.h"
 #include "nsBuiltinDecoder.h"
-#include "nsMediaStream.h"
+#include "MediaResource.h"
 #include "nsWaveReader.h"
 #include "nsTimeRanges.h"
 #include "VideoUtils.h"
 
-#include "mozilla/StdInt.h"
+#include "mozilla/StandardInteger.h"
 
 using namespace mozilla;
 
@@ -263,7 +230,7 @@ nsresult nsWaveReader::Seek(PRInt64 aTarget, PRInt64 aStartTime, PRInt64 aEndTim
   PRInt64 position = RoundDownToFrame(static_cast<PRInt64>(TimeToBytes(seekTime)));
   NS_ASSERTION(INT64_MAX - mWavePCMOffset > position, "Integer overflow during wave seek");
   position += mWavePCMOffset;
-  return mDecoder->GetStream()->Seek(nsISeekableStream::NS_SEEK_SET, position);
+  return mDecoder->GetResource()->Seek(nsISeekableStream::NS_SEEK_SET, position);
 }
 
 static double RoundToUsecs(double aSeconds) {
@@ -272,9 +239,9 @@ static double RoundToUsecs(double aSeconds) {
 
 nsresult nsWaveReader::GetBuffered(nsTimeRanges* aBuffered, PRInt64 aStartTime)
 {
-  PRInt64 startOffset = mDecoder->GetStream()->GetNextCachedData(mWavePCMOffset);
+  PRInt64 startOffset = mDecoder->GetResource()->GetNextCachedData(mWavePCMOffset);
   while (startOffset >= 0) {
-    PRInt64 endOffset = mDecoder->GetStream()->GetCachedDataEnd(startOffset);
+    PRInt64 endOffset = mDecoder->GetResource()->GetCachedDataEnd(startOffset);
     // Bytes [startOffset..endOffset] are cached.
     NS_ASSERTION(startOffset >= mWavePCMOffset, "Integer underflow in GetBuffered");
     NS_ASSERTION(endOffset >= mWavePCMOffset, "Integer underflow in GetBuffered");
@@ -284,7 +251,7 @@ nsresult nsWaveReader::GetBuffered(nsTimeRanges* aBuffered, PRInt64 aStartTime)
     // the media element.
     aBuffered->Add(RoundToUsecs(BytesToTime(startOffset - mWavePCMOffset)),
                    RoundToUsecs(BytesToTime(endOffset - mWavePCMOffset)));
-    startOffset = mDecoder->GetStream()->GetNextCachedData(endOffset);
+    startOffset = mDecoder->GetResource()->GetNextCachedData(endOffset);
   }
   return NS_OK;
 }
@@ -298,8 +265,8 @@ nsWaveReader::ReadAll(char* aBuf, PRInt64 aSize, PRInt64* aBytesRead)
   }
   do {
     PRUint32 read = 0;
-    if (NS_FAILED(mDecoder->GetStream()->Read(aBuf + got, PRUint32(aSize - got), &read))) {
-      NS_WARNING("Stream read failed");
+    if (NS_FAILED(mDecoder->GetResource()->Read(aBuf + got, PRUint32(aSize - got), &read))) {
+      NS_WARNING("Resource read failed");
       return false;
     }
     if (read == 0) {
@@ -320,8 +287,8 @@ nsWaveReader::LoadRIFFChunk()
   char riffHeader[RIFF_INITIAL_SIZE];
   const char* p = riffHeader;
 
-  NS_ABORT_IF_FALSE(mDecoder->GetStream()->Tell() == 0,
-                    "LoadRIFFChunk called when stream in invalid state");
+  NS_ABORT_IF_FALSE(mDecoder->GetResource()->Tell() == 0,
+                    "LoadRIFFChunk called when resource in invalid state");
 
   if (!ReadAll(riffHeader, sizeof(riffHeader))) {
     return false;
@@ -329,7 +296,7 @@ nsWaveReader::LoadRIFFChunk()
 
   PR_STATIC_ASSERT(sizeof(PRUint32) * 2 <= RIFF_INITIAL_SIZE);
   if (ReadUint32BE(&p) != RIFF_CHUNK_MAGIC) {
-    NS_WARNING("Stream data not in RIFF format");
+    NS_WARNING("resource data not in RIFF format");
     return false;
   }
 
@@ -392,8 +359,8 @@ nsWaveReader::LoadFormatChunk()
   const char* p = waveFormat;
 
   // RIFF chunks are always word (two byte) aligned.
-  NS_ABORT_IF_FALSE(mDecoder->GetStream()->Tell() % 2 == 0,
-                    "LoadFormatChunk called with unaligned stream");
+  NS_ABORT_IF_FALSE(mDecoder->GetResource()->Tell() % 2 == 0,
+                    "LoadFormatChunk called with unaligned resource");
 
   // The "format" chunk may not directly follow the "riff" chunk, so skip
   // over any intermediate chunks.
@@ -457,8 +424,8 @@ nsWaveReader::LoadFormatChunk()
   }
 
   // RIFF chunks are always word (two byte) aligned.
-  NS_ABORT_IF_FALSE(mDecoder->GetStream()->Tell() % 2 == 0,
-                    "LoadFormatChunk left stream unaligned");
+  NS_ABORT_IF_FALSE(mDecoder->GetResource()->Tell() % 2 == 0,
+                    "LoadFormatChunk left resource unaligned");
 
   // Make sure metadata is fairly sane.  The rate check is fairly arbitrary,
   // but the channels check is intentionally limited to mono or stereo
@@ -487,8 +454,8 @@ bool
 nsWaveReader::FindDataOffset()
 {
   // RIFF chunks are always word (two byte) aligned.
-  NS_ABORT_IF_FALSE(mDecoder->GetStream()->Tell() % 2 == 0,
-                    "FindDataOffset called with unaligned stream");
+  NS_ABORT_IF_FALSE(mDecoder->GetResource()->Tell() % 2 == 0,
+                    "FindDataOffset called with unaligned resource");
 
   // The "data" chunk may not directly follow the "format" chunk, so skip
   // over any intermediate chunks.
@@ -497,7 +464,7 @@ nsWaveReader::FindDataOffset()
     return false;
   }
 
-  PRInt64 offset = mDecoder->GetStream()->Tell();
+  PRInt64 offset = mDecoder->GetResource()->Tell();
   if (offset <= 0 || offset > PR_UINT32_MAX) {
     NS_WARNING("PCM data offset out of range");
     return false;
@@ -537,7 +504,7 @@ nsWaveReader::GetDataLength()
   // If the decoder has a valid content length, and it's shorter than the
   // expected length of the PCM data, calculate the playback duration from
   // the content length rather than the expected PCM data length.
-  PRInt64 streamLength = mDecoder->GetStream()->GetLength();
+  PRInt64 streamLength = mDecoder->GetResource()->GetLength();
   if (streamLength >= 0) {
     PRInt64 dataLength = NS_MAX<PRInt64>(0, streamLength - mWavePCMOffset);
     length = NS_MIN(dataLength, length);
@@ -548,5 +515,5 @@ nsWaveReader::GetDataLength()
 PRInt64
 nsWaveReader::GetPosition()
 {
-  return mDecoder->GetStream()->Tell();
+  return mDecoder->GetResource()->Tell();
 }

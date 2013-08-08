@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 const URIS_PINNED = ["about:license", "about:about"];
 const URIS_NORMAL_A = ["about:mozilla"];
 const URIS_NORMAL_B = ["about:buildconfig"];
@@ -40,7 +44,7 @@ function openWinWithCb(cb, argURIs, expectedURIs) {
   if (!expectedURIs)
     expectedURIs = argURIs;
 
-  var win = openDialog("chrome://browser/content/", "_blank",
+  var win = openDialog(getBrowserURL(), "_blank",
                        "chrome,all,dialog=no", argURIs.join("|"));
 
   win.addEventListener("load", function () {

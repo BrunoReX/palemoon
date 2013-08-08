@@ -1,46 +1,8 @@
 <?xml version="1.0"?>
 # -*- Mode: HTML -*-
-# ***** BEGIN LICENSE BLOCK *****
-# Version: MPL 1.1/GPL 2.0/LGPL 2.1
-#
-# The contents of this file are subject to the Mozilla Public License Version
-# 1.1 (the "License"); you may not use this file except in compliance with
-# the License. You may obtain a copy of the License at
-# http://www.mozilla.org/MPL/
-#
-# Software distributed under the License is distributed on an "AS IS" basis,
-# WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
-# for the specific language governing rights and limitations under the
-# License.
-#
-# The Original Code is mozilla.org browser.
-#
-# The Initial Developer of the Original Code is
-# Joe Hewitt.
-# Portions created by the Initial Developer are Copyright (C) 2003
-# the Initial Developer. All Rights Reserved.
-#
-# Contributor(s):
-#   Pierre Chanial (v2) <p_ch@verizon.net>
-#   Gavin Sharp (v3) <gavin@gavinsharp.com>
-#   Ben Goodger <beng@google.com>
-#   Pamela Greene <pamg.bugs@gmail.com>
-#   Michael Ventnor <m.ventnor@gmail.com>
-#   Ehsan Akhgari <ehsan.akhgari@gmail.com>
-#
-# Alternatively, the contents of this file may be used under the terms of
-# either the GNU General Public License Version 2 or later (the "GPL"), or
-# the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
-# in which case the provisions of the GPL or the LGPL are applicable instead
-# of those above. If you wish to allow use of your version of this file only
-# under the terms of either the GPL or the LGPL, and not to allow others to
-# use your version of this file under the terms of the MPL, indicate your
-# decision by deleting the provisions above and replace them with the notice
-# and other provisions required by the GPL or the LGPL. If you do not delete
-# the provisions above, a recipient may use your version of this file under
-# the terms of any one of the MPL, the GPL or the LGPL.
-#
-# ***** END LICENSE BLOCK *****
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 <!DOCTYPE bindings [
 <!ENTITY % searchBarDTD SYSTEM "chrome://browser/locale/searchbar.dtd" >
@@ -50,9 +12,9 @@
 ]>
 
 <bindings id="SearchBindings"
-      xmlns="http://www.mozilla.org/xbl"
-      xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-      xmlns:xbl="http://www.mozilla.org/xbl">
+          xmlns="http://www.mozilla.org/xbl"
+          xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+          xmlns:xbl="http://www.mozilla.org/xbl">
 
   <binding id="searchbar">
     <resources>
@@ -96,13 +58,12 @@
           <xul:image class="search-go-button"
                      anonid="search-go-button"
                      onclick="handleSearchCommand(event);"
-                     tooltiptext="&searchEndCap.label;" />
+                     tooltiptext="&searchEndCap.label;"/>
         </xul:hbox>
       </xul:textbox>
     </content>
 
     <implementation implements="nsIObserver">
-
       <constructor><![CDATA[
         if (this.parentNode.parentNode.localName == "toolbarpaletteitem")
           return;
@@ -131,9 +92,10 @@
           var os = Components.classes["@mozilla.org/observer-service;1"]
                              .getService(Components.interfaces.nsIObserverService);
           os.removeObserver(this, "browser-search-engine-modified");
+          this._addedObserver = false;
         }
 
-        // Make sure to break the cycle from _texbox to us. Otherwise we leak
+        // Make sure to break the cycle from _textbox to us. Otherwise we leak
         // the world. But make sure it's actually pointing to us.
         if (this._textbox.mController.input == this)
           this._textbox.mController.input = null;
@@ -164,7 +126,7 @@
         <getter><![CDATA[
           var currentEngine = this.searchService.currentEngine;
           // Return a dummy engine if there is no currentEngine
-          return currentEngine || {name:"", uri:null};
+          return currentEngine || {name: "", uri: null};
         ]]></getter>
       </property>
 
@@ -335,7 +297,8 @@
           // indexes as items are removed.
           var items = popup.childNodes;
           for (var i = items.length - 1; i >= 0; i--) {
-            if (items[i].getAttribute("class").indexOf("addengine") != -1)
+            if (items[i].classList.contains("addengine-item") ||
+                items[i].classList.contains("addengine-separator"))
               popup.removeChild(items[i]);
           }
 
@@ -444,7 +407,7 @@
         <body><![CDATA[
           // Find the new index
           var newIndex = this.engines.indexOf(this.currentEngine);
-          newIndex += (isNextEngine) ? 1 : -1;
+          newIndex += isNextEngine ? 1 : -1;
 
           if (newIndex >= 0 && newIndex < this.engines.length)
             this.currentEngine = this.engines[newIndex];
@@ -495,13 +458,12 @@
           openUILinkIn(submission.uri.spec, aWhere, null, submission.postData);
         ]]></body>
       </method>
-
     </implementation>
 
     <handlers>
       <handler event="command"><![CDATA[
         const target = event.originalTarget;
-        if (target.getAttribute("class").indexOf("addengine-item") != -1) {
+        if (target.classList.contains("addengine-item")) {
           var searchService =
             Components.classes["@mozilla.org/browser/search-service;1"]
                       .getService(Components.interfaces.nsIBrowserSearchService);
@@ -525,6 +487,25 @@
                phase="capturing"
                modifiers="accel"
                action="this.selectEngine(event, (event.detail > 0));"/>
+
+      <handler event="focus">
+      <![CDATA[
+        // Speculatively connect to the current engine's search URI (and
+        // suggest URI, if different) to reduce request latency
+
+        const SUGGEST_TYPE = "application/x-suggestions+json";
+        var engine = this.currentEngine;
+	var connector =
+            Services.io.QueryInterface(Components.interfaces.nsISpeculativeConnect);
+        var searchURI = engine.getSubmission("dummy").uri;
+        connector.speculativeConnect(searchURI, null, null);
+
+        if (engine.supportsResponseType(SUGGEST_TYPE)) {
+	  var suggestURI = engine.getSubmission("dummy", SUGGEST_TYPE).uri;
+          if (suggestURI.prePath != searchURI.prePath)
+            connector.speculativeConnect(suggestURI, null, null);
+        }
+      ]]></handler>
     </handlers>
   </binding>
 
@@ -539,9 +520,9 @@
       ]]></constructor>
 
       <destructor><![CDATA[
-          var ps2 = Components.classes["@mozilla.org/preferences-service;1"]
-                              .getService(Components.interfaces.nsIPrefBranch2);
-          ps2.removeObserver("browser.search.suggest.enabled", this);
+          var prefs = Components.classes["@mozilla.org/preferences-service;1"]
+                              .getService(Components.interfaces.nsIPrefBranch);
+          prefs.removeObserver("browser.search.suggest.enabled", this);
 
         // Because XBL and the customize toolbar code interacts poorly,
         // there may not be anything to remove here
@@ -635,9 +616,9 @@
           this.controllers.appendController(this.searchbarController);
 
           // Add observer for suggest preference
-          var ps2 = Components.classes["@mozilla.org/preferences-service;1"]
-                              .getService(Components.interfaces.nsIPrefBranch2);
-          ps2.addObserver("browser.search.suggest.enabled", this, false);
+          var prefs = Components.classes["@mozilla.org/preferences-service;1"]
+                              .getService(Components.interfaces.nsIPrefBranch);
+          prefs.addObserver("browser.search.suggest.enabled", this, false);
         ]]></body>
       </method>
 
@@ -719,7 +700,7 @@
         </body>
       </method>
 
-      <!-- overload |onTextEntered| in autocomplete.xml -->
+      <!-- override |onTextEntered| in autocomplete.xml -->
       <method name="onTextEntered">
         <parameter name="aEvent"/>
         <body><![CDATA[

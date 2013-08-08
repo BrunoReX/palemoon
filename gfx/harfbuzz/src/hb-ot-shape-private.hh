@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010  Google, Inc.
+ * Copyright © 2010  Google, Inc.
  *
  *  This is part of HarfBuzz, a text shaping library.
  *
@@ -27,50 +27,57 @@
 #ifndef HB_OT_SHAPE_PRIVATE_HH
 #define HB_OT_SHAPE_PRIVATE_HH
 
-#include "hb-private.h"
-
-#include "hb-ot-shape.h"
+#include "hb-private.hh"
 
 #include "hb-ot-map-private.hh"
-
-HB_BEGIN_DECLS
-
-
-/* buffer var allocations */
-#define general_category() var1.u8[0] /* unicode general_category (hb_category_t) */
-#define combining_class() var1.u8[1] /* unicode combining_class (uint8_t) */
-
-
-enum hb_ot_complex_shaper_t {
-  hb_ot_complex_shaper_none,
-  hb_ot_complex_shaper_arabic
-};
+#include "hb-ot-shape-complex-private.hh"
 
 
 struct hb_ot_shape_plan_t
 {
   hb_ot_map_t map;
   hb_ot_complex_shaper_t shaper;
+
+  hb_ot_shape_plan_t (void) : map () {}
+  ~hb_ot_shape_plan_t (void) { map.finish (); }
+
+  private:
+  NO_COPY (hb_ot_shape_plan_t);
 };
 
 
-struct hb_ot_shape_context_t
+
+HB_INTERNAL hb_bool_t
+_hb_ot_shape (hb_font_t          *font,
+	      hb_buffer_t        *buffer,
+	      const hb_feature_t *features,
+	      unsigned int        num_features);
+
+
+inline void
+_hb_glyph_info_set_unicode_props (hb_glyph_info_t *info, hb_unicode_funcs_t *unicode)
 {
-  /* Input to hb_ot_shape_execute() */
-  hb_ot_shape_plan_t *plan;
-  hb_font_t *font;
-  hb_face_t *face;
-  hb_buffer_t  *buffer;
-  const hb_feature_t *user_features;
-  unsigned int        num_user_features;
+  info->unicode_props0() = ((unsigned int) hb_unicode_general_category (unicode, info->codepoint)) |
+			   (_hb_unicode_is_zero_width (info->codepoint) ? 0x80 : 0);
+  info->unicode_props1() = _hb_unicode_modified_combining_class (unicode, info->codepoint);
+}
 
-  /* Transient stuff */
-  hb_direction_t original_direction;
-  hb_bool_t applied_substitute_complex;
-  hb_bool_t applied_position_complex;
-};
+inline hb_unicode_general_category_t
+_hb_glyph_info_get_general_category (const hb_glyph_info_t *info)
+{
+  return (hb_unicode_general_category_t) (info->unicode_props0() & 0x7F);
+}
 
+inline unsigned int
+_hb_glyph_info_get_modified_combining_class (const hb_glyph_info_t *info)
+{
+  return info->unicode_props1();
+}
 
-HB_END_DECLS
+inline hb_bool_t
+_hb_glyph_info_is_zero_width (const hb_glyph_info_t *info)
+{
+  return !!(info->unicode_props0() & 0x80);
+}
 
 #endif /* HB_OT_SHAPE_PRIVATE_HH */

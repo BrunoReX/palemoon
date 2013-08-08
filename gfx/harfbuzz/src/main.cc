@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007,2008,2009  Red Hat, Inc.
+ * Copyright © 2007,2008,2009  Red Hat, Inc.
  *
  *  This is part of HarfBuzz, a text shaping library.
  *
@@ -24,9 +24,9 @@
  * Red Hat Author(s): Behdad Esfahbod
  */
 
-#define HB_OT_LAYOUT_CC
+#include "hb-mutex-private.hh"
 #include "hb-open-file-private.hh"
-#include "hb-ot-layout-gdef-private.hh"
+#include "hb-ot-layout-gdef-table.hh"
 #include "hb-ot-layout-gsubgpos-private.hh"
 
 #ifdef HAVE_GLIB
@@ -35,7 +35,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-HB_BEGIN_DECLS
 
 
 int
@@ -125,10 +124,11 @@ main (int argc, char **argv)
 	    const LangSys &langsys = n_langsys == -1
 				   ? script.get_default_lang_sys ()
 				   : script.get_lang_sys (n_langsys);
-	    printf (n_langsys == -1
-		   ? "      Default Language System\n"
-		   : "      Language System %2d of %2d: %.4s\n", n_langsys, num_langsys,
-	            (const char *)script.get_lang_sys_tag (n_langsys));
+	    if (n_langsys == -1)
+	      printf ("      Default Language System\n");
+	    else
+	      printf ("      Language System %2d of %2d: %.4s\n", n_langsys, num_langsys,
+		      (const char *)script.get_lang_sys_tag (n_langsys));
 	    if (langsys.get_required_feature_index () == Index::NOT_FOUND_INDEX)
 	      printf ("        No required feature\n");
 
@@ -193,4 +193,3 @@ main (int argc, char **argv)
 }
 
 
-HB_END_DECLS

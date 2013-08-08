@@ -1,39 +1,6 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  Alexander Surkov <surkov.alexander@gmail.com> (original author)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef mozilla_a11y_FocusManager_h_
 #define mozilla_a11y_FocusManager_h_
@@ -42,8 +9,8 @@
 #include "mozilla/dom/Element.h"
 
 class AccEvent;
-class nsAccessible;
-class nsDocAccessible;
+class Accessible;
+class DocAccessible;
 
 namespace mozilla {
 namespace a11y {
@@ -59,18 +26,18 @@ public:
   /**
    * Return a focused accessible.
    */
-  nsAccessible* FocusedAccessible() const;
+  Accessible* FocusedAccessible() const;
 
   /**
    * Return true if given accessible is focused.
    */
-  bool IsFocused(const nsAccessible* aAccessible) const;
+  bool IsFocused(const Accessible* aAccessible) const;
 
   /**
    * Return true if the given accessible is an active item, i.e. an item that
    * is current within the active widget.
    */
-  inline bool IsActiveItem(const nsAccessible* aAccessible)
+  inline bool IsActiveItem(const Accessible* aAccessible)
     { return aAccessible == mActiveItem; }
 
   /**
@@ -82,7 +49,7 @@ public:
   /**
    * Return true if focused accessible is within the given container.
    */
-  bool IsFocusWithin(const nsAccessible* aContainer) const;
+  bool IsFocusWithin(const Accessible* aContainer) const;
 
   /**
    * Return whether the given accessible is focused or contains the focus or
@@ -94,7 +61,7 @@ public:
     eContainsFocus,
     eContainedByFocus
   };
-  FocusDisposition IsInOrContainsFocus(const nsAccessible* aAccessible) const;
+  FocusDisposition IsInOrContainsFocus(const Accessible* aAccessible) const;
 
   //////////////////////////////////////////////////////////////////////////////
   // Focus notifications and processing (don't use until you know what you do).
@@ -113,7 +80,7 @@ public:
    * Called when active item is changed. Note: must be called when accessible
    * tree is up to date.
    */
-  void ActiveItemChanged(nsAccessible* aItem, bool aCheckIfActive = true);
+  void ActiveItemChanged(Accessible* aItem, bool aCheckIfActive = true);
 
   /**
    * Dispatch delayed focus event for the current focus accessible.
@@ -123,7 +90,7 @@ public:
   /**
    * Dispatch delayed focus event for the given target.
    */
-  void DispatchFocusEvent(nsDocAccessible* aDocument, nsAccessible* aTarget);
+  void DispatchFocusEvent(DocAccessible* aDocument, Accessible* aTarget);
 
   /**
    * Process DOM focus notification.
@@ -154,8 +121,8 @@ private:
   nsIDocument* FocusedDOMDocument() const;
 
 private:
-  nsRefPtr<nsAccessible> mActiveItem;
-  nsRefPtr<nsAccessible> mActiveARIAMenubar;
+  nsRefPtr<Accessible> mActiveItem;
+  nsRefPtr<Accessible> mActiveARIAMenubar;
 };
 
 } // namespace a11y
@@ -211,7 +178,7 @@ private:
     nsAutoString role;                                                         \
     GetAccService()->GetStringRole(aAccessible->Role(), role);                 \
     nsAutoString name;                                                         \
-    aAccessible->GetName(name);                                                \
+    aAccessible->Name(name);                                                   \
     printf(" role: %s, name: %s; ", NS_ConvertUTF16toUTF8(role).get(),         \
            NS_ConvertUTF16toUTF8(name).get());                                 \
     A11YDEBUG_FOCUS_LOG_DOMNODE(aAccessible->GetNode())                        \

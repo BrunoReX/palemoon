@@ -1,40 +1,7 @@
 /* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Corporation code.
- *
- * The Initial Developer of the Original Code is
- * the Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2009-2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Jonathan Kew <jfkthame@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "prtypes.h"
 #include "nsAlgorithm.h"
@@ -49,14 +16,15 @@
 #include "gfxPlatform.h"
 #include "gfxHarfBuzzShaper.h"
 #include "gfxFontUtils.h"
-#include "gfxUnicodeProperties.h"
+#include "nsUnicodeProperties.h"
+#include "nsUnicodeScriptCodes.h"
+#include "nsUnicodeNormalizer.h"
 
-#include "harfbuzz/hb-unicode.h"
+#include "harfbuzz/hb.h"
 #include "harfbuzz/hb-ot.h"
 
 #include "cairo.h"
 
-#include "nsUnicodeRange.h"
 #include "nsCRT.h"
 
 #if defined(XP_WIN)
@@ -72,6 +40,7 @@
                                     : -((32767 - (f)) >> 16))
 
 using namespace mozilla; // for AutoSwap_* types
+using namespace mozilla::unicode; // for Unicode property lookup
 
 /*
  * Creation and destruction; on deletion, release any font tables we're holding
@@ -107,7 +76,7 @@ gfxHarfBuzzShaper::~gfxHarfBuzzShaper()
 // callback for HarfBuzz to get a font table (in hb_blob_t form)
 // from the shaper (passed as aUserData)
 static hb_blob_t *
-HBGetTable(hb_tag_t aTag, void *aUserData)
+HBGetTable(hb_face_t *face, hb_tag_t aTag, void *aUserData)
 {
     gfxHarfBuzzShaper *shaper = static_cast<gfxHarfBuzzShaper*>(aUserData);
     gfxFont *font = shaper->GetFont();
@@ -130,7 +99,7 @@ HBGetTable(hb_tag_t aTag, void *aUserData)
 }
 
 /*
- * HarfBuzz font callback functions; user_data is a ptr to a
+ * HarfBuzz font callback functions; font_data is a ptr to a
  * FontCallbackData struct
  */
 
@@ -160,7 +129,7 @@ gfxHarfBuzzShaper::GetGlyph(hb_codepoint_t unicode,
     NS_ASSERTION(mCmapTable && (mCmapFormat > 0) && (mSubtableOffset > 0),
                  "cmap data not correctly set up, expect disaster");
 
-    const PRUint8* data = (const PRUint8*)hb_blob_lock(mCmapTable);
+    const PRUint8* data = (const PRUint8*)hb_blob_get_data(mCmapTable, nsnull);
 
     hb_codepoint_t gid;
     switch (mCmapFormat) {
@@ -188,18 +157,19 @@ gfxHarfBuzzShaper::GetGlyph(hb_codepoint_t unicode,
         // of the character code alone
     }
 
-    hb_blob_unlock(mCmapTable);
-
     return gid;
 }
 
-static hb_codepoint_t
-HBGetGlyph(hb_font_t *font, hb_face_t *face, const void *user_data,
-           hb_codepoint_t unicode, hb_codepoint_t variation_selector)
+static hb_bool_t
+HBGetGlyph(hb_font_t *font, void *font_data,
+           hb_codepoint_t unicode, hb_codepoint_t variation_selector,
+           hb_codepoint_t *glyph,
+           void *user_data)
 {
     const FontCallbackData *fcd =
-        static_cast<const FontCallbackData*>(user_data);
-    return fcd->mShaper->GetGlyph(unicode, variation_selector);
+        static_cast<const FontCallbackData*>(font_data);
+    *glyph = fcd->mShaper->GetGlyph(unicode, variation_selector);
+    return *glyph != 0;
 }
 
 struct HMetricsHeader {
@@ -230,15 +200,12 @@ struct HMetrics {
 //  AutoSwap_PRUint16    leftSideBearing[];
 };
 
-void
-gfxHarfBuzzShaper::GetGlyphAdvance(gfxContext *aContext,
-                                   hb_codepoint_t glyph,
-                                   hb_position_t *x_advance,
-                                   hb_position_t *y_advance) const
+hb_position_t
+gfxHarfBuzzShaper::GetGlyphHAdvance(gfxContext *aContext,
+                                    hb_codepoint_t glyph) const
 {
     if (mUseFontGlyphWidths) {
-        *x_advance = mFont->GetGlyphWidth(aContext, glyph);
-        return;
+        return mFont->GetGlyphWidth(aContext, glyph);
     }
 
     // font did not implement GetHintedGlyphWidth, so get an unhinted value
@@ -255,27 +222,25 @@ gfxHarfBuzzShaper::GetGlyphAdvance(gfxContext *aContext,
     // that mNumLongMetrics is > 0, and that the hmtx table is large enough
     // to contain mNumLongMetrics records
     const HMetrics* hmtx =
-        reinterpret_cast<const HMetrics*>(hb_blob_lock(mHmtxTable));
-    *x_advance =
-        FloatToFixed(mFont->FUnitsToDevUnitsFactor() *
-                     PRUint16(hmtx->metrics[glyph].advanceWidth));
-    hb_blob_unlock(mHmtxTable);
+        reinterpret_cast<const HMetrics*>(hb_blob_get_data(mHmtxTable, nsnull));
+    return FloatToFixed(mFont->FUnitsToDevUnitsFactor() *
+                        PRUint16(hmtx->metrics[glyph].advanceWidth));
 }
 
-static void
-HBGetGlyphAdvance(hb_font_t *font, hb_face_t *face, const void *user_data,
-                  hb_codepoint_t glyph,
-                  hb_position_t *x_advance, hb_position_t *y_advance)
+static hb_position_t
+HBGetGlyphHAdvance(hb_font_t *font, void *font_data,
+                   hb_codepoint_t glyph, void *user_data)
 {
     const FontCallbackData *fcd =
-        static_cast<const FontCallbackData*>(user_data);
-    fcd->mShaper->GetGlyphAdvance(fcd->mContext, glyph, x_advance, y_advance);
+        static_cast<const FontCallbackData*>(font_data);
+    return fcd->mShaper->GetGlyphHAdvance(fcd->mContext, glyph);
 }
 
 static hb_bool_t
-HBGetContourPoint(hb_font_t *font, hb_face_t *face, const void *user_data,
+HBGetContourPoint(hb_font_t *font, void *font_data,
                   unsigned int point_index, hb_codepoint_t glyph,
-                  hb_position_t *x, hb_position_t *y)
+                  hb_position_t *x, hb_position_t *y,
+                  void *user_data)
 {
     /* not yet implemented - no support for used of hinted contour points
        to fine-tune anchor positions in GPOS AnchorFormat2 */
@@ -514,8 +479,8 @@ GetKernValueVersion1Fmt3(const void* aSubtable,
 #define KERN1_COVERAGE_RESERVED     0x1F00
 
 hb_position_t
-gfxHarfBuzzShaper::GetKerning(PRUint16 aFirstGlyph,
-                              PRUint16 aSecondGlyph) const
+gfxHarfBuzzShaper::GetHKerning(PRUint16 aFirstGlyph,
+                               PRUint16 aSecondGlyph) const
 {
     // We want to ignore any kern pairs involving <space>, because we are
     // handling words in isolation, the only space characters seen here are
@@ -528,17 +493,16 @@ gfxHarfBuzzShaper::GetKerning(PRUint16 aFirstGlyph,
     if (!mKernTable) {
         mKernTable = mFont->GetFontTable(TRUETYPE_TAG('k','e','r','n'));
         if (!mKernTable) {
-            mKernTable = hb_blob_create_empty();
+            mKernTable = hb_blob_get_empty();
         }
     }
 
-    PRUint32 len = hb_blob_get_length(mKernTable);
+    PRUint32 len;
+    const char* base = hb_blob_get_data(mKernTable, &len);
     if (len < sizeof(KernTableVersion0)) {
         return 0;
     }
-
     PRInt32 value = 0;
-    const char* base = reinterpret_cast<const char*>(hb_blob_lock(mKernTable));
 
     // First try to interpret as "version 0" kern table
     // (see http://www.microsoft.com/typography/otspec/kern.htm)
@@ -660,8 +624,6 @@ gfxHarfBuzzShaper::GetKerning(PRUint16 aFirstGlyph,
         }
     }
 
-    hb_blob_unlock(mKernTable);
-
     if (value != 0) {
         return FloatToFixed(mFont->FUnitsToDevUnitsFactor() * value);
     }
@@ -669,12 +631,13 @@ gfxHarfBuzzShaper::GetKerning(PRUint16 aFirstGlyph,
 }
 
 static hb_position_t
-HBGetKerning(hb_font_t *font, hb_face_t *face, const void *user_data,
-             hb_codepoint_t first_glyph, hb_codepoint_t second_glyph)
+HBGetHKerning(hb_font_t *font, void *font_data,
+              hb_codepoint_t first_glyph, hb_codepoint_t second_glyph,
+              void *user_data)
 {
     const FontCallbackData *fcd =
-        static_cast<const FontCallbackData*>(user_data);
-    return fcd->mShaper->GetKerning(first_glyph, second_glyph);
+        static_cast<const FontCallbackData*>(font_data);
+    return fcd->mShaper->GetHKerning(first_glyph, second_glyph);
 }
 
 /*
@@ -682,33 +645,180 @@ HBGetKerning(hb_font_t *font, hb_face_t *face, const void *user_data,
  */
 
 static hb_codepoint_t
-HBGetMirroring(hb_codepoint_t aCh)
+HBGetMirroring(hb_unicode_funcs_t *ufuncs, hb_codepoint_t aCh, void *user_data)
 {
-    return gfxUnicodeProperties::GetMirroredChar(aCh);
+    return GetMirroredChar(aCh);
 }
 
-static hb_category_t
-HBGetGeneralCategory(hb_codepoint_t aCh)
+static hb_unicode_general_category_t
+HBGetGeneralCategory(hb_unicode_funcs_t *ufuncs, hb_codepoint_t aCh, void *user_data)
 {
-    return hb_category_t(gfxUnicodeProperties::GetGeneralCategory(aCh));
+    return hb_unicode_general_category_t(GetGeneralCategory(aCh));
 }
 
 static hb_script_t
-HBGetScript(hb_codepoint_t aCh)
+HBGetScript(hb_unicode_funcs_t *ufuncs, hb_codepoint_t aCh, void *user_data)
 {
-    return hb_script_t(gfxUnicodeProperties::GetScriptCode(aCh));
+    return hb_script_t(GetScriptTagForCode
+        (GetScriptCode(aCh)));
 }
 
 static unsigned int
-HBGetCombiningClass(hb_codepoint_t aCh)
+HBGetCombiningClass(hb_unicode_funcs_t *ufuncs, hb_codepoint_t aCh, void *user_data)
 {
-    return gfxUnicodeProperties::GetCombiningClass(aCh);
+    return GetCombiningClass(aCh);
 }
 
 static unsigned int
-HBGetEastAsianWidth(hb_codepoint_t aCh)
+HBGetEastAsianWidth(hb_unicode_funcs_t *ufuncs, hb_codepoint_t aCh, void *user_data)
 {
-    return gfxUnicodeProperties::GetEastAsianWidth(aCh);
+    return GetEastAsianWidth(aCh);
+}
+
+// Hebrew presentation forms with dagesh, for characters 0x05D0..0x05EA;
+// note that some letters do not have a dagesh presForm encoded
+static const PRUnichar sDageshForms[0x05EA - 0x05D0 + 1] = {
+    0xFB30, // ALEF
+    0xFB31, // BET
+    0xFB32, // GIMEL
+    0xFB33, // DALET
+    0xFB34, // HE
+    0xFB35, // VAV
+    0xFB36, // ZAYIN
+    0, // HET
+    0xFB38, // TET
+    0xFB39, // YOD
+    0xFB3A, // FINAL KAF
+    0xFB3B, // KAF
+    0xFB3C, // LAMED
+    0, // FINAL MEM
+    0xFB3E, // MEM
+    0, // FINAL NUN
+    0xFB40, // NUN
+    0xFB41, // SAMEKH
+    0, // AYIN
+    0xFB43, // FINAL PE
+    0xFB44, // PE
+    0, // FINAL TSADI
+    0xFB46, // TSADI
+    0xFB47, // QOF
+    0xFB48, // RESH
+    0xFB49, // SHIN
+    0xFB4A // TAV
+};
+
+static hb_bool_t
+HBUnicodeCompose(hb_unicode_funcs_t *ufuncs,
+                 hb_codepoint_t      a,
+                 hb_codepoint_t      b,
+                 hb_codepoint_t     *ab,
+                 void               *user_data)
+{
+    hb_bool_t found = nsUnicodeNormalizer::Compose(a, b, ab);
+
+    if (!found && (b & 0x1fff80) == 0x0580) {
+        // special-case Hebrew presentation forms that are excluded from
+        // standard normalization, but wanted for old fonts
+        switch (b) {
+        case 0x05B4: // HIRIQ
+            if (a == 0x05D9) { // YOD
+                *ab = 0xFB1D;
+                found = true;
+            }
+            break;
+        case 0x05B7: // patah
+            if (a == 0x05F2) { // YIDDISH YOD YOD
+                *ab = 0xFB1F;
+                found = true;
+            } else if (a == 0x05D0) { // ALEF
+                *ab = 0xFB2E;
+                found = true;
+            }
+            break;
+        case 0x05B8: // QAMATS
+            if (a == 0x05D0) { // ALEF
+                *ab = 0xFB2F;
+                found = true;
+            }
+            break;
+        case 0x05B9: // HOLAM
+            if (a == 0x05D5) { // VAV
+                *ab = 0xFB4B;
+                found = true;
+            }
+            break;
+        case 0x05BC: // DAGESH
+            if (a >= 0x05D0 && a <= 0x05EA) {
+                *ab = sDageshForms[a - 0x05D0];
+                found = (*ab != 0);
+            } else if (a == 0xFB2A) { // SHIN WITH SHIN DOT
+                *ab = 0xFB2C;
+                found = true;
+            } else if (a == 0xFB2B) { // SHIN WITH SIN DOT
+                *ab = 0xFB2D;
+                found = true;
+            }
+            break;
+        case 0x05BF: // RAFE
+            switch (a) {
+            case 0x05D1: // BET
+                *ab = 0xFB4C;
+                found = true;
+                break;
+            case 0x05DB: // KAF
+                *ab = 0xFB4D;
+                found = true;
+                break;
+            case 0x05E4: // PE
+                *ab = 0xFB4E;
+                found = true;
+                break;
+            }
+            break;
+        case 0x05C1: // SHIN DOT
+            if (a == 0x05E9) { // SHIN
+                *ab = 0xFB2A;
+                found = true;
+            } else if (a == 0xFB49) { // SHIN WITH DAGESH
+                *ab = 0xFB2C;
+                found = true;
+            }
+            break;
+        case 0x05C2: // SIN DOT
+            if (a == 0x05E9) { // SHIN
+                *ab = 0xFB2B;
+                found = true;
+            } else if (a == 0xFB49) { // SHIN WITH DAGESH
+                *ab = 0xFB2D;
+                found = true;
+            }
+            break;
+        }
+    }
+
+    return found;
+}
+
+static hb_bool_t
+HBUnicodeDecompose(hb_unicode_funcs_t *ufuncs,
+                   hb_codepoint_t      ab,
+                   hb_codepoint_t     *a,
+                   hb_codepoint_t     *b,
+                   void               *user_data)
+{
+    return nsUnicodeNormalizer::DecomposeNonRecursively(ab, a, b);
+}
+
+static PLDHashOperator
+AddFeature(const PRUint32& aTag, PRUint32& aValue, void *aUserArg)
+{
+    nsTArray<hb_feature_t>* features = static_cast<nsTArray<hb_feature_t>*> (aUserArg);
+
+    hb_feature_t feat = { 0, 0, 0, UINT_MAX };
+    feat.tag = aTag;
+    feat.value = aValue;
+    features->AppendElement(feat);
+    return PL_DHASH_NEXT;
 }
 
 /*
@@ -724,7 +834,9 @@ gfxHarfBuzzShaper::ShapeWord(gfxContext      *aContext,
                              const PRUnichar *aText)
 {
     // some font back-ends require this in order to get proper hinted metrics
-    mFont->SetupCairoFont(aContext);
+    if (!mFont->SetupCairoFont(aContext)) {
+        return false;
+    }
 
     if (!mHBFace) {
 
@@ -736,26 +848,43 @@ gfxHarfBuzzShaper::ShapeWord(gfxContext      *aContext,
             // static function callback pointers, initialized by the first
             // harfbuzz shaper used
             sHBFontFuncs = hb_font_funcs_create();
-            hb_font_funcs_set_glyph_func(sHBFontFuncs, HBGetGlyph);
-            hb_font_funcs_set_glyph_advance_func(sHBFontFuncs,
-                                                 HBGetGlyphAdvance);
-            hb_font_funcs_set_contour_point_func(sHBFontFuncs,
-                                                 HBGetContourPoint);
-            hb_font_funcs_set_kerning_func(sHBFontFuncs, HBGetKerning);
+            hb_font_funcs_set_glyph_func(sHBFontFuncs, HBGetGlyph,
+                                         nsnull, nsnull);
+            hb_font_funcs_set_glyph_h_advance_func(sHBFontFuncs,
+                                                   HBGetGlyphHAdvance,
+                                                   nsnull, nsnull);
+            hb_font_funcs_set_glyph_contour_point_func(sHBFontFuncs,
+                                                       HBGetContourPoint,
+                                                       nsnull, nsnull);
+            hb_font_funcs_set_glyph_h_kerning_func(sHBFontFuncs,
+                                                   HBGetHKerning,
+                                                   nsnull, nsnull);
 
-            sHBUnicodeFuncs = hb_unicode_funcs_create();
+            sHBUnicodeFuncs =
+                hb_unicode_funcs_create(hb_unicode_funcs_get_empty());
             hb_unicode_funcs_set_mirroring_func(sHBUnicodeFuncs,
-                                                HBGetMirroring);
-            hb_unicode_funcs_set_script_func(sHBUnicodeFuncs, HBGetScript);
+                                                HBGetMirroring,
+                                                nsnull, nsnull);
+            hb_unicode_funcs_set_script_func(sHBUnicodeFuncs, HBGetScript,
+                                             nsnull, nsnull);
             hb_unicode_funcs_set_general_category_func(sHBUnicodeFuncs,
-                                                       HBGetGeneralCategory);
+                                                       HBGetGeneralCategory,
+                                                       nsnull, nsnull);
             hb_unicode_funcs_set_combining_class_func(sHBUnicodeFuncs,
-                                                      HBGetCombiningClass);
+                                                      HBGetCombiningClass,
+                                                      nsnull, nsnull);
             hb_unicode_funcs_set_eastasian_width_func(sHBUnicodeFuncs,
-                                                      HBGetEastAsianWidth);
+                                                      HBGetEastAsianWidth,
+                                                      nsnull, nsnull);
+            hb_unicode_funcs_set_compose_func(sHBUnicodeFuncs,
+                                              HBUnicodeCompose,
+                                              nsnull, nsnull);
+            hb_unicode_funcs_set_decompose_func(sHBUnicodeFuncs,
+                                                HBUnicodeDecompose,
+                                                nsnull, nsnull);
         }
 
-        mHBFace = hb_face_create_for_tables(HBGetTable, nsnull, this);
+        mHBFace = hb_face_create_for_tables(HBGetTable, this, nsnull);
 
         if (!mUseFontGetGlyph) {
             // get the cmap table and find offset to our subtable
@@ -764,13 +893,13 @@ gfxHarfBuzzShaper::ShapeWord(gfxContext      *aContext,
                 NS_WARNING("failed to load cmap, glyphs will be missing");
                 return false;
             }
-            const PRUint8* data = (const PRUint8*)hb_blob_lock(mCmapTable);
+            PRUint32 len;
+            const PRUint8* data = (const PRUint8*)hb_blob_get_data(mCmapTable, &len);
             bool symbol;
             mCmapFormat = gfxFontUtils::
-                FindPreferredSubtable(data, hb_blob_get_length(mCmapTable),
+                FindPreferredSubtable(data, len,
                                       &mSubtableOffset, &mUVSTableOffset,
                                       &symbol);
-            hb_blob_unlock(mCmapTable);
         }
 
         if (!mUseFontGlyphWidths) {
@@ -780,27 +909,27 @@ gfxHarfBuzzShaper::ShapeWord(gfxContext      *aContext,
             // and preload/cache the hmtx table
             hb_blob_t *hheaTable =
                 mFont->GetFontTable(TRUETYPE_TAG('h','h','e','a'));
-            if (hheaTable &&
-                hb_blob_get_length(hheaTable) >= sizeof(HMetricsHeader)) {
+            if (hheaTable) {
+                PRUint32 len;
                 const HMetricsHeader* hhea =
                     reinterpret_cast<const HMetricsHeader*>
-                        (hb_blob_lock(hheaTable));
-                mNumLongMetrics = hhea->numberOfHMetrics;
-                hb_blob_unlock(hheaTable);
-
-                if (mNumLongMetrics > 0 &&
-                    PRInt16(hhea->metricDataFormat) == 0) {
-                    // no point reading hmtx if number of entries is zero!
-                    // in that case, we won't be able to use this font
-                    // (this method will return FALSE below if mHmtx is null)
-                    mHmtxTable =
-                        mFont->GetFontTable(TRUETYPE_TAG('h','m','t','x'));
-                    if (hb_blob_get_length(mHmtxTable) <
-                        mNumLongMetrics * sizeof(HLongMetric)) {
-                        // hmtx table is not large enough for the claimed
-                        // number of entries: invalid, do not use.
-                        hb_blob_destroy(mHmtxTable);
-                        mHmtxTable = nsnull;
+                        (hb_blob_get_data(hheaTable, &len));
+                if (len >= sizeof(HMetricsHeader)) {
+                    mNumLongMetrics = hhea->numberOfHMetrics;
+                    if (mNumLongMetrics > 0 &&
+                        PRInt16(hhea->metricDataFormat) == 0) {
+                        // no point reading hmtx if number of entries is zero!
+                        // in that case, we won't be able to use this font
+                        // (this method will return FALSE below if mHmtx is null)
+                        mHmtxTable =
+                            mFont->GetFontTable(TRUETYPE_TAG('h','m','t','x'));
+                        if (hb_blob_get_length(mHmtxTable) <
+                            mNumLongMetrics * sizeof(HLongMetric)) {
+                            // hmtx table is not large enough for the claimed
+                            // number of entries: invalid, do not use.
+                            hb_blob_destroy(mHmtxTable);
+                            mHmtxTable = nsnull;
+                        }
                     }
                 }
             }
@@ -815,57 +944,39 @@ gfxHarfBuzzShaper::ShapeWord(gfxContext      *aContext,
     }
 
     FontCallbackData fcd(this, aContext);
-    hb_font_t *font = hb_font_create();
-    hb_font_set_funcs(font, sHBFontFuncs, nsnull, &fcd);
+    hb_font_t *font = hb_font_create(mHBFace);
+    hb_font_set_funcs(font, sHBFontFuncs, &fcd, nsnull);
     hb_font_set_ppem(font, mFont->GetAdjustedSize(), mFont->GetAdjustedSize());
     PRUint32 scale = FloatToFixed(mFont->GetAdjustedSize()); // 16.16 fixed-point
     hb_font_set_scale(font, scale, scale);
 
     nsAutoTArray<hb_feature_t,20> features;
 
-    // Ligature features are enabled by default in the generic shaper,
-    // so we explicitly turn them off if necessary (for letter-spacing)
-    if (aShapedWord->DisableLigatures()) {
-        hb_feature_t ligaOff = { HB_TAG('l','i','g','a'), 0, 0, UINT_MAX };
-        hb_feature_t cligOff = { HB_TAG('c','l','i','g'), 0, 0, UINT_MAX };
-        features.AppendElement(ligaOff);
-        features.AppendElement(cligOff);
-    }
-
-    // css features need to be merged with the existing ones, if any
     gfxFontEntry *entry = mFont->GetFontEntry();
     const gfxFontStyle *style = mFont->GetStyle();
-    const nsTArray<gfxFontFeature> *cssFeatures = &style->featureSettings;
-    if (cssFeatures->IsEmpty()) {
-        cssFeatures = &entry->mFeatureSettings;
-    }
-    for (PRUint32 i = 0; i < cssFeatures->Length(); ++i) {
-        PRUint32 j;
-        for (j = 0; j < features.Length(); ++j) {
-            if (cssFeatures->ElementAt(i).mTag == features[j].tag) {
-                features[j].value = cssFeatures->ElementAt(i).mValue;
-                break;
-            }
-        }
-        if (j == features.Length()) {
-            const gfxFontFeature& f = cssFeatures->ElementAt(i);
-            hb_feature_t hbf = { f.mTag, f.mValue, 0, UINT_MAX };
-            features.AppendElement(hbf);
-        }
+
+    nsDataHashtable<nsUint32HashKey,PRUint32> mergedFeatures;
+
+    if (MergeFontFeatures(style->featureSettings,
+                      mFont->GetFontEntry()->mFeatureSettings,
+                      aShapedWord->DisableLigatures(), mergedFeatures)) {
+        // enumerate result and insert into hb_feature array
+        mergedFeatures.Enumerate(AddFeature, &features);
     }
 
     bool isRightToLeft = aShapedWord->IsRightToLeft();
-    hb_buffer_t *buffer = hb_buffer_create(aShapedWord->Length());
+    hb_buffer_t *buffer = hb_buffer_create();
     hb_buffer_set_unicode_funcs(buffer, sHBUnicodeFuncs);
     hb_buffer_set_direction(buffer, isRightToLeft ? HB_DIRECTION_RTL :
                                                     HB_DIRECTION_LTR);
     // For unresolved "common" or "inherited" runs, default to Latin for now.
     // (Should we somehow use the language or locale to try and infer
     // a better default?)
-    hb_buffer_set_script(buffer,
-                         aShapedWord->Script() <= HB_SCRIPT_INHERITED ?
-                             HB_SCRIPT_LATIN :
-                             hb_script_t(aShapedWord->Script()));
+    PRInt32 scriptCode = aShapedWord->Script();
+    hb_script_t scriptTag = (scriptCode <= MOZ_SCRIPT_INHERITED) ?
+        HB_SCRIPT_LATIN :
+        hb_script_t(GetScriptTagForCode(scriptCode));
+    hb_buffer_set_script(buffer, scriptTag);
 
     hb_language_t language;
     if (style->languageOverride) {
@@ -875,15 +986,17 @@ gfxHarfBuzzShaper::ShapeWord(gfxContext      *aContext,
     } else {
         nsCString langString;
         style->language->ToUTF8String(langString);
-        language = hb_language_from_string(langString.get());
+        language =
+            hb_language_from_string(langString.get(), langString.Length());
     }
     hb_buffer_set_language(buffer, language);
 
     PRUint32 length = aShapedWord->Length();
-    hb_buffer_add_utf16(buffer, reinterpret_cast<const uint16_t*>(aText),
+    hb_buffer_add_utf16(buffer,
+                        reinterpret_cast<const uint16_t*>(aText),
                         length, 0, length);
 
-    hb_shape(font, mHBFace, buffer, features.Elements(), features.Length());
+    hb_shape(font, buffer, features.Elements(), features.Length());
 
     if (isRightToLeft) {
         hb_buffer_reverse(buffer);
@@ -981,12 +1094,11 @@ gfxHarfBuzzShaper::SetGlyphsFromRun(gfxContext *aContext,
                                     gfxShapedWord *aShapedWord,
                                     hb_buffer_t *aBuffer)
 {
-    PRInt32 numGlyphs = hb_buffer_get_length(aBuffer);
+    PRUint32 numGlyphs;
+    const hb_glyph_info_t *ginfo = hb_buffer_get_glyph_infos(aBuffer, &numGlyphs);
     if (numGlyphs == 0) {
         return NS_OK;
     }
-
-    const hb_glyph_info_t *ginfo = hb_buffer_get_glyph_infos(aBuffer);
 
     nsAutoTArray<gfxTextRun::DetailedGlyph,1> detailedGlyphs;
 
@@ -1002,7 +1114,7 @@ gfxHarfBuzzShaper::SetGlyphsFromRun(gfxContext *aContext,
         charToGlyph[offset] = NO_GLYPH;
     }
 
-    for (PRInt32 i = 0; i < numGlyphs; ++i) {
+    for (PRUint32 i = 0; i < numGlyphs; ++i) {
         PRUint32 loc = ginfo[i].cluster;
         if (loc < wordLength) {
             charToGlyph[loc] = i;
@@ -1037,11 +1149,11 @@ gfxHarfBuzzShaper::SetGlyphsFromRun(gfxContext *aContext,
     // keep track of y-position to set glyph offsets if needed
     nscoord yPos = 0;
 
-    const hb_glyph_position_t *posInfo = hb_buffer_get_glyph_positions(aBuffer);
+    const hb_glyph_position_t *posInfo =
+        hb_buffer_get_glyph_positions(aBuffer, nsnull);
 
-    while (glyphStart < numGlyphs) {
+    while (glyphStart < PRInt32(numGlyphs)) {
 
-        bool inOrder = true;
         PRInt32 charEnd = ginfo[glyphStart].cluster;
         PRInt32 glyphEnd = glyphStart;
         PRInt32 charLimit = wordLength;
@@ -1085,9 +1197,6 @@ gfxHarfBuzzShaper::SetGlyphsFromRun(gfxContext *aContext,
                 if (glyphCharIndex < charStart || glyphCharIndex >= charEnd) {
                     allGlyphsAreWithinCluster = false;
                     break;
-                }
-                if (glyphCharIndex <= prevGlyphCharIndex) {
-                    inOrder = false;
                 }
                 prevGlyphCharIndex = glyphCharIndex;
             }
@@ -1223,8 +1332,7 @@ gfxHarfBuzzShaper::SetGlyphsFromRun(gfxContext *aContext,
         while (++baseCharIndex != endCharIndex &&
                baseCharIndex < PRInt32(wordLength)) {
             gfxTextRun::CompressedGlyph g;
-            g.SetComplex(inOrder &&
-                         aShapedWord->IsClusterStart(baseCharIndex),
+            g.SetComplex(aShapedWord->IsClusterStart(baseCharIndex),
                          false, 0);
             aShapedWord->SetGlyphs(baseCharIndex, g, nsnull);
         }

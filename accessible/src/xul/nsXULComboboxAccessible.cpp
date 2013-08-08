@@ -1,46 +1,13 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Aaron Leventhal <aaronl@netscape.com> (original author)
- *   Kyle Yuan <kyle.yuan@sun.com>
- *   Alexander Surkov <surkov.alexander@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsXULComboboxAccessible.h"
 
+#include "Accessible-inl.h"
 #include "nsAccessibilityService.h"
+#include "DocAccessible.h"
 #include "nsCoreUtils.h"
 #include "Role.h"
 #include "States.h"
@@ -56,8 +23,8 @@ using namespace mozilla::a11y;
 ////////////////////////////////////////////////////////////////////////////////
 
 nsXULComboboxAccessible::
-  nsXULComboboxAccessible(nsIContent *aContent, nsIWeakReference *aShell) :
-  nsAccessibleWrap(aContent, aShell)
+  nsXULComboboxAccessible(nsIContent* aContent, DocAccessible* aDoc) :
+  AccessibleWrap(aContent, aDoc)
 {
   if (mContent->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
                             nsGkAtoms::autocomplete, eIgnoreCase))
@@ -83,39 +50,19 @@ nsXULComboboxAccessible::NativeState()
   //     STATE_COLLAPSED
 
   // Get focus status from base class
-  PRUint64 states = nsAccessible::NativeState();
+  PRUint64 state = Accessible::NativeState();
 
   nsCOMPtr<nsIDOMXULMenuListElement> menuList(do_QueryInterface(mContent));
   if (menuList) {
-    bool isOpen;
+    bool isOpen = false;
     menuList->GetOpen(&isOpen);
-    if (isOpen) {
-      states |= states::EXPANDED;
-    }
-    else {
-      states |= states::COLLAPSED;
-    }
+    if (isOpen)
+      state |= states::EXPANDED;
+    else
+      state |= states::COLLAPSED;
   }
 
-  states |= states::HASPOPUP | states::FOCUSABLE;
-
-  return states;
-}
-
-NS_IMETHODIMP
-nsXULComboboxAccessible::GetValue(nsAString& aValue)
-{
-  aValue.Truncate();
-
-  if (IsDefunct())
-    return NS_ERROR_FAILURE;
-
-  // The value is the option or text shown entered in the combobox.
-  nsCOMPtr<nsIDOMXULMenuListElement> menuList(do_QueryInterface(mContent));
-  if (menuList)
-    return menuList->GetLabel(aValue);
-
-  return NS_ERROR_FAILURE;
+  return state | states::HASPOPUP;
 }
 
 void
@@ -131,16 +78,26 @@ nsXULComboboxAccessible::Description(nsString& aDescription)
   menuListElm->GetSelectedItem(getter_AddRefs(focusedOptionItem));
   nsCOMPtr<nsIContent> focusedOptionContent =
     do_QueryInterface(focusedOptionItem);
-  if (focusedOptionContent) {
-    nsAccessible* focusedOptionAcc = GetAccService()->
-      GetAccessibleInWeakShell(focusedOptionContent, mWeakShell);
+  if (focusedOptionContent && mDoc) {
+    Accessible* focusedOptionAcc = mDoc->GetAccessible(focusedOptionContent);
     if (focusedOptionAcc)
       focusedOptionAcc->Description(aDescription);
   }
 }
 
+void
+nsXULComboboxAccessible::Value(nsString& aValue)
+{
+  aValue.Truncate();
+
+  // The value is the option or text shown entered in the combobox.
+  nsCOMPtr<nsIDOMXULMenuListElement> menuList(do_QueryInterface(mContent));
+  if (menuList)
+    menuList->GetLabel(aValue);
+}
+
 bool
-nsXULComboboxAccessible::GetAllowsAnonChildAccessibles()
+nsXULComboboxAccessible::CanHaveAnonChildren()
 {
   if (mContent->NodeInfo()->Equals(nsGkAtoms::textbox, kNameSpaceID_XUL) ||
       mContent->AttrValueIs(kNameSpaceID_None, nsGkAtoms::editable,
@@ -222,7 +179,7 @@ nsXULComboboxAccessible::IsActiveWidget() const
                            nsGkAtoms::_true, eIgnoreCase)) {
     PRInt32 childCount = mChildren.Length();
     for (PRInt32 idx = 0; idx < childCount; idx++) {
-      nsAccessible* child = mChildren[idx];
+      Accessible* child = mChildren[idx];
       if (child->Role() == roles::ENTRY)
         return FocusMgr()->HasDOMFocus(child->GetContent());
     }

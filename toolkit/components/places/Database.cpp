@@ -1,53 +1,6 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Places code.
- *
- * The Initial Developer of the Original Code is
- * the Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Marco Bonardo <mak77@bonardo.net>
- *
- * Original contributor(s) of code moved from nsNavHistory.cpp:
- *   Brett Wilson <brettw@gmail.com> (original author)
- *   Dietrich Ayala <dietrich@mozilla.com>
- *   Seth Spitzer <sspitzer@mozilla.com>
- *   Asaf Romano <mano@mozilla.com>
- *   Marco Bonardo <mak77@bonardo.net>
- *   Edward Lee <edward.lee@engineering.uiuc.edu>
- *   Michael Ventnor <m.ventnor@gmail.com>
- *   Ehsan Akhgari <ehsan.akhgari@gmail.com>
- *   Drew Willcoxon <adw@mozilla.com>
- *   Philipp von Weitershausen <philipp@weitershausen.de>
- *   Paolo Amadini <http://www.amadzone.org/>
- *   Richard Newman <rnewman@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Database.h"
 
@@ -82,16 +35,6 @@
 // Set when the database file was found corrupt by a previous maintenance.
 #define PREF_FORCE_DATABASE_REPLACEMENT "places.database.replaceOnStartup"
 
-// The wanted size of the cache.  This is calculated based on current database
-// size and clamped to the limits specified below.
-#define DATABASE_CACHE_TO_DATABASE_PERC 10
-// The minimum size of the cache.  We should never work without a cache, since
-// that would badly hurt WAL journaling mode.
-#define DATABASE_CACHE_MIN_BYTES (PRUint64)4194304 // 4MiB
-// The maximum size of the cache.  This is the maximum memory that each
-// connection may use.
-#define DATABASE_CACHE_MAX_BYTES (PRUint64)8388608 // 8MiB
-
 // Maximum size for the WAL file.  It should be small enough since in case of
 // crashes we could lose all the transactions in the file.  But a too small
 // file could hurt performance.
@@ -104,6 +47,10 @@
 
 // Places string bundle, contains internationalized bookmark root names.
 #define PLACES_BUNDLE "chrome://places/locale/places.properties"
+
+// Livemarks annotations.
+#define LMANNO_FEEDURI "livemark/feedURI"
+#define LMANNO_SITEURI "livemark/siteURI"
 
 using namespace mozilla;
 
@@ -260,6 +207,49 @@ SetJournalMode(nsCOMPtr<mozIStorageConnection>& aDBConn,
 
   return JOURNAL_DELETE;
 }
+
+class BlockingConnectionCloseCallback : public mozIStorageCompletionCallback {
+  bool mDone;
+
+public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_MOZISTORAGECOMPLETIONCALLBACK
+  BlockingConnectionCloseCallback();
+  void Spin();
+};
+
+NS_IMETHODIMP
+BlockingConnectionCloseCallback::Complete()
+{
+  mDone = true;
+  nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
+  MOZ_ASSERT(os);
+  if (!os)
+    return NS_OK;
+  DebugOnly<nsresult> rv = os->NotifyObservers(nsnull,
+                                               TOPIC_PLACES_CONNECTION_CLOSED,
+                                               nsnull);
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  return NS_OK;
+}
+
+BlockingConnectionCloseCallback::BlockingConnectionCloseCallback()
+  : mDone(false)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+}
+
+void BlockingConnectionCloseCallback::Spin() {
+  nsCOMPtr<nsIThread> thread = do_GetCurrentThread();
+  while (!mDone) {
+    NS_ProcessNextEvent(thread);
+  }
+}
+
+NS_IMPL_THREADSAFE_ISUPPORTS1(
+  BlockingConnectionCloseCallback
+, mozIStorageCompletionCallback
+)
 
 nsresult
 CreateRoot(nsCOMPtr<mozIStorageConnection>& aDBConn,
@@ -567,39 +557,6 @@ Database::InitSchema(bool* aDatabaseMigrated)
       MOZ_STORAGE_UNIQUIFY_QUERY_STR "PRAGMA temp_store = MEMORY"));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // Get the current database size. Due to chunked growth we have to use
-  // page_count to evaluate it.
-  PRUint64 databaseSizeBytes = 0;
-  {
-    nsCOMPtr<mozIStorageStatement> statement;
-    nsresult rv = mMainConn->CreateStatement(NS_LITERAL_CSTRING(
-      "PRAGMA page_count"
-    ), getter_AddRefs(statement));
-    NS_ENSURE_SUCCESS(rv, rv);
-    bool hasResult = false;
-    rv = statement->ExecuteStep(&hasResult);
-    NS_ENSURE_TRUE(NS_SUCCEEDED(rv) && hasResult, NS_ERROR_FAILURE);
-    PRInt32 pageCount = 0;
-    rv = statement->GetInt32(0, &pageCount);
-    NS_ENSURE_SUCCESS(rv, rv);
-    databaseSizeBytes = pageCount * mDBPageSize;
-  }
-
-  // Clamp the cache size to a percentage of the database size, forcing
-  // meaningful limits.
-  PRInt64 cacheSize = clamped(databaseSizeBytes *  DATABASE_CACHE_TO_DATABASE_PERC / 100,
-                              DATABASE_CACHE_MIN_BYTES,
-                              DATABASE_CACHE_MAX_BYTES);
-
-  // Set the number of cached pages.
-  // We don't use PRAGMA default_cache_size, since the database could be moved
-  // among different devices and the value would adapt accordingly.
-  nsCAutoString cacheSizePragma(MOZ_STORAGE_UNIQUIFY_QUERY_STR
-				"PRAGMA cache_size = ");
-  cacheSizePragma.AppendInt(cacheSize / mDBPageSize);
-  rv = mMainConn->ExecuteSimpleSQL(cacheSizePragma);
-  NS_ENSURE_SUCCESS(rv, rv);
-
   // Be sure to set journal mode after page_size.  WAL would prevent the change
   // otherwise.
   if (NS_SUCCEEDED(SetJournalMode(mMainConn, JOURNAL_WAL))) {
@@ -744,6 +701,30 @@ Database::InitSchema(bool* aDatabaseMigrated)
 
       // Firefox 12 uses schema version 17.
 
+      if (currentSchemaVersion < 18) {
+        rv = MigrateV18Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      if (currentSchemaVersion < 19) {
+        rv = MigrateV19Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Firefox 13 uses schema version 19.
+
+      if (currentSchemaVersion < 20) {
+        rv = MigrateV20Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      if (currentSchemaVersion < 21) {
+        rv = MigrateV21Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Firefox 14 uses schema version 21.
+
       // Schema Upgrades must add migration code here.
 
       rv = UpdateBookmarkRootTitles();
@@ -789,8 +770,6 @@ Database::InitSchema(bool* aDatabaseMigrated)
 
     // moz_hosts.
     rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_HOSTS);
-    NS_ENSURE_SUCCESS(rv, rv);
-    rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_HOSTS_FRECENCYHOST);
     NS_ENSURE_SUCCESS(rv, rv);
 
     // moz_bookmarks.
@@ -961,7 +940,9 @@ Database::InitTempTriggers()
   NS_ENSURE_SUCCESS(rv, rv);
   rv = mMainConn->ExecuteSimpleSQL(CREATE_PLACES_AFTERDELETE_TRIGGER);
   NS_ENSURE_SUCCESS(rv, rv);
-  rv = mMainConn->ExecuteSimpleSQL(CREATE_PLACES_AFTERUPDATE_TRIGGER);
+  rv = mMainConn->ExecuteSimpleSQL(CREATE_PLACES_AFTERUPDATE_FRECENCY_TRIGGER);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = mMainConn->ExecuteSimpleSQL(CREATE_PLACES_AFTERUPDATE_TYPED_TRIGGER);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1283,6 +1264,7 @@ Database::MigrateV7Up()
         "WHERE root_name = :parent_name "
       ")"),
     getter_AddRefs(moveUnfiledBookmarks));
+  NS_ENSURE_SUCCESS(rv, rv);
   rv = moveUnfiledBookmarks->BindUTF8StringByName(
     NS_LITERAL_CSTRING("root_name"), NS_LITERAL_CSTRING("unfiled")
   );
@@ -1675,8 +1657,6 @@ Database::MigrateV17Up()
     // Add the moz_hosts table so we can get hostnames for URL autocomplete.
     rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_HOSTS);
     NS_ENSURE_SUCCESS(rv, rv);
-    rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_HOSTS_FRECENCYHOST);
-    NS_ENSURE_SUCCESS(rv, rv);
   }
 
   // Fill the moz_hosts table with all the domains in moz_places.
@@ -1685,7 +1665,8 @@ Database::MigrateV17Up()
     "INSERT OR IGNORE INTO moz_hosts (host, frecency) "
         "SELECT fixup_url(get_unreversed_host(h.rev_host)) AS host, "
                "(SELECT MAX(frecency) FROM moz_places "
-                "WHERE rev_host = h.rev_host OR rev_host = h.rev_host || 'www.'"
+                "WHERE rev_host = h.rev_host "
+                   "OR rev_host = h.rev_host || 'www.' "
                ") AS frecency "
         "FROM moz_places h "
         "WHERE LENGTH(h.rev_host) > 1 "
@@ -1695,6 +1676,202 @@ Database::MigrateV17Up()
 
   nsCOMPtr<mozIStoragePendingStatement> ps;
   rv = fillHostsStmt->ExecuteAsync(nsnull, getter_AddRefs(ps));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+nsresult
+Database::MigrateV18Up()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  // moz_hosts should distinguish on typed entries.
+
+  // Check if the profile already has a typed column.
+  nsCOMPtr<mozIStorageStatement> stmt;
+  nsresult rv = mMainConn->CreateStatement(NS_LITERAL_CSTRING(
+    "SELECT typed FROM moz_hosts"
+  ), getter_AddRefs(stmt));
+  if (NS_FAILED(rv)) {
+    rv = mMainConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
+      "ALTER TABLE moz_hosts ADD COLUMN typed NOT NULL DEFAULT 0"
+    ));
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  // With the addition of the typed column the covering index loses its
+  // advantages.  On the other side querying on host and (optionally) typed
+  // largely restricts the number of results, making scans decently fast.
+  rv = mMainConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
+    "DROP INDEX IF EXISTS moz_hosts_frecencyhostindex"
+  ));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Update typed data.
+  nsCOMPtr<mozIStorageAsyncStatement> updateTypedStmt;
+  rv = mMainConn->CreateAsyncStatement(NS_LITERAL_CSTRING(
+    "UPDATE moz_hosts SET typed = 1 WHERE host IN ( "
+      "SELECT fixup_url(get_unreversed_host(rev_host)) "
+      "FROM moz_places WHERE typed = 1 "
+    ") "
+  ), getter_AddRefs(updateTypedStmt));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<mozIStoragePendingStatement> ps;
+  rv = updateTypedStmt->ExecuteAsync(nsnull, getter_AddRefs(ps));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+nsresult
+Database::MigrateV19Up()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  // Livemarks children are no longer bookmarks.
+
+  // Remove all children of folders annotated as livemarks.
+  nsCOMPtr<mozIStorageStatement> deleteLivemarksChildrenStmt;
+  nsresult rv = mMainConn->CreateStatement(NS_LITERAL_CSTRING(
+    "DELETE FROM moz_bookmarks WHERE parent IN("
+      "SELECT b.id FROM moz_bookmarks b "
+      "JOIN moz_items_annos a ON a.item_id = b.id "
+      "JOIN moz_anno_attributes n ON n.id = a.anno_attribute_id "
+      "WHERE b.type = :item_type AND n.name = :anno_name "
+    ")"
+  ), getter_AddRefs(deleteLivemarksChildrenStmt));
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = deleteLivemarksChildrenStmt->BindUTF8StringByName(
+    NS_LITERAL_CSTRING("anno_name"), NS_LITERAL_CSTRING(LMANNO_FEEDURI)
+  );
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = deleteLivemarksChildrenStmt->BindInt32ByName(
+    NS_LITERAL_CSTRING("item_type"), nsINavBookmarksService::TYPE_FOLDER
+  );
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = deleteLivemarksChildrenStmt->Execute();
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Clear obsolete livemark prefs.
+  (void)Preferences::ClearUser("browser.bookmarks.livemark_refresh_seconds");
+  (void)Preferences::ClearUser("browser.bookmarks.livemark_refresh_limit_count");
+  (void)Preferences::ClearUser("browser.bookmarks.livemark_refresh_delay_time");
+
+  // Remove the old status annotations.
+  nsCOMPtr<mozIStorageStatement> deleteLivemarksAnnosStmt;
+  rv = mMainConn->CreateStatement(NS_LITERAL_CSTRING(
+    "DELETE FROM moz_items_annos WHERE anno_attribute_id IN("
+      "SELECT id FROM moz_anno_attributes "
+      "WHERE name IN (:anno_loading, :anno_loadfailed, :anno_expiration) "
+    ")"
+  ), getter_AddRefs(deleteLivemarksAnnosStmt));
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = deleteLivemarksAnnosStmt->BindUTF8StringByName(
+    NS_LITERAL_CSTRING("anno_loading"), NS_LITERAL_CSTRING("livemark/loading")
+  );
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = deleteLivemarksAnnosStmt->BindUTF8StringByName(
+    NS_LITERAL_CSTRING("anno_loadfailed"), NS_LITERAL_CSTRING("livemark/loadfailed")
+  );
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = deleteLivemarksAnnosStmt->BindUTF8StringByName(
+    NS_LITERAL_CSTRING("anno_expiration"), NS_LITERAL_CSTRING("livemark/expiration")
+  );
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = deleteLivemarksAnnosStmt->Execute();
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Remove orphan annotation names.
+  rv = mMainConn->CreateStatement(NS_LITERAL_CSTRING(
+    "DELETE FROM moz_anno_attributes "
+      "WHERE name IN (:anno_loading, :anno_loadfailed, :anno_expiration) "
+  ), getter_AddRefs(deleteLivemarksAnnosStmt));
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = deleteLivemarksAnnosStmt->BindUTF8StringByName(
+    NS_LITERAL_CSTRING("anno_loading"), NS_LITERAL_CSTRING("livemark/loading")
+  );
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = deleteLivemarksAnnosStmt->BindUTF8StringByName(
+    NS_LITERAL_CSTRING("anno_loadfailed"), NS_LITERAL_CSTRING("livemark/loadfailed")
+  );
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = deleteLivemarksAnnosStmt->BindUTF8StringByName(
+    NS_LITERAL_CSTRING("anno_expiration"), NS_LITERAL_CSTRING("livemark/expiration")
+  );
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = deleteLivemarksAnnosStmt->Execute();
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+nsresult
+Database::MigrateV20Up()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  // Remove obsolete bookmark GUID annotations.
+  nsCOMPtr<mozIStorageStatement> deleteOldBookmarkGUIDAnnosStmt;
+  nsresult rv = mMainConn->CreateStatement(NS_LITERAL_CSTRING(
+    "DELETE FROM moz_items_annos WHERE anno_attribute_id = ("
+      "SELECT id FROM moz_anno_attributes "
+      "WHERE name = :anno_guid"
+    ")"
+  ), getter_AddRefs(deleteOldBookmarkGUIDAnnosStmt));
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = deleteOldBookmarkGUIDAnnosStmt->BindUTF8StringByName(
+    NS_LITERAL_CSTRING("anno_guid"), NS_LITERAL_CSTRING("placesInternal/GUID")
+  );
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = deleteOldBookmarkGUIDAnnosStmt->Execute();
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Remove the orphan annotation name.
+  rv = mMainConn->CreateStatement(NS_LITERAL_CSTRING(
+    "DELETE FROM moz_anno_attributes "
+      "WHERE name = :anno_guid"
+  ), getter_AddRefs(deleteOldBookmarkGUIDAnnosStmt));
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = deleteOldBookmarkGUIDAnnosStmt->BindUTF8StringByName(
+    NS_LITERAL_CSTRING("anno_guid"), NS_LITERAL_CSTRING("placesInternal/GUID")
+  );
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = deleteOldBookmarkGUIDAnnosStmt->Execute();
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+nsresult
+Database::MigrateV21Up()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  // Add a prefix column to moz_hosts.
+  nsCOMPtr<mozIStorageStatement> stmt;
+  nsresult rv = mMainConn->CreateStatement(NS_LITERAL_CSTRING(
+    "SELECT prefix FROM moz_hosts"
+  ), getter_AddRefs(stmt));
+  if (NS_FAILED(rv)) {
+    rv = mMainConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
+      "ALTER TABLE moz_hosts ADD COLUMN prefix"
+    ));
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  // Update prefixes.
+  nsCOMPtr<mozIStorageAsyncStatement> updatePrefixesStmt;
+  rv = mMainConn->CreateAsyncStatement(NS_LITERAL_CSTRING(
+    "UPDATE moz_hosts SET prefix = ( "
+      HOSTS_PREFIX_PRIORITY_FRAGMENT
+    ") "
+  ), getter_AddRefs(updatePrefixesStmt));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<mozIStoragePendingStatement> ps;
+  rv = updatePrefixesStmt->ExecuteAsync(nsnull, getter_AddRefs(ps));
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1715,9 +1892,10 @@ Database::Shutdown()
         );
   DispatchToAsyncThread(event);
 
-  nsRefPtr<PlacesEvent> closeListener =
-    new PlacesEvent(TOPIC_PLACES_CONNECTION_CLOSED);
+  nsRefPtr<BlockingConnectionCloseCallback> closeListener =
+    new BlockingConnectionCloseCallback();
   (void)mMainConn->AsyncClose(closeListener);
+  closeListener->Spin();
 
   // Don't set this earlier, otherwise some internal helper used on shutdown
   // may bail out.

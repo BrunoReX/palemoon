@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * nsWindowGfx - Painting and aceleration.
@@ -66,6 +34,7 @@ using mozilla::plugins::PluginInstanceParent;
 #include "nsRenderingContext.h"
 #include "prmem.h"
 #include "WinUtils.h"
+#include "mozilla/unused.h"
 
 #include "LayerManagerOGL.h"
 #include "BasicLayers.h"
@@ -84,6 +53,7 @@ extern "C" {
 #include "pixman.h"
 }
 
+using namespace mozilla;
 using namespace mozilla::layers;
 using namespace mozilla::widget;
 
@@ -252,10 +222,16 @@ bool nsWindow::OnPaint(HDC aDC, PRUint32 aNestingLevel)
     PluginInstanceParent* instance = reinterpret_cast<PluginInstanceParent*>(
       ::GetPropW(mWnd, L"PluginInstanceParentProperty"));
     if (instance) {
-      instance->CallUpdateWindow();
-      ValidateRect(mWnd, NULL);
-      return true;
+      unused << instance->CallUpdateWindow();
+    } else {
+      // We should never get here since in-process plugins should have
+      // subclassed our HWND and handled WM_PAINT, but in some cases that
+      // could fail. Return without asserting since it's not our fault.
+      NS_WARNING("Plugin failed to subclass our window");
     }
+
+    ValidateRect(mWnd, NULL);
+    return true;
   }
 
   nsPaintEvent willPaintEvent(true, NS_WILL_PAINT, this);
@@ -312,6 +288,7 @@ bool nsWindow::OnPaint(HDC aDC, PRUint32 aNestingLevel)
 #endif
   event.region = GetRegionToPaint(forceRepaint, ps, hDC);
   event.willSendDidPaint = true;
+  event.didSendWillPaint = true;
 
   if (!event.region.IsEmpty() && mEventCallback)
   {
@@ -576,7 +553,7 @@ bool nsWindow::OnPaint(HDC aDC, PRUint32 aNestingLevel)
             // When our device was removed, we should have gfxWindowsPlatform
             // check if its render mode is up to date!
             gfxWindowsPlatform::GetPlatform()->UpdateRenderMode();
-            Invalidate(false);
+            Invalidate();
           }
         }
         break;
@@ -587,7 +564,7 @@ bool nsWindow::OnPaint(HDC aDC, PRUint32 aNestingLevel)
           gfxWindowsPlatform::GetPlatform()->UpdateRenderMode();
           LayerManagerD3D10 *layerManagerD3D10 = static_cast<mozilla::layers::LayerManagerD3D10*>(GetLayerManager());
           if (layerManagerD3D10->device() != gfxWindowsPlatform::GetPlatform()->GetD3D10Device()) {
-            Invalidate(false);
+            Invalidate();
           } else {
             result = DispatchWindowEvent(&event, eventStatus);
           }
@@ -757,23 +734,9 @@ PRUint8* nsWindowGfx::Data32BitTo1Bit(PRUint8* aImageData,
   return outData;
 }
 
-bool nsWindowGfx::IsCursorTranslucencySupported()
-{
-  static bool didCheck = false;
-  static bool isSupported = false;
-  if (!didCheck) {
-    didCheck = true;
-    // Cursor translucency is supported on Windows XP and newer
-    isSupported = WinUtils::GetWindowsVersion() >= WinUtils::WINXP_VERSION;
-  }
-
-  return isSupported;
-}
-
 /**
  * Convert the given image data to a HBITMAP. If the requested depth is
- * 32 bit and the OS supports translucency, a bitmap with an alpha channel
- * will be returned.
+ * 32 bit, a bitmap with an alpha channel will be returned.
  *
  * @param aImageData The image data to convert. Must use the format accepted
  *                   by CreateDIBitmap.
@@ -792,7 +755,7 @@ HBITMAP nsWindowGfx::DataToBitmap(PRUint8* aImageData,
 {
   HDC dc = ::GetDC(NULL);
 
-  if (aDepth == 32 && IsCursorTranslucencySupported()) {
+  if (aDepth == 32) {
     // Alpha channel. We need the new header.
     BITMAPV4HEADER head = { 0 };
     head.bV4Size = sizeof(head);

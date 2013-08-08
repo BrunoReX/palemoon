@@ -7,6 +7,7 @@ Components.utils.import("resource:///modules/devtools/TiltGL.jsm", tempScope);
 Components.utils.import("resource:///modules/devtools/TiltMath.jsm", tempScope);
 Components.utils.import("resource:///modules/devtools/TiltUtils.jsm", tempScope);
 Components.utils.import("resource:///modules/devtools/TiltVisualizer.jsm", tempScope);
+Components.utils.import("resource:///modules/devtools/LayoutHelpers.jsm", tempScope);
 let TiltGL = tempScope.TiltGL;
 let EPSILON = tempScope.EPSILON;
 let TiltMath = tempScope.TiltMath;
@@ -16,12 +17,14 @@ let mat4 = tempScope.mat4;
 let quat4 = tempScope.quat4;
 let TiltUtils = tempScope.TiltUtils;
 let TiltVisualizer = tempScope.TiltVisualizer;
+let LayoutHelpers = tempScope.LayoutHelpers;
 
 
 const DEFAULT_HTML = "data:text/html," +
   "<DOCTYPE html>" +
   "<html>" +
     "<head>" +
+      "<meta charset='utf-8'/>" +
       "<title>Three Laws</title>" +
     "</head>" +
     "<body>" +
@@ -36,6 +39,9 @@ const DEFAULT_HTML = "data:text/html," +
       "<div>" +
         "A robot must protect its own existence as long as such protection " +
         "does not conflict with the First or Second Laws." +
+      "</div>" +
+      "<div id='far-far-away' style='position: absolute; top: 250%;'>" +
+        "I like bacon." +
       "</div>" +
     "<body>" +
   "</html>";
@@ -59,11 +65,19 @@ const INSP_ENABLED = Services.prefs.getBoolPref("devtools.inspector.enabled");
 
 
 function isTiltEnabled() {
-  return TILT_ENABLED && INSP_ENABLED;
+  let enabled = TILT_ENABLED && INSP_ENABLED;
+
+  info("Apparently, Tilt is" + (enabled ? "" : " not") + " enabled.");
+  return enabled;
 }
 
 function isWebGLSupported() {
-  return TiltGL.isWebGLSupported() && TiltGL.create3DContext(createCanvas());
+  let supported = !TiltGL.isWebGLForceEnabled() &&
+                   TiltGL.isWebGLSupported() &&
+                   TiltGL.create3DContext(createCanvas());
+
+  info("Apparently, WebGL is" + (supported ? "" : " not") + " supported.");
+  return supported;
 }
 
 function isApprox(num1, num2, delta) {
@@ -112,6 +126,9 @@ function createCanvas() {
 
 
 function createTab(callback, location) {
+  info("Creating a tab, with callback " + typeof callback +
+                      ", and location " + location + ".");
+
   let tab = gBrowser.selectedTab = gBrowser.addTab();
 
   gBrowser.selectedBrowser.addEventListener("load", function onLoad() {
@@ -124,62 +141,110 @@ function createTab(callback, location) {
 }
 
 
-function createTilt(callbacks, close) {
-  Services.prefs.setBoolPref("webgl.verbose", true);
+function createTilt(callbacks, close, suddenDeath) {
+  info("Creating Tilt, with callbacks {" + Object.keys(callbacks) + "}" +
+                   ", autoclose param " + close +
+          ", and sudden death handler " + typeof suddenDeath + ".");
 
+  Services.prefs.setBoolPref("webgl.verbose", true);
+  TiltUtils.Output.suppressAlerts = true;
+
+  info("Attempting to start the inspector.");
   Services.obs.addObserver(onInspectorOpen, INSPECTOR_OPENED, false);
   InspectorUI.toggleInspectorUI();
 
   function onInspectorOpen() {
+    info("Inspector was opened.");
     Services.obs.removeObserver(onInspectorOpen, INSPECTOR_OPENED);
 
     executeSoon(function() {
       if ("function" === typeof callbacks.onInspectorOpen) {
+        info("Calling 'onInspectorOpen'.");
         callbacks.onInspectorOpen();
       }
-      Services.obs.addObserver(onTiltOpen, INITIALIZING, false);
-      Tilt.initialize();
+      executeSoon(function() {
+        info("Attempting to start Tilt.");
+        Services.obs.addObserver(onTiltOpen, INITIALIZING, false);
+        handleFailure(suddenDeath);
+        Tilt.initialize();
+      });
     });
   }
 
   function onTiltOpen() {
+    info("Tilt was opened.");
     Services.obs.removeObserver(onTiltOpen, INITIALIZING);
 
     executeSoon(function() {
       if ("function" === typeof callbacks.onTiltOpen) {
+        info("Calling 'onTiltOpen'.");
         callbacks.onTiltOpen(Tilt.visualizers[Tilt.currentWindowId]);
       }
       if (close) {
-        Services.obs.addObserver(onTiltClose, DESTROYED, false);
-        Tilt.destroy(Tilt.currentWindowId);
+        executeSoon(function() {
+          info("Attempting to close Tilt.");
+          Services.obs.addObserver(onTiltClose, DESTROYED, false);
+          Tilt.destroy(Tilt.currentWindowId);
+        });
       }
     });
   }
 
   function onTiltClose() {
+    info("Tilt was closed.");
     Services.obs.removeObserver(onTiltClose, DESTROYED);
 
     executeSoon(function() {
       if ("function" === typeof callbacks.onTiltClose) {
+        info("Calling 'onTiltClose'.");
         callbacks.onTiltClose();
       }
       if (close) {
-        Services.obs.addObserver(onInspectorClose, INSPECTOR_CLOSED, false);
-        InspectorUI.closeInspectorUI();
+        executeSoon(function() {
+          info("Attempting to close the Inspector.");
+          Services.obs.addObserver(onInspectorClose, INSPECTOR_CLOSED, false);
+          InspectorUI.closeInspectorUI();
+        });
       }
     });
   }
 
   function onInspectorClose() {
+    info("Inspector was closed.");
     Services.obs.removeObserver(onInspectorClose, INSPECTOR_CLOSED);
 
     executeSoon(function() {
       if ("function" === typeof callbacks.onInspectorClose) {
+        info("Calling 'onInspectorClose'.");
         callbacks.onInspectorClose();
       }
       if ("function" === typeof callbacks.onEnd) {
+        info("Calling 'onEnd'.");
         callbacks.onEnd();
       }
     });
   }
+
+  function handleFailure(suddenDeath) {
+    Tilt.failureCallback = function() {
+      info("Tilt FAIL.");
+      Services.obs.removeObserver(onTiltOpen, INITIALIZING);
+
+      info("Now relying on sudden death handler " + typeof suddenDeath + ".");
+      suddenDeath && suddenDeath();
+    }
+  }
+}
+
+function getPickablePoint(presenter) {
+  let vertices = presenter._meshStacks[0].vertices.components;
+
+  let topLeft = vec3.create([vertices[0], vertices[1], vertices[2]]);
+  let bottomRight = vec3.create([vertices[6], vertices[7], vertices[8]]);
+  let center = vec3.lerp(topLeft, bottomRight, 0.5, []);
+
+  let renderer = presenter._renderer;
+  let viewport = [0, 0, renderer.width, renderer.height];
+
+  return vec3.project(center, viewport, renderer.mvMatrix, renderer.projMatrix);
 }

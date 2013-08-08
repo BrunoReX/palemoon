@@ -1,15 +1,13 @@
 function test() {
   waitForExplicitFinish();
-  ignoreAllUncaughtExceptions();
-  
   // test the main (normal) browser window
   testCustomize(window, testChromeless);
 }
 
 function testChromeless() {
   // test a chromeless window
-  var newWin = openDialog("chrome://browser/content/", "_blank",
-                      "chrome,dialog=no,toolbar=no", "about:blank");
+  var newWin = openDialog(getBrowserURL(), "_blank",
+                          "chrome,dialog=no,toolbar=no", "about:blank");
   ok(newWin, "got new window");
 
   function runWindowTest() {

@@ -1,39 +1,7 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Foundation code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2005
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Vladimir Vukicevic <vladimir@pobox.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifdef MOZ_LOGGING
 #define FORCE_PR_LOG /* Allow logging in the release build */
@@ -57,13 +25,13 @@
 #include "gfxAndroidPlatform.h"
 #endif
 
-#include "gfxAtoms.h"
+#include "nsGkAtoms.h"
 #include "gfxPlatformFontList.h"
 #include "gfxContext.h"
 #include "gfxImageSurface.h"
 #include "gfxUserFontSet.h"
-#include "gfxUnicodeProperties.h"
-#include "harfbuzz/hb-unicode.h"
+#include "nsUnicodeProperties.h"
+#include "harfbuzz/hb.h"
 #ifdef MOZ_GRAPHITE
 #include "gfxGraphiteShaper.h"
 #endif
@@ -71,7 +39,6 @@
 #include "nsUnicodeRange.h"
 #include "nsServiceManagerUtils.h"
 #include "nsTArray.h"
-#include "nsIUGenCategory.h"
 #include "nsUnicharUtilCIID.h"
 #include "nsILocaleService.h"
 
@@ -85,8 +52,13 @@
 #include "GLContext.h"
 #include "GLContextProvider.h"
 
+#ifdef MOZ_WIDGET_ANDROID
+#include "TexturePoolOGL.h"
+#endif
+
 #include "mozilla/FunctionTimer.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Assertions.h"
 
 #include "nsIGfxInfo.h"
 
@@ -119,6 +91,7 @@ static PRLogModuleInfo *sFontlistLog = nsnull;
 static PRLogModuleInfo *sFontInitLog = nsnull;
 static PRLogModuleInfo *sTextrunLog = nsnull;
 static PRLogModuleInfo *sTextrunuiLog = nsnull;
+static PRLogModuleInfo *sCmapDataLog = nsnull;
 #endif
 
 /* Class to listen for pref changes so that chrome code can dynamically
@@ -149,7 +122,8 @@ SRGBOverrideObserver::Observe(nsISupports *aSubject,
 #define GFX_DOWNLOADABLE_FONTS_SANITIZE "gfx.downloadable_fonts.sanitize"
 
 #define GFX_PREF_HARFBUZZ_SCRIPTS "gfx.font_rendering.harfbuzz.scripts"
-#define HARFBUZZ_SCRIPTS_DEFAULT  gfxUnicodeProperties::SHAPING_DEFAULT
+#define HARFBUZZ_SCRIPTS_DEFAULT  mozilla::unicode::SHAPING_DEFAULT
+#define GFX_PREF_FALLBACK_USE_CMAPS  "gfx.font_rendering.fallback.always_use_cmaps"
 
 #ifdef MOZ_GRAPHITE
 #define GFX_PREF_GRAPHITE_SHAPING "gfx.font_rendering.graphite.enabled"
@@ -233,6 +207,8 @@ gfxPlatform::gfxPlatform()
     mUseHarfBuzzScripts = UNINITIALIZED_VALUE;
     mAllowDownloadableFonts = UNINITIALIZED_VALUE;
     mDownloadableFontsSanitize = UNINITIALIZED_VALUE;
+    mFallbackUsesCmaps = UNINITIALIZED_VALUE;
+
 #ifdef MOZ_GRAPHITE
     mGraphiteShapingEnabled = UNINITIALIZED_VALUE;
 #endif
@@ -262,13 +238,12 @@ gfxPlatform::Init()
     }
     gEverInitialized = true;
 
-    gfxAtoms::RegisterAtoms();
-
 #ifdef PR_LOGGING
     sFontlistLog = PR_NewLogModule("fontlist");;
     sFontInitLog = PR_NewLogModule("fontinit");;
     sTextrunLog = PR_NewLogModule("textrun");;
     sTextrunuiLog = PR_NewLogModule("textrunui");;
+    sCmapDataLog = PR_NewLogModule("cmapdata");;
 #endif
 
 
@@ -297,6 +272,10 @@ gfxPlatform::Init()
     gPlatform = new gfxAndroidPlatform;
 #else
     #error "No gfxPlatform implementation available"
+#endif
+
+#ifdef DEBUG
+    mozilla::gl::GLContext::StaticInit();
 #endif
 
     nsresult rv;
@@ -329,6 +308,13 @@ gfxPlatform::Init()
 
     gPlatform->mFontPrefsObserver = new FontPrefsObserver();
     Preferences::AddStrongObservers(gPlatform->mFontPrefsObserver, kObservedPrefs);
+
+    gPlatform->mWorkAroundDriverBugs = Preferences::GetBool("gfx.work-around-driver-bugs", true);
+
+#ifdef MOZ_WIDGET_ANDROID
+    // Texture pool init
+    mozilla::gl::TexturePoolOGL::Init();
+#endif
 
     // Force registration of the gfx component, thus arranging for
     // ::Shutdown to be called.
@@ -366,7 +352,26 @@ gfxPlatform::Shutdown()
         gPlatform->mFontPrefsObserver = nsnull;
     }
 
+#ifdef MOZ_WIDGET_ANDROID
+    // Shut down the texture pool
+    mozilla::gl::TexturePoolOGL::Shutdown();
+#endif
+
+    // Shut down the default GL context provider.
     mozilla::gl::GLContextProvider::Shutdown();
+
+    // We always have OSMesa at least potentially available; shut it down too.
+    mozilla::gl::GLContextProviderOSMesa::Shutdown();
+
+#if defined(XP_WIN)
+    // The above shutdown calls operate on the available context providers on
+    // most platforms.  Windows is a "special snowflake", though, and has three
+    // context providers available, so we have to shut all of them down.
+    // We should only support the default GL provider on Windows; then, this
+    // could go away. Unfortunately, we currently support WGL (the default) for
+    // WebGL on Optimus.
+    mozilla::gl::GLContextProviderEGL::Shutdown();
+#endif
 
     delete gPlatform;
     gPlatform = nsnull;
@@ -374,6 +379,8 @@ gfxPlatform::Shutdown()
 
 gfxPlatform::~gfxPlatform()
 {
+    mScreenReferenceSurface = nsnull;
+
     // The cairo folks think we should only clean up in debug builds,
     // but we're generally in the habit of trying to shut down as
     // cleanly as possible even in production code, so call this
@@ -481,8 +488,14 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
   if (!srcBuffer) {
     nsRefPtr<gfxImageSurface> imgSurface = aSurface->GetAsImageSurface();
 
+    bool isWin32ImageSurf = false;
+
+    if (imgSurface && aSurface->GetType() != gfxASurface::SurfaceTypeWin32) {
+      isWin32ImageSurf = true;
+    }
+
     if (!imgSurface) {
-      imgSurface = new gfxImageSurface(aSurface->GetSize(), gfxASurface::FormatFromContent(aSurface->GetContentType()));
+      imgSurface = new gfxImageSurface(aSurface->GetSize(), OptimalFormatForContent(aSurface->GetContentType()));
       nsRefPtr<gfxContext> ctx = new gfxContext(imgSurface);
       ctx->SetSource(aSurface);
       ctx->SetOperator(gfxContext::OPERATOR_SOURCE);
@@ -507,17 +520,36 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
         NS_RUNTIMEABORT("Invalid surface format!");
     }
 
+    IntSize size = IntSize(imgSurface->GetSize().width, imgSurface->GetSize().height);
     srcBuffer = aTarget->CreateSourceSurfaceFromData(imgSurface->Data(),
-                                                     IntSize(imgSurface->GetSize().width, imgSurface->GetSize().height),
+                                                     size,
                                                      imgSurface->Stride(),
                                                      format);
+
+    if (!srcBuffer) {
+      // We need to check if our gfxASurface will keep the underlying data
+      // alive! This is true if gfxASurface actually -is- an ImageSurface or
+      // if it is a gfxWindowsSurface which supportes GetAsImageSurface.
+      if (imgSurface != aSurface && !isWin32ImageSurf) {
+        // This shouldn't happen for now, it can be easily supported by making
+        // a copy. For now let's just abort.
+        NS_RUNTIMEABORT("Attempt to create unsupported SourceSurface from"
+            "non-image surface.");
+        return nsnull;
+      }
+
+      srcBuffer = Factory::CreateWrappingDataSourceSurface(imgSurface->Data(),
+                                                           imgSurface->Stride(),
+                                                           size, format);
+
+    }
 
     cairo_surface_t *nullSurf =
 	cairo_null_surface_create(CAIRO_CONTENT_COLOR_ALPHA);
     cairo_surface_set_user_data(nullSurf,
-				&kSourceSurface,
-				imgSurface,
-				NULL);
+                                &kSourceSurface,
+                                imgSurface,
+                                NULL);
     cairo_surface_attach_snapshot(imgSurface->CairoSurface(), nullSurf, SourceSnapshotDetached);
     cairo_surface_destroy(nullSurf);
   }
@@ -538,13 +570,6 @@ gfxPlatform::GetScaledFontForFont(gfxFont *aFont)
     Factory::CreateScaledFontForNativeFont(nativeFont,
                                            aFont->GetAdjustedSize());
   return scaledFont;
-}
-
-cairo_user_data_key_t kDrawSourceSurface;
-static void
-DataSourceSurfaceDestroy(void *dataSourceSurface)
-{
-  static_cast<DataSourceSurface*>(dataSourceSurface)->Release();
 }
 
 UserDataKey kThebesSurfaceKey;
@@ -584,13 +609,14 @@ gfxPlatform::GetThebesSurfaceForDrawTarget(DrawTarget *aTarget)
     }
 
     IntSize size = data->GetSize();
-    gfxASurface::gfxImageFormat format = gfxASurface::FormatFromContent(ContentForFormat(data->GetFormat()));
+    gfxASurface::gfxImageFormat format = OptimalFormatForContent(ContentForFormat(data->GetFormat()));
 
-    surf =
-      new gfxImageSurface(data->GetData(), gfxIntSize(size.width, size.height),
-                          data->Stride(), format);
-
-    surf->SetData(&kDrawSourceSurface, data.forget().drop(), DataSourceSurfaceDestroy);
+    // We need to make a copy here because data might change its data under us
+    nsRefPtr<gfxImageSurface> imageSurf = new gfxImageSurface(gfxIntSize(size.width, size.height), format, false);
+ 
+    bool resultOfCopy = imageSurf->CopyFrom(source);
+    NS_ASSERTION(resultOfCopy, "Failed to copy surface.");
+    surf = imageSurf;
   }
 
   // add a reference to be held by the drawTarget
@@ -625,6 +651,16 @@ gfxPlatform::CreateOffscreenDrawTarget(const IntSize& aSize, SurfaceFormat aForm
   } else {
     return Factory::CreateDrawTarget(backend, aSize, aFormat);
   }
+}
+
+RefPtr<DrawTarget>
+gfxPlatform::CreateDrawTargetForData(unsigned char* aData, const IntSize& aSize, int32_t aStride, SurfaceFormat aFormat)
+{
+  BackendType backend;
+  if (!SupportsAzure(backend)) {
+    return NULL;
+  }
+  return Factory::CreateDrawTargetForData(backend, aData, aSize, aStride, aFormat); 
 }
 
 nsresult
@@ -663,6 +699,17 @@ gfxPlatform::SanitizeDownloadedFonts()
     return mDownloadableFontsSanitize;
 }
 
+bool
+gfxPlatform::UseCmapsDuringSystemFallback()
+{
+    if (mFallbackUsesCmaps == UNINITIALIZED_VALUE) {
+        mFallbackUsesCmaps =
+            Preferences::GetBool(GFX_PREF_FALLBACK_USE_CMAPS, false);
+    }
+
+    return mFallbackUsesCmaps;
+}
+
 #ifdef MOZ_GRAPHITE
 bool
 gfxPlatform::UseGraphiteShaping()
@@ -683,7 +730,7 @@ gfxPlatform::UseHarfBuzzForScript(PRInt32 aScriptCode)
         mUseHarfBuzzScripts = Preferences::GetInt(GFX_PREF_HARFBUZZ_SCRIPTS, HARFBUZZ_SCRIPTS_DEFAULT);
     }
 
-    PRInt32 shapingType = gfxUnicodeProperties::ScriptShapingType(aScriptCode);
+    PRInt32 shapingType = mozilla::unicode::ScriptShapingType(aScriptCode);
 
     return (mUseHarfBuzzScripts & shapingType) != 0;
 }
@@ -753,7 +800,7 @@ gfxPlatform::GetPrefFonts(nsIAtom *aLanguage, nsString& aFonts, bool aAppendUnic
 
     AppendGenericFontFromPref(aFonts, aLanguage, nsnull);
     if (aAppendUnicode)
-        AppendGenericFontFromPref(aFonts, gfxAtoms::x_unicode, nsnull);
+        AppendGenericFontFromPref(aFonts, nsGkAtoms::Unicode, nsnull);
 }
 
 bool gfxPlatform::ForEachPrefFont(eFontPrefLang aLangArray[], PRUint32 aLangArrayLen, PrefFontCallback aCallback,
@@ -1341,14 +1388,24 @@ gfxPlatform::FontsPrefsChanged(const char *aPref)
         mAllowDownloadableFonts = UNINITIALIZED_VALUE;
     } else if (!strcmp(GFX_DOWNLOADABLE_FONTS_SANITIZE, aPref)) {
         mDownloadableFontsSanitize = UNINITIALIZED_VALUE;
+    } else if (!strcmp(GFX_PREF_FALLBACK_USE_CMAPS, aPref)) {
+        mFallbackUsesCmaps = UNINITIALIZED_VALUE;
 #ifdef MOZ_GRAPHITE
     } else if (!strcmp(GFX_PREF_GRAPHITE_SHAPING, aPref)) {
         mGraphiteShapingEnabled = UNINITIALIZED_VALUE;
-        gfxFontCache::GetCache()->AgeAllGenerations();
+        gfxFontCache *fontCache = gfxFontCache::GetCache();
+        if (fontCache) {
+            fontCache->AgeAllGenerations();
+            fontCache->FlushShapedWordCaches();
+        }
 #endif
     } else if (!strcmp(GFX_PREF_HARFBUZZ_SCRIPTS, aPref)) {
         mUseHarfBuzzScripts = UNINITIALIZED_VALUE;
-        gfxFontCache::GetCache()->AgeAllGenerations();
+        gfxFontCache *fontCache = gfxFontCache::GetCache();
+        if (fontCache) {
+            fontCache->AgeAllGenerations();
+            fontCache->FlushShapedWordCaches();
+        }
     } else if (!strcmp(BIDI_NUMERAL_PREF, aPref)) {
         mBidiNumeralOption = UNINITIALIZED_VALUE;
     }
@@ -1372,6 +1429,9 @@ gfxPlatform::GetLog(eGfxLog aWhichLog)
     case eGfxLog_textrunui:
         return sTextrunuiLog;
         break;
+    case eGfxLog_cmapdata:
+        return sCmapDataLog;
+        break;
     default:
         break;
     }
@@ -1380,4 +1440,43 @@ gfxPlatform::GetLog(eGfxLog aWhichLog)
 #else
     return nsnull;
 #endif
+}
+
+int
+gfxPlatform::GetScreenDepth() const
+{
+    MOZ_ASSERT(false, "Not implemented on this platform");
+    return 0;
+}
+
+mozilla::gfx::SurfaceFormat
+gfxPlatform::Optimal2DFormatForContent(gfxASurface::gfxContentType aContent)
+{
+  switch (aContent) {
+  case gfxASurface::CONTENT_COLOR:
+    return mozilla::gfx::FORMAT_B8G8R8X8;
+  case gfxASurface::CONTENT_ALPHA:
+    return mozilla::gfx::FORMAT_A8;
+  case gfxASurface::CONTENT_COLOR_ALPHA:
+    return mozilla::gfx::FORMAT_B8G8R8A8;
+  default:
+    NS_NOTREACHED("unknown gfxContentType");
+    return mozilla::gfx::FORMAT_B8G8R8A8;
+  }
+}
+
+gfxImageFormat
+gfxPlatform::OptimalFormatForContent(gfxASurface::gfxContentType aContent)
+{
+  switch (aContent) {
+  case gfxASurface::CONTENT_COLOR:
+    return GetOffscreenFormat();
+  case gfxASurface::CONTENT_ALPHA:
+    return gfxASurface::ImageFormatA8;
+  case gfxASurface::CONTENT_COLOR_ALPHA:
+    return gfxASurface::ImageFormatARGB32;
+  default:
+    NS_NOTREACHED("unknown gfxContentType");
+    return gfxASurface::ImageFormatARGB32;
+  }
 }

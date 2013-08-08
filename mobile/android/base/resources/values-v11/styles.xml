@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
 <resources>
     
     <!--
@@ -6,17 +10,10 @@
         Please refer to values/styles.xml for default styles.
     -->
 
-    <!-- BrowserToolbar -->
-    <style name="BrowserToolbar">
+    <!-- AwesomeBar -->
+    <style name="AwesomeBar">
         <item name="android:layout_width">fill_parent</item>
-        <item name="android:layout_height">fill_parent</item>
-        <item name="android:orientation">vertical</item>
-    </style>
-
-    <!-- Address bar -->
-    <style name="AddressBar">
-        <item name="android:layout_width">fill_parent</item>
-        <item name="android:layout_height">fill_parent</item>
+        <item name="android:layout_height">@dimen/browser_toolbar_height</item>
         <item name="android:orientation">horizontal</item>
     </style>
 
@@ -25,6 +22,31 @@
         <item name="android:layout_width">fill_parent</item>
         <item name="android:layout_height">fill_parent</item>
         <item name="android:layout_weight">1</item>
+        <item name="android:background">#EEF1F5</item>
+        <item name="android:divider">#D1D5DA</item>
+        <item name="android:dividerHeight">1dp</item>
+        <item name="android:cacheColorHint">#EEF1F5</item>
+        <item name="android:listSelector">@drawable/action_bar_button</item>
+    </style>
+ 
+    <!-- ActionBar -->
+    <style name="ActionBar" parent="android:style/Widget.Holo.ActionBar" />
+
+    <!-- AwesomeBar ActionBar -->
+    <style name="ActionBar.AwesomeBar">
+         <item name="android:displayOptions">showCustom</item>
+         <item name="android:customNavigationLayout">@layout/awesomebar_actionbar</item>
+         <item name="android:visibility">gone</item>
+    </style>
+ 
+    <!-- GeckoPreferences ActionBar -->
+    <style name="ActionBar.GeckoPreferences">
+         <item name="android:displayOptions">showHome|homeAsUp|showTitle</item>
+    </style>
+ 
+    <!-- TabsTray ActionBar -->
+    <style name="ActionBar.TabsTray">
+         <item name="android:visibility">gone</item>
     </style>
 
 </resources>

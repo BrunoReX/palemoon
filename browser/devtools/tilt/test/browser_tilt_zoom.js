@@ -4,15 +4,9 @@
 
 const ZOOM = 2;
 const RESIZE = 50;
+let tiltOpened = false;
 
 function test() {
-  let random = Math.random() * 10;
-
-  TiltUtils.setDocumentZoom(window, random);
-  ok(isApprox(TiltUtils.getDocumentZoom(window), random),
-    "The getDocumentZoom utility function didn't return the expected results.");
-
-
   if (!isTiltEnabled()) {
     info("Skipping controller test because Tilt isn't enabled.");
     return;
@@ -32,6 +26,11 @@ function test() {
       },
       onTiltOpen: function(instance)
       {
+        tiltOpened = true;
+
+        ok(isApprox(InspectorUI.highlighter.zoom, ZOOM),
+          "The Highlighter zoom doesn't have the expected results.");
+
         ok(isApprox(instance.presenter.transforms.zoom, ZOOM),
           "The presenter transforms zoom wasn't initially set correctly.");
 
@@ -39,7 +38,7 @@ function test() {
         let initialWidth = contentWindow.innerWidth;
         let initialHeight = contentWindow.innerHeight;
 
-        let renderer = instance.presenter.renderer;
+        let renderer = instance.presenter._renderer;
         let arcball = instance.controller.arcball;
 
         ok(isApprox(contentWindow.innerWidth * ZOOM, renderer.width, 1),
@@ -74,16 +73,21 @@ function test() {
 
           window.resizeBy(RESIZE * ZOOM, RESIZE * ZOOM);
 
+
           Services.obs.addObserver(cleanup, DESTROYED, false);
           InspectorUI.closeInspectorUI();
         });
-      },
+      }
+    }, false, function suddenDeath()
+    {
+      info("Tilt could not be initialized properly.");
+      cleanup();
     });
   });
 }
 
 function cleanup() {
-  Services.obs.removeObserver(cleanup, DESTROYED);
+  if (tiltOpened) { Services.obs.removeObserver(cleanup, DESTROYED); }
   gBrowser.removeCurrentTab();
   finish();
 }

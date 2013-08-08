@@ -1,42 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Vipul Gupta <vipul.gupta@sun.com>
- *   Douglas Stebila <douglas@stebila.ca>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 extern "C" {
 #include "secdert.h"
@@ -509,7 +475,6 @@ nsKeygenFormProcessor::GetPublicKey(nsAString& aValue, nsAString& aChallenge,
     nsresult rv = NS_ERROR_FAILURE;
     char *keystring = nsnull;
     char *keyparamsString = nsnull, *str = nsnull;
-    KeyType type;
     PRUint32 keyGenMechanism;
     PRInt32 primeBits;
     PK11SlotInfo *slot = nsnull;
@@ -530,6 +495,9 @@ nsKeygenFormProcessor::GetPublicKey(nsAString& aValue, nsAString& aChallenge,
     nsIGeneratingKeypairInfoDialogs * dialogs;
     nsKeygenThread *KeygenRunnable = 0;
     nsCOMPtr<nsIKeygenThread> runnable;
+    
+    // permanent and sensitive flags for keygen
+    PK11AttrFlags attrFlags = PK11_ATTR_TOKEN | PK11_ATTR_SENSITIVE | PK11_ATTR_PRIVATE;
 
     // Get the key size //
     for (size_t i = 0; i < number_of_key_size_choices; ++i) {
@@ -549,7 +517,6 @@ nsKeygenFormProcessor::GetPublicKey(nsAString& aValue, nsAString& aChallenge,
 
     // Set the keygen mechanism
     if (aKeyType.IsEmpty() || aKeyType.LowerCaseEqualsLiteral("rsa")) {
-        type = rsaKey;
         keyGenMechanism = CKM_RSA_PKCS_KEY_PAIR_GEN;
     } else if (aKeyType.LowerCaseEqualsLiteral("dsa")) {
         char * end;
@@ -559,7 +526,6 @@ nsKeygenFormProcessor::GetPublicKey(nsAString& aValue, nsAString& aChallenge,
             goto loser;
         }
 
-        type = dsaKey;
         keyGenMechanism = CKM_DSA_KEY_PAIR_GEN;
         if (strcmp(keyparamsString, "null") == 0)
             goto loser;
@@ -586,7 +552,6 @@ nsKeygenFormProcessor::GetPublicKey(nsAString& aValue, nsAString& aChallenge,
             goto loser;
         }
 
-        type = ecKey;
         keyGenMechanism = CKM_EC_KEY_PAIR_GEN;
         /* ecParams are initialized later */
     } else {
@@ -675,10 +640,11 @@ nsKeygenFormProcessor::GetPublicKey(nsAString& aValue, nsAString& aChallenge,
 
     if (NS_FAILED(rv) || !KeygenRunnable) {
         rv = NS_OK;
-        privateKey = PK11_GenerateKeyPair(slot, keyGenMechanism, params,
-                                          &publicKey, true, true, m_ctx);
+        privateKey = PK11_GenerateKeyPairWithFlags(slot, keyGenMechanism, params,
+                                                   &publicKey, attrFlags, m_ctx);
     } else {
-        KeygenRunnable->SetParams( slot, keyGenMechanism, params, true, true, m_ctx );
+        KeygenRunnable->SetParams( slot, attrFlags, nsnull, 0,
+                                   keyGenMechanism, params, m_ctx );
 
         runnable = do_QueryInterface(KeygenRunnable);
         
@@ -698,7 +664,11 @@ nsKeygenFormProcessor::GetPublicKey(nsAString& aValue, nsAString& aChallenge,
 
             NS_RELEASE(dialogs);
             if (NS_SUCCEEDED(rv)) {
-                rv = KeygenRunnable->GetParams(&privateKey, &publicKey);
+                PK11SlotInfo *used_slot = nsnull;
+                rv = KeygenRunnable->ConsumeResult(&used_slot, &privateKey, &publicKey);
+                if (NS_SUCCEEDED(rv) && used_slot) {
+                  PK11_FreeSlot(used_slot);
+                }
             }
         }
     }

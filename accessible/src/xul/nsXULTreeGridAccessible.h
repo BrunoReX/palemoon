@@ -1,70 +1,49 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Alexander Surkov <surkov.alexander@gmail.com> (original author)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef __nsXULTreeGridAccessible_h__
 #define __nsXULTreeGridAccessible_h__
 
-#include "nsIAccessibleTable.h"
-
 #include "nsXULTreeAccessible.h"
+#include "TableAccessible.h"
+#include "xpcAccessibleTable.h"
 
 /**
  * Represents accessible for XUL tree in the case when it has multiple columns.
  */
 class nsXULTreeGridAccessible : public nsXULTreeAccessible,
-                                public nsIAccessibleTable
+                                public xpcAccessibleTable,
+                                public nsIAccessibleTable,
+                                public mozilla::a11y::TableAccessible
 {
 public:
-  nsXULTreeGridAccessible(nsIContent *aContent, nsIWeakReference *aShell);
+  nsXULTreeGridAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIAccessibleTable
-  NS_DECL_NSIACCESSIBLETABLE
+  NS_DECL_OR_FORWARD_NSIACCESSIBLETABLE_WITH_XPCACCESSIBLETABLE
 
-  // nsAccessible
+  // TableAccessible
+  virtual PRUint32 ColCount();
+  virtual PRUint32 RowCount();
+  virtual Accessible* CellAt(PRUint32 aRowIndex, PRUint32 aColumnIndex);
+  virtual void UnselectRow(PRUint32 aRowIdx);
+
+  // nsAccessNode
+  virtual void Shutdown();
+
+  // Accessible
+  virtual mozilla::a11y::TableAccessible* AsTable() { return this; }
   virtual mozilla::a11y::role NativeRole();
 
 protected:
 
   // nsXULTreeAccessible
-  virtual already_AddRefed<nsAccessible> CreateTreeItemAccessible(PRInt32 aRow);
+  virtual already_AddRefed<Accessible> CreateTreeItemAccessible(PRInt32 aRow);
 };
 
 
@@ -75,12 +54,11 @@ protected:
 class nsXULTreeGridRowAccessible : public nsXULTreeItemAccessibleBase
 {
 public:
-  using nsAccessible::GetChildCount;
-  using nsAccessible::GetChildAt;
+  using Accessible::GetChildAt;
 
-  nsXULTreeGridRowAccessible(nsIContent *aContent, nsIWeakReference *aShell,
-                             nsAccessible *aParent, nsITreeBoxObject *aTree,
-                             nsITreeView *aTreeView, PRInt32 aRow);
+  nsXULTreeGridRowAccessible(nsIContent* aContent, DocAccessible* aDoc,
+                             Accessible* aParent, nsITreeBoxObject* aTree,
+                             nsITreeView* aTreeView, PRInt32 aRow);
 
   // nsISupports and cycle collection
   NS_DECL_ISUPPORTS_INHERITED
@@ -90,26 +68,26 @@ public:
   // nsAccessNode
   virtual void Shutdown();
 
-  // nsAccessible
+  // Accessible
   virtual mozilla::a11y::role NativeRole();
-  NS_IMETHOD GetName(nsAString& aName);
-  virtual nsAccessible* ChildAtPoint(PRInt32 aX, PRInt32 aY,
-                                     EWhichChildAtPoint aWhichChild);
+  virtual mozilla::a11y::ENameValueFlag Name(nsString& aName);
+  virtual Accessible* ChildAtPoint(PRInt32 aX, PRInt32 aY,
+                                   EWhichChildAtPoint aWhichChild);
 
-  virtual nsAccessible* GetChildAt(PRUint32 aIndex);
-  virtual PRInt32 GetChildCount();
+  virtual Accessible* GetChildAt(PRUint32 aIndex);
+  virtual PRUint32 ChildCount() const;
 
   // nsXULTreeItemAccessibleBase
-  virtual nsAccessible* GetCellAccessible(nsITreeColumn *aColumn);
+  virtual Accessible* GetCellAccessible(nsITreeColumn* aColumn);
   virtual void RowInvalidated(PRInt32 aStartColIdx, PRInt32 aEndColIdx);
 
 protected:
 
-  // nsAccessible
+  // Accessible
   virtual void CacheChildren();
 
   // nsXULTreeItemAccessibleBase
-  nsAccessibleHashtable mAccessibleCache;
+  AccessibleHashtable mAccessibleCache;
 };
 
 
@@ -130,11 +108,10 @@ class nsXULTreeGridCellAccessible : public nsLeafAccessible,
                                     public nsIAccessibleTableCell
 {
 public:
-  using nsAccessible::GetParent;
 
-  nsXULTreeGridCellAccessible(nsIContent *aContent, nsIWeakReference *aShell,
-                              nsXULTreeGridRowAccessible *aRowAcc,
-                              nsITreeBoxObject *aTree, nsITreeView *aTreeView,
+  nsXULTreeGridCellAccessible(nsIContent* aContent, DocAccessible* aDoc,
+                              nsXULTreeGridRowAccessible* aRowAcc,
+                              nsITreeBoxObject* aTree, nsITreeView* aTreeView,
                               PRInt32 aRow, nsITreeColumn* aColumn);
 
   // nsISupports
@@ -144,7 +121,6 @@ public:
 
   // nsIAccessible
 
-  NS_IMETHOD GetName(nsAString& aName);
   NS_IMETHOD GetBounds(PRInt32 *aX, PRInt32 *aY,
                        PRInt32 *aWidth, PRInt32 *aHeight);
 
@@ -155,17 +131,18 @@ public:
   NS_DECL_NSIACCESSIBLETABLECELL
 
   // nsAccessNode
-  virtual bool IsDefunct() const;
   virtual bool Init();
   virtual bool IsPrimaryForNode() const;
 
-  // nsAccessible
-  virtual nsAccessible* FocusedChild();
+  // Accessible
+  virtual mozilla::a11y::ENameValueFlag Name(nsString& aName);
+  virtual Accessible* FocusedChild();
   virtual nsresult GetAttributesInternal(nsIPersistentProperties *aAttributes);
   virtual PRInt32 IndexInParent() const;
   virtual Relation RelationByType(PRUint32 aType);
   virtual mozilla::a11y::role NativeRole();
   virtual PRUint64 NativeState();
+  virtual PRUint64 NativeInteractiveState() const;
 
   // ActionAccessible
   virtual PRUint8 ActionCount();
@@ -185,9 +162,9 @@ public:
   void CellInvalidated();
 
 protected:
-  // nsAccessible
-  virtual nsAccessible* GetSiblingAtOffset(PRInt32 aOffset,
-                                           nsresult *aError = nsnull) const;
+  // Accessible
+  virtual Accessible* GetSiblingAtOffset(PRInt32 aOffset,
+                                         nsresult *aError = nsnull) const;
   virtual void DispatchClickEvent(nsIContent *aContent, PRUint32 aActionIndex);
 
   // nsXULTreeGridCellAccessible
@@ -200,7 +177,7 @@ protected:
   enum { eAction_Click = 0 };
 
   nsCOMPtr<nsITreeBoxObject> mTree;
-  nsCOMPtr<nsITreeView> mTreeView;
+  nsITreeView* mTreeView;
 
   PRInt32 mRow;
   nsCOMPtr<nsITreeColumn> mColumn;
