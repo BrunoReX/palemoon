@@ -408,7 +408,8 @@ LayerManagerD3D10::CreateOptimalSurface(const gfxIntSize &aSize,
   CD3D10_TEXTURE2D_DESC desc(DXGI_FORMAT_B8G8R8A8_UNORM, aSize.width, aSize.height, 1, 1);
   desc.BindFlags = D3D10_BIND_RENDER_TARGET | D3D10_BIND_SHADER_RESOURCE;
 // Pale Moon: Stop using Misc. GDI resources to fix IGP issues.
-//  desc.MiscFlags = D3D10_RESOURCE_MISC_GDI_COMPATIBLE;
+// 15.1.1 Not needed for optimalsurface! Only for drawtarget.
+  desc.MiscFlags = D3D10_RESOURCE_MISC_GDI_COMPATIBLE;
   
   HRESULT hr = device()->CreateTexture2D(&desc, NULL, getter_AddRefs(texture));
 

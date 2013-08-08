@@ -48,168 +48,6 @@
 
 #define CAIRO_INT_STATUS_SUCCESS (cairo_int_status_t)CAIRO_STATUS_SUCCESS
 
-__forceinline
-GradientBrushCache::GradientBrushCache(cairo_d2d_surface_t* const _d2dsurf, const int Style)
-{
-    d2dsurf = _d2dsurf;
-
-    switch(Style) {
-    case Linear:
-        pCreateGradientBrush = &GradientBrushCache::CreateLinearGradientBrush;
-        pSetPropertiesGradientBrush = &GradientBrushCache::SetPropertiesLinearGradientBrush;
-        break;
-    case Radial:
-        pCreateGradientBrush = &GradientBrushCache::CreateRadialGradientBrush;
-        pSetPropertiesGradientBrush = &GradientBrushCache::SetPropertiesRadialGradientBrush;
-        break;
-    }
-
-    Cache = NULL;
-}
-
-__forceinline
-GradientBrushCache::~GradientBrushCache(void)
-{
-    if(Cache) {
-        for(_Cache* Idx = Cache; Idx < MaxCacheIdx; Idx++) {
-            if(Idx->Brush) {
-                delete[] Idx->GradientStops;
-            } else {
-                break;
-            }
-        }
-
-        delete[] Cache;
-    }
-}
-
-__forceinline TemporaryRef<ID2D1Brush>
-GradientBrushCache::Create(
-    void* const GradientBrushProperties,
-    const D2D1_BRUSH_PROPERTIES& BrushProperties,
-    const UINT StopCount,
-    D2D1_GRADIENT_STOP* const GradientStops)
-{
-    if(Cache == NULL) {
-        Cache = new _Cache[MaxCache];
-        CacheIdx = Cache;
-        MaxCacheIdx = Cache + MaxCache;
-    }
-
-    const size_t SizeGradientStops = StopCount * sizeof(D2D1_GRADIENT_STOP);
-
-    for(UINT Idx = 0; Idx < MaxCache; Idx++) {
-        _Cache* const Ptr = CacheIdx >= Cache + Idx ? CacheIdx - Idx : CacheIdx + MaxCache - Idx;
-
-        if(Ptr->Brush) {
-            if((Ptr->StopCount == StopCount) &&
-                (memcmp(Ptr->GradientStops, GradientStops, SizeGradientStops) == 0)) {
-                return (this->*pSetPropertiesGradientBrush)(Ptr, GradientBrushProperties, BrushProperties);
-            }
-        } else {
-            break;
-        }
-    }
-
-    RefPtr<ID2D1GradientStopCollection> GradientStopCollection;
-
-    d2dsurf->rt->CreateGradientStopCollection(
-        GradientStops,
-        StopCount,
-        &GradientStopCollection);
-
-    RefPtr<ID2D1Brush> Brush = (this->*pCreateGradientBrush)(
-        GradientBrushProperties,
-        BrushProperties,
-        GradientStopCollection);
-
-    if(CacheIdx->Brush) {
-        CacheIdx = ++CacheIdx < MaxCacheIdx ? CacheIdx : Cache;
-        if(CacheIdx->Brush) delete[] CacheIdx->GradientStops;
-    }
-
-    CacheIdx->Brush = Brush;
-    CacheIdx->StopCount = StopCount;
-    CacheIdx->GradientStops = new D2D1_GRADIENT_STOP[StopCount];
-    memcpy(CacheIdx->GradientStops, GradientStops, SizeGradientStops);
-
-    return Brush;
-}
-
-TemporaryRef<ID2D1Brush>
-GradientBrushCache::CreateLinearGradientBrush(
-    void* const GradientBrushProperties,
-    const D2D1_BRUSH_PROPERTIES& BrushProperties,
-    ID2D1GradientStopCollection* GradientStopCollection)
-{
-    RefPtr<ID2D1LinearGradientBrush> LinearGradientBrush;
-
-    d2dsurf->rt->CreateLinearGradientBrush(
-        *static_cast<D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES*>(GradientBrushProperties),
-        BrushProperties,
-        GradientStopCollection,
-        &LinearGradientBrush);
-
-    return LinearGradientBrush;
-}
-
-TemporaryRef<ID2D1Brush>
-GradientBrushCache::CreateRadialGradientBrush(
-    void* const GradientBrushProperties,
-    const D2D1_BRUSH_PROPERTIES& BrushProperties,
-    ID2D1GradientStopCollection* GradientStopCollection)
-{
-    RefPtr<ID2D1RadialGradientBrush> RadialGradientBrush;
-
-    d2dsurf->rt->CreateRadialGradientBrush(
-        *static_cast<D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES*>(GradientBrushProperties),
-        BrushProperties,
-        GradientStopCollection,
-        &RadialGradientBrush);
-
-    return RadialGradientBrush;
-}
-
-TemporaryRef<ID2D1Brush>
-GradientBrushCache::SetPropertiesLinearGradientBrush(
-    _Cache* const Ptr,
-    void* const GradientBrushProperties,
-    const D2D1_BRUSH_PROPERTIES& BrushProperties)
-{
-    RefPtr<ID2D1LinearGradientBrush> LinearGradientBrush = static_cast<ID2D1LinearGradientBrush*>(Ptr->Brush.get());
-    const D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES* const LinearGradientBrushProperties =
-        static_cast<D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES*>(GradientBrushProperties);
-
-    LinearGradientBrush->SetStartPoint(LinearGradientBrushProperties->startPoint);
-    LinearGradientBrush->SetEndPoint(LinearGradientBrushProperties->endPoint);
-
-    LinearGradientBrush->SetOpacity(BrushProperties.opacity);
-    LinearGradientBrush->SetTransform(BrushProperties.transform);
-
-    return LinearGradientBrush;
-}
-
-TemporaryRef<ID2D1Brush>
-GradientBrushCache::SetPropertiesRadialGradientBrush(
-    _Cache* const Ptr,
-    void* const GradientBrushProperties,
-    const D2D1_BRUSH_PROPERTIES& BrushProperties)
-{
-    RefPtr<ID2D1RadialGradientBrush> RadialGradientBrush = static_cast<ID2D1RadialGradientBrush*>(Ptr->Brush.get());
-    const D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES* const RadialGradientBrushProperties =
-        static_cast<D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES*>(GradientBrushProperties);
-
-    RadialGradientBrush->SetCenter(RadialGradientBrushProperties->center);
-    RadialGradientBrush->SetGradientOriginOffset(RadialGradientBrushProperties->gradientOriginOffset);
-    RadialGradientBrush->SetRadiusX(RadialGradientBrushProperties->radiusX);
-    RadialGradientBrush->SetRadiusY(RadialGradientBrushProperties->radiusY);
-
-    RadialGradientBrush->SetOpacity(BrushProperties.opacity);
-    RadialGradientBrush->SetTransform(BrushProperties.transform);
-
-    return RadialGradientBrush;
-}
-
 struct Vertex
 {
     float position[2];
@@ -1681,16 +1519,17 @@ _cairo_d2d_create_radial_gradient_brush(cairo_d2d_surface_t *d2dsurf,
 	return NULL;
     }
 
-    if(d2dsurf->RadialGradientBrushCache == NULL) {
-        d2dsurf->RadialGradientBrushCache = new GradientBrushCache(d2dsurf, GradientBrushCache::Radial);
-    }
+    RefPtr<ID2D1GradientStopCollection> stopCollection;
+    d2dsurf->rt->CreateGradientStopCollection(stops, num_stops, &stopCollection);
+    RefPtr<ID2D1RadialGradientBrush> brush;
 
-    RefPtr<ID2D1Brush> brush = d2dsurf->RadialGradientBrushCache->Create(
-        &D2D1::RadialGradientBrushProperties(center, origin, outer_radius, outer_radius),
-        brushProps,
-        num_stops,
-        stops);
-
+    d2dsurf->rt->CreateRadialGradientBrush(D2D1::RadialGradientBrushProperties(center,
+									       origin,
+									       outer_radius,
+									       outer_radius),
+					   brushProps,
+					   stopCollection,
+					   &brush);
     delete [] stops;
     return brush;
 }
@@ -1842,17 +1681,14 @@ _cairo_d2d_create_linear_gradient_brush(cairo_d2d_surface_t *d2dsurf,
 	stops[source_pattern->base.n_stops + 1].position = 1.0f;
 	stops[source_pattern->base.n_stops + 1].color = D2D1::ColorF(0, 0);
     }
-
-    if(d2dsurf->LinearGradientBrushCache == NULL) {
-        d2dsurf->LinearGradientBrushCache = new GradientBrushCache(d2dsurf, GradientBrushCache::Linear);
-    }
-
-    RefPtr<ID2D1Brush> brush = d2dsurf->LinearGradientBrushCache->Create(
-        &D2D1::LinearGradientBrushProperties(D2D1::Point2F((FLOAT)p1.x, (FLOAT)p1.y), D2D1::Point2F((FLOAT)p2.x, (FLOAT)p2.y)),
-        brushProps,
-        num_stops,
-        stops);
-
+    RefPtr<ID2D1GradientStopCollection> stopCollection;
+    d2dsurf->rt->CreateGradientStopCollection(stops, num_stops, &stopCollection);
+    RefPtr<ID2D1LinearGradientBrush> brush;
+    d2dsurf->rt->CreateLinearGradientBrush(D2D1::LinearGradientBrushProperties(D2D1::Point2F((FLOAT)p1.x, (FLOAT)p1.y),
+									       D2D1::Point2F((FLOAT)p2.x, (FLOAT)p2.y)),
+					   brushProps,
+					   stopCollection,
+					   &brush);
     delete [] stops;
     return brush;
 }
@@ -2527,9 +2363,6 @@ _cairo_d2d_surface_init(cairo_d2d_surface_t *newSurf, cairo_d2d_device_t *d2d_de
     
 _cairo_d2d_surface::~_cairo_d2d_surface()
 {
-    if(RadialGradientBrushCache) delete RadialGradientBrushCache;
-    if(LinearGradientBrushCache) delete LinearGradientBrushCache;
-
     _cairo_d2d_surface_entry *entry, *next;
     cairo_list_foreach_entry_safe(entry, next, _cairo_d2d_surface_entry, &dependent_surfaces, link) {
 	// We do not need to flush, the contents of our texture has not changed,
