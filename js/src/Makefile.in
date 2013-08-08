@@ -678,8 +678,8 @@ CXXFLAGS += -fp:precise
 
 ifeq ($(CPU_ARCH),x86)
 # Workaround compiler bug on PGO (Bug 721284)
-MonoIC.$(OBJ_SUFFIX): CXXFLAGS += -GL-
-Compiler.$(OBJ_SUFFIX): CXXFLAGS += -GL-
+# MonoIC.$(OBJ_SUFFIX): CXXFLAGS += -GL-
+# Compiler.$(OBJ_SUFFIX): CXXFLAGS += -GL-
 endif
 endif # _MSC_VER
 
@@ -878,4 +878,4 @@ endif
 # END kludges for the Nitro assembler
 ###############################################
 
-CXXFLAGS := $(CXXFLAGS:arch:SSE2=arch:SSE)
+# CXXFLAGS := $(CXXFLAGS:arch:SSE2=arch:SSE)

@@ -40,6 +40,9 @@ pref("extensions.getMoreThemesURL", "https://addons.mozilla.org/%LOCALE%/firefox
 pref("extensions.blocklist.url", "https://addons.mozilla.org/blocklist/3/firefox/%APP_VERSION%/%PRODUCT%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/");
 pref("extensions.webservice.discoverURL","https://services.addons.mozilla.org/%LOCALE%/firefox/discovery/pane/%VERSION%/%OS%");
 pref("extensions.getAddons.get.url","https://services.addons.mozilla.org/%LOCALE%/firefox/api/%API_VERSION%/search/guid:%IDS%?src=firefox&appOS=%OS%&appVersion=%VERSION%&tMain=%TIME_MAIN%&tFirstPaint=%TIME_FIRST_PAINT%&tSessionRestored=%TIME_SESSION_RESTORED%");
+//Add-on updates: hard-code base Firefox version number.
+pref("extensions.update.background.url","https://versioncheck-bg.addons.mozilla.org/update/VersionCheck.php?reqVersion=%REQ_VERSION%&id=%ITEM_ID%&version=%ITEM_VERSION%&maxAppVersion=%ITEM_MAXAPPVERSION%&status=%ITEM_STATUS%&appID=%APP_ID%&appVersion=15.0&appOS=%APP_OS%&appABI=%APP_ABI%&locale=%APP_LOCALE%&currentAppVersion=%CURRENT_APP_VERSION%&updateType=%UPDATE_TYPE%&compatMode=%COMPATIBILITY_MODE%");
+pref("extensions.update.url","https://versioncheck.addons.mozilla.org/update/VersionCheck.php?reqVersion=%REQ_VERSION%&id=%ITEM_ID%&version=%ITEM_VERSION%&maxAppVersion=%ITEM_MAXAPPVERSION%&status=%ITEM_STATUS%&appID=%APP_ID%&appVersion=15.0&appOS=%APP_OS%&appABI=%APP_ABI%&locale=%APP_LOCALE%&currentAppVersion=%CURRENT_APP_VERSION%&updateType=%UPDATE_TYPE%&compatMode=%COMPATIBILITY_MODE%");
 //Search engine fixes
 pref("browser.search.searchEnginesURL", "https://addons.mozilla.org/%LOCALE%/firefox/search-engines/");
 //Safebrowsing URL fixes
@@ -85,6 +88,8 @@ pref("gfx.direct2d.force-enabled", false); //D2D force may cause issues for poor
 // JIT the chrome!
 pref("javascript.options.jitprofiling.chrome", true);
 pref("javascript.options.methodjit.chrome", true);
+// Azure for content (off for now, performance hit)
+// pref("gfx.content.azure.enabled",true);
 
 // ****************** UI config ******************
 
@@ -157,6 +162,9 @@ pref("image.mem.max_decoded_image_kb", 256000);
 pref("javascript.options.mem.gc_per_compartment", false);
 pref("javascript.options.mem.high_water_mark", 64);
 pref("javascript.options.mem.max", 100000);
+//add IGC and adjust time slice
+pref("javascript.options.mem.gc_incremental",true);
+pref("javascript.options.mem.gc_incremental_slice_ms",25);
 
 //DOM
 pref("dom.disable_window_status_change", false); //Allow status feedback by default
