@@ -1,0 +1,101 @@
+***************
+*** 1108,1134 ****
+              return pending_result;
+          }
+      }
+      return NS_ERROR_FAILURE;
+  }
+  
+  NS_IMETHODIMP
+  nsXPCWrappedJSClass::CallMethod(nsXPCWrappedJS* wrapper, uint16_t methodIndex,
+-                                 const XPTMethodDescriptor* info,
+                                  nsXPTCMiniVariant* nativeParams)
+  {
+      jsval* sp = nullptr;
+      jsval* argv = nullptr;
+      uint8_t i;
+      nsresult retval = NS_ERROR_FAILURE;
+      nsresult pending_result = NS_OK;
+      JSBool success;
+      JSBool readyToDoTheCall = false;
+      nsID  param_iid;
+      const char* name = info->name;
+      jsval fval;
+      JSBool foundDependentParam;
+  
+      // Make sure not to set the callee on ccx until after we've gone through
+      // the whole nsIXPCFunctionThisTranslator bit.  That code uses ccx to
+      // convert natives to JSObjects, but we do NOT plan to pass those JSObjects
+      // to our real callee.
+--- 1108,1135 ----
+              return pending_result;
+          }
+      }
+      return NS_ERROR_FAILURE;
+  }
+  
+  NS_IMETHODIMP
+  nsXPCWrappedJSClass::CallMethod(nsXPCWrappedJS* wrapper, uint16_t methodIndex,
++                                 const XPTMethodDescriptor* info_,
+                                  nsXPTCMiniVariant* nativeParams)
+  {
+      jsval* sp = nullptr;
+      jsval* argv = nullptr;
+      uint8_t i;
+      nsresult retval = NS_ERROR_FAILURE;
+      nsresult pending_result = NS_OK;
+      JSBool success;
+      JSBool readyToDoTheCall = false;
+      nsID  param_iid;
++     const nsXPTMethodInfo* info = static_cast<const nsXPTMethodInfo*>(info_);
+      const char* name = info->name;
+      jsval fval;
+      JSBool foundDependentParam;
+  
+      // Make sure not to set the callee on ccx until after we've gone through
+      // the whole nsIXPCFunctionThisTranslator bit.  That code uses ccx to
+      // convert natives to JSObjects, but we do NOT plan to pass those JSObjects
+      // to our real callee.
+***************
+*** 1138,1153 ****
+          return retval;
+  
+      XPCContext *xpcc = ccx.GetXPCContext();
+      JSContext *cx = xpc_UnmarkGrayContext(ccx.GetJSContext());
+  
+      if (!cx || !xpcc || !IsReflectable(methodIndex))
+          return NS_ERROR_FAILURE;
+  
+      JSObject *obj = wrapper->GetJSObject();
+      JSObject *thisObj = obj;
+  
+      JSAutoCompartment ac(cx, obj);
+      ccx.SetScopeForNewJSObjects(obj);
+  
+      JS::AutoValueVector args(cx);
+      AutoScriptEvaluate scriptEval(cx);
+--- 1139,1162 ----
+          return retval;
+  
+      XPCContext *xpcc = ccx.GetXPCContext();
+      JSContext *cx = xpc_UnmarkGrayContext(ccx.GetJSContext());
+  
+      if (!cx || !xpcc || !IsReflectable(methodIndex))
+          return NS_ERROR_FAILURE;
+  
++     // [implicit_jscontext] and [optional_argc] have a different calling
++     // convention, which we don't support for JS-implemented components.
++     if (info->WantsOptArgc() || info->WantsContext()) {
++         JS_ReportError(cx, "IDL methods marked with [implicit_jscontext] "
++                            "or [optional_argc] may not be implemented in JS");
++         return NS_ERROR_FAILURE;
++     }
++ 
+      JSObject *obj = wrapper->GetJSObject();
+      JSObject *thisObj = obj;
+  
+      JSAutoCompartment ac(cx, obj);
+      ccx.SetScopeForNewJSObjects(obj);
+  
+      JS::AutoValueVector args(cx);
+      AutoScriptEvaluate scriptEval(cx);

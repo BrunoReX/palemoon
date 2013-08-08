@@ -1,0 +1,78 @@
+***************
+*** 117,133 ****
+    NS_IMETHOD_(nsISelectionController*) GetSelectionController();
+    NS_IMETHOD_(nsFrameSelection*) GetConstFrameSelection();
+    NS_IMETHOD BindToFrame(nsTextControlFrame* aFrame);
+    NS_IMETHOD_(void) UnbindFromFrame(nsTextControlFrame* aFrame);
+    NS_IMETHOD CreateEditor();
+    NS_IMETHOD_(nsIContent*) GetRootEditorNode();
+    NS_IMETHOD_(nsIContent*) CreatePlaceholderNode();
+    NS_IMETHOD_(nsIContent*) GetPlaceholderNode();
+-   NS_IMETHOD_(void) SetPlaceholderVisibility(bool aVisible, bool aNotify);
+    NS_IMETHOD_(bool) GetPlaceholderVisibility();
+    NS_IMETHOD_(void) InitializeKeyboardEventListeners();
+    NS_IMETHOD_(void) OnValueChanged(bool aNotify);
+    NS_IMETHOD_(bool) HasCachedSelection();
+  
+    // nsIContent
+    virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
+                                 nsIContent* aBindingParent,
+--- 117,133 ----
+    NS_IMETHOD_(nsISelectionController*) GetSelectionController();
+    NS_IMETHOD_(nsFrameSelection*) GetConstFrameSelection();
+    NS_IMETHOD BindToFrame(nsTextControlFrame* aFrame);
+    NS_IMETHOD_(void) UnbindFromFrame(nsTextControlFrame* aFrame);
+    NS_IMETHOD CreateEditor();
+    NS_IMETHOD_(nsIContent*) GetRootEditorNode();
+    NS_IMETHOD_(nsIContent*) CreatePlaceholderNode();
+    NS_IMETHOD_(nsIContent*) GetPlaceholderNode();
++   NS_IMETHOD_(void) UpdatePlaceholderVisibility(bool aNotify);
+    NS_IMETHOD_(bool) GetPlaceholderVisibility();
+    NS_IMETHOD_(void) InitializeKeyboardEventListeners();
+    NS_IMETHOD_(void) OnValueChanged(bool aNotify);
+    NS_IMETHOD_(bool) HasCachedSelection();
+  
+    // nsIContent
+    virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
+                                 nsIContent* aBindingParent,
+***************
+*** 509,527 ****
+  
+  NS_IMETHODIMP_(nsIContent*)
+  nsHTMLTextAreaElement::GetPlaceholderNode()
+  {
+    return mState.GetPlaceholderNode();
+  }
+  
+  NS_IMETHODIMP_(void)
+- nsHTMLTextAreaElement::SetPlaceholderVisibility(bool aVisible, bool aNotify)
+  {
+-   mState.SetPlaceholderVisibility(aVisible, aNotify);
+  }
+  
+  NS_IMETHODIMP_(bool)
+  nsHTMLTextAreaElement::GetPlaceholderVisibility()
+  {
+    return mState.GetPlaceholderVisibility();
+  }
+  
+--- 509,527 ----
+  
+  NS_IMETHODIMP_(nsIContent*)
+  nsHTMLTextAreaElement::GetPlaceholderNode()
+  {
+    return mState.GetPlaceholderNode();
+  }
+  
+  NS_IMETHODIMP_(void)
++ nsHTMLTextAreaElement::UpdatePlaceholderVisibility(bool aNotify)
+  {
++   mState.UpdatePlaceholderVisibility(aNotify);
+  }
+  
+  NS_IMETHODIMP_(bool)
+  nsHTMLTextAreaElement::GetPlaceholderVisibility()
+  {
+    return mState.GetPlaceholderVisibility();
+  }
+  

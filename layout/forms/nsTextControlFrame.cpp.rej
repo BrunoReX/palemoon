@@ -1,0 +1,79 @@
+***************
+*** 1308,1328 ****
+  
+  void
+  nsTextControlFrame::SetValueChanged(bool aValueChanged)
+  {
+    nsCOMPtr<nsITextControlElement> txtCtrl = do_QueryInterface(GetContent());
+    NS_ASSERTION(txtCtrl, "Content not a text control element");
+  
+    if (mUsePlaceholder) {
+-     int32_t textLength;
+-     GetTextLength(&textLength);
+- 
+      nsWeakFrame weakFrame(this);
+-     txtCtrl->SetPlaceholderVisibility(!textLength, true);
+      if (!weakFrame.IsAlive()) {
+        return;
+      }
+    }
+  
+    txtCtrl->SetValueChanged(aValueChanged);
+  }
+  
+--- 1308,1325 ----
+  
+  void
+  nsTextControlFrame::SetValueChanged(bool aValueChanged)
+  {
+    nsCOMPtr<nsITextControlElement> txtCtrl = do_QueryInterface(GetContent());
+    NS_ASSERTION(txtCtrl, "Content not a text control element");
+  
+    if (mUsePlaceholder) {
+      nsWeakFrame weakFrame(this);
++     txtCtrl->UpdatePlaceholderVisibility(true);
+      if (!weakFrame.IsAlive()) {
+        return;
+      }
+    }
+  
+    txtCtrl->SetValueChanged(aValueChanged);
+  }
+  
+***************
+*** 1370,1386 ****
+    }
+  
+    // Update the display of the placeholder value if needed.
+    // We don't need to do this if we're about to initialize the
+    // editor, since EnsureEditorInitialized takes care of this.
+    if (mUsePlaceholder && !aBeforeEditorInit)
+    {
+      nsWeakFrame weakFrame(this);
+-     txtCtrl->SetPlaceholderVisibility(value.IsEmpty(), aNotify);
+      NS_ENSURE_STATE(weakFrame.IsAlive());
+    }
+  
+    if (aBeforeEditorInit && value.IsEmpty()) {
+      rootNode->RemoveChildAt(0, true);
+      return NS_OK;
+    }
+  
+--- 1367,1383 ----
+    }
+  
+    // Update the display of the placeholder value if needed.
+    // We don't need to do this if we're about to initialize the
+    // editor, since EnsureEditorInitialized takes care of this.
+    if (mUsePlaceholder && !aBeforeEditorInit)
+    {
+      nsWeakFrame weakFrame(this);
++     txtCtrl->UpdatePlaceholderVisibility(aNotify);
+      NS_ENSURE_STATE(weakFrame.IsAlive());
+    }
+  
+    if (aBeforeEditorInit && value.IsEmpty()) {
+      rootNode->RemoveChildAt(0, true);
+      return NS_OK;
+    }
+  

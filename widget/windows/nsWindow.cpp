@@ -1348,9 +1348,13 @@ NS_METHOD nsWindow::Resize(PRInt32 aWidth, PRInt32 aHeight, bool aRepaint)
   NS_ASSERTION((aHeight >=0 ), "Negative height passed to nsWindow::Resize");
 
   // Avoid unnecessary resizing calls
-  if (mBounds.width == aWidth && mBounds.height == aHeight && !aRepaint)
+  if (mBounds.width == aWidth && mBounds.height == aHeight) {
+    if (aRepaint) {
+      Invalidate();
+    }
     return NS_OK;
-
+  } 
+  
 #ifdef MOZ_XUL
   if (eTransparencyTransparent == mTransparencyMode)
     ResizeTranslucentWindow(aWidth, aHeight);
@@ -1386,8 +1390,12 @@ NS_METHOD nsWindow::Resize(PRInt32 aX, PRInt32 aY, PRInt32 aWidth, PRInt32 aHeig
 
   // Avoid unnecessary resizing calls
   if (mBounds.x == aX && mBounds.y == aY &&
-      mBounds.width == aWidth && mBounds.height == aHeight && !aRepaint)
+      mBounds.width == aWidth && mBounds.height == aHeight) {
+    if (aRepaint) {
+      Invalidate();
+    }
     return NS_OK;
+  } 
 
 #ifdef MOZ_XUL
   if (eTransparencyTransparent == mTransparencyMode)

@@ -23,7 +23,6 @@ public:
   virtual BackendType GetBackendType() const { return BACKEND_DIRECT2D; }
 
 private:
-  friend class GradientTextureCacheD2D;
   friend class DrawTargetD2D;
 
   mutable RefPtr<ID2D1GradientStopCollection> mStopCollection;

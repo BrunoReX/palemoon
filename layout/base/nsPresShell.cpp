@@ -39,6 +39,7 @@
 #include "nsIServiceManager.h"
 #include "nsFrame.h"
 #include "nsViewManager.h"
+// #include "FrameLayerBuilder.h" 
 #include "nsView.h"
 #include "nsCRTGlue.h"
 #include "prlog.h"
@@ -1963,6 +1964,13 @@ PresShell::NotifyDestroyingFrame(nsIFrame* aFrame)
     }
   
     mFramesToDirty.RemoveEntry(aFrame);
+  } else {
+   // We must delete this property in situ so that its destructor removes the
+   // frame from FrameLayerBuilder::DisplayItemData::mFrameList -- otherwise
+   // the DisplayItemData destructor will use the destroyed frame when it
+   // tries to remove it from the (array) value of this property.
+//   mPresContext->PropertyTable()->
+//     Delete(aFrame, FrameLayerBuilder::LayerManagerDataProperty()); 
   }
 }
 

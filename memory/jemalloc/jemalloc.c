@@ -144,7 +144,7 @@
  * use of concurrent allocation, so the increased fragmentation associated with
  * multiple arenas is not warranted.
  */
-#define	MOZ_MEMORY_NARENAS_DEFAULT_ONE
+#define	MOZ_MEMORY_NARENAS_DEFAULT_ONE  /* PM */
 
 /*
  * MALLOC_STATS enables statistics calculation, and is required for
@@ -197,14 +197,14 @@
  * re-balances arena load if exponentially averaged contention exceeds a
  * certain threshold.
  */
-/* #define	MALLOC_BALANCE */
+/* #define	MALLOC_BALANCE /* PM */
 
 /*
  * MALLOC_PAGEFILE causes all mmap()ed memory to be backed by temporary
  * files, so that if a chunk is mapped, it is guaranteed to be swappable.
  * This avoids asynchronous OOM failures that are due to VM over-commit.
  */
-/* #define MALLOC_PAGEFILE */
+/* #define MALLOC_PAGEFILE /* PM */
 
 #ifdef MALLOC_PAGEFILE
 /* Write size when initializing a page file. */

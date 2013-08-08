@@ -1,0 +1,83 @@
+***************
+*** 400,419 ****
+  #endif
+  #ifdef MOZ_WEBM
+    { VIDEO_WEBM, "webm" },
+    { AUDIO_WEBM, "webm" },
+  #endif
+  #ifdef MOZ_DASH
+    { APPLICATION_DASH, "mpd" },
+  #endif
+- #if defined(MOZ_GSTREAMER) || defined(MOZ_WMF)
+    { VIDEO_MP4, "mp4" },
+-   { AUDIO_MP4, "m4a" },
+-   { AUDIO_MP4, "mp3" },
+  #endif
+  #ifdef MOZ_RAW
+    { VIDEO_RAW, "yuv" }
+  #endif
+  };
+  
+  /**
+   * This is a small private struct used to help us initialize some
+--- 400,417 ----
+  #endif
+  #ifdef MOZ_WEBM
+    { VIDEO_WEBM, "webm" },
+    { AUDIO_WEBM, "webm" },
+  #endif
+  #ifdef MOZ_DASH
+    { APPLICATION_DASH, "mpd" },
+  #endif
++ #ifdef MOZ_GSTREAMER
+    { VIDEO_MP4, "mp4" },
+  #endif
+  #ifdef MOZ_RAW
+    { VIDEO_RAW, "yuv" }
+  #endif
+  };
+  
+  /**
+   * This is a small private struct used to help us initialize some
+***************
+*** 479,497 ****
+    { APPLICATION_OGG, "ogg", "Ogg Video"},
+    { AUDIO_OGG, "oga", "Ogg Audio" },
+    { AUDIO_OGG, "opus", "Opus Audio" },
+    { VIDEO_WEBM, "webm", "Web Media Video" },
+    { AUDIO_WEBM, "webm", "Web Media Audio" },
+  #ifdef MOZ_DASH
+    { APPLICATION_DASH, "mpd", "DASH Media Presentation Description" },
+  #endif
+    { AUDIO_MP3, "mp3", "MPEG Audio" },
+    { VIDEO_MP4, "mp4", "MPEG-4 Video" },
+-   { AUDIO_MP4, "m4a", "MPEG-4 Audio" },
+    { VIDEO_RAW, "yuv", "Raw YUV Video" },
+    { AUDIO_WAV, "wav", "Waveform Audio" },
+    { VIDEO_3GPP, "3gpp,3gp", "3GPP Video" }
+  };
+  
+  #undef MAC_TYPE
+  
+  /**
+--- 477,496 ----
+    { APPLICATION_OGG, "ogg", "Ogg Video"},
+    { AUDIO_OGG, "oga", "Ogg Audio" },
+    { AUDIO_OGG, "opus", "Opus Audio" },
+    { VIDEO_WEBM, "webm", "Web Media Video" },
+    { AUDIO_WEBM, "webm", "Web Media Audio" },
+  #ifdef MOZ_DASH
+    { APPLICATION_DASH, "mpd", "DASH Media Presentation Description" },
+  #endif
++ #if defined(MOZ_MEDIA_PLUGINS) || defined(MOZ_WIDGET_GONK)
+    { AUDIO_MP3, "mp3", "MPEG Audio" },
++ #endif
+    { VIDEO_MP4, "mp4", "MPEG-4 Video" },
+    { VIDEO_RAW, "yuv", "Raw YUV Video" },
+    { AUDIO_WAV, "wav", "Waveform Audio" },
+    { VIDEO_3GPP, "3gpp,3gp", "3GPP Video" }
+  };
+  
+  #undef MAC_TYPE
+  
+  /**

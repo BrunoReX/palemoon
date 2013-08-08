@@ -1,0 +1,38 @@
+***************
+*** 1492,1507 ****
+  
+  /**
+    * =================== Caret & Selection ======================
+    */
+  
+  nsresult
+  HyperTextAccessible::SetSelectionRange(int32_t aStartPos, int32_t aEndPos)
+  {
+    bool isFocusable = InteractiveState() & states::FOCUSABLE;
+  
+    // If accessible is focusable then focus it before setting the selection to
+    // neglect control's selection changes on focus if any (for example, inputs
+    // that do select all on focus).
+    // some input controls
+    if (isFocusable)
+      TakeFocus();
+--- 1492,1510 ----
+  
+  /**
+    * =================== Caret & Selection ======================
+    */
+  
+  nsresult
+  HyperTextAccessible::SetSelectionRange(int32_t aStartPos, int32_t aEndPos)
+  {
++   // ensure editor is initialized if necessary
++   nsCOMPtr<nsIEditor> editor = GetEditor();
++ 
+    bool isFocusable = InteractiveState() & states::FOCUSABLE;
+  
+    // If accessible is focusable then focus it before setting the selection to
+    // neglect control's selection changes on focus if any (for example, inputs
+    // that do select all on focus).
+    // some input controls
+    if (isFocusable)
+      TakeFocus();

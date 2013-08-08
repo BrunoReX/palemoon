@@ -1,0 +1,37 @@
+***************
+*** 169,185 ****
+    int32_t GetWrapCols() {
+      return mTextCtrlElement->GetWrapCols();
+    }
+    int32_t GetRows() {
+      return mTextCtrlElement->GetRows();
+    }
+  
+    // placeholder methods
+-   void SetPlaceholderVisibility(bool aVisible, bool aNotify);
+    bool GetPlaceholderVisibility() {
+      return mPlaceholderVisibility;
+    }
+    void UpdatePlaceholderText(bool aNotify); 
+  
+    /**
+     * Get the maxlength attribute
+     * @param aMaxLength the value of the max length attr
+--- 169,185 ----
+    int32_t GetWrapCols() {
+      return mTextCtrlElement->GetWrapCols();
+    }
+    int32_t GetRows() {
+      return mTextCtrlElement->GetRows();
+    }
+  
+    // placeholder methods
++   void UpdatePlaceholderVisibility(bool aNotify);
+    bool GetPlaceholderVisibility() {
+      return mPlaceholderVisibility;
+    }
+    void UpdatePlaceholderText(bool aNotify); 
+  
+    /**
+     * Get the maxlength attribute
+     * @param aMaxLength the value of the max length attr

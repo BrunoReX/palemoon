@@ -1,0 +1,134 @@
+***************
+*** 97,115 ****
+  #include "MediaPluginDecoder.h"
+  #endif
+  #ifdef MOZ_WIDGET_GONK
+  #include "MediaOmxDecoder.h"
+  #endif
+  #ifdef MOZ_DASH
+  #include "DASHDecoder.h"
+  #endif
+- #ifdef MOZ_WMF
+- #include "WMFDecoder.h"
+- #endif
+  
+  #ifdef PR_LOGGING
+  static PRLogModuleInfo* gMediaElementLog;
+  static PRLogModuleInfo* gMediaElementEventsLog;
+  #define LOG(type, msg) PR_LOG(gMediaElementLog, type, msg)
+  #define LOG_EVENT(type, msg) PR_LOG(gMediaElementEventsLog, type, msg)
+  #else
+  #define LOG(type, msg)
+--- 97,112 ----
+  #include "MediaPluginDecoder.h"
+  #endif
+  #ifdef MOZ_WIDGET_GONK
+  #include "MediaOmxDecoder.h"
+  #endif
+  #ifdef MOZ_DASH
+  #include "DASHDecoder.h"
+  #endif
+  
+  #ifdef PR_LOGGING
+  static PRLogModuleInfo* gMediaElementLog;
+  static PRLogModuleInfo* gMediaElementEventsLog;
+  #define LOG(type, msg) PR_LOG(gMediaElementLog, type, msg)
+  #define LOG_EVENT(type, msg) PR_LOG(gMediaElementEventsLog, type, msg)
+  #else
+  #define LOG(type, msg)
+***************
+*** 2161,2176 ****
+    // bundled decoders, unless the "media.prefer-gstreamer" pref is set.
+    if (DecoderTraits::IsGStreamerSupportedType(aType)) {
+      nsRefPtr<GStreamerDecoder> decoder = new GStreamerDecoder();
+      if (decoder->Init(this)) {
+        return decoder.forget();
+      }
+    }
+  #endif
+  #ifdef MOZ_RAW
+    if (DecoderTraits::IsRawType(aType)) {
+      nsRefPtr<RawDecoder> decoder = new RawDecoder();
+      if (decoder->Init(this)) {
+        return decoder.forget();
+      }
+    }
+  #endif
+--- 2158,2174 ----
+    // bundled decoders, unless the "media.prefer-gstreamer" pref is set.
+    if (DecoderTraits::IsGStreamerSupportedType(aType)) {
+      nsRefPtr<GStreamerDecoder> decoder = new GStreamerDecoder();
+      if (decoder->Init(this)) {
+        return decoder.forget();
+      }
+    }
+  #endif
++ 
+  #ifdef MOZ_RAW
+    if (DecoderTraits::IsRawType(aType)) {
+      nsRefPtr<RawDecoder> decoder = new RawDecoder();
+      if (decoder->Init(this)) {
+        return decoder.forget();
+      }
+    }
+  #endif
+***************
+*** 2209,2240 ****
+  #ifdef MOZ_WEBM
+    if (DecoderTraits::IsWebMType(aType)) {
+      nsRefPtr<WebMDecoder> decoder = new WebMDecoder();
+      if (decoder->Init(this)) {
+        return decoder.forget();
+      }
+    }
+  #endif
+  #ifdef MOZ_DASH
+    if (DecoderTraits::IsDASHMPDType(aType)) {
+      nsRefPtr<DASHDecoder> decoder = new DASHDecoder();
+      if (decoder->Init(this)) {
+        return decoder.forget();
+      }
+    }
+  #endif
+- #ifdef MOZ_WMF
+-   if (DecoderTraits::IsWMFSupportedType(aType)) {
+-     nsRefPtr<WMFDecoder> decoder = new WMFDecoder();
+-     if (decoder->Init(this)) {
+-       return decoder.forget();
+-     }
+-   }
+- #endif
+  
+    return nullptr;
+  }
+  
+  nsresult nsHTMLMediaElement::InitializeDecoderAsClone(MediaDecoder* aOriginal)
+  {
+    NS_ASSERTION(mLoadingSrc, "mLoadingSrc must already be set");
+    NS_ASSERTION(mDecoder == nullptr, "Shouldn't have a decoder");
+--- 2207,2231 ----
+  #ifdef MOZ_WEBM
+    if (DecoderTraits::IsWebMType(aType)) {
+      nsRefPtr<WebMDecoder> decoder = new WebMDecoder();
+      if (decoder->Init(this)) {
+        return decoder.forget();
+      }
+    }
+  #endif
++ 
+  #ifdef MOZ_DASH
+    if (DecoderTraits::IsDASHMPDType(aType)) {
+      nsRefPtr<DASHDecoder> decoder = new DASHDecoder();
+      if (decoder->Init(this)) {
+        return decoder.forget();
+      }
+    }
+  #endif
+  
+    return nullptr;
+  }
+  
+  nsresult nsHTMLMediaElement::InitializeDecoderAsClone(MediaDecoder* aOriginal)
+  {
+    NS_ASSERTION(mLoadingSrc, "mLoadingSrc must already be set");
+    NS_ASSERTION(mDecoder == nullptr, "Shouldn't have a decoder");

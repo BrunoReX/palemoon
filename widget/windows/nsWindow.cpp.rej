@@ -1,0 +1,86 @@
+***************
+*** 1364,1381 ****
+  // Resize this component
+  NS_METHOD nsWindow::Resize(int32_t aWidth, int32_t aHeight, bool aRepaint)
+  {
+    NS_ASSERTION((aWidth >=0 ) , "Negative width passed to nsWindow::Resize");
+    NS_ASSERTION((aHeight >=0 ), "Negative height passed to nsWindow::Resize");
+    ConstrainSize(&aWidth, &aHeight);
+  
+    // Avoid unnecessary resizing calls
+-   if (mBounds.width == aWidth && mBounds.height == aHeight && !aRepaint)
+      return NS_OK;
+  
+  #ifdef MOZ_XUL
+    if (eTransparencyTransparent == mTransparencyMode)
+      ResizeTranslucentWindow(aWidth, aHeight);
+  #endif
+  
+    // Set cached value for lightweight and printing
+    mBounds.width  = aWidth;
+--- 1364,1385 ----
+  // Resize this component
+  NS_METHOD nsWindow::Resize(int32_t aWidth, int32_t aHeight, bool aRepaint)
+  {
+    NS_ASSERTION((aWidth >=0 ) , "Negative width passed to nsWindow::Resize");
+    NS_ASSERTION((aHeight >=0 ), "Negative height passed to nsWindow::Resize");
+    ConstrainSize(&aWidth, &aHeight);
+  
+    // Avoid unnecessary resizing calls
++   if (mBounds.width == aWidth && mBounds.height == aHeight) {
++     if (aRepaint) {
++       Invalidate();
++     }
+      return NS_OK;
++   }
+  
+  #ifdef MOZ_XUL
+    if (eTransparencyTransparent == mTransparencyMode)
+      ResizeTranslucentWindow(aWidth, aHeight);
+  #endif
+  
+    // Set cached value for lightweight and printing
+    mBounds.width  = aWidth;
+***************
+*** 1404,1421 ****
+  NS_METHOD nsWindow::Resize(int32_t aX, int32_t aY, int32_t aWidth, int32_t aHeight, bool aRepaint)
+  {
+    NS_ASSERTION((aWidth >=0 ),  "Negative width passed to nsWindow::Resize");
+    NS_ASSERTION((aHeight >=0 ), "Negative height passed to nsWindow::Resize");
+    ConstrainSize(&aWidth, &aHeight);
+  
+    // Avoid unnecessary resizing calls
+    if (mBounds.x == aX && mBounds.y == aY &&
+-       mBounds.width == aWidth && mBounds.height == aHeight && !aRepaint)
+      return NS_OK;
+  
+  #ifdef MOZ_XUL
+    if (eTransparencyTransparent == mTransparencyMode)
+      ResizeTranslucentWindow(aWidth, aHeight);
+  #endif
+  
+    // Set cached value for lightweight and printing
+    mBounds.x      = aX;
+--- 1408,1429 ----
+  NS_METHOD nsWindow::Resize(int32_t aX, int32_t aY, int32_t aWidth, int32_t aHeight, bool aRepaint)
+  {
+    NS_ASSERTION((aWidth >=0 ),  "Negative width passed to nsWindow::Resize");
+    NS_ASSERTION((aHeight >=0 ), "Negative height passed to nsWindow::Resize");
+    ConstrainSize(&aWidth, &aHeight);
+  
+    // Avoid unnecessary resizing calls
+    if (mBounds.x == aX && mBounds.y == aY &&
++       mBounds.width == aWidth && mBounds.height == aHeight) {
++     if (aRepaint) {
++       Invalidate();
++     }
+      return NS_OK;
++   }
+  
+  #ifdef MOZ_XUL
+    if (eTransparencyTransparent == mTransparencyMode)
+      ResizeTranslucentWindow(aWidth, aHeight);
+  #endif
+  
+    // Set cached value for lightweight and printing
+    mBounds.x      = aX;

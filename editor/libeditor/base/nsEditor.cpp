@@ -3399,7 +3399,7 @@ nsEditor::FindNode(nsINode *aCurrentNode,
     return nsnull;
   }
 
-  nsIContent* candidate =
+  nsCOMPtr<nsIContent> candidate =
     FindNextLeafNode(aCurrentNode, aGoForward, bNoBlockCrossing);
   
   if (!candidate) {

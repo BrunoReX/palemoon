@@ -131,6 +131,10 @@ LOCAL_INCLUDES = -I$(srcdir)
 ifdef _MSC_VER
 ifeq ($(CPU_ARCH),x86)
 # Workaround compiler bug on PGO (Bug 804205)
-huffdec.$(OBJ_SUFFIX): CFLAGS += -GL-
+# huffdec.$(OBJ_SUFFIX): CFLAGS += -GL-
+CFLAGS += -GL-
 endif
 endif # _MSC_VER 
+
+
+

@@ -159,9 +159,11 @@ pref("browser.cache.memory.max_entry_size",-1);
 pref("image.mem.max_decoded_image_kb", 256000);
 
 //Improve memory handling for js
-pref("javascript.options.mem.gc_per_compartment", false);
+pref("javascript.options.mem.gc_per_compartment", true);
 pref("javascript.options.mem.high_water_mark", 64);
-pref("javascript.options.mem.max", 100000);
+pref("javascript.options.mem.max", -1);
+pref("javascript.options.gc_on_memory_pressure", true);
+pref("javascript.options.mem.disable_explicit_compartment_gc", true);
 //add IGC and adjust time slice
 pref("javascript.options.mem.gc_incremental",true);
 pref("javascript.options.mem.gc_incremental_slice_ms",25);

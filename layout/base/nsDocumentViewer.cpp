@@ -4307,6 +4307,13 @@ DocumentViewerImpl::GetIsTabModalPromptAllowed(bool *aAllowed)
   return NS_OK;
 }
 
+NS_IMETHODIMP
+DocumentViewerImpl::GetIsHidden(bool *aHidden)
+{
+  *aHidden = mHidden;
+  return NS_OK;
+}
+
 void
 DocumentViewerImpl::DestroyPresShell()
 {

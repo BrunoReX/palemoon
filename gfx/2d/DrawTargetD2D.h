@@ -25,159 +25,20 @@ struct IDWriteFactory;
 namespace mozilla {
 namespace gfx {
 
-class DrawTargetD2D;
 class SourceSurfaceD2DTarget;
 class SourceSurfaceD2D;
 class GradientStopsD2D;
 class ScaledFontDWrite;
 
-const int32_t kLayerCacheSize = 5; 
+const int32_t kLayerCacheSize = 5;
 
- class GradientStopsCacheD2D
- {
- public:
-     GradientStopsCacheD2D(DrawTargetD2D* const _Target);
-     ~GradientStopsCacheD2D(void);
- 
-     RefPtr<ID2D1GradientStopCollection> Create(
-         const D2D1_GRADIENT_STOP* GradientStops,
-         const UINT GradientStopsCount,
- //        const D2D1_GAMMA ColorInterpolationGamma,
-         const D2D1_EXTEND_MODE ExtendMode);
- 
- private:
-     struct _Cache {
-         RefPtr<ID2D1GradientStopCollection> StopCollection;
-         D2D1_GRADIENT_STOP* GradientStops;
-         UINT StopCount;
- //        D2D1_GAMMA ColorInterpolationGamma;
-         D2D1_EXTEND_MODE ExtendMode;
-     };
-     static const UINT MaxCache = 128;
-     DrawTargetD2D* Target;
-     _Cache* Cache;
-     _Cache* CacheIdx;
-     _Cache* MaxCacheIdx;
- };
- 
- class GradientBrushCacheD2D
- {
- public:
-     enum {
-         Linear, Radial,
-     };
- 
-     GradientBrushCacheD2D(DrawTargetD2D* const _Target, const int Style);
-     ~GradientBrushCacheD2D(void);
- 
-     TemporaryRef<ID2D1Brush> Create(
-         void* const GradientBrushProperties,
-         const D2D1_BRUSH_PROPERTIES& BrushProperties,
-         ID2D1GradientStopCollection* GradientStopCollection);
- 
- private:
-     struct _Cache {
-         RefPtr<ID2D1Brush> Brush;
-         D2D1_GRADIENT_STOP* GradientStops;
-         UINT StopCount;
- //        D2D1_GAMMA ColorInterpolationGamma;
-         D2D1_EXTEND_MODE ExtendMode;
-     };
-     static const UINT MaxCache = 128;
-     DrawTargetD2D* Target;
-     _Cache* Cache;
-     _Cache* CacheIdx;
-     _Cache* MaxCacheIdx;
-     TemporaryRef<ID2D1Brush> (GradientBrushCacheD2D::*pCreateGradientBrush)(
-         void* const GradientBrushProperties,
-         const D2D1_BRUSH_PROPERTIES& BrushProperties,
-         ID2D1GradientStopCollection* GradientStopCollection);
-     TemporaryRef<ID2D1Brush> (GradientBrushCacheD2D::*pSetPropertiesGradientBrush)(
-         _Cache* const Ptr,
-         void* const GradientBrushProperties,
-         const D2D1_BRUSH_PROPERTIES& BrushProperties);
- 
-     TemporaryRef<ID2D1Brush> CreateLinearGradientBrush(
-         void* const GradientBrushProperties,
-         const D2D1_BRUSH_PROPERTIES& BrushProperties,
-         ID2D1GradientStopCollection* GradientStopCollection);
-     TemporaryRef<ID2D1Brush> CreateRadialGradientBrush(
-         void* const GradientBrushProperties,
-         const D2D1_BRUSH_PROPERTIES& BrushProperties,
-         ID2D1GradientStopCollection* GradientStopCollection);
-     TemporaryRef<ID2D1Brush> SetPropertiesLinearGradientBrush(
-         _Cache* const Ptr,
-         void* const GradientBrushProperties,
-         const D2D1_BRUSH_PROPERTIES& BrushProperties);
-     TemporaryRef<ID2D1Brush> SetPropertiesRadialGradientBrush(
-         _Cache* const Ptr,
-         void* const GradientBrushProperties,
-         const D2D1_BRUSH_PROPERTIES& BrushProperties);
- };
- 
- class GradientTextureCacheD2D
- {
- public:
-     GradientTextureCacheD2D(DrawTargetD2D* const _Target);
-     ~GradientTextureCacheD2D(void);
- 
-     TemporaryRef<ID3D10Texture2D> Create(const GradientStopsD2D* aStops);
- 
- private:
-     struct _Cache {
-         RefPtr<ID3D10Texture2D> Texture;
-         D2D1_GRADIENT_STOP* GradientStops;
-         UINT StopCount;
- //        D2D1_GAMMA ColorInterpolationGamma;
-         D2D1_EXTEND_MODE ExtendMode;
-     };
-     static const UINT MaxCache = 128;
-     DrawTargetD2D* Target;
-     _Cache* Cache;
-     _Cache* CacheIdx;
-     _Cache* MaxCacheIdx;
- 
-     TemporaryRef<ID3D10Texture2D> CreateGradientTexture(
-         D2D1_GRADIENT_STOP* const GradientStops,
-         const UINT StopCount);
- };
-  
-    
-        
 struct PrivateD3D10DataD2D
 {
   RefPtr<ID3D10Effect> mEffect;
   RefPtr<ID3D10InputLayout> mInputLayout;
   RefPtr<ID3D10Buffer> mVB;
   RefPtr<ID3D10BlendState> mBlendStates[OP_COUNT];
-// Pale Moon: Cache D2D brush target 
-   ID3D10EffectTechnique* Technique_SampleMaskedTexture;
-   ID3D10EffectTechnique* Technique_SampleRadialGradient;
-   ID3D10EffectTechnique* Technique_SampleTextTexture;
-   ID3D10EffectTechnique* Technique_SampleTexture;
-   ID3D10EffectTechnique* Technique_SampleTextureWithShadow;
- 
-   ID3D10EffectVariable* Variable_A;
-   ID3D10EffectVariable* Variable_BlurOffsetsH;
-   ID3D10EffectVariable* Variable_BlurOffsetsV;
-   ID3D10EffectVariable* Variable_BlurWeights;
-   ID3D10EffectVariable* Variable_center1;
-   ID3D10EffectVariable* Variable_DeviceSpaceToUserSpace;
-   ID3D10EffectVariable* Variable_diff;
-   ID3D10EffectVariable* Variable_dimensions;
-   ID3D10EffectVariable* Variable_mask;
-   ID3D10EffectVariable* Variable_MaskTexCoords;
-   ID3D10EffectVariable* Variable_QuadDesc;
-   ID3D10EffectVariable* Variable_radius1;
-   ID3D10EffectVariable* Variable_ShadowColor;
-   ID3D10EffectVariable* Variable_sq_radius1;
-   ID3D10EffectVariable* Variable_tex;
-   ID3D10EffectVariable* Variable_TexCoords;
-   ID3D10EffectVariable* Variable_TextColor; 
 };
-
-
-
 
 class DrawTargetD2D : public DrawTarget
 {
@@ -262,6 +123,9 @@ public:
   bool Init(const IntSize &aSize, SurfaceFormat aFormat);
   bool Init(ID3D10Texture2D *aTexture, SurfaceFormat aFormat);
   bool InitD3D10Data();
+  uint32_t GetByteSize() const;
+  TemporaryRef<ID2D1Layer> GetCachedLayer();
+  void PopCachedLayer(ID2D1RenderTarget *aRT);
 
   static ID2D1Factory *factory();
   static TemporaryRef<ID2D1StrokeStyle> CreateStrokeStyleForOptions(const StrokeOptions &aStrokeOptions);
@@ -272,10 +136,11 @@ public:
     stream << "DrawTargetD2D(" << this << ")";
     return stream.str();
   }
+
+  static uint64_t mVRAMUsageDT;
+  static uint64_t mVRAMUsageSS;
+
 private:
-  friend class GradientStopsCacheD2D;
-  friend class GradientBrushCacheD2D;
-  friend class GradientTextureCacheD2D;
   friend class AutoSaveRestoreClippedOut;
   friend class SourceSurfaceD2DTarget;
 
@@ -327,7 +192,8 @@ private:
   // This creates a (partially) uploaded bitmap for a DataSourceSurface. It
   // uploads the minimum requirement and possibly downscales. It adjusts the
   // input Matrix to compensate.
-  TemporaryRef<ID2D1Bitmap> CreatePartialBitmapForSurface(DataSourceSurface *aSurface, Matrix &aMatrix);
+  TemporaryRef<ID2D1Bitmap> CreatePartialBitmapForSurface(DataSourceSurface *aSurface, Matrix &aMatrix,
+                                                          ExtendMode aExtendMode);
 
   void SetupEffectForRadialGradient(const RadialGradientPattern *aPattern);
   void SetupStateForRendering();
@@ -361,6 +227,13 @@ private:
     RefPtr<PathD2D> mPath;
   };
   std::vector<PushedClip> mPushedClips;
+
+  // We cache ID2D1Layer objects as it causes D2D to keep around textures that
+  // serve as the temporary surfaces for these operations. As texture creation
+  // is quite expensive this considerably improved performance.
+  // Careful here, RAII will not ensure destruction of the RefPtrs.
+  RefPtr<ID2D1Layer> mCachedLayers[kLayerCacheSize];
+  uint32_t mCurrentCachedLayer;
   
   // The latest snapshot of this surface. This needs to be told when this
   // target is modified. We keep it alive as a cache.
@@ -375,11 +248,6 @@ private:
   PrivateD3D10DataD2D *mPrivateData;
   static ID2D1Factory *mFactory;
   static IDWriteFactory *mDWriteFactory;
-
-  GradientStopsCacheD2D* GradientStopsCache;
-  GradientBrushCacheD2D* LinearGradientBrushCache;
-  GradientBrushCacheD2D* RadialGradientBrushCache;
-  GradientTextureCacheD2D* GradientTextureCache;
 };
 
 }

@@ -39,7 +39,7 @@ interface nsIFile;
 interface nsIDOMTouch;
 interface nsIDOMClientRect;
 
-[scriptable, uuid(858578f1-9653-4d5c-821a-07479bf2d9b2)]
+[scriptable, uuid(5fc61d7b-a303-4f34-adfe-b7828675ba45)]
 interface nsIDOMWindowUtils : nsISupports {
 
   /**
@@ -1161,4 +1161,10 @@ interface nsIDOMWindowUtils : nsISupports {
    * or isn't the manifest URL of an installed application.
    */
   void setApp(in DOMString manifestURL);
+
+  /**
+   * Prevent this window (and any child windows) from displaying any further
+   * dialogs (e.g. window.alert()).
+   */
+  void preventFurtherDialogs(); 
 };

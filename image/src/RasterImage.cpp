@@ -209,19 +209,22 @@ RasterImage::~RasterImage()
              num_discardable_containers,
              total_source_bytes,
              discardable_source_bytes));
-    DiscardTracker::Remove(&mDiscardTrackerNode);
   }
 
-  // If we have a decoder open, shut it down
   if (mDecoder) {
-    nsresult rv = ShutdownDecoder(eShutdownIntent_Interrupted);
-    if (NS_FAILED(rv))
-      NS_WARNING("Failed to shut down decoder in destructor!");
+    // Kill off our decode request, if it's pending.  (If not, this call is
+    // harmless.)
+    DecodeWorker::Singleton()->StopDecoding(this);
+    mDecoder = nullptr; 
   }
 
   // Total statistics
   num_containers--;
   total_source_bytes -= mSourceData.Length();
+
+  if (DiscardingActive()) {
+    DiscardTracker::Remove(&mDiscardTrackerNode);
+  } 
 }
 
 nsresult

@@ -1,0 +1,90 @@
+***************
+*** 1963,1981 ****
+  void
+  nsTextEditorState::ValueWasChanged(bool aNotify)
+  {
+    // placeholder management
+    if (!mPlaceholderDiv) {
+      return;
+    }
+  
+-   nsAutoString valueString;
+-   GetValue(valueString, true);
+-   SetPlaceholderVisibility(valueString.IsEmpty(), aNotify);
+  }
+  
+  void
+  nsTextEditorState::UpdatePlaceholderText(bool aNotify)
+  {
+    NS_ASSERTION(mPlaceholderDiv, "This function should not be called if "
+                                  "mPlaceholderDiv isn't set");
+  
+--- 1963,1979 ----
+  void
+  nsTextEditorState::ValueWasChanged(bool aNotify)
+  {
+    // placeholder management
+    if (!mPlaceholderDiv) {
+      return;
+    }
+  
++   UpdatePlaceholderVisibility(aNotify);
+  }
+  
+  void
+  nsTextEditorState::UpdatePlaceholderText(bool aNotify)
+  {
+    NS_ASSERTION(mPlaceholderDiv, "This function should not be called if "
+                                  "mPlaceholderDiv isn't set");
+  
+***************
+*** 1989,2011 ****
+    content->GetAttr(kNameSpaceID_None, nsGkAtoms::placeholder, placeholderValue);
+    nsContentUtils::RemoveNewlines(placeholderValue);
+    NS_ASSERTION(mPlaceholderDiv->GetFirstChild(), "placeholder div has no child");
+    mPlaceholderDiv->GetFirstChild()->SetText(placeholderValue, aNotify);
+    ValueWasChanged(aNotify);
+  }
+  
+  void
+- nsTextEditorState::SetPlaceholderVisibility(bool aVisible,
+-                                             bool aNotify)
+  {
+    NS_ASSERTION(mPlaceholderDiv, "This function should not be called if "
+                                  "mPlaceholderDiv isn't set");
+  
+-   mPlaceholderVisibility = aVisible;
+  
+    if (mBoundFrame && aNotify) {
+      mBoundFrame->InvalidateFrame();
+    }
+  }
+  
+  void
+  nsTextEditorState::HideSelectionIfBlurred()
+--- 1987,2011 ----
+    content->GetAttr(kNameSpaceID_None, nsGkAtoms::placeholder, placeholderValue);
+    nsContentUtils::RemoveNewlines(placeholderValue);
+    NS_ASSERTION(mPlaceholderDiv->GetFirstChild(), "placeholder div has no child");
+    mPlaceholderDiv->GetFirstChild()->SetText(placeholderValue, aNotify);
+    ValueWasChanged(aNotify);
+  }
+  
+  void
++ nsTextEditorState::UpdatePlaceholderVisibility(bool aNotify)
+  {
+    NS_ASSERTION(mPlaceholderDiv, "This function should not be called if "
+                                  "mPlaceholderDiv isn't set");
+  
++   nsAutoString value;
++   GetValue(value, true);
++ 
++   mPlaceholderVisibility = value.IsEmpty();
+  
+    if (mBoundFrame && aNotify) {
+      mBoundFrame->InvalidateFrame();
+    }
+  }
+  
+  void
+  nsTextEditorState::HideSelectionIfBlurred()

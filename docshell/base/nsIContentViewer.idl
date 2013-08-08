@@ -27,7 +27,7 @@ class nsDOMNavigationTiming;
 [ptr] native nsIViewPtr(nsIView);
 [ptr] native nsDOMNavigationTimingPtr(nsDOMNavigationTiming);
 
-[scriptable, builtinclass, uuid(26b2380b-4a1a-46cd-b7d8-7600e41c1688)]
+[scriptable, builtinclass, uuid(b9d92b8b-5623-4079-ae11-36bb341f322e)]
 interface nsIContentViewer : nsISupports
 {
 
@@ -155,6 +155,11 @@ interface nsIContentViewer : nsISupports
    */
   readonly attribute boolean isTabModalPromptAllowed;
 
+  /**
+   * Returns whether this content viewer is in a hidden state.
+   */
+  readonly attribute boolean isHidden;
+  
   [noscript] readonly attribute nsIPresShellPtr presShell;
   [noscript] readonly attribute nsPresContextPtr presContext;
   [noscript] void setDocumentInternal(in nsIDocumentPtr aDocument,

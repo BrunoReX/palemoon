@@ -1,0 +1,46 @@
+***************
+*** 6591,6617 ****
+        DecoderTraits::IsMediaPluginsType(nsDependentCString(aType))) {
+      docFactory = do_GetService("@mozilla.org/content/document-loader-factory;1");
+      if (docFactory && aLoaderType) {
+        *aLoaderType = TYPE_CONTENT;
+      }
+      return docFactory.forget();
+    }
+  #endif // MOZ_MEDIA_PLUGINS
+- 
+- #ifdef MOZ_WMF
+-   if (DecoderTraits::IsWMFSupportedType(nsDependentCString(aType))) {
+-     docFactory = do_GetService("@mozilla.org/content/document-loader-factory;1");
+-     if (docFactory && aLoaderType) {
+-       *aLoaderType = TYPE_CONTENT;
+-     }
+-     return docFactory.forget();
+-   }
+- #endif
+- 
+  #endif // MOZ_MEDIA
+  
+    return NULL;
+  }
+  
+  // static
+  bool
+  nsContentUtils::IsPatternMatching(nsAString& aValue, nsAString& aPattern,
+--- 6591,6606 ----
+        DecoderTraits::IsMediaPluginsType(nsDependentCString(aType))) {
+      docFactory = do_GetService("@mozilla.org/content/document-loader-factory;1");
+      if (docFactory && aLoaderType) {
+        *aLoaderType = TYPE_CONTENT;
+      }
+      return docFactory.forget();
+    }
+  #endif // MOZ_MEDIA_PLUGINS
+  #endif // MOZ_MEDIA
+  
+    return NULL;
+  }
+  
+  // static
+  bool
+  nsContentUtils::IsPatternMatching(nsAString& aValue, nsAString& aPattern,

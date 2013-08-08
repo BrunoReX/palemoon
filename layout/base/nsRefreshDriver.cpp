@@ -412,7 +412,8 @@ nsRefreshDriver::Notify(nsITimer *aTimer)
 
   if (mViewManagerFlushIsPending) {
     mViewManagerFlushIsPending = false;
-    mPresContext->GetPresShell()->GetViewManager()->ProcessPendingUpdates();
+    nsCOMPtr<nsIViewManager> vm = mPresContext->GetPresShell()->GetViewManager();
+    vm->ProcessPendingUpdates();
   }
 
   if (mThrottled ||

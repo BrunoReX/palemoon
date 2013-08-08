@@ -407,8 +407,6 @@ LayerManagerD3D10::CreateOptimalSurface(const gfxIntSize &aSize,
   
   CD3D10_TEXTURE2D_DESC desc(DXGI_FORMAT_B8G8R8A8_UNORM, aSize.width, aSize.height, 1, 1);
   desc.BindFlags = D3D10_BIND_RENDER_TARGET | D3D10_BIND_SHADER_RESOURCE;
-// Pale Moon: Stop using Misc. GDI resources to fix IGP issues.
-// 15.1.1 Not needed for optimalsurface! Only for drawtarget.
   desc.MiscFlags = D3D10_RESOURCE_MISC_GDI_COMPATIBLE;
   
   HRESULT hr = device()->CreateTexture2D(&desc, NULL, getter_AddRefs(texture));
@@ -433,6 +431,14 @@ LayerManagerD3D10::CreateOptimalSurface(const gfxIntSize &aSize,
   return surface.forget();
 }
 
+
+already_AddRefed<gfxASurface>
+LayerManagerD3D10::CreateOptimalMaskSurface(const gfxIntSize &aSize)
+{
+  return CreateOptimalSurface(aSize, gfxASurface::ImageFormatARGB32);
+}
+
+
 TemporaryRef<DrawTarget>
 LayerManagerD3D10::CreateDrawTarget(const IntSize &aSize,
                                     SurfaceFormat aFormat)
@@ -446,13 +452,11 @@ LayerManagerD3D10::CreateDrawTarget(const IntSize &aSize,
   
   CD3D10_TEXTURE2D_DESC desc(DXGI_FORMAT_B8G8R8A8_UNORM, aSize.width, aSize.height, 1, 1);
   desc.BindFlags = D3D10_BIND_RENDER_TARGET | D3D10_BIND_SHADER_RESOURCE;
-// Pale Moon: Stop using Misc. GDI resources to fix IGP issues.
-//  desc.MiscFlags = D3D10_RESOURCE_MISC_GDI_COMPATIBLE;
   
   HRESULT hr = device()->CreateTexture2D(&desc, NULL, getter_AddRefs(texture));
 
   if (FAILED(hr)) {
-    NS_WARNING("Failed to create new texture for CreateDrawTarget!");
+    NS_WARNING("Failed to create new texture for CreateOptimalSurface!");
     return LayerManager::CreateDrawTarget(aSize, aFormat);
   }
 

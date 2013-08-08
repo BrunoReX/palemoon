@@ -111,7 +111,10 @@ ChromeStackWalker(void *aPC, void *aClosure)
   MOZ_ASSERT(aClosure);
   Telemetry::HangStack *callStack =
     reinterpret_cast< Telemetry::HangStack* >(aClosure);
-  callStack->AppendElement(reinterpret_cast<uintptr_t>(aPC));
+
+  // The thread we're stackwalking might have the alloc lock
+  if (callStack->Capacity() > callStack->Length())
+    callStack->AppendElement(reinterpret_cast<uintptr_t>(aPC));
 }
 
 static void
@@ -119,6 +122,10 @@ GetChromeHangReport(Telemetry::HangStack &callStack, SharedLibraryInfo &moduleMa
 {
   MOZ_ASSERT(winMainThreadHandle);
 
+  // The thread we're about to suspend might have the alloc lock
+  // so allocate ahead of time
+  callStack.SetCapacity(400);
+  
   DWORD ret = ::SuspendThread(winMainThreadHandle);
   if (ret == -1) {
     callStack.Clear();

@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <math.h>
 #include <string.h>
-#include <windows.h>
 
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Util.h"
@@ -33,54 +32,6 @@ namespace gfx {
  * @param aSkipRect An area to skip blurring in.
  * XXX shouldn't we pass stride in separately here?
  */
- 
-static DWORD NumberOfProcessors = 0;
-
-static void
-GetNumberOfLogicalProcessors(void)
-{
-    SYSTEM_INFO SystemInfo;
-
-    GetSystemInfo(&SystemInfo);
-    NumberOfProcessors = SystemInfo.dwNumberOfProcessors;
-}
-
-static void
-GetNumberOfProcessors(void)
-{
-    PSYSTEM_LOGICAL_PROCESSOR_INFORMATION SystemLogicalProcessorInformation = NULL;
-    DWORD SizeSystemLogicalProcessorInformation = 0;
-
-    while(!GetLogicalProcessorInformation(SystemLogicalProcessorInformation, &SizeSystemLogicalProcessorInformation)) {
-        if(SystemLogicalProcessorInformation) free(SystemLogicalProcessorInformation);
-
-        if(GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
-            SystemLogicalProcessorInformation =
-                static_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION>(malloc(SizeSystemLogicalProcessorInformation));
-        } else {
-            GetNumberOfLogicalProcessors();
-            return;
-        }
-    }
-
-    DWORD ProcessorCore = 0;
-    PSYSTEM_LOGICAL_PROCESSOR_INFORMATION Ptr = SystemLogicalProcessorInformation;
-
-    for(DWORD Offset = sizeof SYSTEM_LOGICAL_PROCESSOR_INFORMATION;
-        Offset <= SizeSystemLogicalProcessorInformation;
-        Offset += sizeof SYSTEM_LOGICAL_PROCESSOR_INFORMATION) {
-        if(Ptr++->Relationship == RelationProcessorCore) ProcessorCore++;
-    }
-
-    free(SystemLogicalProcessorInformation);
-
-    if(ProcessorCore) {
-        NumberOfProcessors = ProcessorCore;
-    } else {
-        GetNumberOfLogicalProcessors();
-    }
-}  
- 
 static void
 BoxBlurHorizontal(unsigned char* aInput,
                   unsigned char* aOutput,
