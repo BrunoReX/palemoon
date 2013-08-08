@@ -941,11 +941,12 @@ ScriptAnalysis::killVariable(JSContext *cx, LifetimeVariable &var, unsigned offs
          * The variable is live even before the write, due to an enclosing try
          * block. We need to split the lifetime to indicate there was a write.
          */
-        var.lifetime = cx->typeLifoAlloc().new_<Lifetime>(start, offset, var.lifetime);
+        var.lifetime = cx->typeLifoAlloc().new_<Lifetime>(start, 0, var.lifetime);
         if (!var.lifetime) {
             setOOM(cx);
             return;
         }
+        var.lifetime->end = offset;
     } else {
         var.saved = var.lifetime;
         var.savedEnd = 0;

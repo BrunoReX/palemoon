@@ -146,9 +146,10 @@ PluginModuleChild::PluginModuleChild()
 PluginModuleChild::~PluginModuleChild()
 {
     NS_ASSERTION(gInstance == this, "Something terribly wrong here!");
-    if (mLibrary) {
-        PR_UnloadLibrary(mLibrary);
-    }
+// Don't unload to fix Flash 11.3 crash. Possible mem leak for lack of cleanup?
+//    if (mLibrary) {
+//        PR_UnloadLibrary(mLibrary);
+//    }
 
     DeinitGraphics();
 

@@ -78,10 +78,10 @@ GRE_MODULE	    = 1
 
 LIBS		= $(NSPR_LIBS) 
 
-# Pale Moon: PGO JS (with patches) (v12.1:disable?)
-# ifeq ($(OS_ARCH),WINNT)
-#   NO_PROFILE_GUIDED_OPTIMIZE = 1
-# endif
+# Pale Moon: PGO JS (with patches) (v12.2.1:disable for now)
+ifeq ($(OS_ARCH),WINNT)
+  NO_PROFILE_GUIDED_OPTIMIZE = 1
+endif
 
 # JavaScript must be built shared, even for static builds, as it is used by
 # other modules which are always built shared. Failure to do so results in
@@ -934,7 +934,7 @@ endif
 
 ###############################################
 # Pale Moon: Work around for optimizer bug with MSVC PGO (Bug 595653) crash on appstart
-# (v12: PGO disable: not req'd, can use SSE2)
+# (v12.2.1: PGO disable: not req'd, can use SSE2)
 # CXXFLAGS := $(filter-out %SSE2 %SSE,$(CXXFLAGS))
 # CXXFLAGS := $(CXXFLAGS:arch:SSE2=arch:SSE)
-CXXFLAGS := $(CXXFLAGS:-O2=-O1)
+# CXXFLAGS := $(CXXFLAGS:-O2=-O1)
