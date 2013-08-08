@@ -1367,11 +1367,23 @@ html|*.urlbar-input:-moz-lwtheme:-moz-placeholder,
   color: hsl(92,100%,30%);
   -moz-margin-end: 4px;
   background-image: -moz-linear-gradient(hsla(92,81%,16%,0),
-                                         hsla(92,81%,16%,.2) 25%,
-                                         hsla(92,81%,16%,.2) 75%,
+                                         hsla(92,81%,16%,.06) 25%,
+                                         hsla(92,81%,16%,.06) 75%,
                                          hsla(92,81%,16%,0));
   background-position: right;
-  background-size: 1px;
+/*  background-size: 1px; */
+  background-repeat: no-repeat;
+}
+
+#urlbar[pageproxystate="valid"] > #identity-box.verifiedDomain {
+  color: rgb(0,79,168);
+  -moz-margin-end: 4px;
+  background-image: -moz-linear-gradient(rgba(0,79,168,0),
+                                         rgba(0,79,168,.06) 25%,
+                                         rgba(0,79,168,.06) 75%,
+                                         rgba(0,79,168,0));
+  background-position: right;
+/*  background-size: 1px; */
   background-repeat: no-repeat;
 }
 
@@ -1429,6 +1441,9 @@ html|*.urlbar-input:-moz-lwtheme:-moz-placeholder,
   margin-bottom: 1px;
   -moz-margin-start: 3px;
   -moz-margin-end: 2px;
+}
+
+#page-proxy-favicon:not([src]) {
   list-style-image: url(chrome://browser/skin/identity-icons-generic.png);
   -moz-image-region: rect(0, 16px, 16px, 0);
 }

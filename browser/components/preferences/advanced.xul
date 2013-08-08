@@ -106,9 +106,9 @@
       <preference id="general.smoothScroll.pages"                    name="general.smoothScroll.pages"                    type="bool"/>
       <preference id="general.smoothScroll.pages.durationMinMS"      name="general.smoothScroll.pages.durationMinMS"      type="int"/>
       <preference id="general.smoothScroll.pages.durationMaxMS"      name="general.smoothScroll.pages.durationMaxMS"      type="int"/>
-      <preference id="general.smoothScroll.pixels"                   name="general.smoothScroll.pixels"                   type="bool"/>
-      <preference id="general.smoothScroll.pixels.durationMinMS"     name="general.smoothScroll.pixels.durationMinMS"     type="int"/>
-      <preference id="general.smoothScroll.pixels.durationMaxMS"     name="general.smoothScroll.pixels.durationMaxMS"     type="int"/>
+      <preference id="general.smoothScroll.mouseWheel"               name="general.smoothScroll.mouseWheel"                   type="bool"/>
+      <preference id="general.smoothScroll.mouseWheel.durationMinMS" name="general.smoothScroll.mouseWheel.durationMinMS"     type="int"/>
+      <preference id="general.smoothScroll.mouseWheel.durationMaxMS" name="general.smoothScroll.mouseWheel.durationMaxMS"     type="int"/>
       <preference id="general.smoothScroll.scrollbars"               name="general.smoothScroll.scrollbars"               type="bool"/>
       <preference id="general.smoothScroll.scrollbars.durationMinMS" name="general.smoothScroll.scrollbars.durationMinMS" type="int"/>
       <preference id="general.smoothScroll.scrollbars.durationMaxMS" name="general.smoothScroll.scrollbars.durationMaxMS" type="int"/>
@@ -438,14 +438,14 @@
         <groupbox>
           <caption label="&palemoon.smoothscroll.params.label;"/>
           
-          <checkbox label="&palemoon.smoothscroll.mousewheel.label;" preference="general.smoothScroll.pixels"/>
+          <checkbox label="&palemoon.smoothscroll.mousewheel.label;" preference="general.smoothScroll.mouseWheel"/>
           <hbox align="center" class="indent">
             <label value="&palemoon.smoothscroll.mousewheel.duration;"/>
             <textbox type="number" size="3" max="500"
-                     preference="general.smoothScroll.pixels.durationMinMS"/>
+                     preference="general.smoothScroll.mouseWheel.durationMinMS"/>
             <label>&palemoon.smoothscroll.to;</label>
             <textbox type="number" size="4" max="2000"
-                     preference="general.smoothScroll.pixels.durationMaxMS"/>
+                     preference="general.smoothScroll.mouseWheel.durationMaxMS"/>
             <label flex="1">ms.</label>
           </hbox>
           

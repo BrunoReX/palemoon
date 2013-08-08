@@ -77,12 +77,72 @@ const unsigned int TEXT_TEXTURE_WIDTH = 2048;
 const unsigned int TEXT_TEXTURE_HEIGHT = 512;
 typedef struct _cairo_d2d_device cairo_d2d_device_t;
 
+struct _cairo_d2d_surface;
+typedef struct _cairo_d2d_surface cairo_d2d_surface_t;
+
+class GradientBrushCache
+{
+public:
+    enum {
+        Linear, Radial,
+    };
+
+    GradientBrushCache(cairo_d2d_surface_t* const _d2dsurf, const int Style);
+    ~GradientBrushCache(void);
+
+    TemporaryRef<ID2D1Brush> Create(
+        void* const GradientBrushProperties,
+        const D2D1_BRUSH_PROPERTIES& BrushProperties,
+        const UINT StopCount,
+        D2D1_GRADIENT_STOP* const GradientStops);
+
+private:
+    struct _Cache {
+        RefPtr<ID2D1Brush> Brush;
+        UINT StopCount;
+        D2D1_GRADIENT_STOP* GradientStops;
+    };
+    static const UINT MaxCache = 128;
+    cairo_d2d_surface_t* d2dsurf;
+    _Cache* Cache;
+    _Cache* CacheIdx;
+    _Cache* MaxCacheIdx;
+    TemporaryRef<ID2D1Brush> (GradientBrushCache::*pCreateGradientBrush)(
+        void* const GradientBrushProperties,
+        const D2D1_BRUSH_PROPERTIES& BrushProperties,
+        ID2D1GradientStopCollection* GradientStopCollection);
+    TemporaryRef<ID2D1Brush> (GradientBrushCache::*pSetPropertiesGradientBrush)(
+        _Cache* const Ptr,
+        void* const GradientBrushProperties,
+        const D2D1_BRUSH_PROPERTIES& BrushProperties);
+
+    TemporaryRef<ID2D1Brush> CreateLinearGradientBrush(
+        void* const GradientBrushProperties,
+        const D2D1_BRUSH_PROPERTIES& BrushProperties,
+        ID2D1GradientStopCollection* GradientStopCollection);
+    TemporaryRef<ID2D1Brush> CreateRadialGradientBrush(
+        void* const GradientBrushProperties,
+        const D2D1_BRUSH_PROPERTIES& BrushProperties,
+        ID2D1GradientStopCollection* GradientStopCollection);
+    TemporaryRef<ID2D1Brush> SetPropertiesLinearGradientBrush(
+        _Cache* const Ptr,
+        void* const GradientBrushProperties,
+        const D2D1_BRUSH_PROPERTIES& BrushProperties);
+    TemporaryRef<ID2D1Brush> SetPropertiesRadialGradientBrush(
+        _Cache* const Ptr,
+        void* const GradientBrushProperties,
+        const D2D1_BRUSH_PROPERTIES& BrushProperties);
+};
+
 struct _cairo_d2d_surface {
     _cairo_d2d_surface() : d2d_clip(NULL), clipping(false), isDrawing(false),
             textRenderingState(TEXT_RENDERING_UNINITIALIZED)
     {
 	_cairo_clip_init (&this->clip);
         cairo_list_init(&this->dependent_surfaces);
+
+        LinearGradientBrushCache = NULL;
+        RadialGradientBrushCache = NULL;
     }
     
     ~_cairo_d2d_surface();
@@ -152,8 +212,10 @@ struct _cairo_d2d_surface {
     // no longer be what it was when the drawing command was issued.
     cairo_list_t dependent_surfaces;
     //cairo_surface_clipper_t clipper;
+
+    GradientBrushCache* LinearGradientBrushCache;
+    GradientBrushCache* RadialGradientBrushCache;
 };
-typedef struct _cairo_d2d_surface cairo_d2d_surface_t;
 
 struct _cairo_d2d_surface_entry
 {

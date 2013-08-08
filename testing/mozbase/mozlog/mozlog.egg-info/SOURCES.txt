@@ -1,0 +1,8 @@
+setup.py
+mozlog/__init__.py
+mozlog/logger.py
+mozlog.egg-info/PKG-INFO
+mozlog.egg-info/SOURCES.txt
+mozlog.egg-info/dependency_links.txt
+mozlog.egg-info/not-zip-safe
+mozlog.egg-info/top_level.txt

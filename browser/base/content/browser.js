@@ -2479,9 +2479,27 @@ function SetPageProxyState(aState)
   if (aState == "valid") {
     gLastValidURLStr = gURLBar.value;
     gURLBar.addEventListener("input", UpdatePageProxyState, false);
+    PageProxySetIcon(gBrowser.getIcon());
   } else if (aState == "invalid") {
     gURLBar.removeEventListener("input", UpdatePageProxyState, false);
+    PageProxyClearIcon();
   }
+}
+
+function PageProxySetIcon (aURL)
+{
+  if (!gProxyFavIcon)
+    return;
+
+  if (!aURL)
+    PageProxyClearIcon();
+  else if (gProxyFavIcon.getAttribute("src") != aURL)
+    gProxyFavIcon.setAttribute("src", aURL);
+}
+
+function PageProxyClearIcon ()
+{
+  gProxyFavIcon.removeAttribute("src");
 }
 
 function PageProxyClickHandler(aEvent)
@@ -3870,6 +3888,15 @@ var XULBrowserWindow = {
       return originalTarget;
 
     return "_blank";
+  },
+
+  onLinkIconAvailable: function (aIconURL) {
+    if (gProxyFavIcon && gBrowser.userTypedValue === null) {
+      if (gURLBar.getAttribute("level") != "high") {
+        //non-secure site means update icon
+        PageProxySetIcon(aIconURL); // update the favicon in the URL bar
+      }
+    }
   },
 
   onProgressChange: function (aWebProgress, aRequest,
@@ -6613,6 +6640,15 @@ var gIdentityHandler = {
     case this.IDENTITY_MODE_DOMAIN_VERIFIED: {
       let iData = this.getIdentityData();
 
+      //Pale Moon: honor browser.identity.ssl_domain_display!
+      switch (gPrefService.getIntPref("browser.identity.ssl_domain_display")) {
+        case 2 : // Show full domain
+          icon_label = this._lastLocation.hostname;
+          break;
+        case 1 : // Show eTLD.
+          icon_label = this.getEffectiveHost();
+      }
+      
       // Verifier is either the CA Org, for a normal cert, or a special string
       // for certs that are trusted because of a security exception.
       tooltip = gNavigatorBundle.getFormattedString("identity.identified.verifier",

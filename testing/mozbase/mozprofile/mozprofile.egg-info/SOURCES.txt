@@ -1,0 +1,14 @@
+setup.py
+mozprofile/__init__.py
+mozprofile/addons.py
+mozprofile/cli.py
+mozprofile/permissions.py
+mozprofile/prefs.py
+mozprofile/profile.py
+mozprofile.egg-info/PKG-INFO
+mozprofile.egg-info/SOURCES.txt
+mozprofile.egg-info/dependency_links.txt
+mozprofile.egg-info/entry_points.txt
+mozprofile.egg-info/not-zip-safe
+mozprofile.egg-info/requires.txt
+mozprofile.egg-info/top_level.txt

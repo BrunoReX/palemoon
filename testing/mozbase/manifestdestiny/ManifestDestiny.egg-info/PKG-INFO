@@ -1,0 +1,11 @@
+Metadata-Version: 1.0
+Name: ManifestDestiny
+Version: 0.5.4
+Summary: Universal manifests for Mozilla test harnesses
+Home-page: https://github.com/mozilla/mozbase/tree/master/manifestdestiny
+Author: Jeff Hammel
+Author-email: jhammel@mozilla.com
+License: MPL
+Description: UNKNOWN
+Keywords: mozilla manifests
+Platform: UNKNOWN

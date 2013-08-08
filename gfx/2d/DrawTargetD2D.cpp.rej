@@ -1,0 +1,165 @@
+***************
+*** 15,20 ****
+  #include "Tools.h"
+  #include <algorithm>
+  #include "mozilla/Constants.h"
+  
+  #include <dwrite.h>
+  
+--- 15,22 ----
+  #include "Tools.h"
+  #include <algorithm>
+  #include "mozilla/Constants.h"
++ #include <xmmintrin.h>
++ #include <emmintrin.h>
+  
+  #include <dwrite.h>
+  
+***************
+*** 588,645 ****
+  
+    mDevice->RSSetViewports(1, &viewport);
+  
+-   mPrivateData->mEffect->GetVariableByName("tex")->AsShaderResource()->SetResource(tmpSRView);
+  
+    rtViews = destRTView;
+    mDevice->OMSetRenderTargets(1, &rtViews, nullptr);
+  
+    Point shadowDest = aDest + aOffset;
+  
+-   mPrivateData->mEffect->GetVariableByName("QuadDesc")->AsVector()->
+      SetFloatVector(ShaderConstantRectD3D10(-1.0f + ((shadowDest.x / mSize.width) * 2.0f),
+                                             1.0f - (shadowDest.y / mSize.height * 2.0f),
+                                             (Float(aSurface->GetSize().width) / mSize.width) * 2.0f,
+                                             (-Float(aSurface->GetSize().height) / mSize.height) * 2.0f));
+-   mPrivateData->mEffect->GetVariableByName("TexCoords")->AsVector()->
+      SetFloatVector(ShaderConstantRectD3D10(0, 0, Float(srcSurfSize.width) / tmpSurfSize.width,
+                                                   Float(srcSurfSize.height) / tmpSurfSize.height));
+  
+    if (mPushedClips.size()) {
+-     mPrivateData->mEffect->GetVariableByName("mask")->AsShaderResource()->SetResource(maskSRView);
+-     mPrivateData->mEffect->GetVariableByName("MaskTexCoords")->AsVector()->
+        SetFloatVector(ShaderConstantRectD3D10(shadowDest.x / mSize.width, shadowDest.y / mSize.height,
+                                               Float(aSurface->GetSize().width) / mSize.width,
+                                               Float(aSurface->GetSize().height) / mSize.height));
+-     mPrivateData->mEffect->GetTechniqueByName("SampleTextureWithShadow")->
+-       GetPassByIndex(2)->Apply(0);
+    } else {
+-     mPrivateData->mEffect->GetTechniqueByName("SampleTextureWithShadow")->
+-       GetPassByIndex(1)->Apply(0);
+    }
+  
+    mDevice->OMSetBlendState(GetBlendStateForOperator(aOperator), nullptr, 0xffffffff);
+  
+    mDevice->Draw(4, 0);
+  
+-   mPrivateData->mEffect->GetVariableByName("QuadDesc")->AsVector()->
+      SetFloatVector(ShaderConstantRectD3D10(-1.0f + ((aDest.x / mSize.width) * 2.0f),
+                                             1.0f - (aDest.y / mSize.height * 2.0f),
+                                             (Float(aSurface->GetSize().width) / mSize.width) * 2.0f,
+                                             (-Float(aSurface->GetSize().height) / mSize.height) * 2.0f));
+-   mPrivateData->mEffect->GetVariableByName("tex")->AsShaderResource()->SetResource(static_cast<SourceSurfaceD2DTarget*>(aSurface)->GetSRView());
+-   mPrivateData->mEffect->GetVariableByName("TexCoords")->AsVector()->
+-     SetFloatVector(ShaderConstantRectD3D10(0, 0, 1.0f, 1.0f));
+  
+    if (mPushedClips.size()) {
+-     mPrivateData->mEffect->GetVariableByName("MaskTexCoords")->AsVector()->
+        SetFloatVector(ShaderConstantRectD3D10(aDest.x / mSize.width, aDest.y / mSize.height,
+                                               Float(aSurface->GetSize().width) / mSize.width,
+                                               Float(aSurface->GetSize().height) / mSize.height));
+-     mPrivateData->mEffect->GetTechniqueByName("SampleMaskedTexture")->
+-       GetPassByIndex(0)->Apply(0);
+    } else {
+-     mPrivateData->mEffect->GetTechniqueByName("SampleTexture")->
+-       GetPassByIndex(0)->Apply(0);
+    }
+  
+    mDevice->OMSetBlendState(GetBlendStateForOperator(aOperator), nullptr, 0xffffffff);
+--- 1001,1053 ----
+  
+    mDevice->RSSetViewports(1, &viewport);
+  
++   mPrivateData->Variable_tex->AsShaderResource()->SetResource(tmpSRView);
+  
+    rtViews = destRTView;
+    mDevice->OMSetRenderTargets(1, &rtViews, nullptr);
+  
+    Point shadowDest = aDest + aOffset;
+  
++   mPrivateData->Variable_QuadDesc->AsVector()->
+      SetFloatVector(ShaderConstantRectD3D10(-1.0f + ((shadowDest.x / mSize.width) * 2.0f),
+                                             1.0f - (shadowDest.y / mSize.height * 2.0f),
+                                             (Float(aSurface->GetSize().width) / mSize.width) * 2.0f,
+                                             (-Float(aSurface->GetSize().height) / mSize.height) * 2.0f));
++   mPrivateData->Variable_TexCoords->AsVector()->
+      SetFloatVector(ShaderConstantRectD3D10(0, 0, Float(srcSurfSize.width) / tmpSurfSize.width,
+                                                   Float(srcSurfSize.height) / tmpSurfSize.height));
+  
+    if (mPushedClips.size()) {
++     mPrivateData->Variable_mask->AsShaderResource()->SetResource(maskSRView);
++     mPrivateData->Variable_MaskTexCoords->AsVector()->
+        SetFloatVector(ShaderConstantRectD3D10(shadowDest.x / mSize.width, shadowDest.y / mSize.height,
+                                               Float(aSurface->GetSize().width) / mSize.width,
+                                               Float(aSurface->GetSize().height) / mSize.height));
++     mPrivateData->Technique_SampleTextureWithShadow->GetPassByIndex(2)->Apply(0);
+    } else {
++     mPrivateData->Technique_SampleTextureWithShadow->GetPassByIndex(1)->Apply(0);
+    }
+  
+    mDevice->OMSetBlendState(GetBlendStateForOperator(aOperator), nullptr, 0xffffffff);
+  
+    mDevice->Draw(4, 0);
+  
++   mPrivateData->Variable_QuadDesc->AsVector()->
+      SetFloatVector(ShaderConstantRectD3D10(-1.0f + ((aDest.x / mSize.width) * 2.0f),
+                                             1.0f - (aDest.y / mSize.height * 2.0f),
+                                             (Float(aSurface->GetSize().width) / mSize.width) * 2.0f,
+                                             (-Float(aSurface->GetSize().height) / mSize.height) * 2.0f));
++   mPrivateData->Variable_tex->AsShaderResource()->SetResource(static_cast<SourceSurfaceD2DTarget*>(aSurface)->GetSRView());
++   mPrivateData->Variable_TexCoords->AsVector()->SetFloatVector(ShaderConstantRectD3D10(0, 0, 1.0f, 1.0f));
+  
+    if (mPushedClips.size()) {
++     mPrivateData->Variable_MaskTexCoords->AsVector()->
+        SetFloatVector(ShaderConstantRectD3D10(aDest.x / mSize.width, aDest.y / mSize.height,
+                                               Float(aSurface->GetSize().width) / mSize.width,
+                                               Float(aSurface->GetSize().height) / mSize.height));
++     mPrivateData->Technique_SampleMaskedTexture->GetPassByIndex(0)->Apply(0);
+    } else {
++     mPrivateData->Technique_SampleTexture->GetPassByIndex(0)->Apply(0);
+    }
+  
+    mDevice->OMSetBlendState(GetBlendStateForOperator(aOperator), nullptr, 0xffffffff);
+***************
+*** 1122,1141 ****
+      stops[i].color = D2DColor(rawStops[i].color);
+    }
+  
+-   RefPtr<ID2D1GradientStopCollection> stopCollection;
+- 
+-   HRESULT hr =
+-     mRT->CreateGradientStopCollection(stops, aNumStops,
+-                                       D2D1_GAMMA_2_2, D2DExtend(aExtendMode),
+-                                       byRef(stopCollection));
+-   delete [] stops;
+- 
+-   if (FAILED(hr)) {
+-     gfxWarning() << "Failed to create GradientStopCollection. Code: " << hr;
+-     return nullptr;
+-   }
+- 
+-   return new GradientStopsD2D(stopCollection);
+  }
+  
+  void*
+--- 1530,1540 ----
+      stops[i].color = D2DColor(rawStops[i].color);
+    }
+  
++   return new GradientStopsD2D(
++       GradientStopsCache->Create(
++       stops,
++       aNumStops,
++       D2DExtend(aExtendMode)));
+  }
+  
+  void*

@@ -84,8 +84,7 @@ pref("gfx.font_rendering.directwrite.enabled", false); //Too many issues with th
 pref("gfx.direct2d.force-enabled", false); //D2D force may cause issues for poor drivers, so off by default.
 // JIT the chrome!
 pref("javascript.options.jitprofiling.chrome", true);
-// pref("javascript.options.methodjit.chrome", true);
-// pref("javascript.options.methodjit_always", true);
+pref("javascript.options.methodjit.chrome", true);
 
 // ****************** UI config ******************
 
@@ -97,6 +96,9 @@ pref("browser.ctrlTab.previews", true);
 pref("browser.allTabs.previews", true);
 pref("browser.urlbar.trimURLs", false); //stop being a derp, Mozilla!
 pref("browser.preferences.animateFadeIn", true); //Animate preferences windows
+pref("browser.identity.ssl_domain_display", 1); //show domain verified SSL
+pref("browser.urlbar.autoFill", false);
+pref("browser.urlbar.autoFill.typed", false);
 
 //Take unintended/removed tools out of the UI
 pref("devtools.errorconsole.enabled",true); //Essential for troubleshooting
@@ -120,9 +122,9 @@ pref("general.smoothScroll.lines.durationMaxMS",200);
 pref("general.smoothScroll.pages",false);
 pref("general.smoothScroll.pages.durationMinMS",200);
 pref("general.smoothScroll.pages.durationMaxMS",600);
-pref("general.smoothScroll.pixels",true);
-pref("general.smoothScroll.pixels.durationMinMS",100);
-pref("general.smoothScroll.pixels.durationMaxMS",500);
+pref("general.smoothScroll.mouseWheel",true);
+pref("general.smoothScroll.mouseWheel.durationMinMS",150);
+pref("general.smoothScroll.mouseWheel.durationMaxMS",500);
 pref("general.smoothScroll.scrollbars",true);
 pref("general.smoothScroll.scrollbars.durationMinMS",50);
 pref("general.smoothScroll.scrollbars.durationMaxMS",200);
@@ -132,6 +134,7 @@ pref("general.smoothScroll.scrollbars.durationMaxMS",200);
 // Download manager
 pref("browser.download.manager.flashCount", 10);
 pref("browser.download.manager.scanWhenDone", false);
+pref("browser.altClickSave", true); //SBaD,M! (#2)
 
 //plugin kill timeout
 pref("dom.ipc.plugins.timeoutSecs", 20);

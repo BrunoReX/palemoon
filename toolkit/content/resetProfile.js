@@ -36,7 +36,7 @@ function resetSupported() {
                        getService(Ci.nsIToolkitProfileService);
   let currentProfileDir = Services.dirsvc.get("ProfD", Ci.nsIFile);
 
-#expand const MOZ_APP_NAME = "__MOZ_APP_NAME__";
+#expand const MOZ_APP_NAME = "firefox";
 #expand const MOZ_BUILD_APP = "__MOZ_BUILD_APP__";
 
   // Reset is only supported for the default profile if the self-migrator used for reset exists.
@@ -54,7 +54,7 @@ function getMigratedData() {
   Components.utils.import("resource:///modules/MigrationUtils.jsm");
 
 #expand const MOZ_BUILD_APP = "__MOZ_BUILD_APP__";
-#expand const MOZ_APP_NAME = "__MOZ_APP_NAME__";
+#expand const MOZ_APP_NAME = "firefox";
 
   // From migration.properties
   const MIGRATED_TYPES = [

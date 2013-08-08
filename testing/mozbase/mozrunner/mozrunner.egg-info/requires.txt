@@ -1,0 +1,3 @@
+mozinfo
+mozprocess
+mozprofile >= 0.1

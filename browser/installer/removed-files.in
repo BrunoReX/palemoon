@@ -1366,26 +1366,6 @@ xpicleanup@BIN_SUFFIX@
   js3250.dll
   mozcpp19.dll
   mozcrt19.dll
-  #if MOZ_MSVC_REDIST != 1400
-    Microsoft.VC80.CRT.manifest
-    msvcm80.dll
-    msvcp80.dll
-    msvcr80.dll
-  #endif
-  #if MOZ_MSVC_REDIST != 1500
-    Microsoft.VC90.CRT.manifest
-    msvcm90.dll
-    msvcp90.dll
-    msvcr90.dll
-  #endif
-  #if MOZ_MSVC_REDIST != 1600
-    msvcp100.dll
-    msvcr100.dll
-  #endif
-  #if MOZ_MSVC_REDIST != 1700
-    msvcp110.dll
-    msvcr110.dll
-  #endif
   plugins/npnul32.dll
 #endif
 @DLL_PREFIX@xpcom_core@DLL_SUFFIX@

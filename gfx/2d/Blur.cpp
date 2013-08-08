@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <math.h>
 #include <string.h>
+#include <windows.h>
 
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Util.h"
@@ -32,6 +33,151 @@ namespace gfx {
  * @param aSkipRect An area to skip blurring in.
  * XXX shouldn't we pass stride in separately here?
  */
+static DWORD NumberOfProcessors = 0;
+
+static void
+GetNumberOfLogicalProcessors(void)
+{
+    SYSTEM_INFO SystemInfo;
+
+    GetSystemInfo(&SystemInfo);
+    NumberOfProcessors = SystemInfo.dwNumberOfProcessors;
+}
+
+static void
+GetNumberOfProcessors(void)
+{
+    PSYSTEM_LOGICAL_PROCESSOR_INFORMATION SystemLogicalProcessorInformation = NULL;
+    DWORD SizeSystemLogicalProcessorInformation = 0;
+
+    while(!GetLogicalProcessorInformation(SystemLogicalProcessorInformation, &SizeSystemLogicalProcessorInformation)) {
+        if(SystemLogicalProcessorInformation) free(SystemLogicalProcessorInformation);
+
+        if(GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+            SystemLogicalProcessorInformation =
+                static_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION>(malloc(SizeSystemLogicalProcessorInformation));
+        } else {
+            GetNumberOfLogicalProcessors();
+            return;
+        }
+    }
+
+    DWORD ProcessorCore = 0;
+    PSYSTEM_LOGICAL_PROCESSOR_INFORMATION Ptr = SystemLogicalProcessorInformation;
+
+    for(DWORD Offset = sizeof SYSTEM_LOGICAL_PROCESSOR_INFORMATION;
+        Offset <= SizeSystemLogicalProcessorInformation;
+        Offset += sizeof SYSTEM_LOGICAL_PROCESSOR_INFORMATION) {
+        if(Ptr++->Relationship == RelationProcessorCore) ProcessorCore++;
+    }
+
+    free(SystemLogicalProcessorInformation);
+
+    if(ProcessorCore) {
+        NumberOfProcessors = ProcessorCore;
+    } else {
+        GetNumberOfLogicalProcessors();
+    }
+}
+
+struct BoxBlurHorizontal_Param {
+    BoxBlurHorizontal_Param* Ptr;
+    unsigned char* aInput;
+    unsigned char* aOutput;
+    int32_t aLeftLobe;
+    int32_t aWidth;
+    IntRect* aSkipRect;
+    int32_t boxSize;
+    bool skipRectCoversWholeRow;
+    int32_t y;
+    int32_t Loop;
+    uint32_t reciprocal;
+    int32_t* aInput_next_last;
+};
+
+DWORD WINAPI
+BoxBlurHorizontal_Thread(void* Param)
+{
+//    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+
+    unsigned char* const aInput = static_cast<BoxBlurHorizontal_Param*>(Param)->Ptr->aInput;
+    unsigned char* const aOutput = static_cast<BoxBlurHorizontal_Param*>(Param)->Ptr->aOutput;
+    const int32_t aLeftLobe = static_cast<BoxBlurHorizontal_Param*>(Param)->Ptr->aLeftLobe;
+    const int32_t aWidth = static_cast<BoxBlurHorizontal_Param*>(Param)->Ptr->aWidth;
+    IntRect* const aSkipRect = static_cast<BoxBlurHorizontal_Param*>(Param)->Ptr->aSkipRect;
+    const int32_t boxSize = static_cast<BoxBlurHorizontal_Param*>(Param)->Ptr->boxSize;
+    const bool skipRectCoversWholeRow = static_cast<BoxBlurHorizontal_Param*>(Param)->Ptr->skipRectCoversWholeRow;
+    const int32_t Loop = static_cast<BoxBlurHorizontal_Param*>(Param)->Loop;
+    const int64_t reciprocal = static_cast<BoxBlurHorizontal_Param*>(Param)->Ptr->reciprocal;
+    int32_t* const aInput_next = static_cast<BoxBlurHorizontal_Param*>(Param)->Ptr->aInput_next_last;
+    int32_t* const aInput_last = aInput_next + aWidth;
+
+    for (int32_t y = static_cast<BoxBlurHorizontal_Param*>(Param)->y; y < Loop; y++) {
+        // Check whether the skip rect intersects this row. If the skip
+        // rect covers the whole surface in this row, we can avoid
+        // this row entirely (and any others along the skip rect).
+        bool inSkipRectY = y >= aSkipRect->y && y < aSkipRect->YMost();
+
+        if (inSkipRectY && skipRectCoversWholeRow) {
+            y = aSkipRect->YMost() - 1;
+            continue;
+        }
+
+        const int32_t aWidth_y = aWidth * y;
+        uint32_t alphaSum = 0;
+
+        for (int32_t i = 0; i < boxSize; i++) {
+            int32_t pos = i - aLeftLobe;
+            // See assertion above; if aWidth is zero, then we would have no
+            // valid position to clamp to.
+            pos = max(pos, 0);
+            pos = min(pos, aWidth - 1);
+            alphaSum += aInput[aWidth_y + pos];
+        }
+
+        unsigned char* ptr_aInput = aInput + aWidth_y;
+        unsigned char* ptr_aOutput = aOutput + aWidth_y;
+        int32_t* ptr_aInput_next = aInput_next;
+        int32_t* ptr_aInput_last = aInput_last;
+
+        for (int32_t x = 0; x < aWidth; x++) {
+            // Check whether we are within the skip rect. If so, go
+            // to the next point outside the skip rect.
+            if (inSkipRectY && x >= aSkipRect->x &&
+                x < aSkipRect->XMost()) {
+                x = aSkipRect->XMost();
+                if (x >= aWidth)
+                    break;
+
+                // Recalculate the neighbouring alpha values for
+                // our new point on the surface.
+                alphaSum = 0;
+
+                ptr_aOutput = aOutput + aWidth_y + x;
+                ptr_aInput_next = aInput_next + x;
+                ptr_aInput_last = aInput_last + x;
+
+                for (int32_t i = 0; i < boxSize; i++) {
+                    int32_t pos = x + i - aLeftLobe;
+                    // See assertion above; if aWidth is zero, then we would have no
+                    // valid position to clamp to.
+                    pos = max(pos, 0);
+                    pos = min(pos, aWidth - 1);
+                    alphaSum += aInput[aWidth_y + pos];
+                }
+            }
+
+            *ptr_aOutput++ = (uint64_t(alphaSum) * reciprocal) >> 32;
+
+            alphaSum += *(ptr_aInput + *ptr_aInput_next++) - *(ptr_aInput + *ptr_aInput_last++);
+        }
+    }
+
+    ExitThread(0);
+
+    return 0;
+}
+
 static void
 BoxBlurHorizontal(unsigned char* aInput,
                   unsigned char* aOutput,
@@ -43,66 +189,60 @@ BoxBlurHorizontal(unsigned char* aInput,
 {
     MOZ_ASSERT(aWidth > 0);
 
-    int32_t boxSize = aLeftLobe + aRightLobe + 1;
-    bool skipRectCoversWholeRow = 0 >= aSkipRect.x &&
-                                  aWidth <= aSkipRect.XMost();
-    if (boxSize == 1) {
-        memcpy(aOutput, aInput, aWidth*aRows);
+    const int32_t boxSize = aLeftLobe + aRightLobe + 1;
+
+    if(boxSize == 1) {
+        memcpy(aOutput, aInput, aWidth * aRows);
         return;
     }
-    uint32_t reciprocal = (uint64_t(1) << 32) / boxSize;
 
-    for (int32_t y = 0; y < aRows; y++) {
-        // Check whether the skip rect intersects this row. If the skip
-        // rect covers the whole surface in this row, we can avoid
-        // this row entirely (and any others along the skip rect).
-        bool inSkipRectY = y >= aSkipRect.y &&
-                           y < aSkipRect.YMost();
-        if (inSkipRectY && skipRectCoversWholeRow) {
-            y = aSkipRect.YMost() - 1;
-            continue;
-        }
+    if(NumberOfProcessors == 0) GetNumberOfProcessors();
 
-        uint32_t alphaSum = 0;
-        for (int32_t i = 0; i < boxSize; i++) {
-            int32_t pos = i - aLeftLobe;
-            // See assertion above; if aWidth is zero, then we would have no
-            // valid position to clamp to.
-            pos = max(pos, 0);
-            pos = min(pos, aWidth - 1);
-            alphaSum += aInput[aWidth * y + pos];
-        }
-        for (int32_t x = 0; x < aWidth; x++) {
-            // Check whether we are within the skip rect. If so, go
-            // to the next point outside the skip rect.
-            if (inSkipRectY && x >= aSkipRect.x &&
-                x < aSkipRect.XMost()) {
-                x = aSkipRect.XMost();
-                if (x >= aWidth)
-                    break;
+    BoxBlurHorizontal_Param* Param = new BoxBlurHorizontal_Param[NumberOfProcessors];
 
-                // Recalculate the neighbouring alpha values for
-                // our new point on the surface.
-                alphaSum = 0;
-                for (int32_t i = 0; i < boxSize; i++) {
-                    int32_t pos = x + i - aLeftLobe;
-                    // See assertion above; if aWidth is zero, then we would have no
-                    // valid position to clamp to.
-                    pos = max(pos, 0);
-                    pos = min(pos, aWidth - 1);
-                    alphaSum += aInput[aWidth * y + pos];
-                }
-            }
-            int32_t tmp = x - aLeftLobe;
-            int32_t last = max(tmp, 0);
-            int32_t next = min(tmp + boxSize, aWidth - 1);
+    Param->aInput = aInput;
+    Param->aOutput = aOutput;
+    Param->aLeftLobe = aLeftLobe;
+    Param->aWidth = aWidth;
+    Param->aSkipRect = &const_cast<IntRect&>(aSkipRect);
+    Param->boxSize = boxSize;
+    Param->skipRectCoversWholeRow = 0 >= aSkipRect.x && aWidth <= aSkipRect.XMost();
+    Param->reciprocal = (uint64_t(1) << 32) / boxSize;
+    Param->aInput_next_last = new int32_t[aWidth * 2];
 
-            aOutput[aWidth * y + x] = (uint64_t(alphaSum) * reciprocal) >> 32;
+    int32_t* ptr_aInput_next = Param->aInput_next_last;
+    int32_t* ptr_aInput_last = ptr_aInput_next + aWidth;
+    int32_t tmp = -aLeftLobe;
+    const int32_t aWidth_1 = aWidth - 1;
 
-            alphaSum += aInput[aWidth * y + next] -
-                        aInput[aWidth * y + last];
-        }
+    for(int32_t x = 0; x < aWidth; x++) {
+        *ptr_aInput_next++ = min(tmp + boxSize, aWidth_1);
+        *ptr_aInput_last++ = max(tmp, 0);
+        tmp++;
     }
+
+    const int Step = aRows / NumberOfProcessors;
+    const int Remain = aRows - Step * NumberOfProcessors;
+    HANDLE* Thread = new HANDLE[NumberOfProcessors];
+
+    for(int Idx = 0, y = 0; Idx < NumberOfProcessors; Idx++) {
+        Param[Idx].Ptr = Param;
+        Param[Idx].y = y;
+        y += Step + (Idx == 0 ? Remain : 0);
+        Param[Idx].Loop = y;
+
+        Thread[Idx] = CreateThread(NULL, 0, BoxBlurHorizontal_Thread, Param + Idx, 0, NULL);
+    }
+
+    WaitForMultipleObjects(NumberOfProcessors, Thread, true, INFINITE);
+
+    for(int Idx = 0; Idx < NumberOfProcessors; Idx++) {
+        CloseHandle(Thread[Idx]);
+    }
+
+    delete[] Thread;
+    delete[] Param->aInput_next_last;
+    delete[] Param;
 }
 
 /**
@@ -110,6 +250,99 @@ BoxBlurHorizontal(unsigned char* aInput,
  * left and right.
  * XXX shouldn't we pass stride in separately here?
  */
+struct BoxBlurVertical_Param {
+    BoxBlurVertical_Param* Ptr;
+    unsigned char* aInput;
+    unsigned char* aOutput;
+    int32_t aTopLobe;
+    int32_t aWidth;
+    int32_t aRows;
+    IntRect* aSkipRect;
+    int32_t boxSize;
+    bool skipRectCoversWholeColumn;
+    int32_t x;
+    int32_t Loop;
+    uint32_t reciprocal;
+    int32_t* aInput_next_last;
+};
+
+DWORD WINAPI
+BoxBlurVertical_Thread(void* Param)
+{
+//    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+
+    unsigned char* const aInput = static_cast<BoxBlurVertical_Param*>(Param)->Ptr->aInput;
+    unsigned char* const aOutput = static_cast<BoxBlurVertical_Param*>(Param)->Ptr->aOutput;
+    const int32_t aTopLobe = static_cast<BoxBlurVertical_Param*>(Param)->Ptr->aTopLobe;
+    const int32_t aWidth = static_cast<BoxBlurVertical_Param*>(Param)->Ptr->aWidth;
+    const int32_t aRows = static_cast<BoxBlurVertical_Param*>(Param)->Ptr->aRows;
+    IntRect* const aSkipRect = static_cast<BoxBlurVertical_Param*>(Param)->Ptr->aSkipRect;
+    const int32_t boxSize = static_cast<BoxBlurVertical_Param*>(Param)->Ptr->boxSize;
+    const bool skipRectCoversWholeColumn = static_cast<BoxBlurVertical_Param*>(Param)->Ptr->skipRectCoversWholeColumn;
+    const int32_t Loop = static_cast<BoxBlurVertical_Param*>(Param)->Loop;
+    const int64_t reciprocal = static_cast<BoxBlurVertical_Param*>(Param)->Ptr->reciprocal;
+    int32_t* const aInput_next = static_cast<BoxBlurVertical_Param*>(Param)->Ptr->aInput_next_last;
+    int32_t* const aInput_last = aInput_next + aRows;
+
+    for (int32_t x = static_cast<BoxBlurVertical_Param*>(Param)->x; x < Loop; x++) {
+        bool inSkipRectX = x >= aSkipRect->x && x < aSkipRect->XMost();
+
+        if (inSkipRectX && skipRectCoversWholeColumn) {
+            x = aSkipRect->XMost() - 1;
+            continue;
+        }
+
+        uint32_t alphaSum = 0;
+
+        for (int32_t i = 0; i < boxSize; i++) {
+            int32_t pos = i - aTopLobe;
+            // See assertion above; if aRows is zero, then we would have no
+            // valid position to clamp to.
+            pos = max(pos, 0);
+            pos = min(pos, aRows - 1);
+            alphaSum += aInput[aWidth * pos + x];
+        }
+
+        unsigned char* ptr_aInput = aInput + x;
+        unsigned char* ptr_aOutput = aOutput + x;
+        int32_t* ptr_aInput_next = aInput_next;
+        int32_t* ptr_aInput_last = aInput_last;
+
+        for (int32_t y = 0; y < aRows; y++) {
+            if (inSkipRectX && y >= aSkipRect->y &&
+                y < aSkipRect->YMost()) {
+                y = aSkipRect->YMost();
+                if (y >= aRows)
+                    break;
+
+                alphaSum = 0;
+
+                ptr_aOutput = aOutput + aWidth * y + x;
+                ptr_aInput_next = aInput_next + y;
+                ptr_aInput_last = aInput_last + y;
+
+                for (int32_t i = 0; i < boxSize; i++) {
+                    int32_t pos = y + i - aTopLobe;
+                    // See assertion above; if aRows is zero, then we would have no
+                    // valid position to clamp to.
+                    pos = max(pos, 0);
+                    pos = min(pos, aRows - 1);
+                    alphaSum += aInput[aWidth * pos + x];
+                }
+            }
+
+            *ptr_aOutput = (uint64_t(alphaSum) * reciprocal) >> 32;
+            ptr_aOutput += aWidth;
+
+            alphaSum += *(ptr_aInput + *ptr_aInput_next++) - *(ptr_aInput + *ptr_aInput_last++);
+        }
+    }
+
+    ExitThread(0);
+
+    return 0;
+}
+
 static void
 BoxBlurVertical(unsigned char* aInput,
                 unsigned char* aOutput,
@@ -121,59 +354,61 @@ BoxBlurVertical(unsigned char* aInput,
 {
     MOZ_ASSERT(aRows > 0);
 
-    int32_t boxSize = aTopLobe + aBottomLobe + 1;
-    bool skipRectCoversWholeColumn = 0 >= aSkipRect.y &&
-                                     aRows <= aSkipRect.YMost();
-    if (boxSize == 1) {
-        memcpy(aOutput, aInput, aWidth*aRows);
+    const int32_t boxSize = aTopLobe + aBottomLobe + 1;
+
+    if(boxSize == 1) {
+        memcpy(aOutput, aInput, aWidth * aRows);
         return;
     }
-    uint32_t reciprocal = (uint64_t(1) << 32) / boxSize;
 
-    for (int32_t x = 0; x < aWidth; x++) {
-        bool inSkipRectX = x >= aSkipRect.x &&
-                           x < aSkipRect.XMost();
-        if (inSkipRectX && skipRectCoversWholeColumn) {
-            x = aSkipRect.XMost() - 1;
-            continue;
-        }
+    if(NumberOfProcessors == 0) GetNumberOfProcessors();
 
-        uint32_t alphaSum = 0;
-        for (int32_t i = 0; i < boxSize; i++) {
-            int32_t pos = i - aTopLobe;
-            // See assertion above; if aRows is zero, then we would have no
-            // valid position to clamp to.
-            pos = max(pos, 0);
-            pos = min(pos, aRows - 1);
-            alphaSum += aInput[aWidth * pos + x];
-        }
-        for (int32_t y = 0; y < aRows; y++) {
-            if (inSkipRectX && y >= aSkipRect.y &&
-                y < aSkipRect.YMost()) {
-                y = aSkipRect.YMost();
-                if (y >= aRows)
-                    break;
+    BoxBlurVertical_Param* Param = new BoxBlurVertical_Param[NumberOfProcessors];
 
-                alphaSum = 0;
-                for (int32_t i = 0; i < boxSize; i++) {
-                    int32_t pos = y + i - aTopLobe;
-                    // See assertion above; if aRows is zero, then we would have no
-                    // valid position to clamp to.
-                    pos = max(pos, 0);
-                    pos = min(pos, aRows - 1);
-                    alphaSum += aInput[aWidth * pos + x];
-                }
-            }
-            int32_t tmp = y - aTopLobe;
-            int32_t last = max(tmp, 0);
-            int32_t next = min(tmp + boxSize, aRows - 1);
+    Param->aInput = aInput;
+    Param->aOutput = aOutput;
+    Param->aTopLobe = aTopLobe;
+    Param->aWidth = aWidth;
+    Param->aRows = aRows;
+    Param->aSkipRect = &const_cast<IntRect&>(aSkipRect);
+    Param->boxSize = boxSize;
+    Param->skipRectCoversWholeColumn = 0 >= aSkipRect.y && aRows <= aSkipRect.YMost();
+    Param->reciprocal = (uint64_t(1) << 32) / boxSize;
+    Param->aInput_next_last = new int32_t[aRows * 2];
 
-            aOutput[aWidth * y + x] = (uint64_t(alphaSum) * reciprocal) >> 32;
+    int32_t* ptr_aInput_next = Param->aInput_next_last;
+    int32_t* ptr_aInput_last = ptr_aInput_next + aRows;
+    int32_t tmp = -aTopLobe;
+    const int32_t aRows_1 = aRows - 1;
 
-            alphaSum += aInput[aWidth * next + x] -
-                        aInput[aWidth * last + x];
-        }
+    for(int32_t y = 0; y < aRows; y++) {
+        *ptr_aInput_next++ = aWidth * min(tmp + boxSize, aRows_1);
+        *ptr_aInput_last++ = aWidth * max(tmp, 0);
+        tmp++;
     }
+
+    const int Step = aWidth / NumberOfProcessors;
+    const int Remain = aWidth - Step * NumberOfProcessors;
+    HANDLE* Thread = new HANDLE[NumberOfProcessors];
+
+    for(int Idx = 0, x = 0; Idx < NumberOfProcessors; Idx++) {
+        Param[Idx].Ptr = Param;
+        Param[Idx].x = x;
+        x += Step + (Idx == 0 ? Remain : 0);
+        Param[Idx].Loop = x;
+
+        Thread[Idx] = CreateThread(NULL, 0, BoxBlurVertical_Thread, Param + Idx, 0, NULL);
+    }
+
+    WaitForMultipleObjects(NumberOfProcessors, Thread, true, INFINITE);
+
+    for(int Idx = 0; Idx < NumberOfProcessors; Idx++) {
+        CloseHandle(Thread[Idx]);
+    }
+
+    delete[] Thread;
+    delete[] Param->aInput_next_last;
+    delete[] Param;
 }
 
 static void ComputeLobes(int32_t aRadius, int32_t aLobes[3][2])
