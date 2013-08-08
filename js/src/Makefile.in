@@ -41,11 +41,11 @@ GRE_MODULE	    = 1
 LIBS		= $(NSPR_LIBS)
 
 # Pale Moon: Don't PGO JS to workaround MSVC bugs on x86
-ifeq ($(OS_ARCH),WINNT)
-  ifeq ($(CPU_ARCH),x86)
-    NO_PROFILE_GUIDED_OPTIMIZE = 1
-  endif
-endif
+# ifeq ($(OS_ARCH),WINNT)
+#   ifeq ($(CPU_ARCH),x86)
+#     NO_PROFILE_GUIDED_OPTIMIZE = 1
+#   endif
+# endif
 
 # JavaScript must be built shared, even for static builds, as it is used by
 # other modules which are always built shared. Failure to do so results in
@@ -678,8 +678,8 @@ CXXFLAGS += -fp:precise
 
 ifeq ($(CPU_ARCH),x86)
 # Workaround compiler bug on PGO (Bug 721284)
-# MonoIC.$(OBJ_SUFFIX): CXXFLAGS += -GL-
-# Compiler.$(OBJ_SUFFIX): CXXFLAGS += -GL-
+MonoIC.$(OBJ_SUFFIX): CXXFLAGS += -GL-
+Compiler.$(OBJ_SUFFIX): CXXFLAGS += -GL-
 endif
 endif # _MSC_VER
 
@@ -878,3 +878,4 @@ endif
 # END kludges for the Nitro assembler
 ###############################################
 
+CXXFLAGS := $(CXXFLAGS:arch:SSE2=arch:SSE)

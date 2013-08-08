@@ -1159,7 +1159,7 @@ pref("full-screen-api.approval-required", true);
 // (this pref has no effect if more than 6 hours have passed since the last crash)
 pref("toolkit.startup.max_resumed_crashes", 3);
 
-// Completely disable pdf.js as an option to preview pdfs within firefox.
+// Completely disable pdf.js as an option to preview pdfs within Pale Moon.
 // Note: if this is not disabled it does not necessarily mean pdf.js is the pdf
 // handler just that it is an option.
 pref("pdfjs.disabled", true);
@@ -1175,3 +1175,15 @@ pref("pdfjs.previousHandler.alwaysAskBeforeHandling", false);
 // might keep around more than this, but we'll try to get down to this value).
 // (This is intentionally on the high side; see bug 746055.)
 pref("image.mem.max_decoded_image_kb", 256000);
+
+//Pale Moon padlock overlay preferences
+pref("browser.padlock.shown", true);
+/* Where to show the padlock
+   1 = inside identity button, right side
+   2 = inside identity button, left side
+   3 = urlbar, right side (next to bookmark star)
+   4 = statusbar
+   5 = tabs bar, right side */
+pref("browser.padlock.style", 1);
+// address bar border, 0 = no border, 1 = border
+pref("browser.padlock.urlbar_background", 1);

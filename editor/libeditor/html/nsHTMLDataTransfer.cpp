@@ -244,6 +244,9 @@ nsHTMLEditor::DoInsertHTMLWithContext(const nsAString & aInputString,
 {
   NS_ENSURE_TRUE(mRules, NS_ERROR_NOT_INITIALIZED);
 
+  // Prevent the edit rules object from dying - Bug 788950
+  nsCOMPtr<nsIEditRules> kungFuDeathGrip(mRules);
+
   // force IME commit; set up rules sniffing and batching
   ForceCompositionEnd();
   nsAutoEditBatch beginBatching(this);

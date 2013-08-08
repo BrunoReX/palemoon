@@ -1612,9 +1612,16 @@ _cairo_d2d_create_linear_gradient_brush(cairo_d2d_surface_t *d2dsurf,
 	min_dist = MAX(-min_dist, 0);
 
 	// Repeats after gradient start.
-	int after_repeat = (int)ceil(max_dist / gradient_length);
+ 	// It's possible for max_dist and min_dist to both be zero, in which case
+ 	// we'll set num_stops to 0 and crash D2D. Let's just ensure after_repeat
+ 	// is at least 1.
+ 	int after_repeat = MAX((int)ceil(max_dist / gradient_length), 1);
 	int before_repeat = (int)ceil(min_dist / gradient_length);
 	num_stops *= (after_repeat + before_repeat);
+   if (num_stops == 0) {
+     fprintf(stderr, "num_stops == 0: max_dist=%f, min_dist=%f, after_repeat=%d, before_repeat=%d\n",
+             max_dist, min_dist, after_repeat, before_repeat);
+   }
 
 	p2.x = p1.x + u.x * after_repeat * gradient_length;
 	p2.y = p1.y + u.y * after_repeat * gradient_length;

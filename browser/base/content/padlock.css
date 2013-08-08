@@ -1,0 +1,131 @@
+#padlock-ib {
+  -moz-appearance: none;
+  min-width: 0px;
+  margin-right: 1px !important;
+  background-repeat: no-repeat;
+  background-position: center;
+  z-index: 1000 !important;
+  padding: 0px;
+  margin: 0px;
+  border: 0px; 
+}
+
+#padlock-ib[padshow="ib-trans-bg"][level="ev"] {
+  list-style-image: url("chrome://browser/content/ev3-transparent.png");
+  background-color: transparent;
+}
+
+#padlock-ib[padshow="ib-trans-bg"][level="high"],
+#padlock-ib[padshow="ib-trans-bg"][level="low"] {
+  list-style-image: url("chrome://browser/content/secure-transparent.png");
+  background-color: transparent;
+}
+
+#padlock-ib[padshow="ib-trans-bg"][level="broken"] {
+  list-style-image: url("chrome://browser/content/broken-transparent.png");
+  background-color: transparent;
+}
+
+
+#padlock-ib-left {
+  -moz-appearance: none;
+  min-width: 0px;
+  margin-right: 1px !important;
+  background-repeat: no-repeat;
+  background-position: center;
+  z-index: 1000 !important;
+  padding: 0px;
+  margin: 0px;
+  border: 0px; 
+}
+
+#padlock-ib-left[padshow="ib-left"][level="ev"] {
+  list-style-image: url("chrome://browser/content/ev3-transparent.png");
+  padding: 2px;
+  background-color: transparent;
+}
+
+#padlock-ib-left[padshow="ib-left"][level="high"],
+#padlock-ib-left[padshow="ib-left"][level="low"] {
+  list-style-image: url("chrome://browser/content/secure-transparent.png");
+  padding: 2px;
+  background-color: transparent;
+}
+
+#padlock-ib-left[padshow="ib-left"][level="broken"] {
+  list-style-image: url("chrome://browser/content/broken-transparent.png");
+  padding: 2px;
+  background-color: transparent;
+}
+
+#padlock-ub-right {
+  -moz-appearance: none;
+  min-width: 0px;
+  margin-right: 1px !important;
+  background-repeat: no-repeat;
+  background-position: center;
+  z-index: 1000 !important;
+  padding: 0px;
+  margin: 0px;
+  border: 0px; 
+}
+
+#padlock-ub-right[padshow="ub-right"][level="ev"] {
+  list-style-image: url("chrome://browser/content/ev3-transparent.png");
+  background-color: transparent;
+}
+
+#padlock-ub-right[padshow="ub-right"][level="high"],
+#padlock-ub-right[padshow="ub-right"][level="low"] {
+  list-style-image: url("chrome://browser/content/secure-transparent.png");
+  background-color: transparent;
+}
+
+#padlock-ub-right[padshow="ub-right"][level="broken"] {
+  list-style-image: url("chrome://browser/content/broken-transparent.png");
+  background-color: transparent;
+}
+
+#padlock-sb {
+  -moz-appearance: none;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+#padlock-sb[padshow="statbar"][level="ev"] {
+  list-style-image: url("chrome://browser/content/ev3-transparent.png");
+  background-color: transparent;
+}
+
+#padlock-sb[padshow="statbar"][level="high"],
+#padlock-sb[padshow="statbar"][level="low"] {
+  list-style-image: url("chrome://browser/content/secure-transparent.png");
+  background-color: transparent;
+}
+
+#padlock-sb[padshow="statbar"][level="broken"] {
+  list-style-image: url("chrome://browser/content/broken-transparent.png");
+  background-color: transparent;
+}
+
+#padlock-tab {
+  -moz-appearance: none;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+#padlock-tab[padshow="tabs-bar"][level="ev"] {
+  list-style-image: url("chrome://browser/content/ev3-transparent.png");
+  background-color: transparent;
+}
+
+#padlock-tab[padshow="tabs-bar"][level="high"],
+#padlock-tab[padshow="tabs-bar"][level="low"] {
+  list-style-image: url("chrome://browser/content/secure-transparent.png");
+  background-color: transparent;
+}
+
+#padlock-tab[padshow="tabs-bar"][level="broken"] {
+  list-style-image: url("chrome://browser/content/broken-transparent.png");
+  background-color: transparent;
+}

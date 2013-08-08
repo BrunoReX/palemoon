@@ -192,6 +192,12 @@
 #include "mozilla/StartupTimeline.h"
 #include "nsIFrameMessageManager.h"
 
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
+#include "nsIPrivateBrowsingService.h"
+#endif
+
+
+
 static NS_DEFINE_CID(kDOMScriptObjectFactoryCID,
                      NS_DOM_SCRIPT_OBJECT_FACTORY_CID);
 static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
@@ -2718,12 +2724,23 @@ nsDocShell::SetDocLoaderParent(nsDocLoader * aParent)
         }
         SetAllowDNSPrefetch(value);
     }
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
+    // Set the PB flag on the docshell based on the global PB mode for now
+    nsCOMPtr<nsIPrivateBrowsingService> pbs =
+        do_GetService(NS_PRIVATE_BROWSING_SERVICE_CONTRACTID);
+    if (pbs) {
+        bool inPrivateBrowsing = false;
+        pbs->GetPrivateBrowsingEnabled(&inPrivateBrowsing);
+        SetUsePrivateBrowsing(inPrivateBrowsing);
+    }
+#else
     nsCOMPtr<nsILoadContext> parentAsLoadContext(do_QueryInterface(parent));
     if (parentAsLoadContext &&
         NS_SUCCEEDED(parentAsLoadContext->GetUsePrivateBrowsing(&value)))
     {
         SetUsePrivateBrowsing(value);
     }
+#endif
 
     nsCOMPtr<nsIURIContentListener> parentURIListener(do_GetInterface(parent));
     if (parentURIListener)

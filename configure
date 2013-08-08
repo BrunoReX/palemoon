@@ -8559,7 +8559,7 @@ EOF
         LIBXUL_LIBS='$(LIBXUL_DIST)/lib/xpcom.lib $(LIBXUL_DIST)/lib/xul.lib $(LIBXUL_DIST)/lib/mozalloc.lib'
         MOZ_COMPONENT_NSPR_LIBS='$(NSPR_LIBS)'
         if test $_MSC_VER -ge 1400; then
-            LDFLAGS="$LDFLAGS -LARGEADDRESSAWARE -NXCOMPAT -OPT:REF -OPT:ICF"
+            LDFLAGS="$LDFLAGS -LARGEADDRESSAWARE -NXCOMPAT"
                         PROFILE_GEN_CFLAGS="-GL"
             PROFILE_GEN_LDFLAGS="-LTCG:PGINSTRUMENT"
                                                                                                 PROFILE_USE_CFLAGS="-GL -wd4624 -wd4952"

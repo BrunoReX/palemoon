@@ -15,7 +15,6 @@ MOZ_CO_PROJECT=browser
 # --enable-optimize=-O2 -arch:SSE2 -GFLs -GS- -fp:precise -Qfast_transcendentals is used by configure (not client.mk)
 # --enable-jemalloc is used by configure (not client.mk)
 # --disable-debug is used by configure (not client.mk)
-# --disable-debug-symbols is used by configure (not client.mk)
 # --enable-chrome-format=jar is used by configure (not client.mk)
 # --disable-tests is used by configure (not client.mk)
 # --disable-mochitests is used by configure (not client.mk)
@@ -30,5 +29,5 @@ MOZ_CO_PROJECT=browser
 # --disable-activex-scripting is used by configure (not client.mk)
 # --disable-logging is used by configure (not client.mk)
 # --disable-necko-wifi is used by configure (not client.mk)
-PROFILE_GEN_SCRIPT=$(PYTHON) $(MOZ_OBJDIR)/_profile/pgo/profileserver.py
+PROFILE_GEN_SCRIPT=sh $(HOME)/run-pm4.sh
 export FOUND_MOZCONFIG := /e/mozdev/home/.mozconfig-15

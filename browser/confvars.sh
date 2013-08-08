@@ -36,7 +36,7 @@ MOZ_APP_ID={ec8030f7-c20a-464f-9b0e-13a3a9e97384}
 # of values.
 ACCEPTED_MAR_CHANNEL_IDS=firefox-mozilla-beta,firefox-mozilla-release
 # The MAR_CHANNEL_ID must not contain the following 3 characters: ",\t "
-MAR_CHANNEL_ID=firefox-mozilla-beta
+MAR_CHANNEL_ID=firefox-mozilla-release
 MOZ_PROFILE_MIGRATOR=1
 MOZ_EXTENSION_MANAGER=1
 MOZ_APP_STATIC_INI=1

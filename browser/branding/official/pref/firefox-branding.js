@@ -97,8 +97,8 @@ pref("browser.allTabs.previews", true);
 pref("browser.urlbar.trimURLs", false); //stop being a derp, Mozilla!
 pref("browser.preferences.animateFadeIn", true); //Animate preferences windows
 pref("browser.identity.ssl_domain_display", 1); //show domain verified SSL
-pref("browser.urlbar.autoFill", false);
-pref("browser.urlbar.autoFill.typed", false);
+pref("browser.urlbar.autoFill", true);
+pref("browser.urlbar.autoFill.typed", true);
 
 //Take unintended/removed tools out of the UI
 pref("devtools.errorconsole.enabled",true); //Essential for troubleshooting

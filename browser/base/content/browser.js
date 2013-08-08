@@ -3892,10 +3892,7 @@ var XULBrowserWindow = {
 
   onLinkIconAvailable: function (aIconURL) {
     if (gProxyFavIcon && gBrowser.userTypedValue === null) {
-      if (gURLBar.getAttribute("level") != "high") {
-        //non-secure site means update icon
-        PageProxySetIcon(aIconURL); // update the favicon in the URL bar
-      }
+      PageProxySetIcon(aIconURL); // update the favicon in the URL bar
     }
   },
 
@@ -4687,11 +4684,12 @@ var TabsOnTop = {
   init: function TabsOnTop_init() {
     Services.prefs.addObserver(this._prefName, this, false);
 
+// Pale Moon: Stop Being a Derp, Mozilla (#3)
     // Only show the toggle UI if the user disabled tabs on top.
-    if (Services.prefs.getBoolPref(this._prefName)) {
-      for (let item of document.querySelectorAll("menuitem[command=cmd_ToggleTabsOnTop]"))
-        item.parentNode.removeChild(item);
-    }
+//    if (Services.prefs.getBoolPref(this._prefName)) {
+//      for (let item of document.querySelectorAll("menuitem[command=cmd_ToggleTabsOnTop]"))
+//        item.parentNode.removeChild(item);
+//    }
   },
 
   uninit: function TabsOnTop_uninit() {

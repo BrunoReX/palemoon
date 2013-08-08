@@ -153,3 +153,8 @@ nsBoxObject.cpp: %: $(topsrcdir)/layout/xul/base/src/%
 
 GARBAGE    += nsIBoxObject.idl nsPIBoxObject.h nsBoxObject.cpp
 endif
+
+# Pale Moon: Exclude the following from PGO to avoid compiler crash
+ifeq ($(CPU_ARCH),x86)
+FrameLayerBuilder.$(OBJ_SUFFIX): CXXFLAGS += -GL-
+endif
