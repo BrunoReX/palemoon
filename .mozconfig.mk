@@ -3,7 +3,7 @@
 # Do not edit. Edit /e/mozdev/home/.mozconfig-vs11 instead.
 
 # PATH=/local/bin:/e/mozilla-build/wget:/e/mozilla-build/7zip:/e/mozilla-build/blat261/full:/e/mozilla-build/python:/e/mozilla-build/svn-win32-1.6.3/bin:/e/mozilla-build/upx203w:/e/mozilla-build/emacs-22.3/bin:/e/mozilla-build/info-zip:/e/mozilla-build/nsis-2.22:/e/mozilla-build/nsis-2.33u:/e/mozilla-build/nsis-2.46u:/e/mozilla-build/wix-351728:/e/mozilla-build/hg:/e/mozilla-build/python/Scripts:/e/mozilla-build/kdiff3:/e/mozilla-build/yasm:.:/usr/local/bin:/mingw/bin:/bin:/d/VS2012/Common7/IDE/CommonExtensions/Microsoft/TestWindow:/c/Program Files (x86)/Microsoft SDKs/F#/3.0/Framework/v4.0/:/d/VS2012/VSTSDB/Deploy:/d/VS2012/Common7/IDE/:/d/VS2012/VC/BIN:/d/VS2012/Common7/Tools:/c/Windows/Microsoft.NET/Framework/v4.0.30319:/c/Windows/Microsoft.NET/Framework/v3.5:/d/VS2012/VC/VCPackages:/c/Program Files (x86)/HTML Help Workshop:/c/Program Files (x86)/HTML Help Workshop:/d/VS2012/Team Tools/Performance Tools:/c/Program Files (x86)/Windows Kits/8.0/bin/x86:/c/Program Files (x86)/Microsoft SDKs/Windows/v8.0A/bin/NETFX 4.0 Tools:/c/Program Files (x86)/Microsoft SDKs/Windows/v7.0A/bin/:/c/Windows/System32:/c/Windows:/c/Windows/System32/Wbem:/e/mozilla-build/moztools/bin:/e/mozilla-build/vim/vim72
-MOZ_OBJDIR=$(TOPSRCDIR)/build-optimized
+MOZ_OBJDIR=$(TOPSRCDIR)/build-optimized-sdk8
 MOZ_MAKE_FLAGS=-j1
 MOZ_APP_NAME=palemoon
 MOZ_APP_DISPLAYNAME=Palemoon
